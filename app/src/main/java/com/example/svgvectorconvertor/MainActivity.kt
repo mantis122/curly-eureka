@@ -1,34 +1,40 @@
 package com.example.svgvectorconverter
 
-import android.app.*
 import android.os.*
 import android.content.*
-import android.net.Uri
 import android.graphics.Color
 import android.view.*
 import android.widget.*
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private lateinit var outputBox: EditText
     private var convertedXml = ""
 
     private val openSvg = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+        ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri ?: return@registerForActivityResult
-        val svg = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
-        convertedXml = SvgToVectorConverter.convert(svg)
-        outputBox.setText(convertedXml)
+        if (uri != null) {
+            val svg = contentResolver.openInputStream(uri)
+                ?.bufferedReader()
+                ?.use { it.readText() }
+                ?: ""
+
+            convertedXml = SvgToVectorConverter.convert(svg)
+            outputBox.setText(convertedXml)
+        }
     }
 
     private val saveXml = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/xml")
+        ActivityResultContracts.CreateDocument("text/xml")
     ) { uri ->
-        uri ?: return@registerForActivityResult
-        contentResolver.openOutputStream(uri)?.use {
-            it.write(convertedXml.toByteArray())
+        if (uri != null) {
+            contentResolver.openOutputStream(uri)?.use {
+                it.write(convertedXml.toByteArray())
+            }
+            toast("Saved")
         }
-        toast("Saved")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,7 +65,7 @@ class MainActivity : Activity() {
                 if (convertedXml.isBlank()) {
                     toast("Nothing to copy yet")
                 } else {
-                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("vector.xml", convertedXml))
                     toast("Copied")
                 }
@@ -110,7 +116,8 @@ object SvgToVectorConverter {
     fun convert(svg: String): String {
         val viewBox = Regex("""viewBox=["']([^"']+)["']""")
             .find(svg)
-            ?.groupValues?.get(1)
+            ?.groupValues
+            ?.get(1)
             ?.trim()
             ?.split(Regex("[,\\s]+"))
             ?.mapNotNull { it.toFloatOrNull() }
