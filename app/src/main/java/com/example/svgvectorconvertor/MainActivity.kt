@@ -114,53 +114,179 @@ class MainActivity : ComponentActivity() {
 
 object SvgToVectorConverter {
     fun convert(svg: String): String {
-        val viewBox = Regex("""viewBox=["']([^"']+)["']""")
+        val viewBoxValues = getViewBox(svg)
+
+        val widthFromSvg = getNumberAttr(svg, "width")
+        val heightFromSvg = getNumberAttr(svg, "height")
+
+        val viewportWidth = viewBoxValues?.getOrNull(2)
+            ?: widthFromSvg
+            ?: 24f
+
+        val viewportHeight = viewBoxValues?.getOrNull(3)
+            ?: heightFromSvg
+            ?: 24f
+
+        val vectorWidthDp = 24
+        val vectorHeightDp = 24
+
+        val output = StringBuilder()
+
+        output.appendLine("""<vector xmlns:android="http://schemas.android.com/apk/res/android"""")
+        output.appendLine("""    android:width="${vectorWidthDp}dp"""")
+        output.appendLine("""    android:height="${vectorHeightDp}dp"""")
+        output.appendLine("""    android:viewportWidth="$viewportWidth"""")
+        output.appendLine("""    android:viewportHeight="$viewportHeight">""")
+        output.appendLine()
+
+        val groupRegex = Regex("""<g\b[^>]*>.*?</g>""", RegexOption.DOT_MATCHES_ALL)
+        val groups = groupRegex.findAll(svg).toList()
+
+        if (groups.isNotEmpty()) {
+            for (groupMatch in groups) {
+                appendConvertedGroup(output, groupMatch.value)
+            }
+        } else {
+            appendConvertedPaths(output, svg, null)
+        }
+
+        output.appendLine("</vector>")
+
+        return output.toString().trim()
+    }
+
+    private fun appendConvertedGroup(output: StringBuilder, groupXml: String) {
+        val groupStartTag = Regex("""<g\b[^>]*>""")
+            .find(groupXml)
+            ?.value
+            ?: ""
+
+        val transform = attr(groupStartTag, "transform")
+        val translate = parseTranslate(transform)
+        val scale = parseScale(transform)
+
+        val needsGroup = translate != null || scale != null
+
+        if (needsGroup) {
+            output.appendLine("    <group")
+
+            if (translate != null) {
+                output.appendLine("""        android:translateX="${translate.first}"""")
+                output.appendLine("""        android:translateY="${translate.second}"""")
+            }
+
+            if (scale != null) {
+                output.appendLine("""        android:scaleX="${scale.first}"""")
+                output.appendLine("""        android:scaleY="${scale.second}"""")
+            }
+
+            output.appendLine("    >")
+            appendConvertedPaths(output, groupXml, "        ")
+            output.appendLine("    </group>")
+            output.appendLine()
+        } else {
+            appendConvertedPaths(output, groupXml, null)
+        }
+    }
+
+    private fun appendConvertedPaths(
+        output: StringBuilder,
+        xml: String,
+        indentOverride: String?
+    ) {
+        val indent = indentOverride ?: "    "
+
+        Regex("""<path\b[^>]*>""")
+            .findAll(xml)
+            .forEach { match ->
+                val tag = match.value
+                val d = attr(tag, "d") ?: return@forEach
+
+                val fill = attr(tag, "fill")
+                    ?: styleValue(attr(tag, "style"), "fill")
+                    ?: "#000000"
+
+                val stroke = attr(tag, "stroke")
+                    ?: styleValue(attr(tag, "style"), "stroke")
+
+                val strokeWidth = attr(tag, "stroke-width")
+                    ?: styleValue(attr(tag, "style"), "stroke-width")
+
+                val pathTransform = attr(tag, "transform")
+                val translate = parseTranslate(pathTransform)
+                val scale = parseScale(pathTransform)
+
+                val pathNeedsGroup = translate != null || scale != null
+
+                if (pathNeedsGroup) {
+                    output.appendLine("${indent}<group")
+
+                    if (translate != null) {
+                        output.appendLine("""${indent}    android:translateX="${translate.first}"""")
+                        output.appendLine("""${indent}    android:translateY="${translate.second}"""")
+                    }
+
+                    if (scale != null) {
+                        output.appendLine("""${indent}    android:scaleX="${scale.first}"""")
+                        output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
+                    }
+
+                    output.appendLine("${indent}>")
+                    appendPath(output, d, fill, stroke, strokeWidth, indent + "    ")
+                    output.appendLine("${indent}</group>")
+                } else {
+                    appendPath(output, d, fill, stroke, strokeWidth, indent)
+                }
+
+                output.appendLine()
+            }
+    }
+
+    private fun appendPath(
+        output: StringBuilder,
+        d: String,
+        fill: String,
+        stroke: String?,
+        strokeWidth: String?,
+        indent: String
+    ) {
+        output.appendLine("${indent}<path")
+        output.appendLine("""${indent}    android:pathData="${escapeXml(d)}"""")
+
+        if (fill != "none") {
+            output.appendLine("""${indent}    android:fillColor="$fill"""")
+        } else {
+            output.appendLine("""${indent}    android:fillColor="@android:color/transparent"""")
+        }
+
+        if (stroke != null && stroke != "none") {
+            output.appendLine("""${indent}    android:strokeColor="$stroke"""")
+            output.appendLine("""${indent}    android:strokeWidth="${strokeWidth ?: "1"}"""")
+        }
+
+        output.appendLine("${indent}/>")
+    }
+
+    private fun getViewBox(svg: String): List<Float>? {
+        return Regex("""viewBox=["']([^"']+)["']""")
             .find(svg)
             ?.groupValues
             ?.get(1)
             ?.trim()
             ?.split(Regex("[,\\s]+"))
             ?.mapNotNull { it.toFloatOrNull() }
+            ?.takeIf { it.size >= 4 }
+    }
 
-        val viewportWidth = viewBox?.getOrNull(2) ?: 24f
-        val viewportHeight = viewBox?.getOrNull(3) ?: 24f
-
-        val paths = Regex("""<path\b[^>]*>""")
-            .findAll(svg)
-            .mapNotNull { match ->
-                val tag = match.value
-                val d = attr(tag, "d") ?: return@mapNotNull null
-                val fill = attr(tag, "fill") ?: "#000000"
-                val stroke = attr(tag, "stroke")
-                val strokeWidth = attr(tag, "stroke-width")
-
-                buildString {
-                    appendLine("    <path")
-                    appendLine("""        android:pathData="${escapeXml(d)}"""")
-                    if (fill != "none") {
-                        appendLine("""        android:fillColor="$fill"""")
-                    } else {
-                        appendLine("""        android:fillColor="@android:color/transparent"""")
-                    }
-                    if (stroke != null && stroke != "none") {
-                        appendLine("""        android:strokeColor="$stroke"""")
-                        appendLine("""        android:strokeWidth="${strokeWidth ?: "1"}"""")
-                    }
-                    appendLine("    />")
-                }
-            }
-            .joinToString("\n")
-
-        return """
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="${viewportWidth.toInt()}dp"
-    android:height="${viewportHeight.toInt()}dp"
-    android:viewportWidth="$viewportWidth"
-    android:viewportHeight="$viewportHeight">
-
-$paths
-</vector>
-        """.trim()
+    private fun getNumberAttr(tag: String, name: String): Float? {
+        return Regex("""\b$name=["']([^"']*)["']""")
+            .find(tag)
+            ?.groupValues
+            ?.get(1)
+            ?.replace("px", "")
+            ?.replace("dp", "")
+            ?.trim()
+            ?.toFloatOrNull()
     }
 
     private fun attr(tag: String, name: String): String? {
@@ -168,6 +294,51 @@ $paths
             .find(tag)
             ?.groupValues
             ?.get(1)
+    }
+
+    private fun styleValue(style: String?, name: String): String? {
+        if (style == null) return null
+
+        return style
+            .split(";")
+            .map { it.trim() }
+            .firstOrNull { it.startsWith("$name:") }
+            ?.substringAfter(":")
+            ?.trim()
+    }
+
+    private fun parseTranslate(transform: String?): Pair<Float, Float>? {
+        if (transform == null) return null
+
+        val match = Regex("""translate\(([^)]*)\)""")
+            .find(transform)
+            ?: return null
+
+        val nums = match.groupValues[1]
+            .split(Regex("[,\\s]+"))
+            .filter { it.isNotBlank() }
+            .mapNotNull { it.toFloatOrNull() }
+
+        if (nums.isEmpty()) return null
+
+        return Pair(nums[0], nums.getOrNull(1) ?: 0f)
+    }
+
+    private fun parseScale(transform: String?): Pair<Float, Float>? {
+        if (transform == null) return null
+
+        val match = Regex("""scale\(([^)]*)\)""")
+            .find(transform)
+            ?: return null
+
+        val nums = match.groupValues[1]
+            .split(Regex("[,\\s]+"))
+            .filter { it.isNotBlank() }
+            .mapNotNull { it.toFloatOrNull() }
+
+        if (nums.isEmpty()) return null
+
+        return Pair(nums[0], nums.getOrNull(1) ?: nums[0])
     }
 
     private fun escapeXml(value: String): String {
