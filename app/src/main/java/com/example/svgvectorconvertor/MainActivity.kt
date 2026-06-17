@@ -200,7 +200,8 @@ object SvgToVectorConverter {
             .findAll(xml)
             .forEach { match ->
                 val tag = match.value
-                val d = attr(tag, "d") ?: return@forEach
+                val d = attr(tag, "d")?.trim()
+                if (d.isNullOrBlank()) return@forEach
 
                 val fill = attr(tag, "fill")
                     ?: styleValue(attr(tag, "style"), "fill")
