@@ -215,7 +215,7 @@ val report = buildString {
 
 return ConversionResult(finalXml, report)
 
-        }
+
     }
 
     private fun appendConvertedGroup(output: StringBuilder, groupXml: String) {
