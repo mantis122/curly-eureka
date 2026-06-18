@@ -194,24 +194,39 @@ val finalXml = if (endIndex >= 0) {
     result
 }
 
+val convertedPathCount = Regex("""<path\b""").findAll(finalXml).count()
+val generatedGroupCount = Regex("""<group\b""").findAll(finalXml).count()
+
 val report = buildString {
     appendLine("SVG Analysis")
     appendLine()
-    appendLine("Viewport: ${viewportWidth} x ${viewportHeight}")
-    appendLine("Paths found: $pathCount")
-    appendLine("Groups found: $groupCount")
-    appendLine("Translate transforms: $translateCount")
-    appendLine("Scale transforms: $scaleCount")
+    appendLine("✓ Viewport: ${viewportWidth} × ${viewportHeight}")
+    appendLine("✓ Paths found: $pathCount")
+    appendLine("✓ Source groups: $groupCount")
+    appendLine("✓ Path transforms: $translateCount")
+    appendLine("✓ Scale transforms: $scaleCount")
+    appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
+
+    appendLine("Conversion Status")
+    appendLine()
+    appendLine("✓ Android VectorDrawable generated")
+    appendLine("✓ Converted paths: $convertedPathCount")
+    appendLine("✓ Empty paths skipped")
+    appendLine("✓ XML cleanup complete")
+    appendLine()
+
     if (unsupported.isEmpty()) {
         appendLine("Warnings: none")
     } else {
-        appendLine("Warnings:")
+        appendLine("Warnings")
+        appendLine()
         unsupported.forEach {
             appendLine("⚠ Unsupported: $it")
         }
     }
 }
+
 
 return ConversionResult(finalXml, report)
 
