@@ -8,9 +8,15 @@ import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 
+data class ConversionResult(
+    val xml: String,
+    val report: String
+)
+
 class MainActivity : ComponentActivity() {
     private lateinit var outputBox: EditText
     private var convertedXml = ""
+    private lateinit var reportBox: TextView
 
     private val openSvg = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -21,8 +27,11 @@ class MainActivity : ComponentActivity() {
                 ?.use { it.readText() }
                 ?: ""
 
-            convertedXml = SvgToVectorConverter.convert(svg)
-            outputBox.setText(convertedXml)
+    val result = SvgToVectorConverter.convert(svg)
+    convertedXml = result.xml
+    reportBox.text = result.report
+    outputBox.setText(convertedXml)
+
         }
     }
 
@@ -100,8 +109,17 @@ class MainActivity : ComponentActivity() {
             addView(saveButton, LinearLayout.LayoutParams(0, -2, 1f))
         }
 
+        reportBox = TextView(this).apply {
+            text = "No SVG converted yet"
+            textSize = 14f
+            setTextColor(Color.BLACK)
+            setPadding(0, 16, 0, 16)
+        }
+
+
         root.addView(title)
         root.addView(buttonRow)
+        root.addView(reportBox)
         root.addView(outputBox, LinearLayout.LayoutParams(-1, 0, 1f))
 
         setContentView(root)
@@ -113,7 +131,21 @@ class MainActivity : ComponentActivity() {
 }
 
 object SvgToVectorConverter {
-    fun convert(svg: String): String {
+    fun convert(svg: String): ConversionResult {
+
+val pathCount = Regex("""<path\b[^>]*>""").findAll(svg).count()
+val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
+val translateCount = Regex("""translate\(""").findAll(svg).count()
+val scaleCount = Regex("""scale\(""").findAll(svg).count()
+
+val unsupported = mutableListOf<String>()
+if (svg.contains("<linearGradient")) unsupported.add("linearGradient")
+if (svg.contains("<radialGradient")) unsupported.add("radialGradient")
+if (svg.contains("<mask")) unsupported.add("mask")
+if (svg.contains("<filter")) unsupported.add("filter")
+if (svg.contains("<text")) unsupported.add("text")
+if (svg.contains("matrix(")) unsupported.add("matrix transform")
+
         val viewBoxValues = getViewBox(svg)
 
         val widthFromSvg = getNumberAttr(svg, "width")
@@ -156,10 +188,33 @@ object SvgToVectorConverter {
         val endTag = "</vector>"
         val endIndex = result.indexOf(endTag)
 
-        return if (endIndex >= 0) {
-        result.substring(0, endIndex + endTag.length)
-        } else {
-            result
+val finalXml = if (endIndex >= 0) {
+    result.substring(0, endIndex + endTag.length)
+} else {
+    result
+}
+
+val report = buildString {
+    appendLine("SVG Analysis")
+    appendLine()
+    appendLine("Viewport: ${viewportWidth} x ${viewportHeight}")
+    appendLine("Paths found: $pathCount")
+    appendLine("Groups found: $groupCount")
+    appendLine("Translate transforms: $translateCount")
+    appendLine("Scale transforms: $scaleCount")
+    appendLine()
+    if (unsupported.isEmpty()) {
+        appendLine("Warnings: none")
+    } else {
+        appendLine("Warnings:")
+        unsupported.forEach {
+            appendLine("⚠ Unsupported: $it")
+        }
+    }
+}
+
+return ConversionResult(finalXml, report)
+
         }
     }
 
