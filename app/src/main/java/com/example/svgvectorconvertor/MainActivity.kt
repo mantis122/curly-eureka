@@ -133,7 +133,18 @@ class MainActivity : ComponentActivity() {
 object SvgToVectorConverter {
     fun convert(svg: String): ConversionResult {
 
+var convertedPaths = 0
+var skippedEmptyPaths = 0
+
 val pathCount = Regex("""<path\b[^>]*>""").findAll(svg).count()
+val validPathCount = Regex("""<path\b[^>]*>""")
+    .findAll(svg)
+    .count { match ->
+        val d = attr(match.value, "d")?.trim()
+        !d.isNullOrBlank()
+    }
+
+val emptyPathCount = pathCount - validPathCount
 val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
 val translateCount = Regex("""translate\(""").findAll(svg).count()
 val scaleCount = Regex("""scale\(""").findAll(svg).count()
@@ -202,6 +213,8 @@ val report = buildString {
     appendLine()
     appendLine("✓ Viewport: ${viewportWidth} × ${viewportHeight}")
     appendLine("✓ Paths found: $pathCount")
+    appendLine("✓ Valid paths: $validPathCount")
+    appendLine("✓ Empty paths skipped: $emptyPathCount")
     appendLine("✓ Source groups: $groupCount")
     appendLine("✓ Path transforms: $translateCount")
     appendLine("✓ Scale transforms: $scaleCount")
@@ -211,7 +224,7 @@ val report = buildString {
     appendLine("Conversion Status")
     appendLine()
     appendLine("✓ Android VectorDrawable generated")
-    appendLine("✓ Converted paths: $convertedPathCount")
+    appendLine("✓ Drawable paths created: $convertedPathCount")
     appendLine("✓ Empty paths skipped")
     appendLine("✓ XML cleanup complete")
     appendLine()
