@@ -152,7 +152,15 @@ object SvgToVectorConverter {
 
         output.appendLine("</vector>")
 
-        return output.toString().trim()
+        val result = output.toString().trim()
+        val endTag = "</vector>"
+        val endIndex = result.indexOf(endTag)
+
+        return if (endIndex >= 0) {
+        result.substring(0, endIndex + endTag.length)
+        } else {
+            result
+        }
     }
 
     private fun appendConvertedGroup(output: StringBuilder, groupXml: String) {
