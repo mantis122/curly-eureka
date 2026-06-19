@@ -24,11 +24,13 @@ class MainActivity : ComponentActivity() {
     private var convertedXml = ""
     private lateinit var reportBox: TextView
     private lateinit var previewBox: ImageView
+    private var suggestedFileName = "converted_vector.xml"
 
     private val openSvg = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
+            suggestedFileName = makeXmlFileName(uri)
             val svg = contentResolver.openInputStream(uri)
                 ?.bufferedReader()
                 ?.use { it.readText() }
@@ -95,7 +97,7 @@ class MainActivity : ComponentActivity() {
                 if (convertedXml.isBlank()) {
                     toast("Nothing to save yet")
                 } else {
-                    saveXml.launch("converted_vector.xml")
+                    saveXml.launch(suggestedFileName)
                 }
             }
         }
@@ -138,6 +140,22 @@ class MainActivity : ComponentActivity() {
         root.addView(outputBox, LinearLayout.LayoutParams(-1, 0, 1f))
 
         setContentView(root)
+    }
+
+    private fun makeXmlFileName(uri: android.net.Uri): String {
+        val name = uri.lastPathSegment
+            ?.substringAfterLast("/")
+            ?.substringAfterLast(":")
+            ?: "converted_vector.svg"
+
+        val baseName = name
+            .substringBeforeLast(".")
+            .lowercase()
+            .replace(Regex("[^a-z0-9_]+"), "_")
+            .trim('_')
+            .ifBlank { "converted_vector" }
+
+        return "$baseName.xml"
     }
 
     private fun toast(msg: String) {
