@@ -48,7 +48,7 @@ private val openSvg = registerForActivityResult(
             ?.use { it.readText() }
             ?: ""
 
-        SvgToVectorConverter.convert(svg, outputDpSize)
+        val result = SvgToVectorConverter.convert(svg, outputDpSize)
         convertedXml = result.xml
         reportBox.text = result.report
         outputBox.setText(convertedXml)
