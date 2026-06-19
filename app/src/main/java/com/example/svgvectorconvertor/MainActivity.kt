@@ -96,7 +96,6 @@ try {
     )
 }       
 
-     batchResults[fileName] = result.xml
         }
 
         val successCount = batchResults.count { it.success }
@@ -115,9 +114,14 @@ Failed: $failureCount
 
 Ready to save ZIP
 """.trimIndent()
-        outputBox.setText(batchResults.entries.joinToString("\n\n") {
-            "===== ${it.key} =====\n${it.value}"
-        })
+
+outputBox.setText(
+    batchResults
+        .filter { it.success && it.xml != null }
+        .joinToString("\n\n") {
+            "===== ${it.fileName} =====\n${it.xml}"
+        }
+)
 
         showBatchGallery()
 
