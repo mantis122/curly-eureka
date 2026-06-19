@@ -333,20 +333,18 @@ private fun showBatchGallery() {
 
     batchResults.forEach { result ->
 
-        val label = TextView(this).apply {
-            text =
-                when {
-                    !result.success ->
-                        "✕ ${result.fileName}"
-
-                    result.warningCount > 0 ->
-                        "⚠ ${result.fileName}"
-
-                    else ->
-                        "✓ ${result.fileName}"
-                }
+ val label = TextView(this).apply {
+    text =
+        when {
+            !result.success -> "✕ ${result.fileName}"
+            result.warningCount > 0 -> "⚠ ${result.fileName}"
+            else -> "✓ ${result.fileName}"
         }
 
+    textSize = 16f
+    setTextColor(Color.BLACK)
+    setPadding(0, 16, 0, 6)
+}
         batchGallery.addView(label)
 
         val xml = result.xml ?: return@forEach
