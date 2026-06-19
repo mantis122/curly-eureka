@@ -26,6 +26,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var reportBox: TextView
     private lateinit var previewBox: ImageView
     private var suggestedFileName = "converted_vector.xml"
+    private lateinit var mainPanel: LinearLayout
+    private lateinit var xmlPanel: EditText
+
 
     private val openSvg = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -126,6 +129,28 @@ class MainActivity : ComponentActivity() {
             addView(saveButton, LinearLayout.LayoutParams(0, -2, 1f))
         }
 
+val previewTab = Button(this).apply {
+    text = "Preview"
+    setOnClickListener {
+        mainPanel.visibility = View.VISIBLE
+        outputBox.visibility = View.GONE
+    }
+}
+
+val xmlTab = Button(this).apply {
+    text = "XML"
+    setOnClickListener {
+        mainPanel.visibility = View.GONE
+        outputBox.visibility = View.VISIBLE
+    }
+}
+
+val tabRow = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    addView(previewTab, LinearLayout.LayoutParams(0, -2, 1f))
+    addView(xmlTab, LinearLayout.LayoutParams(0, -2, 1f))
+}
+
         reportBox = TextView(this).apply {
             text = "No SVG converted yet"
             textSize = 14f
@@ -133,14 +158,17 @@ class MainActivity : ComponentActivity() {
             setPadding(0, 16, 0, 16)
         }
 
+        mainPanel = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        }
 
         root.addView(title)
         root.addView(buttonRow)
-        root.addView(reportBox)
-        root.addView(previewBox, LinearLayout.LayoutParams(-1, 300))
+        root.addView(tabRow)
+        root.addView(mainPanel, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(outputBox, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        setContentView(root)
+         setContentView(root)
     }
 
 private fun makeXmlFileName(uri: android.net.Uri): String {
