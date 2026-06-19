@@ -212,7 +212,33 @@ val finalXml = if (endIndex >= 0) {
 val convertedPathCount = Regex("""<path\b""").findAll(finalXml).count()
 val generatedGroupCount = Regex("""<group\b""").findAll(finalXml).count()
 
+val warningCount =
+    unsupported.size +
+    if (matrixCount > 0) 1 else 0
+
+val summaryTitle =
+    if (warningCount == 0)
+        "🟢 Conversion Successful"
+    else
+        "🟡 Conversion Completed With Warnings"
+
+val summaryLine1 =
+    "$convertedPathCount drawable paths created"
+
+val summaryLine2 =
+    if (warningCount == 0)
+        "No warnings detected"
+    else
+        "$warningCount warning(s) detected"
+
 val report = buildString {
+    appendLine(summaryTitle)
+    appendLine(summaryLine1)
+    appendLine(summaryLine2)
+    appendLine()
+
+    appendLine("────────────────────")
+    appendLine()
     appendLine("SVG Analysis")
     appendLine()
     appendLine("✓ Viewport: ${viewportWidth} × ${viewportHeight}")
