@@ -237,7 +237,7 @@ if (matrixCount > 0) {
 
     appendLine()
     appendLine("Conversion Status")
-    appendline()
+    appendLine()
 
     appendLine("✓ Android VectorDrawable generated")
     appendLine("✓ Drawable paths created: $convertedPathCount")
