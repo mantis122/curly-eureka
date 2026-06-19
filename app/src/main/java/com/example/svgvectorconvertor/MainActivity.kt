@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var mainPanel: LinearLayout
     private val batchResults = mutableListOf<BatchResult>()
     private lateinit var batchGallery: LinearLayout
+    private var outputDpSize = 24
 
 private val openSvg = registerForActivityResult(
     ActivityResultContracts.OpenDocument()
@@ -47,7 +48,7 @@ private val openSvg = registerForActivityResult(
             ?.use { it.readText() }
             ?: ""
 
-        val result = SvgToVectorConverter.convert(svg)
+        SvgToVectorConverter.convert(svg, outputDpSize)
         convertedXml = result.xml
         reportBox.text = result.report
         outputBox.setText(convertedXml)
@@ -71,7 +72,7 @@ private val openMultipleSvgs = registerForActivityResult(
     val fileName = makeXmlFileName(uri)
 
 try {
-    val result = SvgToVectorConverter.convert(svg)
+    val result = SvgToVectorConverter.convert(svg, outputDpSize)
 
     val warningCount =
         result.report.lines().count { it.startsWith("⚠") }
@@ -211,6 +212,32 @@ private val saveZip = registerForActivityResult(
             }
         }
 
+val sizeButton = Button(this).apply {
+    text = "Size: 24dp"
+    setOnClickListener {
+        val options = arrayOf("24dp", "48dp", "Keep SVG size")
+        android.app.AlertDialog.Builder(this@MainActivity)
+            .setTitle("Output Size")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        outputDpSize = 24
+                        text = "Size: 24dp"
+                    }
+                    1 -> {
+                        outputDpSize = 48
+                        text = "Size: 48dp"
+                    }
+                    2 -> {
+                        outputDpSize = -1
+                        text = "Size: SVG"
+                    }
+                }
+            }
+            .show()
+    }
+}
+
         val batchButton = Button(this).apply {
             text = "Batch SVGs"
             setOnClickListener {
@@ -291,6 +318,11 @@ val tabRow = LinearLayout(this).apply {
     addView(xmlTab, LinearLayout.LayoutParams(0, -2, 1f))
 }
 
+val settingsRow = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    addView(sizeButton, LinearLayout.LayoutParams(0, -2, 1f))
+}
+
 val batchRow = LinearLayout(this).apply {
     orientation = LinearLayout.HORIZONTAL
     addView(batchButton, LinearLayout.LayoutParams(0, -2, 1f))
@@ -315,6 +347,7 @@ val batchRow = LinearLayout(this).apply {
         root.addView(title)
         root.addView(buttonRow)
         root.addView(batchRow)
+        root.addView(settingsRow)
         root.addView(tabRow)
         root.addView(mainPanel, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(outputBox, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -412,7 +445,7 @@ private fun updatePreview(xml: String) {
 }
 
 object SvgToVectorConverter {
-    fun convert(svg: String): ConversionResult {
+fun convert(svg: String, outputDpSize: Int): ConversionResult {    
 
 val translateCount = Regex("""translate\(""").findAll(svg).count()
 val scaleCount = Regex("""scale\(""").findAll(svg).count()
@@ -455,8 +488,11 @@ if (hasTag(svg, "use")) unsupported.add("Referenced elements")
             ?: heightFromSvg
             ?: 24f
 
-        val vectorWidthDp = 24
-        val vectorHeightDp = 24
+val vectorWidthDp =
+    if (outputDpSize > 0) outputDpSize else viewportWidth.toInt()
+
+val vectorHeightDp =
+    if (outputDpSize > 0) outputDpSize else viewportHeight.toInt()        
 
         val output = StringBuilder()
 
