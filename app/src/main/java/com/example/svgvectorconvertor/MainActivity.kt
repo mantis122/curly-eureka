@@ -230,7 +230,7 @@ val report = buildString {
     appendLine("✓ Scale transforms: $scaleCount")
 
 if (matrixCount > 0) {
-    appendLine("⚠ Unsupported matrix transforms: $matrixCount (unsupported)")
+    appendLine("⚠ Unsupported matrix transforms: $matrixCount")
 } else {
     appendLine("✓ Unsupported matrix transforms: 0")
 }
