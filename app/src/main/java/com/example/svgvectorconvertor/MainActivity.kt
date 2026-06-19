@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.graphics.drawable.Drawable
 import android.util.Xml
 import java.io.StringReader
+import androidx.vectordrawable.graphics.drawable.VectorDrawableCompat
 
 data class ConversionResult(
     val xml: String,
@@ -153,11 +154,16 @@ private fun updatePreview(xml: String) {
             eventType = parser.next()
         }
 
-        val drawable = Drawable.createFromXml(resources, parser)
+        val drawable = VectorDrawableCompat.createFromXml(
+            resources,
+            parser,
+            theme
+        )
+
         previewBox.setImageDrawable(drawable)
     } catch (e: Exception) {
         previewBox.setImageDrawable(null)
-        toast("Preview failed")
+        reportBox.text = reportBox.text.toString() + "\n\nPreview failed: ${e.message}"
     }
 }
 

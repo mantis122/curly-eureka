@@ -28,4 +28,5 @@ android {
 
 dependencies {
     implementation("androidx.activity:activity-ktx:1.9.3")
+    implementation("androidx.vectordrawable:vectordrawable:1.2.0")
 }
