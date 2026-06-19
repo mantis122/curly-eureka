@@ -149,16 +149,18 @@ val emptyPathCount = pathCount - validPathCount
 val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
 
 val unsupported = mutableListOf<String>()
-if (svg.contains("<linearGradient")) unsupported.add("Linear gradients")
-if (svg.contains("<radialGradient")) unsupported.add("Radial gradients")
-if (svg.contains("<mask")) unsupported.add("Masks")
-if (svg.contains("<filter")) unsupported.add("Filters")
-if (svg.contains("<text")) unsupported.add("Text elements")
-if (svg.contains("<clipPath")) unsupported.add("Clip paths")
-if (svg.contains("<pattern")) unsupported.add("Patterns")
-if (svg.contains("<image")) unsupported.add("Embedded images")
-if (svg.contains("<symbol")) unsupported.add("Symbols")
-if (svg.contains("<use ")) unsupported.add("Referenced elements (<use>)")
+
+if (hasTag(svg, "linearGradient")) unsupported.add("Linear gradients")
+if (hasTag(svg, "radialGradient")) unsupported.add("Radial gradients")
+if (hasTag(svg, "mask")) unsupported.add("Masks")
+if (hasTag(svg, "filter")) unsupported.add("Filters")
+if (hasTag(svg, "text")) unsupported.add("Text elements")
+if (hasTag(svg, "clipPath")) unsupported.add("Clip paths")
+if (hasTag(svg, "pattern")) unsupported.add("Patterns")
+if (hasTag(svg, "image")) unsupported.add("Embedded images")
+if (hasTag(svg, "symbol")) unsupported.add("Symbols")
+if (hasTag(svg, "use")) unsupported.add("Referenced elements")
+
         val viewBoxValues = getViewBox(svg)
 
         val widthFromSvg = getNumberAttr(svg, "width")
@@ -228,10 +230,14 @@ val report = buildString {
     appendLine("✓ Scale transforms: $scaleCount")
 
 if (matrixCount > 0) {
-    appendLine("⚠ Matrix transforms: $matrixCount (unsupported)")
+    appendLine("⚠ Unsupported matrix transforms: $matrixCount (unsupported)")
 } else {
-    appendLine("✓ Matrix transforms: 0")
+    appendLine("✓ Unsupported matrix transforms: 0")
 }
+
+    appendLine()
+    appendLine("Conversion Status")
+    appendline()
 
     appendLine("✓ Android VectorDrawable generated")
     appendLine("✓ Drawable paths created: $convertedPathCount")
@@ -239,24 +245,36 @@ if (matrixCount > 0) {
     appendLine("✓ Output ready to save")
     appendLine()
 
-    if (unsupported.isEmpty()) {
-        appendLine("✓ No warnings detected")
-    } else {
-        appendLine("Warnings")
-        appendLine()
-        unsupported.forEach {
-            appendLine("⚠ Unsupported: $it")
-        }
 
-        appendLine()
-        appendLine("Some SVG features may not convert correctly.")
+if (unsupported.isEmpty() && matrixCount == 0) {
+    appendLine("✓ No warnings detected")
+} else {
+    appendLine("Warnings")
+    appendLine()
+
+    if (matrixCount > 0) {
+        appendLine("⚠ Unsupported matrix transforms: $matrixCount")
     }
+
+    unsupported.forEach {
+        appendLine("⚠ $it detected")
+    }
+
+    appendLine()
+    appendLine("Some SVG features may not convert correctly.")
+}
+
 }
 
 
 return ConversionResult(finalXml, report)
 
 
+    }
+
+    private fun hasTag(svg: String, tagName: String): Boolean {
+        return Regex("""<\s*$tagName\b""", RegexOption.IGNORE_CASE)
+            .containsMatchIn(svg)
     }
 
     private fun appendConvertedGroup(output: StringBuilder, groupXml: String) {
