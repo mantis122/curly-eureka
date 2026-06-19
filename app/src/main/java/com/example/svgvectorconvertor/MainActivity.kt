@@ -331,6 +331,15 @@ private fun makeXmlFileName(uri: android.net.Uri): String {
 private fun showBatchGallery() {
     batchGallery.removeAllViews()
 
+val heading = TextView(this).apply {
+    text = "Batch Results"
+    textSize = 20f
+    setTextColor(Color.BLACK)
+    setPadding(0, 24, 0, 12)
+}
+
+batchGallery.addView(heading)
+
     batchResults.forEach { result ->
 
  val label = TextView(this).apply {
