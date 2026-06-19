@@ -27,57 +27,67 @@ class MainActivity : ComponentActivity() {
     private lateinit var mainPanel: LinearLayout
     private val batchResults = mutableMapOf<String, String>()
 
-    private val openSvg = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            suggestedFileName = makeXmlFileName(uri)
+private val openSvg = registerForActivityResult(
+    ActivityResultContracts.OpenDocument()
+) { uri ->
+    if (uri != null) {
+        suggestedFileName = makeXmlFileName(uri)
+
+        val svg = contentResolver.openInputStream(uri)
+            ?.bufferedReader()
+            ?.use { it.readText() }
+            ?: ""
+
+        val result = SvgToVectorConverter.convert(svg)
+        convertedXml = result.xml
+        reportBox.text = result.report
+        outputBox.setText(convertedXml)
+        updatePreview(convertedXml)
+    }
+}
+
+private val openMultipleSvgs = registerForActivityResult(
+    ActivityResultContracts.OpenMultipleDocuments()
+) { uris ->
+    if (uris.isNotEmpty()) {
+        batchResults.clear()
+
+        uris.forEach { uri ->
             val svg = contentResolver.openInputStream(uri)
                 ?.bufferedReader()
                 ?.use { it.readText() }
                 ?: ""
 
-    private val openMultipleSvgs = registerForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
-        if (uris.isNotEmpty()) {
-            batchResults.clear()
-
-            uris.forEach { uri ->
-                val svg = contentResolver.openInputStream(uri)
-                    ?.bufferedReader()
-                    ?.use { it.readText() }
-                    ?: ""
-
-                val fileName = makeXmlFileName(uri)
-                val result = SvgToVectorConverter.convert(svg)
-                batchResults[fileName] = result.xml
-            }
-
-            reportBox.text = "🟢 Batch Conversion Complete\n${batchResults.size} files converted\nReady to save ZIP"
-            outputBox.setText(batchResults.entries.joinToString("\n\n") {
-                "===== ${it.key} =====\n${it.value}"
-            })
-            toast("${batchResults.size} files converted")
+            val fileName = makeXmlFileName(uri)
+            val result = SvgToVectorConverter.convert(svg)
+            batchResults[fileName] = result.xml
         }
-    }
 
-    private val saveZip = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/zip")
-    ) { uri ->
-        if (uri != null) {
-            contentResolver.openOutputStream(uri)?.use { output ->
-                ZipOutputStream(output).use { zip ->
-                    batchResults.forEach { (fileName, xml) ->
-                        zip.putNextEntry(ZipEntry(fileName))
-                        zip.write(xml.toByteArray())
-                        zip.closeEntry()
-                    }
+        reportBox.text = "🟢 Batch Conversion Complete\n${batchResults.size} files converted\nReady to save ZIP"
+        outputBox.setText(batchResults.entries.joinToString("\n\n") {
+            "===== ${it.key} =====\n${it.value}"
+        })
+
+        toast("${batchResults.size} files converted")
+    }
+}
+
+private val saveZip = registerForActivityResult(
+    ActivityResultContracts.CreateDocument("application/zip")
+) { uri ->
+    if (uri != null) {
+        contentResolver.openOutputStream(uri)?.use { output ->
+            ZipOutputStream(output).use { zip ->
+                batchResults.forEach { (fileName, xml) ->
+                    zip.putNextEntry(ZipEntry(fileName))
+                    zip.write(xml.toByteArray())
+                    zip.closeEntry()
                 }
             }
-            toast("ZIP saved")
         }
+        toast("ZIP saved")
     }
+}
 
     val result = SvgToVectorConverter.convert(svg)
     convertedXml = result.xml
@@ -232,7 +242,7 @@ val batchRow = LinearLayout(this).apply {
 
         root.addView(title)
         root.addView(buttonRow)
-        root.addvuew(batchRow)
+        root.addview(batchRow)
         root.addView(tabRow)
         root.addView(mainPanel, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(outputBox, LinearLayout.LayoutParams(-1, 0, 1f))
