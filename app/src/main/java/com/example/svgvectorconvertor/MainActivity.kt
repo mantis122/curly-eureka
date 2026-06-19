@@ -7,10 +7,6 @@ import android.view.*
 import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
-import android.graphics.drawable.Drawable
-import android.util.Xml
-import java.io.StringReader
-import androidx.vectordrawable.graphics.drawable.VectorDrawableCompat
 import android.graphics.*
 import android.graphics.drawable.BitmapDrawable
 import android.provider.OpenableColumns
@@ -27,8 +23,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var previewBox: ImageView
     private var suggestedFileName = "converted_vector.xml"
     private lateinit var mainPanel: LinearLayout
-    private lateinit var xmlPanel: EditText
-
 
     private val openSvg = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
