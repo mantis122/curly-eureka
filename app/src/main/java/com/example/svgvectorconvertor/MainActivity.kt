@@ -7,6 +7,9 @@ import android.view.*
 import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import android.graphics.drawable.Drawable
+import android.util.Xml
+import java.io.StringReader
 
 data class ConversionResult(
     val xml: String,
@@ -17,6 +20,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var outputBox: EditText
     private var convertedXml = ""
     private lateinit var reportBox: TextView
+    private lateinit var previewBox: ImageView
 
     private val openSvg = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -31,6 +35,7 @@ class MainActivity : ComponentActivity() {
     convertedXml = result.xml
     reportBox.text = result.report
     outputBox.setText(convertedXml)
+    updatePreview(convertedXml)
 
         }
     }
@@ -92,6 +97,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    previewBox = ImageView(this).apply {
+        setBackgroundColor(Color.WHITE)
+        setPadding(24, 24, 24, 24)
+        scaleType = ImageView.ScaleType.FIT_CENTER
+    }
+
         outputBox = EditText(this).apply {
             hint = "Converted VectorDrawable XML will appear here"
             setTextColor(Color.BLACK)
@@ -120,6 +131,7 @@ class MainActivity : ComponentActivity() {
         root.addView(title)
         root.addView(buttonRow)
         root.addView(reportBox)
+        root.addView(previewBox, LinearLayout.LayoutParams(-1, 300))
         root.addView(outputBox, LinearLayout.LayoutParams(-1, 0, 1f))
 
         setContentView(root)
@@ -128,6 +140,27 @@ class MainActivity : ComponentActivity() {
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
+
+private fun updatePreview(xml: String) {
+    try {
+        val parser = Xml.newPullParser()
+        parser.setInput(StringReader(xml))
+
+        var eventType = parser.eventType
+        while (eventType != org.xmlpull.v1.XmlPullParser.START_TAG &&
+            eventType != org.xmlpull.v1.XmlPullParser.END_DOCUMENT
+        ) {
+            eventType = parser.next()
+        }
+
+        val drawable = Drawable.createFromXml(resources, parser)
+        previewBox.setImageDrawable(drawable)
+    } catch (e: Exception) {
+        previewBox.setImageDrawable(null)
+        toast("Preview failed")
+    }
+}
+
 }
 
 object SvgToVectorConverter {
