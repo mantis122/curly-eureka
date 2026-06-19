@@ -154,6 +154,8 @@ private fun updatePreview(xml: String) {
     }
 }
 
+}
+
 object SvgToVectorConverter {
     fun convert(svg: String): ConversionResult {
 
