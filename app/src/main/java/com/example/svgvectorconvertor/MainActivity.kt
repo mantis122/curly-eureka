@@ -89,14 +89,6 @@ private val saveZip = registerForActivityResult(
     }
 }
 
-    val result = SvgToVectorConverter.convert(svg)
-    convertedXml = result.xml
-    reportBox.text = result.report
-    outputBox.setText(convertedXml)
-    updatePreview(convertedXml)
-
-        }
-    }
 
     private val saveXml = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/xml")
@@ -242,7 +234,7 @@ val batchRow = LinearLayout(this).apply {
 
         root.addView(title)
         root.addView(buttonRow)
-        root.addview(batchRow)
+        root.addView(batchRow)
         root.addView(tabRow)
         root.addView(mainPanel, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(outputBox, LinearLayout.LayoutParams(-1, 0, 1f))
