@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
     private var suggestedFileName = "converted_vector.xml"
     private lateinit var mainPanel: LinearLayout
     private val batchResults = mutableMapOf<String, String>()
+    private lateinit var batchGallery: LinearLayout
 
 private val openSvg = registerForActivityResult(
     ActivityResultContracts.OpenDocument()
@@ -43,6 +44,7 @@ private val openSvg = registerForActivityResult(
         reportBox.text = result.report
         outputBox.setText(convertedXml)
         updatePreview(convertedXml)
+        batchGallery.removeAllViews()
     }
 }
 
@@ -67,6 +69,8 @@ private val openMultipleSvgs = registerForActivityResult(
         outputBox.setText(batchResults.entries.joinToString("\n\n") {
             "===== ${it.key} =====\n${it.value}"
         })
+
+        showBatchGallery()
 
         toast("${batchResults.size} files converted")
     }
@@ -171,6 +175,10 @@ private val saveZip = registerForActivityResult(
         scaleType = ImageView.ScaleType.FIT_CENTER
     }
 
+    batchGallery = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+    }
+
         outputBox = EditText(this).apply {
             hint = "Converted VectorDrawable XML will appear here"
             setTextColor(Color.BLACK)
@@ -231,6 +239,7 @@ val batchRow = LinearLayout(this).apply {
 
         mainPanel.addView(reportBox)
         mainPanel.addView(previewBox, LinearLayout.LayoutParams(-1, 300))
+        mainPanel.addView(batchGallery)        
 
         root.addView(title)
         root.addView(buttonRow)
@@ -263,6 +272,35 @@ private fun makeXmlFileName(uri: android.net.Uri): String {
 
     return "$baseName.xml"
 } 
+
+private fun showBatchGallery() {
+    batchGallery.removeAllViews()
+
+    batchResults.forEach { (fileName, xml) ->
+        val label = TextView(this).apply {
+            text = fileName
+            textSize = 16f
+            setTextColor(Color.BLACK)
+            setPadding(0, 24, 0, 8)
+        }
+
+        val image = ImageView(this).apply {
+            setBackgroundColor(Color.WHITE)
+            setPadding(16, 16, 16, 16)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+
+            try {
+                val bitmap = VectorPreviewRenderer.render(xml, 256, 256)
+                setImageDrawable(BitmapDrawable(resources, bitmap))
+            } catch (e: Exception) {
+                setImageDrawable(null)
+            }
+        }
+
+        batchGallery.addView(label)
+        batchGallery.addView(image, LinearLayout.LayoutParams(-1, 220))
+    }
+}
 
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
