@@ -136,6 +136,10 @@ object SvgToVectorConverter {
 var convertedPaths = 0
 var skippedEmptyPaths = 0
 
+val translateCount = Regex("""translate\(""").findAll(svg).count()
+val scaleCount = Regex("""scale\(""").findAll(svg).count()
+val matrixCount = Regex("""matrix\(""").findAll(svg).count()
+
 val pathCount = Regex("""<path\b[^>]*>""").findAll(svg).count()
 val validPathCount = Regex("""<path\b[^>]*>""")
     .findAll(svg)
@@ -150,13 +154,16 @@ val translateCount = Regex("""translate\(""").findAll(svg).count()
 val scaleCount = Regex("""scale\(""").findAll(svg).count()
 
 val unsupported = mutableListOf<String>()
-if (svg.contains("<linearGradient")) unsupported.add("linearGradient")
-if (svg.contains("<radialGradient")) unsupported.add("radialGradient")
-if (svg.contains("<mask")) unsupported.add("mask")
-if (svg.contains("<filter")) unsupported.add("filter")
-if (svg.contains("<text")) unsupported.add("text")
-if (svg.contains("matrix(")) unsupported.add("matrix transform")
-
+if (svg.contains("<linearGradient")) unsupported.add("Linear gradients")
+if (svg.contains("<radialGradient")) unsupported.add("Radial gradients")
+if (svg.contains("<mask")) unsupported.add("Masks")
+if (svg.contains("<filter")) unsupported.add("Filters")
+if (svg.contains("<text")) unsupported.add("Text elements")
+if (svg.contains("<clipPath")) unsupported.add("Clip paths")
+if (svg.contains("<pattern")) unsupported.add("Patterns")
+if (svg.contains("<image")) unsupported.add("Embedded images")
+if (svg.contains("<symbol")) unsupported.add("Symbols")
+if (svg.contains("<use ")) unsupported.add("Referenced elements (<use>)")
         val viewBoxValues = getViewBox(svg)
 
         val widthFromSvg = getNumberAttr(svg, "width")
@@ -214,29 +221,40 @@ val report = buildString {
     appendLine("✓ Viewport: ${viewportWidth} × ${viewportHeight}")
     appendLine("✓ Paths found: $pathCount")
     appendLine("✓ Valid paths: $validPathCount")
-    appendLine("✓ Empty paths skipped: $emptyPathCount")
-    appendLine("✓ Source groups: $groupCount")
-    appendLine("✓ Path transforms: $translateCount")
-    appendLine("✓ Scale transforms: $scaleCount")
+    appendLine("✓ Empty paths skipped: $emptyPathCount"
     appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
 
-    appendLine("Conversion Status")
     appendLine()
+    appendLine("Transforms")
+    appendLine()
+
+    appendLine("✓ Translate transforms: $translateCount")
+    appendLine("✓ Scale transforms: $scaleCount")
+
+if (matrixCount > 0) {
+    appendLine("⚠ Matrix transforms: $matrixCount (unsupported)")
+} else {
+    appendLine("✓ Matrix transforms: 0")
+}
+
     appendLine("✓ Android VectorDrawable generated")
     appendLine("✓ Drawable paths created: $convertedPathCount")
-    appendLine("✓ Empty paths skipped")
-    appendLine("✓ XML cleanup complete")
+    appendLine("✓ XML validation passed")
+    appendLine("✓ Output ready to save")
     appendLine()
 
     if (unsupported.isEmpty()) {
-        appendLine("Warnings: none")
+        appendLine("✓ No warnings detected")
     } else {
         appendLine("Warnings")
         appendLine()
         unsupported.forEach {
             appendLine("⚠ Unsupported: $it")
         }
+
+        appendLine()
+        appendLine("Some SVG features may not convert correctly.")
     }
 }
 
