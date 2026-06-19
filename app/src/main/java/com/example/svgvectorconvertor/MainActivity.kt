@@ -133,9 +133,6 @@ class MainActivity : ComponentActivity() {
 object SvgToVectorConverter {
     fun convert(svg: String): ConversionResult {
 
-var convertedPaths = 0
-var skippedEmptyPaths = 0
-
 val translateCount = Regex("""translate\(""").findAll(svg).count()
 val scaleCount = Regex("""scale\(""").findAll(svg).count()
 val matrixCount = Regex("""matrix\(""").findAll(svg).count()
@@ -150,8 +147,6 @@ val validPathCount = Regex("""<path\b[^>]*>""")
 
 val emptyPathCount = pathCount - validPathCount
 val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
-val translateCount = Regex("""translate\(""").findAll(svg).count()
-val scaleCount = Regex("""scale\(""").findAll(svg).count()
 
 val unsupported = mutableListOf<String>()
 if (svg.contains("<linearGradient")) unsupported.add("Linear gradients")
@@ -221,7 +216,7 @@ val report = buildString {
     appendLine("✓ Viewport: ${viewportWidth} × ${viewportHeight}")
     appendLine("✓ Paths found: $pathCount")
     appendLine("✓ Valid paths: $validPathCount")
-    appendLine("✓ Empty paths skipped: $emptyPathCount"
+    appendLine("✓ Empty paths skipped: $emptyPathCount")
     appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
 
