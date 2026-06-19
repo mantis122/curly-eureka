@@ -115,13 +115,29 @@ Failed: $failureCount
 Ready to save ZIP
 """.trimIndent()
 
-outputBox.setText(
-    batchResults
-        .filter { it.success && it.xml != null }
-        .joinToString("\n\n") {
-            "===== ${it.fileName} =====\n${it.xml}"
+val xmlOutput = buildString {
+    appendLine("Batch XML Output")
+    appendLine("${batchResults.size} files selected")
+    appendLine("${batchResults.count { it.success }} converted")
+    appendLine("${batchResults.count { !it.success }} failed")
+    appendLine()
+    appendLine("────────────────────")
+    appendLine()
+
+    batchResults.forEach { result ->
+        appendLine("===== ${result.fileName} =====")
+
+        if (result.success && result.xml != null) {
+            appendLine(result.xml)
+        } else {
+            appendLine("FAILED: ${result.error ?: "Unknown error"}")
         }
-)
+
+        appendLine()
+    }
+}
+
+outputBox.setText(xmlOutput)
 
         showBatchGallery()
 
