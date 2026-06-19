@@ -215,24 +215,27 @@ private val saveZip = registerForActivityResult(
 val sizeButton = Button(this).apply {
     text = "Size: 24dp"
     setOnClickListener {
-        val options = arrayOf("24dp", "48dp", "Keep SVG size")
+        val options = arrayOf("24dp", "48dp", "Keep SVG size", "Custom...")
         android.app.AlertDialog.Builder(this@MainActivity)
             .setTitle("Output Size")
             .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        outputDpSize = 24
-                        text = "Size: 24dp"
-                    }
-                    1 -> {
-                        outputDpSize = 48
-                        text = "Size: 48dp"
-                    }
-                    2 -> {
-                        outputDpSize = -1
-                        text = "Size: SVG"
-                    }
-                }
+               when (which) {
+    0 -> {
+        outputDpSize = 24
+        text = "Size: 24dp"
+    }
+    1 -> {
+        outputDpSize = 48
+        text = "Size: 48dp"
+    }
+    2 -> {
+        outputDpSize = -1
+        text = "Size: SVG"
+    }
+    3 -> {
+        showCustomSizeDialog(this)
+    }
+}
             }
             .show()
     }
@@ -354,6 +357,30 @@ val batchRow = LinearLayout(this).apply {
 
          setContentView(root)
     }
+
+private fun showCustomSizeDialog(sizeButton: Button) {
+    val input = EditText(this).apply {
+        hint = "Example: 32"
+        inputType = android.text.InputType.TYPE_CLASS_NUMBER
+    }
+
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Custom Output Size")
+        .setMessage("Enter dp size:")
+        .setView(input)
+        .setPositiveButton("Apply") { _, _ ->
+            val size = input.text.toString().toIntOrNull()
+
+            if (size == null || size <= 0) {
+                toast("Invalid size")
+            } else {
+                outputDpSize = size
+                sizeButton.text = "Size: ${size}dp"
+            }
+        }
+        .setNegativeButton("Cancel", null)
+        .show()
+}
 
 private fun makeXmlFileName(uri: android.net.Uri): String {
     var displayName: String? = null
