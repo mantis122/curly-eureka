@@ -11,6 +11,8 @@ import android.graphics.drawable.Drawable
 import android.util.Xml
 import java.io.StringReader
 import androidx.vectordrawable.graphics.drawable.VectorDrawableCompat
+import android.graphics.*
+import android.graphics.drawable.BitmapDrawable
 
 data class ConversionResult(
     val xml: String,
@@ -144,29 +146,12 @@ class MainActivity : ComponentActivity() {
 
 private fun updatePreview(xml: String) {
     try {
-        val parser = Xml.newPullParser()
-        parser.setInput(StringReader(xml))
-
-        var eventType = parser.eventType
-        while (eventType != org.xmlpull.v1.XmlPullParser.START_TAG &&
-            eventType != org.xmlpull.v1.XmlPullParser.END_DOCUMENT
-        ) {
-            eventType = parser.next()
-        }
-
-        val drawable = VectorDrawableCompat.createFromXml(
-            resources,
-            parser,
-            theme
-        )
-
-        previewBox.setImageDrawable(drawable)
+        val bitmap = VectorPreviewRenderer.render(xml, 512, 512)
+        previewBox.setImageDrawable(BitmapDrawable(resources, bitmap))
     } catch (e: Exception) {
         previewBox.setImageDrawable(null)
         reportBox.text = reportBox.text.toString() + "\n\nPreview failed: ${e.message}"
     }
-}
-
 }
 
 object SvgToVectorConverter {
@@ -535,5 +520,81 @@ return ConversionResult(finalXml, report)
             .replace("\"", "&quot;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
+    }
+}
+
+object VectorPreviewRenderer {
+    fun render(xml: String, width: Int, height: Int): Bitmap {
+        val viewportWidth = attr(xml, "android:viewportWidth")?.toFloatOrNull() ?: 24f
+        val viewportHeight = attr(xml, "android:viewportHeight")?.toFloatOrNull() ?: 24f
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.WHITE)
+
+        val scaleX = width / viewportWidth
+        val scaleY = height / viewportHeight
+        canvas.scale(scaleX, scaleY)
+
+        val groupRegex = Regex("""<group\b[^>]*>.*?</group>""", RegexOption.DOT_MATCHES_ALL)
+        val groups = groupRegex.findAll(xml).toList()
+
+        if (groups.isNotEmpty()) {
+            for (group in groups) {
+                drawGroup(canvas, group.value)
+            }
+        } else {
+            drawPaths(canvas, xml)
+        }
+
+        return bitmap
+    }
+
+    private fun drawGroup(canvas: Canvas, groupXml: String) {
+        val startTag = Regex("""<group\b[^>]*>""")
+            .find(groupXml)
+            ?.value
+            ?: ""
+
+        val translateX = attr(startTag, "android:translateX")?.toFloatOrNull() ?: 0f
+        val translateY = attr(startTag, "android:translateY")?.toFloatOrNull() ?: 0f
+        val scaleX = attr(startTag, "android:scaleX")?.toFloatOrNull() ?: 1f
+        val scaleY = attr(startTag, "android:scaleY")?.toFloatOrNull() ?: 1f
+
+        canvas.save()
+        canvas.translate(translateX, translateY)
+        canvas.scale(scaleX, scaleY)
+
+        drawPaths(canvas, groupXml)
+
+        canvas.restore()
+    }
+
+    private fun drawPaths(canvas: Canvas, xml: String) {
+        Regex("""<path\b[^>]*/>""", RegexOption.DOT_MATCHES_ALL)
+            .findAll(xml)
+            .forEach { match ->
+                val tag = match.value
+                val pathData = attr(tag, "android:pathData") ?: return@forEach
+                val fillColor = attr(tag, "android:fillColor") ?: "#000000"
+
+                if (fillColor == "@android:color/transparent") return@forEach
+
+                val path = androidx.core.graphics.PathParser.createPathFromPathData(pathData)
+
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.FILL
+                    color = Color.parseColor(fillColor)
+                }
+
+                canvas.drawPath(path, paint)
+            }
+    }
+
+    private fun attr(tag: String, name: String): String? {
+        return Regex("""\b$name=["']([^"']*)["']""")
+            .find(tag)
+            ?.groupValues
+            ?.get(1)
     }
 }
