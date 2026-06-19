@@ -122,6 +122,8 @@ class MainActivity : ComponentActivity() {
             setHorizontallyScrolling(true)
         }
 
+        outputBox.visibility = View.GONE
+
         val buttonRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(openButton, LinearLayout.LayoutParams(0, -2, 1f))
@@ -161,6 +163,9 @@ val tabRow = LinearLayout(this).apply {
         mainPanel = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         }
+
+        mainPanel.addView(reportBox)
+        mainPanel.addView(previewBox, LinearLayout.LayoutParams(-1, 300))
 
         root.addView(title)
         root.addView(buttonRow)
