@@ -18,6 +18,14 @@ data class ConversionResult(
     val report: String
 )
 
+data class BatchResult(
+    val fileName: String,
+    val xml: String?,
+    val warningCount: Int,
+    val success: Boolean,
+    val error: String? = null
+)
+
 class MainActivity : ComponentActivity() {
     private lateinit var outputBox: EditText
     private var convertedXml = ""
@@ -25,7 +33,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var previewBox: ImageView
     private var suggestedFileName = "converted_vector.xml"
     private lateinit var mainPanel: LinearLayout
-    private val batchResults = mutableMapOf<String, String>()
+    private val batchResults = mutableListOf<BatchResult>()
     private lateinit var batchGallery: LinearLayout
 
 private val openSvg = registerForActivityResult(
@@ -60,12 +68,53 @@ private val openMultipleSvgs = registerForActivityResult(
                 ?.use { it.readText() }
                 ?: ""
 
-            val fileName = makeXmlFileName(uri)
-            val result = SvgToVectorConverter.convert(svg)
-            batchResults[fileName] = result.xml
+    val fileName = makeXmlFileName(uri)
+
+try {
+    val result = SvgToVectorConverter.convert(svg)
+
+    val warningCount =
+        result.report.lines().count { it.startsWith("⚠") }
+
+    batchResults.add(
+        BatchResult(
+            fileName = fileName,
+            xml = result.xml,
+            warningCount = warningCount,
+            success = true
+        )
+    )
+} catch (e: Exception) {
+    batchResults.add(
+        BatchResult(
+            fileName = fileName,
+            xml = null,
+            warningCount = 0,
+            success = false,
+            error = e.message
+        )
+    )
+}       
+
+     batchResults[fileName] = result.xml
         }
 
-        reportBox.text = "🟢 Batch Conversion Complete\n${batchResults.size} files converted\nReady to save ZIP"
+        val successCount = batchResults.count { it.success }
+val warningCount = batchResults.count {
+    it.success && it.warningCount > 0
+}
+val failureCount = batchResults.count { !it.success }
+
+reportBox.text =
+    """
+🟢 Batch Conversion Complete
+
+Success: $successCount
+Warnings: $warningCount
+Failed: $failureCount
+
+Ready to save ZIP
+""".trimIndent()
         outputBox.setText(batchResults.entries.joinToString("\n\n") {
             "===== ${it.key} =====\n${it.value}"
         })
@@ -82,9 +131,11 @@ private val saveZip = registerForActivityResult(
     if (uri != null) {
         contentResolver.openOutputStream(uri)?.use { output ->
             ZipOutputStream(output).use { zip ->
-                batchResults.forEach { (fileName, xml) ->
-                    zip.putNextEntry(ZipEntry(fileName))
-                    zip.write(xml.toByteArray())
+                batchResults
+    .filter { it.success && it.xml != null }
+    .forEach { result ->
+                    zip.putNextEntry(ZipEntry(result.fileName))
+                    zip.write(result.xml!!.toByteArray()) 
                     zip.closeEntry()
                 }
             }
@@ -276,13 +327,25 @@ private fun makeXmlFileName(uri: android.net.Uri): String {
 private fun showBatchGallery() {
     batchGallery.removeAllViews()
 
-    batchResults.forEach { (fileName, xml) ->
+    batchResults.forEach { result ->
+
         val label = TextView(this).apply {
-            text = fileName
-            textSize = 16f
-            setTextColor(Color.BLACK)
-            setPadding(0, 24, 0, 8)
+            text =
+                when {
+                    !result.success ->
+                        "✕ ${result.fileName}"
+
+                    result.warningCount > 0 ->
+                        "⚠ ${result.fileName}"
+
+                    else ->
+                        "✓ ${result.fileName}"
+                }
         }
+
+        batchGallery.addView(label)
+
+        val xml = result.xml ?: return@forEach
 
         val image = ImageView(this).apply {
             setBackgroundColor(Color.WHITE)
@@ -297,14 +360,17 @@ private fun showBatchGallery() {
             }
         }
 
-        batchGallery.addView(label)
-        batchGallery.addView(image, LinearLayout.LayoutParams(-1, 220))
+        batchGallery.addView(
+            image,
+            LinearLayout.LayoutParams(-1, 220)
+        )
     }
 }
 
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
+
 
 private fun updatePreview(xml: String) {
     try {
