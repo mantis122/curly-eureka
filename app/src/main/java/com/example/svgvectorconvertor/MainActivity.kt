@@ -13,6 +13,7 @@ import java.io.StringReader
 import androidx.vectordrawable.graphics.drawable.VectorDrawableCompat
 import android.graphics.*
 import android.graphics.drawable.BitmapDrawable
+import android.provider.OpenableColumns
 
 data class ConversionResult(
     val xml: String,
@@ -142,21 +143,27 @@ class MainActivity : ComponentActivity() {
         setContentView(root)
     }
 
-    private fun makeXmlFileName(uri: android.net.Uri): String {
-        val name = uri.lastPathSegment
-            ?.substringAfterLast("/")
-            ?.substringAfterLast(":")
-            ?: "converted_vector.svg"
+private fun makeXmlFileName(uri: android.net.Uri): String {
+    var displayName: String? = null
 
-        val baseName = name
-            .substringBeforeLast(".")
-            .lowercase()
-            .replace(Regex("[^a-z0-9_]+"), "_")
-            .trim('_')
-            .ifBlank { "converted_vector" }
-
-        return "$baseName.xml"
+    contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (nameIndex >= 0 && cursor.moveToFirst()) {
+            displayName = cursor.getString(nameIndex)
+        }
     }
+
+    val name = displayName ?: "converted_vector.svg"
+
+    val baseName = name
+        .substringBeforeLast(".")
+        .lowercase()
+        .replace(Regex("[^a-z0-9_]+"), "_")
+        .trim('_')
+        .ifBlank { "converted_vector" }
+
+    return "$baseName.xml"
+} 
 
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
