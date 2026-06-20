@@ -200,6 +200,50 @@ private val saveZip = registerForActivityResult(
             }
         }
 
+        val copyButton = Button(this).apply {
+            text = "Copy XML"
+            setOnClickListener {
+                if (convertedXml.isBlank()) {
+                    toast("Nothing to copy yet")
+                } else {
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("vector.xml", convertedXml))
+                    toast("Copied")
+                }
+            }
+        }
+
+
+val sizeButton = Button(this).apply {
+    text = "Size: 24dp"
+    setOnClickListener {
+        val options = arrayOf("24dp", "48dp", "Keep SVG size", "Custom...")
+        android.app.AlertDialog.Builder(this@MainActivity)
+            .setTitle("Output Size")
+            .setItems(options) { _, which ->
+               when (which) {
+    0 -> {
+        outputDpSize = 24
+        text = "Size: 24dp"
+    }
+    1 -> {
+        outputDpSize = 48
+        text = "Size: 48dp"
+    }
+    2 -> {
+        outputDpSize = -1
+        text = "Size: SVG"
+    }
+    3 -> {
+        showCustomSizeDialog(this)
+    }
+}
+            }
+            .show()
+    }
+}
+
+
 val profileButton = Button(this).apply {
     text = "Profile: Default"
     setOnClickListener {
@@ -244,47 +288,6 @@ val profileButton = Button(this).apply {
     }
 }
 
-        val copyButton = Button(this).apply {
-            text = "Copy XML"
-            setOnClickListener {
-                if (convertedXml.isBlank()) {
-                    toast("Nothing to copy yet")
-                } else {
-                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("vector.xml", convertedXml))
-                    toast("Copied")
-                }
-            }
-        }
-
-val sizeButton = Button(this).apply {
-    text = "Size: 24dp"
-    setOnClickListener {
-        val options = arrayOf("24dp", "48dp", "Keep SVG size", "Custom...")
-        android.app.AlertDialog.Builder(this@MainActivity)
-            .setTitle("Output Size")
-            .setItems(options) { _, which ->
-               when (which) {
-    0 -> {
-        outputDpSize = 24
-        text = "Size: 24dp"
-    }
-    1 -> {
-        outputDpSize = 48
-        text = "Size: 48dp"
-    }
-    2 -> {
-        outputDpSize = -1
-        text = "Size: SVG"
-    }
-    3 -> {
-        showCustomSizeDialog(this)
-    }
-}
-            }
-            .show()
-    }
-}
 
         val batchButton = Button(this).apply {
             text = "Batch SVGs"
