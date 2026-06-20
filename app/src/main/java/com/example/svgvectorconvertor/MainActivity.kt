@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
     private val batchResults = mutableListOf<BatchResult>()
     private lateinit var batchGallery: LinearLayout
     private var outputDpSize = 24
+    private var conversionProfile = "Default"
 
 private val openSvg = registerForActivityResult(
     ActivityResultContracts.OpenDocument()
@@ -199,6 +200,50 @@ private val saveZip = registerForActivityResult(
             }
         }
 
+val profileButton = Button(this).apply {
+    text = "Profile: Default"
+    setOnClickListener {
+        val options = arrayOf(
+            "Default",
+            "Android Icon",
+            "Material Icon",
+            "Keep SVG"
+        )
+
+        android.app.AlertDialog.Builder(this@MainActivity)
+            .setTitle("Conversion Profile")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        conversionProfile = "Default"
+                        outputDpSize = 24
+                        text = "Profile: Default"
+                        sizeButton.text = "Size: 24dp"
+                    }
+                    1 -> {
+                        conversionProfile = "Android Icon"
+                        outputDpSize = 24
+                        text = "Profile: Android Icon"
+                        sizeButton.text = "Size: 24dp"
+                    }
+                    2 -> {
+                        conversionProfile = "Material Icon"
+                        outputDpSize = 24
+                        text = "Profile: Material"
+                        sizeButton.text = "Size: 24dp"
+                    }
+                    3 -> {
+                        conversionProfile = "Keep SVG"
+                        outputDpSize = -1
+                        text = "Profile: Keep SVG"
+                        sizeButton.text = "Size: SVG"
+                    }
+                }
+            }
+            .show()
+    }
+}
+
         val copyButton = Button(this).apply {
             text = "Copy XML"
             setOnClickListener {
@@ -323,9 +368,20 @@ val saveRow = LinearLayout(this).apply {
 }
 
 val utilityRow = LinearLayout(this).apply {
-    orientation = LinearLayout.HORIZONTAL
-    addView(copyButton, LinearLayout.LayoutParams(0, -2, 1f))
-    addView(sizeButton, LinearLayout.LayoutParams(0, -2, 1f))
+    orientation = LinearLayout.VERTICAL
+
+    addView(
+        LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(copyButton, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(sizeButton, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+    )
+
+    addView(
+        profileButton,
+        LinearLayout.LayoutParams(-1, -2)
+    )
 }
 
 val tabRow = LinearLayout(this).apply {
