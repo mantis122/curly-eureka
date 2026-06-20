@@ -38,6 +38,10 @@ class MainActivity : ComponentActivity() {
     private var outputDpSize = 24
     private var conversionProfile = "Default"
 
+private val prefs by lazy {
+    getSharedPreferences("svg_converter_settings", MODE_PRIVATE)
+}
+
 private val openSvg = registerForActivityResult(
     ActivityResultContracts.OpenDocument()
 ) { uri ->
@@ -189,6 +193,12 @@ private val saveZip = registerForActivityResult(
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        outputDpSize = prefs.getInt("outputDpSize", 24)
+        conversionProfile = prefs.getString(
+            "conversionProfile",
+            "Default"
+        ) ?: "Default"
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 32, 32, 32)
@@ -223,7 +233,11 @@ private val saveZip = registerForActivityResult(
 
 
 val sizeButton = Button(this).apply {
-    text = "Size: 24dp"
+    text =
+    if (outputDpSize > 0)
+        "Size: ${outputDpSize}dp"
+    else
+        "Size: SVG"
     setOnClickListener {
         val options = arrayOf("24dp", "48dp", "Keep SVG size", "Custom...")
         android.app.AlertDialog.Builder(this@MainActivity)
@@ -232,14 +246,29 @@ val sizeButton = Button(this).apply {
                when (which) {
     0 -> {
         outputDpSize = 24
+
+        prefs.edit()
+        .putInt("outputDpSize", outputDpSize)
+        .apply()
+
         text = "Size: 24dp"
     }
     1 -> {
         outputDpSize = 48
+
+        prefs.edit()
+        .putInt("outputDpSize", outputDpSize)
+        .apply()
+
         text = "Size: 48dp"
     }
     2 -> {
         outputDpSize = -1
+
+        prefs.edit()
+        .putInt("outputDpSize", outputDpSize)
+        .apply()
+
         text = "Size: SVG"
     }
     3 -> {
@@ -253,7 +282,7 @@ val sizeButton = Button(this).apply {
 
 
 val profileButton = Button(this).apply {
-    text = "Profile: Default"
+    text = "Profile: $conversionProfile"
     setOnClickListener {
         val options = arrayOf(
             "Default",
@@ -269,24 +298,48 @@ val profileButton = Button(this).apply {
                     0 -> {
                         conversionProfile = "Default"
                         outputDpSize = 24
+
+                        prefs.edit()
+                        .putString("conversionProfile", conversionProfile)
+                        .putInt("outputDpSize", outputDpSize)
+                        .apply()
+
                         text = "Profile: Default"
                         sizeButton.text = "Size: 24dp"
                     }
                     1 -> {
                         conversionProfile = "Android Icon"
                         outputDpSize = 24
+
+                        prefs.edit()
+                        .putString("conversionProfile", conversionProfile)
+                        .putInt("outputDpSize", outputDpSize)
+                        .apply()
+
                         text = "Profile: Android Icon"
                         sizeButton.text = "Size: 24dp"
                     }
                     2 -> {
                         conversionProfile = "Material Icon"
                         outputDpSize = 24
+
+                        prefs.edit()
+                        .putString("conversionProfile", conversionProfile)
+                        .putInt("outputDpSize", outputDpSize)
+                        .apply()
+
                         text = "Profile: Material"
                         sizeButton.text = "Size: 24dp"
                     }
                     3 -> {
                         conversionProfile = "Keep SVG"
                         outputDpSize = -1
+
+                        prefs.edit()
+                        .putString("conversionProfile", conversionProfile)
+                        .putInt("outputDpSize", outputDpSize)
+                        .apply()
+
                         text = "Profile: Keep SVG"
                         sizeButton.text = "Size: SVG"
                     }
@@ -445,7 +498,11 @@ private fun showCustomSizeDialog(sizeButton: Button) {
             } else {
                 outputDpSize = size
                 sizeButton.text = "Size: ${size}dp"
-            }
+                prefs.edit()
+                .putInt("outputDpSize", outputDpSize)
+                .apply()
+        
+    }
         }
         .setNegativeButton("Cancel", null)
         .show()
