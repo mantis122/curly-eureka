@@ -292,12 +292,7 @@ val sizeButton = Button(this).apply {
 
         outputBox.visibility = View.GONE
 
-        val buttonRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(openButton, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(copyButton, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(saveButton, LinearLayout.LayoutParams(0, -2, 1f))
-        }
+    
 
 val previewTab = Button(this).apply {
     text = "Preview"
@@ -315,21 +310,28 @@ val xmlTab = Button(this).apply {
     }
 }
 
+val openRow = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    addView(openButton, LinearLayout.LayoutParams(0, -2, 1f))
+    addView(batchButton, LinearLayout.LayoutParams(0, -2, 1f))
+}
+
+val saveRow = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    addView(saveButton, LinearLayout.LayoutParams(0, -2, 1f))
+    addView(saveZipButton, LinearLayout.LayoutParams(0, -2, 1f))
+}
+
+val utilityRow = LinearLayout(this).apply {
+    orientation = LinearLayout.HORIZONTAL
+    addView(copyButton, LinearLayout.LayoutParams(0, -2, 1f))
+    addView(sizeButton, LinearLayout.LayoutParams(0, -2, 1f))
+}
+
 val tabRow = LinearLayout(this).apply {
     orientation = LinearLayout.HORIZONTAL
     addView(previewTab, LinearLayout.LayoutParams(0, -2, 1f))
     addView(xmlTab, LinearLayout.LayoutParams(0, -2, 1f))
-}
-
-val settingsRow = LinearLayout(this).apply {
-    orientation = LinearLayout.HORIZONTAL
-    addView(sizeButton, LinearLayout.LayoutParams(0, -2, 1f))
-}
-
-val batchRow = LinearLayout(this).apply {
-    orientation = LinearLayout.HORIZONTAL
-    addView(batchButton, LinearLayout.LayoutParams(0, -2, 1f))
-    addView(saveZipButton, LinearLayout.LayoutParams(0, -2, 1f))
 }
 
         reportBox = TextView(this).apply {
@@ -348,12 +350,12 @@ val batchRow = LinearLayout(this).apply {
         mainPanel.addView(batchGallery)        
 
         root.addView(title)
-        root.addView(buttonRow)
-        root.addView(batchRow)
-        root.addView(settingsRow)
+        root.addView(openRow)
+        root.addView(saveRow)
+        root.addView(utilityRow)
         root.addView(tabRow)
         root.addView(mainPanel, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(outputBox, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(outputBox, LinearLayout.LayoutParams(-1, 0, 1f)) 
 
          setContentView(root)
     }
