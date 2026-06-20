@@ -379,6 +379,13 @@ val profileButton = Button(this).apply {
             }
         }
 
+        val aboutButton = Button(this).apply {
+            text = "About"
+            setOnClickListener {
+                showAboutDialog()
+            }
+        }
+
     previewBox = ImageView(this).apply {
         setBackgroundColor(Color.WHITE)
         setPadding(24, 24, 24, 24)
@@ -446,6 +453,12 @@ val utilityRow = LinearLayout(this).apply {
         profileButton,
         LinearLayout.LayoutParams(-1, -2)
     )
+
+    addView(
+        aboutButton,
+        LinearLayout.LayoutParams(-1, -2)
+    )
+
 }
 
 val tabRow = LinearLayout(this).apply {
@@ -505,6 +518,30 @@ private fun showCustomSizeDialog(sizeButton: Button) {
     }
         }
         .setNegativeButton("Cancel", null)
+        .show()
+}
+
+private fun showAboutDialog() {
+    android.app.AlertDialog.Builder(this)
+        .setTitle("SVG Vector Converter")
+        .setMessage(
+            """
+Converts SVG files into Android VectorDrawable XML.
+
+Supports:
+• path fill colors
+• simple translate/scale transforms
+• batch ZIP export
+• preview rendering
+• output size presets
+• conversion profiles
+
+Unsupported SVG features are reported when detected.
+
+Version 1.0
+            """.trimIndent()
+        )
+        .setPositiveButton("OK", null)
         .show()
 }
 
