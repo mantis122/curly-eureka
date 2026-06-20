@@ -545,7 +545,7 @@ fun convert(
     svg: String,
     outputDpSize: Int,
     conversionProfile: String
-): ConversionResult
+): ConversionResult {
 
 val translateCount = Regex("""translate\(""").findAll(svg).count()
 val scaleCount = Regex("""scale\(""").findAll(svg).count()
