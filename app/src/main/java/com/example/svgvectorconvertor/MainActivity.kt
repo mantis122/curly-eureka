@@ -49,7 +49,11 @@ private val openSvg = registerForActivityResult(
             ?.use { it.readText() }
             ?: ""
 
-        val result = SvgToVectorConverter.convert(svg, outputDpSize)
+val result = SvgToVectorConverter.convert(
+    svg,
+    outputDpSize,
+    conversionProfile
+)
         convertedXml = result.xml
         reportBox.text = result.report
         outputBox.setText(convertedXml)
@@ -73,7 +77,11 @@ private val openMultipleSvgs = registerForActivityResult(
     val fileName = makeXmlFileName(uri)
 
 try {
-    val result = SvgToVectorConverter.convert(svg, outputDpSize)
+val result = SvgToVectorConverter.convert(
+    svg,
+    outputDpSize,
+    conversionProfile
+)   
 
     val warningCount =
         result.report.lines().count { it.startsWith("⚠") }
@@ -533,7 +541,11 @@ private fun updatePreview(xml: String) {
 }
 
 object SvgToVectorConverter {
-fun convert(svg: String, outputDpSize: Int): ConversionResult {    
+fun convert(
+    svg: String,
+    outputDpSize: Int,
+    conversionProfile: String
+): ConversionResult
 
 val translateCount = Regex("""translate\(""").findAll(svg).count()
 val scaleCount = Regex("""scale\(""").findAll(svg).count()
@@ -640,6 +652,19 @@ val report = buildString {
     appendLine(summaryTitle)
     appendLine(summaryLine1)
     appendLine(summaryLine2)
+    appendLine()
+
+appendLine("Profile Settings")
+    appendLine()
+    appendLine("✓ Profile: $conversionProfile")
+
+    appendLine(
+        if (outputDpSize > 0)
+            "✓ Output size: ${outputDpSize}dp"
+        else
+            "✓ Output size: Keep SVG size"
+    )
+
     appendLine()
 
     appendLine("────────────────────")
