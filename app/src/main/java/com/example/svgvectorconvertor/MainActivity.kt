@@ -201,7 +201,7 @@ private val saveZip = registerForActivityResult(
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
+            setPadding(32, 80, 32, 32)
             setBackgroundColor(Color.rgb(250, 248, 240))
         }
 
@@ -396,6 +396,8 @@ val profileButton = Button(this).apply {
         orientation = LinearLayout.VERTICAL
     }
 
+    val bottomSpacer = Space(this)
+
         outputBox = EditText(this).apply {
             hint = "Converted VectorDrawable XML will appear here"
             setTextColor(Color.BLACK)
@@ -485,6 +487,7 @@ val scrollView = ScrollView(this).apply {
         mainPanel.addView(reportBox)
         mainPanel.addView(previewBox, LinearLayout.LayoutParams(-1, 300))
         mainPanel.addView(batchGallery)        
+        mainPanel.addView(bottomSpacer, LinearLayout.LayoutParams(-1, 96))
 
         root.addView(title)
         root.addView(openRow)
