@@ -206,7 +206,7 @@ private val saveZip = registerForActivityResult(
         }
 
         val title = TextView(this).apply {
-            text = "SVG to Android Vector"
+            text = "SVG → Android Vector"
             textSize = 24f
             setTextColor(Color.BLACK)
         }
@@ -484,8 +484,8 @@ val scrollView = ScrollView(this).apply {
     addView(mainPanel)
 }
 
-        mainPanel.addView(reportBox)
         mainPanel.addView(previewBox, LinearLayout.LayoutParams(-1, 300))
+        mainPanel.addView(reportBox)
         mainPanel.addView(batchGallery)        
         mainPanel.addView(bottomSpacer, LinearLayout.LayoutParams(-1, 96))
 
@@ -538,7 +538,7 @@ private fun showAboutDialog() {
     }
 
     android.app.AlertDialog.Builder(this)
-        .setTitle("SVG Vector Converter")
+        .setTitle("SVG → Android Vector")
         .setMessage(
             """
 Convert SVG artwork into
