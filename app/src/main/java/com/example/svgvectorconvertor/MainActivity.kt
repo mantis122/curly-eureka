@@ -522,23 +522,33 @@ private fun showCustomSizeDialog(sizeButton: Button) {
 }
 
 private fun showAboutDialog() {
+    val versionName = try {
+        packageManager
+            .getPackageInfo(packageName, 0)
+            .versionName
+    } catch (e: Exception) {
+        "1.0"
+    }
+
     android.app.AlertDialog.Builder(this)
         .setTitle("SVG Vector Converter")
         .setMessage(
             """
-Converts SVG files into Android VectorDrawable XML.
+Convert SVG artwork into
+Android VectorDrawable XML.
 
-Supports:
-• path fill colors
-• simple translate/scale transforms
-• batch ZIP export
-• preview rendering
-• output size presets
-• conversion profiles
+Features:
+• SVG → VectorDrawable conversion
+• Batch ZIP export
+• Preview rendering
+• Size presets
+• Conversion profiles
 
-Unsupported SVG features are reported when detected.
+Unsupported SVG features are reported
+when detected.
 
-Version 1.0
+Version $versionName
+© 2026 Nathan Harris
             """.trimIndent()
         )
         .setPositiveButton("OK", null)
