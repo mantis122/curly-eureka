@@ -478,6 +478,10 @@ val tabRow = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         }
 
+val scrollView = ScrollView(this).apply {
+    addView(mainPanel)
+}
+
         mainPanel.addView(reportBox)
         mainPanel.addView(previewBox, LinearLayout.LayoutParams(-1, 300))
         mainPanel.addView(batchGallery)        
@@ -487,7 +491,7 @@ val tabRow = LinearLayout(this).apply {
         root.addView(saveRow)
         root.addView(utilityRow)
         root.addView(tabRow)
-        root.addView(mainPanel, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(outputBox, LinearLayout.LayoutParams(-1, 0, 1f)) 
 
          setContentView(root)
