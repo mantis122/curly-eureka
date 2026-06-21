@@ -758,7 +758,15 @@ val report = buildString {
     appendLine(summaryLine2)
     appendLine()
 
-appendLine("Profile Settings")
+    appendLine("Conversion Statistics")
+    appendLine()
+    appendLine("✓ Paths converted: $convertedPathCount / $validPathCount")
+    appendLine("✓ Groups generated: $generatedGroupCount")
+    appendLine("✓ Warnings: $warningCount")
+    appendLine()
+
+    appendLine("────────────────────")
+
     appendLine()
     appendLine("✓ Profile: $conversionProfile")
 
