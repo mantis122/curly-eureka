@@ -399,15 +399,15 @@ val profileButton = Button(this).apply {
     val bottomSpacer = Space(this)
 
         outputBox = EditText(this).apply {
-            hint = "Converted VectorDrawable XML will appear here"
-            setTextColor(Color.BLACK)
-            setHintTextColor(Color.GRAY)
-            textSize = 12f
-            gravity = Gravity.TOP or Gravity.START
-            isSingleLine = false
-            setHorizontallyScrolling(true)
-        }
-
+    hint = "Converted VectorDrawable XML will appear here"
+    setTextColor(Color.BLACK)
+    setHintTextColor(Color.GRAY)
+    textSize = 12f
+    gravity = Gravity.TOP or Gravity.START
+    isSingleLine = false
+    setHorizontallyScrolling(true)
+    minLines = 20
+}
         outputBox.visibility = View.GONE
 
     
@@ -415,7 +415,9 @@ val profileButton = Button(this).apply {
 val previewTab = Button(this).apply {
     text = "Preview"
     setOnClickListener {
-        mainPanel.visibility = View.VISIBLE
+        previewBox.visibility = View.VISIBLE
+        reportBox.visibility = View.VISIBLE
+        batchGallery.visibility = View.VISIBLE
         outputBox.visibility = View.GONE
     }
 }
@@ -423,11 +425,12 @@ val previewTab = Button(this).apply {
 val xmlTab = Button(this).apply {
     text = "XML"
     setOnClickListener {
-        mainPanel.visibility = View.GONE
+        previewBox.visibility = View.GONE
+        reportBox.visibility = View.GONE
+        batchGallery.visibility = View.GONE
         outputBox.visibility = View.VISIBLE
     }
 }
-
 val openRow = LinearLayout(this).apply {
     orientation = LinearLayout.HORIZONTAL
     addView(openButton, LinearLayout.LayoutParams(0, -2, 1f))
@@ -485,17 +488,17 @@ val scrollView = ScrollView(this).apply {
 }
 
         mainPanel.addView(previewBox, LinearLayout.LayoutParams(-1, 450))
-        mainPanel.addView(reportBox)
-        mainPanel.addView(batchGallery)        
-        mainPanel.addView(bottomSpacer, LinearLayout.LayoutParams(-1, 96))
+mainPanel.addView(outputBox, LinearLayout.LayoutParams(-1, -2))
+mainPanel.addView(reportBox)
+mainPanel.addView(batchGallery)
+mainPanel.addView(bottomSpacer, LinearLayout.LayoutParams(-1, 96))
 
-        root.addView(title)
-        root.addView(openRow)
-        root.addView(saveRow)
-        root.addView(utilityRow)
-        root.addView(tabRow)
-        root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(outputBox, LinearLayout.LayoutParams(-1, 0, 1f)) 
+root.addView(title)
+root.addView(openRow)
+root.addView(saveRow)
+root.addView(utilityRow)
+root.addView(tabRow)
+root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
 
          setContentView(root)
     }
