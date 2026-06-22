@@ -1158,26 +1158,50 @@ object VectorPreviewRenderer {
         canvas.restore()
     }
 
-    private fun drawPaths(canvas: Canvas, xml: String) {
-        Regex("""<path\b[^>]*/>""", RegexOption.DOT_MATCHES_ALL)
-            .findAll(xml)
-            .forEach { match ->
-                val tag = match.value
-                val pathData = attr(tag, "android:pathData") ?: return@forEach
-                val fillColor = attr(tag, "android:fillColor") ?: "#000000"
+private fun drawPaths(canvas: Canvas, xml: String) {
+    Regex("""<path\b[^>]*/>""", RegexOption.DOT_MATCHES_ALL)
+        .findAll(xml)
+        .forEach { match ->
+            val tag = match.value
+            val pathData = attr(tag, "android:pathData") ?: return@forEach
 
-                if (fillColor == "@android:color/transparent") return@forEach
+            val fillColor = attr(tag, "android:fillColor")
+            val strokeColor = attr(tag, "android:strokeColor")
+            val strokeWidth = attr(tag, "android:strokeWidth")
+                ?.toFloatOrNull()
+                ?: 1f
 
-                val path = androidx.core.graphics.PathParser.createPathFromPathData(pathData)
+            val path = androidx.core.graphics.PathParser.createPathFromPathData(pathData)
 
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            if (
+                fillColor != null &&
+                fillColor != "@android:color/transparent" &&
+                fillColor != "none"
+            ) {
+                val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     style = Paint.Style.FILL
                     color = Color.parseColor(fillColor)
                 }
 
-                canvas.drawPath(path, paint)
+                canvas.drawPath(path, fillPaint)
             }
-    }
+
+            if (
+                strokeColor != null &&
+                strokeColor != "none"
+            ) {
+                val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.STROKE
+                    color = Color.parseColor(strokeColor)
+                    this.strokeWidth = strokeWidth
+                    strokeCap = Paint.Cap.BUTT
+                    strokeJoin = Paint.Join.MITER
+                }
+
+                canvas.drawPath(path, strokePaint)
+            }
+        }
+}
 
     private fun attr(tag: String, name: String): String? {
         return Regex("""\b$name=["']([^"']*)["']""")
