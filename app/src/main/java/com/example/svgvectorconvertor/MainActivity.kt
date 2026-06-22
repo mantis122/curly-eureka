@@ -484,7 +484,7 @@ val scrollView = ScrollView(this).apply {
     addView(mainPanel)
 }
 
-        mainPanel.addView(previewBox, LinearLayout.LayoutParams(-1, 300))
+        mainPanel.addView(previewBox, LinearLayout.LayoutParams(-1, 450))
         mainPanel.addView(reportBox)
         mainPanel.addView(batchGallery)        
         mainPanel.addView(bottomSpacer, LinearLayout.LayoutParams(-1, 96))
