@@ -545,7 +545,7 @@ private fun showAboutDialog() {
 
     val icon = ImageView(this).apply {
         setImageResource(R.mipmap.ic_launcher)
-        layoutParams = LinearLayout.LayoutParams(128, 128)
+        layoutParams = LinearLayout.LayoutParams(160, 160)
     }
 
     val title = TextView(this).apply {
@@ -556,34 +556,68 @@ private fun showAboutDialog() {
         setPadding(0, 16, 0, 16)
     }
 
-    val body = TextView(this).apply {
+    val description = TextView(this).apply {
         text =
             """
 Convert SVG artwork into
 Android VectorDrawable XML.
-
-Features:
-• SVG → VectorDrawable conversion
-• Batch ZIP export
-• Preview rendering
-• Size presets
-• Conversion profiles
-
-Unsupported SVG features are reported
-when detected.
-
-Version $versionName
-© 2026 Nathan Harris
             """.trimIndent()
 
         textSize = 16f
         setTextColor(Color.DKGRAY)
         gravity = Gravity.CENTER
+        setPadding(0, 0, 0, 28)
+    }
+
+    val features = TextView(this).apply {
+        text =
+            """
+Features
+
+✓ SVG → VectorDrawable conversion
+✓ Batch ZIP export
+✓ Preview rendering
+✓ Size presets
+✓ Conversion profiles
+            """.trimIndent()
+
+        textSize = 16f
+        setTextColor(Color.DKGRAY)
+        gravity = Gravity.CENTER
+        setPadding(0, 0, 0, 28)
+    }
+
+    val note = TextView(this).apply {
+        text =
+            """
+Unsupported SVG features are reported
+when detected.
+            """.trimIndent()
+
+        textSize = 16f
+        setTextColor(Color.DKGRAY)
+        gravity = Gravity.CENTER
+        setPadding(0, 0, 0, 28)
+    }
+
+    val footer = TextView(this).apply {
+        text =
+            """
+Version $versionName
+© 2026 Nathan Harris
+            """.trimIndent()
+
+        textSize = 14f
+        setTextColor(Color.GRAY)
+        gravity = Gravity.CENTER
     }
 
     layout.addView(icon)
     layout.addView(title)
-    layout.addView(body)
+    layout.addView(description)
+    layout.addView(features)
+    layout.addView(note)
+    layout.addView(footer)
 
     android.app.AlertDialog.Builder(this)
         .setView(layout)
