@@ -537,9 +537,27 @@ private fun showAboutDialog() {
         "1.0"
     }
 
-    android.app.AlertDialog.Builder(this)
-        .setTitle("SVG → Android Vector")
-        .setMessage(
+    val layout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(64, 48, 64, 24)
+        gravity = Gravity.CENTER_HORIZONTAL
+    }
+
+    val icon = ImageView(this).apply {
+        setImageResource(R.mipmap.ic_launcher)
+        layoutParams = LinearLayout.LayoutParams(128, 128)
+    }
+
+    val title = TextView(this).apply {
+        text = "SVG → Android Vector"
+        textSize = 22f
+        setTextColor(Color.BLACK)
+        gravity = Gravity.CENTER
+        setPadding(0, 16, 0, 16)
+    }
+
+    val body = TextView(this).apply {
+        text =
             """
 Convert SVG artwork into
 Android VectorDrawable XML.
@@ -557,7 +575,18 @@ when detected.
 Version $versionName
 © 2026 Nathan Harris
             """.trimIndent()
-        )
+
+        textSize = 16f
+        setTextColor(Color.DKGRAY)
+        gravity = Gravity.CENTER
+    }
+
+    layout.addView(icon)
+    layout.addView(title)
+    layout.addView(body)
+
+    android.app.AlertDialog.Builder(this)
+        .setView(layout)
         .setPositiveButton("OK", null)
         .show()
 }
