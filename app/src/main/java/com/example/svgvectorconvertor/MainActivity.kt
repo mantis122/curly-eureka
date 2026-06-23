@@ -1241,15 +1241,18 @@ private fun drawPaths(canvas: Canvas, xml: String) {
                 strokeColor != "none"
             ) {
                 val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    style = Paint.Style.STROKE
-                   color = try {
-    Color.parseColor(strokeColor)
-} catch (e: Exception) {
-    Color.TRANSPARENT
-}                    this.strokeWidth = strokeWidth
-                    strokeCap = Paint.Cap.BUTT
-                    strokeJoin = Paint.Join.MITER
-                }
+    style = Paint.Style.STROKE
+
+    color = try {
+        Color.parseColor(strokeColor)
+    } catch (e: Exception) {
+        Color.TRANSPARENT
+    }
+
+    this.strokeWidth = strokeWidth
+    strokeCap = Paint.Cap.BUTT
+    strokeJoin = Paint.Join.MITER
+}
 
                 canvas.drawPath(path, strokePaint)
             }
