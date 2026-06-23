@@ -746,6 +746,8 @@ fun convert(
     conversionProfile: String
 ): ConversionResult {
 
+val startTime = System.nanoTime()
+
 val translateCount = Regex("""translate\(""").findAll(svg).count()
 val scaleCount = Regex("""scale\(""").findAll(svg).count()
 val matrixCount = Regex("""matrix\(""").findAll(svg).count()
@@ -837,6 +839,9 @@ val finalXml = if (endIndex >= 0) {
 val convertedPathCount = Regex("""<path\b""").findAll(finalXml).count()
 val generatedGroupCount = Regex("""<group\b""").findAll(finalXml).count()
 
+val elapsedMs =
+    (System.nanoTime() - startTime) / 1_000_000
+
 val warningCount =
     unsupported.size +
     if (matrixCount > 0) 1 else 0
@@ -861,6 +866,9 @@ val report = buildString {
     appendLine(summaryLine1)
     appendLine(summaryLine2)
     appendLine()
+
+appendLine("Converted in ${elapsedMs} ms")
+appendLine()
 
     appendLine("Conversion Statistics")
     appendLine()
