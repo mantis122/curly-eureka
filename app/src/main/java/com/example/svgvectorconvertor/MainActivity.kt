@@ -23,6 +23,7 @@ data class BatchResult(
     val xml: String?,
     val warningCount: Int,
     val success: Boolean,
+    val definitionPathCount: Int = 0,
     val error: String? = null
 )
 
@@ -95,13 +96,22 @@ val result = SvgToVectorConverter.convert(
     val warningCount =
         result.report.lines().count { it.startsWith("⚠") }
 
+val definitionPathCount =
+    Regex("""Definition paths skipped:\s*(\d+)""")
+        .find(result.report)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+        ?: 0
+
     batchResults.add(
         BatchResult(
-            fileName = fileName,
-            xml = result.xml,
-            warningCount = warningCount,
-            success = true
-        )
+    fileName = fileName,
+    xml = result.xml,
+    warningCount = warningCount,
+    definitionPathCount = definitionPathCount,
+    success = true
+)
     )
 } catch (e: Exception) {
     batchResults.add(
@@ -687,13 +697,22 @@ batchGallery.addView(heading)
     batchResults.forEach { result ->
 
  val label = TextView(this).apply {
-    text =
-        when {
-            !result.success -> "✕ ${result.fileName}"
-            result.warningCount > 0 -> "⚠ ${result.fileName}"
-            else -> "✓ ${result.fileName}"
-        }
+    text = buildString {
 
+    append(
+        when {
+            !result.success -> "✕ "
+            result.warningCount > 0 -> "⚠ "
+            else -> "✓ "
+        }
+    )
+
+    append(result.fileName)
+
+    if (result.definitionPathCount > 0) {
+        append("  (${result.definitionPathCount} defs skipped)")
+    }
+}
     textSize = 16f
     setTextColor(Color.BLACK)
     setPadding(0, 16, 0, 6)
