@@ -918,6 +918,52 @@ return ConversionResult(finalXml, report)
             .containsMatchIn(svg)
     }
 
+private fun isValidAndroidColor(value: String?): Boolean {
+    if (value == null) return false
+
+    val v = value.trim()
+
+    if (v == "none") return true
+    if (v == "@android:color/transparent") return true
+
+    return Regex("""^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$""")
+        .matches(v)
+}
+
+private fun isUnsupportedPaint(value: String?): Boolean {
+    if (value == null) return false
+
+    val v = value.trim()
+
+    return v.startsWith("url(") ||
+        v.startsWith("linear-gradient") ||
+        v.startsWith("radial-gradient")
+}
+
+private fun safeFillColor(value: String?): String {
+    val v = value?.trim()
+
+    return when {
+        v.isNullOrBlank() -> "#000000"
+        v == "none" -> "@android:color/transparent"
+        isUnsupportedPaint(v) -> "@android:color/transparent"
+        isValidAndroidColor(v) -> v
+        else -> "@android:color/transparent"
+    }
+}
+
+private fun safeStrokeColor(value: String?): String? {
+    val v = value?.trim()
+
+    return when {
+        v.isNullOrBlank() -> null
+        v == "none" -> null
+        isUnsupportedPaint(v) -> null
+        isValidAndroidColor(v) -> v
+        else -> null
+    }
+}
+
     private fun appendConvertedGroup(output: StringBuilder, groupXml: String) {
         val groupStartTag = Regex("""<g\b[^>]*>""")
             .find(groupXml)
@@ -966,12 +1012,14 @@ return ConversionResult(finalXml, report)
                 val d = attr(tag, "d")?.trim()
                 if (d.isNullOrBlank()) return@forEach
 
-                val fill = attr(tag, "fill")
-                    ?: styleValue(attr(tag, "style"), "fill")
-                    ?: "#000000"
+val rawFill = attr(tag, "fill")
+    ?: styleValue(attr(tag, "style"), "fill")
 
-                val stroke = attr(tag, "stroke")
-                    ?: styleValue(attr(tag, "style"), "stroke")
+val rawStroke = attr(tag, "stroke")
+    ?: styleValue(attr(tag, "style"), "stroke")
+
+val fill = safeFillColor(rawFill)
+val stroke = safeStrokeColor(rawStroke)                
 
                 val strokeWidth = attr(tag, "stroke-width")
                     ?: styleValue(attr(tag, "style"), "stroke-width")
@@ -1017,17 +1065,12 @@ return ConversionResult(finalXml, report)
         output.appendLine("${indent}<path")
         output.appendLine("""${indent}    android:pathData="${escapeXml(d)}"""")
 
-        if (fill != "none") {
-            output.appendLine("""${indent}    android:fillColor="$fill"""")
-        } else {
-            output.appendLine("""${indent}    android:fillColor="@android:color/transparent"""")
-        }
+    output.appendLine("""${indent}    android:fillColor="$fill"""")
 
-        if (stroke != null && stroke != "none") {
-            output.appendLine("""${indent}    android:strokeColor="$stroke"""")
-            output.appendLine("""${indent}    android:strokeWidth="${strokeWidth ?: "1"}"""")
-        }
-
+if (stroke != null) {
+    output.appendLine("""${indent}    android:strokeColor="$stroke"""")
+    output.appendLine("""${indent}    android:strokeWidth="${strokeWidth ?: "1"}"""")
+}
         output.appendLine("${indent}/>")
     }
 
@@ -1183,7 +1226,11 @@ private fun drawPaths(canvas: Canvas, xml: String) {
             ) {
                 val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     style = Paint.Style.FILL
-                    color = Color.parseColor(fillColor)
+                    color = try {
+    Color.parseColor(fillColor)
+} catch (e: Exception) {
+    Color.TRANSPARENT
+}
                 }
 
                 canvas.drawPath(path, fillPaint)
@@ -1195,8 +1242,11 @@ private fun drawPaths(canvas: Canvas, xml: String) {
             ) {
                 val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     style = Paint.Style.STROKE
-                    color = Color.parseColor(strokeColor)
-                    this.strokeWidth = strokeWidth
+                   color = try {
+    Color.parseColor(strokeColor)
+} catch (e: Exception) {
+    Color.TRANSPARENT
+}                    this.strokeWidth = strokeWidth
                     strokeCap = Paint.Cap.BUTT
                     strokeJoin = Paint.Join.MITER
                 }
