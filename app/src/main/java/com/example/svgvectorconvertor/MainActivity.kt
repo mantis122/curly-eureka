@@ -67,6 +67,9 @@ previewBox.visibility = View.VISIBLE
         outputBox.setText(convertedXml)
         updatePreview(convertedXml)
         batchGallery.removeAllViews()
+        batchResults.clear()
+        updateActionButtons()
+
     }
 }
 
@@ -695,9 +698,7 @@ private fun makeXmlFileName(uri: android.net.Uri): String {
 
 private fun showBatchGallery() {
     batchGallery.removeAllViews()
-    batchResults.clear()
-    updateActionButtons()
-
+    
 val heading = TextView(this).apply {
     text = "Batch Results"
     textSize = 20f
