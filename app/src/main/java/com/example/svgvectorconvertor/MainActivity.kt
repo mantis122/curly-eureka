@@ -38,7 +38,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var batchGallery: LinearLayout
     private var outputDpSize = 24
     private var conversionProfile = "Default"
-
+    private lateinit var copyButton: Button
+    private lateinit var saveXmlButton: Button
+    private lateinit var saveZipButton: Button
 private val prefs by lazy {
     getSharedPreferences("svg_converter_settings", MODE_PRIVATE)
 }
@@ -77,6 +79,7 @@ private val openMultipleSvgs = registerForActivityResult(
 convertedXml = ""
 previewBox.setImageDrawable(null)
 outputBox.setText("")
+updateActionButtons()
 
         uris.forEach { uri ->
             val svg = contentResolver.openInputStream(uri)
@@ -171,6 +174,7 @@ outputBox.setText(xmlOutput)
         showBatchGallery()
 
 previewBox.visibility = View.GONE
+updateActionButtons()
 
         toast("${batchResults.size} files converted")
     }
@@ -249,7 +253,7 @@ val versionLabel = TextView(this).apply {
             }
         }
 
-        val copyButton = Button(this).apply {
+        copyButton = Button(this).apply {
             text = "Copy XML"
             setOnClickListener {
                 if (convertedXml.isBlank()) {
@@ -388,7 +392,7 @@ val profileButton = Button(this).apply {
             }
         }
 
-        val saveZipButton = Button(this).apply {
+        saveZipButton = Button(this).apply {
             text = "Save ZIP"
             setOnClickListener {
                 if (batchResults.isEmpty()) {
@@ -399,7 +403,7 @@ val profileButton = Button(this).apply {
             }
         }
 
-        val saveButton = Button(this).apply {
+        saveXmlButton = Button(this).apply {
             text = "Save XML"
             setOnClickListener {
                 if (convertedXml.isBlank()) {
@@ -470,7 +474,7 @@ val openRow = LinearLayout(this).apply {
 
 val saveRow = LinearLayout(this).apply {
     orientation = LinearLayout.HORIZONTAL
-    addView(saveButton, LinearLayout.LayoutParams(0, -2, 1f))
+    addView(saveXmlButton, LinearLayout.LayoutParams(0, -2, 1f))
     addView(saveZipButton, LinearLayout.LayoutParams(0, -2, 1f))
 }
 
@@ -533,6 +537,7 @@ root.addView(tabRow)
 root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
 
          setContentView(root)
+         updateActionButtons()
     }
 
 private fun showCustomSizeDialog(sizeButton: Button) {
@@ -660,6 +665,12 @@ Version $versionName
         .show()
 }
 
+private fun updateActionButtons() {
+    copyButton.isEnabled = convertedXml.isNotBlank()
+    saveXmlButton.isEnabled = convertedXml.isNotBlank()
+    saveZipButton.isEnabled = batchResults.isNotEmpty()
+}
+
 private fun makeXmlFileName(uri: android.net.Uri): String {
     var displayName: String? = null
 
@@ -684,6 +695,8 @@ private fun makeXmlFileName(uri: android.net.Uri): String {
 
 private fun showBatchGallery() {
     batchGallery.removeAllViews()
+    batchResults.clear()
+    updateActionButtons()
 
 val heading = TextView(this).apply {
     text = "Batch Results"
