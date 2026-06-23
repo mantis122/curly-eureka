@@ -12,6 +12,11 @@ import android.graphics.drawable.BitmapDrawable
 import android.provider.OpenableColumns
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import org.w3c.dom.Element
+import org.w3c.dom.Node
+import javax.xml.parsers.DocumentBuilderFactory
+import org.xml.sax.InputSource
+import java.io.StringReader
 
 data class ConversionResult(
     val xml: String,
@@ -846,16 +851,7 @@ val vectorHeightDp =
         output.appendLine("""    android:viewportHeight="$viewportHeight">""")
         output.appendLine()
 
-        val groupRegex = Regex("""<g\b[^>]*>.*?</g>""", RegexOption.DOT_MATCHES_ALL)
-        val groups = groupRegex.findAll(svg).toList()
-
-        if (groups.isNotEmpty()) {
-            for (groupMatch in groups) {
-                appendConvertedGroup(output, groupMatch.value)
-            }
-        } else {
-            appendConvertedPaths(output, svg, null)
-        }
+        appendConvertedSvgTree(output, stripDefs(svg))
 
         output.appendLine("</vector>")
 
@@ -1050,97 +1046,173 @@ private fun safeStrokeColor(value: String?): String? {
     }
 }
 
-    private fun appendConvertedGroup(output: StringBuilder, groupXml: String) {
-        val groupStartTag = Regex("""<g\b[^>]*>""")
-            .find(groupXml)
-            ?.value
-            ?: ""
-
-        val transform = attr(groupStartTag, "transform")
-        val translate = parseTranslate(transform)
-        val scale = parseScale(transform)
-
-        val needsGroup = translate != null || scale != null
-
-        if (needsGroup) {
-            output.appendLine("    <group")
-
-            if (translate != null) {
-                output.appendLine("""        android:translateX="${translate.first}"""")
-                output.appendLine("""        android:translateY="${translate.second}"""")
-            }
-
-            if (scale != null) {
-                output.appendLine("""        android:scaleX="${scale.first}"""")
-                output.appendLine("""        android:scaleY="${scale.second}"""")
-            }
-
-            output.appendLine("    >")
-            appendConvertedPaths(output, groupXml, "        ")
-            output.appendLine("    </group>")
-            output.appendLine()
-        } else {
-            appendConvertedPaths(output, groupXml, null)
+private fun appendConvertedSvgTree(output: StringBuilder, svg: String) {
+    try {
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            isIgnoringComments = true
         }
+
+        val document = factory
+            .newDocumentBuilder()
+            .parse(InputSource(StringReader(svg)))
+
+        val root = document.documentElement
+        walkSvgNode(output, root, "    ")
+    } catch (e: Exception) {
+        // Fallback for imperfect SVG/XML files
+        appendFlatPathsFallback(output, svg, "    ")
     }
+}
 
-    private fun appendConvertedPaths(
-        output: StringBuilder,
-        xml: String,
-        indentOverride: String?
-    ) {
-        val indent = indentOverride ?: "    "
+private fun walkSvgNode(
+    output: StringBuilder,
+    node: Node,
+    indent: String
+) {
+    if (node.nodeType != Node.ELEMENT_NODE) return
 
-val drawableXml = stripDefs(xml)
+    val element = node as Element
+    val tagName = element.tagName.substringAfter(":")
 
-Regex("""<path\b[^>]*>""")
-    .findAll(drawableXml)
-            .forEach { match ->
-                val tag = match.value
-                val d = attr(tag, "d")?.trim()
-                if (d.isNullOrBlank()) return@forEach
+    when (tagName) {
+        "g" -> {
+            val transform = element.getAttribute("transform")
+            val translate = parseTranslate(transform)
+            val scale = parseScale(transform)
 
-val rawFill = attr(tag, "fill")
-    ?: styleValue(attr(tag, "style"), "fill")
+            val needsGroup = translate != null || scale != null
 
-val rawStroke = attr(tag, "stroke")
-    ?: styleValue(attr(tag, "style"), "stroke")
+            if (needsGroup) {
+                output.appendLine("${indent}<group")
 
-val fill = safeFillColor(rawFill)
-val stroke = safeStrokeColor(rawStroke)                
-
-                val strokeWidth = attr(tag, "stroke-width")
-                    ?: styleValue(attr(tag, "style"), "stroke-width")
-
-                val pathTransform = attr(tag, "transform")
-                val translate = parseTranslate(pathTransform)
-                val scale = parseScale(pathTransform)
-
-                val pathNeedsGroup = translate != null || scale != null
-
-                if (pathNeedsGroup) {
-                    output.appendLine("${indent}<group")
-
-                    if (translate != null) {
-                        output.appendLine("""${indent}    android:translateX="${translate.first}"""")
-                        output.appendLine("""${indent}    android:translateY="${translate.second}"""")
-                    }
-
-                    if (scale != null) {
-                        output.appendLine("""${indent}    android:scaleX="${scale.first}"""")
-                        output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
-                    }
-
-                    output.appendLine("${indent}>")
-                    appendPath(output, d, fill, stroke, strokeWidth, indent + "    ")
-                    output.appendLine("${indent}</group>")
-                } else {
-                    appendPath(output, d, fill, stroke, strokeWidth, indent)
+                if (translate != null) {
+                    output.appendLine("""${indent}    android:translateX="${translate.first}"""")
+                    output.appendLine("""${indent}    android:translateY="${translate.second}"""")
                 }
 
+                if (scale != null) {
+                    output.appendLine("""${indent}    android:scaleX="${scale.first}"""")
+                    output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
+                }
+
+                output.appendLine("${indent}>")
+
+                val children = element.childNodes
+                for (i in 0 until children.length) {
+                    walkSvgNode(output, children.item(i), indent + "    ")
+                }
+
+                output.appendLine("${indent}</group>")
                 output.appendLine()
+            } else {
+                val children = element.childNodes
+                for (i in 0 until children.length) {
+                    walkSvgNode(output, children.item(i), indent)
+                }
             }
+        }
+
+        "path" -> {
+            appendElementPath(output, element, indent)
+        }
+
+        else -> {
+            val children = element.childNodes
+            for (i in 0 until children.length) {
+                walkSvgNode(output, children.item(i), indent)
+            }
+        }
     }
+}
+
+private fun appendElementPath(
+    output: StringBuilder,
+    element: Element,
+    indent: String
+) {
+    val d = element.getAttribute("d").trim()
+    if (d.isBlank()) return
+
+    val style = element.getAttribute("style").ifBlank { null }
+
+    val rawFill = element.getAttribute("fill").ifBlank {
+        styleValue(style, "fill") ?: ""
+    }
+
+    val rawStroke = element.getAttribute("stroke").ifBlank {
+        styleValue(style, "stroke") ?: ""
+    }
+
+    val strokeWidth = element.getAttribute("stroke-width").ifBlank {
+        styleValue(style, "stroke-width") ?: ""
+    }
+
+    val fill = safeFillColor(rawFill)
+    val stroke = safeStrokeColor(rawStroke)
+
+    val pathTransform = element.getAttribute("transform")
+    val translate = parseTranslate(pathTransform)
+    val scale = parseScale(pathTransform)
+
+    val pathNeedsGroup = translate != null || scale != null
+
+    if (pathNeedsGroup) {
+        output.appendLine("${indent}<group")
+
+        if (translate != null) {
+            output.appendLine("""${indent}    android:translateX="${translate.first}"""")
+            output.appendLine("""${indent}    android:translateY="${translate.second}"""")
+        }
+
+        if (scale != null) {
+            output.appendLine("""${indent}    android:scaleX="${scale.first}"""")
+            output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
+        }
+
+        output.appendLine("${indent}>")
+        appendPath(output, d, fill, stroke, strokeWidth.ifBlank { null }, indent + "    ")
+        output.appendLine("${indent}</group>")
+    } else {
+        appendPath(output, d, fill, stroke, strokeWidth.ifBlank { null }, indent)
+    }
+
+    output.appendLine()
+}
+
+private fun appendFlatPathsFallback(
+    output: StringBuilder,
+    xml: String,
+    indent: String
+) {
+    Regex("""<path\b[^>]*>""")
+        .findAll(xml)
+        .forEach { match ->
+            val tag = match.value
+            val d = attr(tag, "d")?.trim()
+            if (d.isNullOrBlank()) return@forEach
+
+            val rawFill = attr(tag, "fill")
+                ?: styleValue(attr(tag, "style"), "fill")
+
+            val rawStroke = attr(tag, "stroke")
+                ?: styleValue(attr(tag, "style"), "stroke")
+
+            val strokeWidth = attr(tag, "stroke-width")
+                ?: styleValue(attr(tag, "style"), "stroke-width")
+
+            appendPath(
+                output,
+                d,
+                safeFillColor(rawFill),
+                safeStrokeColor(rawStroke),
+                strokeWidth,
+                indent
+            )
+
+            output.appendLine()
+        }
+}
 
     private fun appendPath(
         output: StringBuilder,
