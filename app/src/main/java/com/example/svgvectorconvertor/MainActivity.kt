@@ -918,6 +918,13 @@ return ConversionResult(finalXml, report)
             .containsMatchIn(svg)
     }
 
+private fun stripDefs(xml: String): String {
+    return Regex(
+        """<defs\b[^>]*>.*?</defs>""",
+        RegexOption.DOT_MATCHES_ALL
+    ).replace(xml, "")
+}
+
 private fun isValidAndroidColor(value: String?): Boolean {
     if (value == null) return false
 
@@ -1005,8 +1012,10 @@ private fun safeStrokeColor(value: String?): String? {
     ) {
         val indent = indentOverride ?: "    "
 
-        Regex("""<path\b[^>]*>""")
-            .findAll(xml)
+val drawableXml = stripDefs(xml)
+
+Regex("""<path\b[^>]*>""")
+    .findAll(drawableXml)
             .forEach { match ->
                 val tag = match.value
                 val d = attr(tag, "d")?.trim()
