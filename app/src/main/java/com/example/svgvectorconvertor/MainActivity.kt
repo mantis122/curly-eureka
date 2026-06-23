@@ -58,6 +58,7 @@ val result = SvgToVectorConverter.convert(
     outputDpSize,
     conversionProfile
 )
+previewBox.visibility = View.VISIBLE
         convertedXml = result.xml
         reportBox.text = result.report
         outputBox.setText(convertedXml)
@@ -71,6 +72,10 @@ private val openMultipleSvgs = registerForActivityResult(
 ) { uris ->
     if (uris.isNotEmpty()) {
         batchResults.clear()
+
+convertedXml = ""
+previewBox.setImageDrawable(null)
+outputBox.setText("")
 
         uris.forEach { uri ->
             val svg = contentResolver.openInputStream(uri)
@@ -154,6 +159,8 @@ val xmlOutput = buildString {
 outputBox.setText(xmlOutput)
 
         showBatchGallery()
+
+previewBox.visibility = View.GONE
 
         toast("${batchResults.size} files converted")
     }
