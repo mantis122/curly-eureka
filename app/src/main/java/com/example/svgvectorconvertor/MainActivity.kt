@@ -1326,23 +1326,124 @@ object VectorPreviewRenderer {
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.WHITE)
 
-        val scaleX = width / viewportWidth
-        val scaleY = height / viewportHeight
-        canvas.scale(scaleX, scaleY)
+        canvas.scale(width / viewportWidth, height / viewportHeight)
 
-        val groupRegex = Regex("""<group\b[^>]*>.*?</group>""", RegexOption.DOT_MATCHES_ALL)
-        val groups = groupRegex.findAll(xml).toList()
-
-        if (groups.isNotEmpty()) {
-            for (group in groups) {
-                drawGroup(canvas, group.value)
-            }
-        } else {
-            drawPaths(canvas, xml)
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            isIgnoringComments = true
         }
+
+        val document = factory
+            .newDocumentBuilder()
+            .parse(InputSource(StringReader(xml)))
+
+        walkVectorNode(canvas, document.documentElement)
 
         return bitmap
     }
+
+    private fun walkVectorNode(canvas: Canvas, node: Node) {
+        if (node.nodeType != Node.ELEMENT_NODE) return
+
+        val element = node as Element
+        val tagName = element.tagName.substringAfter(":")
+
+        when (tagName) {
+            "group" -> {
+                canvas.save()
+
+                val translateX =
+                    element.getAttribute("android:translateX").toFloatOrNull() ?: 0f
+                val translateY =
+                    element.getAttribute("android:translateY").toFloatOrNull() ?: 0f
+                val scaleX =
+                    element.getAttribute("android:scaleX").toFloatOrNull() ?: 1f
+                val scaleY =
+                    element.getAttribute("android:scaleY").toFloatOrNull() ?: 1f
+
+                canvas.translate(translateX, translateY)
+                canvas.scale(scaleX, scaleY)
+
+                val children = element.childNodes
+                for (i in 0 until children.length) {
+                    walkVectorNode(canvas, children.item(i))
+                }
+
+                canvas.restore()
+            }
+
+            "path" -> {
+                drawPathElement(canvas, element)
+            }
+
+            else -> {
+                val children = element.childNodes
+                for (i in 0 until children.length) {
+                    walkVectorNode(canvas, children.item(i))
+                }
+            }
+        }
+    }
+
+    private fun drawPathElement(canvas: Canvas, element: Element) {
+        val pathData = element.getAttribute("android:pathData")
+        if (pathData.isBlank()) return
+
+        val path = androidx.core.graphics.PathParser
+            .createPathFromPathData(pathData)
+
+        val fillColor = element.getAttribute("android:fillColor")
+        val strokeColor = element.getAttribute("android:strokeColor")
+        val strokeWidth = element.getAttribute("android:strokeWidth")
+            .toFloatOrNull()
+            ?: 1f
+
+        if (
+            fillColor.isNotBlank() &&
+            fillColor != "@android:color/transparent" &&
+            fillColor != "none"
+        ) {
+            val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                color = try {
+                    Color.parseColor(fillColor)
+                } catch (e: Exception) {
+                    Color.TRANSPARENT
+                }
+            }
+
+            canvas.drawPath(path, fillPaint)
+        }
+
+        if (
+            strokeColor.isNotBlank() &&
+            strokeColor != "@android:color/transparent" &&
+            strokeColor != "none"
+        ) {
+            val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                color = try {
+                    Color.parseColor(strokeColor)
+                } catch (e: Exception) {
+                    Color.TRANSPARENT
+                }
+
+                this.strokeWidth = strokeWidth
+                strokeCap = Paint.Cap.BUTT
+                strokeJoin = Paint.Join.MITER
+            }
+
+            canvas.drawPath(path, strokePaint)
+        }
+    }
+
+    private fun attr(tag: String, name: String): String? {
+        return Regex("""\b$name=["']([^"']*)["']""")
+            .find(tag)
+            ?.groupValues
+            ?.get(1)
+    }
+}
 
     private fun drawGroup(canvas: Canvas, groupXml: String) {
         val startTag = Regex("""<group\b[^>]*>""")
