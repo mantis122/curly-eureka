@@ -742,7 +742,16 @@ val validPathCount = Regex("""<path\b[^>]*>""")
         val d = attr(match.value, "d")?.trim()
         !d.isNullOrBlank()
     }
+val drawableSvgForStats = stripDefs(svg)
 
+val drawableValidPathCount = Regex("""<path\b[^>]*>""")
+    .findAll(drawableSvgForStats)
+    .count { match ->
+        val d = attr(match.value, "d")?.trim()
+        !d.isNullOrBlank()
+    }
+
+val definitionPathCount = validPathCount - drawableValidPathCount
 val emptyPathCount = pathCount - validPathCount
 val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
 
@@ -840,7 +849,11 @@ val report = buildString {
 
     appendLine("Conversion Statistics")
     appendLine()
-    appendLine("✓ Paths converted: $convertedPathCount / $validPathCount")
+appendLine("✓ Paths converted: $convertedPathCount / $validPathCount")
+
+if (definitionPathCount > 0) {
+    appendLine("✓ Definition paths skipped: $definitionPathCount")
+}
     appendLine("✓ Groups generated: $generatedGroupCount")
     appendLine("✓ Warnings: $warningCount")
     appendLine()
@@ -867,6 +880,9 @@ val report = buildString {
     appendLine("✓ Paths found: $pathCount")
     appendLine("✓ Valid paths: $validPathCount")
     appendLine("✓ Empty paths skipped: $emptyPathCount")
+if (definitionPathCount > 0) {
+    appendLine("✓ Definition paths skipped: $definitionPathCount")
+}
     appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
 
