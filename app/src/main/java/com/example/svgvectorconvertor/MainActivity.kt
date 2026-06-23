@@ -212,11 +212,25 @@ private val saveZip = registerForActivityResult(
             setBackgroundColor(Color.rgb(250, 248, 240))
         }
 
-        val title = TextView(this).apply {
-            text = "SVG → Android Vector"
-            textSize = 24f
-            setTextColor(Color.BLACK)
-        }
+val versionName = try {
+    packageManager
+        .getPackageInfo(packageName, 0)
+        .versionName
+} catch (e: Exception) {
+    "1.0"
+}
+
+val title = TextView(this).apply {
+    text = "SVG → Android Vector"
+    textSize = 24f
+    setTextColor(Color.BLACK)
+}
+
+val versionLabel = TextView(this).apply {
+    text = "v$versionName"
+    textSize = 12f
+    setTextColor(Color.GRAY)
+}        
 
         val openButton = Button(this).apply {
             text = "Open SVG"
@@ -501,6 +515,7 @@ mainPanel.addView(batchGallery)
 mainPanel.addView(bottomSpacer, LinearLayout.LayoutParams(-1, 96))
 
 root.addView(title)
+root.addView(versionLabel)
 root.addView(openRow)
 root.addView(saveRow)
 root.addView(utilityRow)
