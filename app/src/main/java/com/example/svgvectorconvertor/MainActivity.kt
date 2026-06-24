@@ -1120,7 +1120,14 @@ val currentStrokeWidth = element.getAttribute("stroke-width").ifBlank {
 
                 val children = element.childNodes
                 for (i in 0 until children.length) {
-                    walkSvgNode(output, children.item(i), indent + "    ")
+                 walkSvgNode(
+    output,
+    children.item(i),
+    indent + "    ",
+    currentFill,
+    currentStroke,
+    currentStrokeWidth
+)
                 }
 
                 output.appendLine("${indent}</group>")
@@ -1128,19 +1135,40 @@ val currentStrokeWidth = element.getAttribute("stroke-width").ifBlank {
             } else {
                 val children = element.childNodes
                 for (i in 0 until children.length) {
-                    walkSvgNode(output, children.item(i), indent)
+walkSvgNode(
+    output,
+    children.item(i),
+    indent,
+    currentFill,
+    currentStroke,
+    currentStrokeWidth
+)
                 }
             }
         }
 
         "path" -> {
-            appendElementPath(output, element, indent)
-        }
+    appendElementPath(
+        output,
+        element,
+        indent,
+        currentFill,
+        currentStroke,
+        currentStrokeWidth
+    )
+}
 
         else -> {
             val children = element.childNodes
             for (i in 0 until children.length) {
-                walkSvgNode(output, children.item(i), indent)
+walkSvgNode(
+    output,
+    children.item(i),
+    indent,
+    currentFill,
+    currentStroke,
+    currentStrokeWidth
+)
             }
         }
     }
