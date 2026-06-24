@@ -1382,8 +1382,11 @@ object VectorPreviewRenderer {
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.WHITE)
 
-        canvas.scale(width / viewportWidth, height / viewportHeight)
+       val canvasScaleX = width / viewportWidth
+val canvasScaleY = height / viewportHeight
+val strokeScale = minOf(canvasScaleX, canvasScaleY)
 
+canvas.scale(canvasScaleX, canvasScaleY)
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = false
             isIgnoringComments = true
@@ -1393,12 +1396,12 @@ object VectorPreviewRenderer {
             .newDocumentBuilder()
             .parse(InputSource(StringReader(xml)))
 
-        walkVectorNode(canvas, document.documentElement)
+walkVectorNode(canvas, document.documentElement, strokeScale)
 
         return bitmap
     }
 
-    private fun walkVectorNode(canvas: Canvas, node: Node) {
+private fun walkVectorNode(canvas: Canvas, node: Node, strokeScale: Float) {
         if (node.nodeType != Node.ELEMENT_NODE) return
 
         val element = node as Element
@@ -1422,26 +1425,30 @@ object VectorPreviewRenderer {
 
                 val children = element.childNodes
                 for (i in 0 until children.length) {
-                    walkVectorNode(canvas, children.item(i))
+                    walkVectorNode(canvas, children.item(i), strokeScale)
                 }
 
                 canvas.restore()
             }
 
             "path" -> {
-                drawPathElement(canvas, element)
+                drawPathElement(canvas, element, strokeScale)
             }
 
             else -> {
                 val children = element.childNodes
                 for (i in 0 until children.length) {
-                    walkVectorNode(canvas, children.item(i))
+                    walkVectorNode(canvas, children.item(i), strokeScale)
                 }
             }
         }
     }
 
-    private fun drawPathElement(canvas: Canvas, element: Element) {
+private fun drawPathElement(
+    canvas: Canvas,
+    element: Element,
+    strokeScale: Float
+) {
         val pathData = element.getAttribute("android:pathData")
         if (pathData.isBlank()) return
 
@@ -1484,7 +1491,7 @@ object VectorPreviewRenderer {
                     Color.TRANSPARENT
                 }
 
-                this.strokeWidth = strokeWidth
+this.strokeWidth = strokeWidth / strokeScale
                 strokeCap = Paint.Cap.BUTT
                 strokeJoin = Paint.Join.MITER
             }
