@@ -1006,6 +1006,7 @@ private fun isValidAndroidColor(value: String?): Boolean {
     val v = value.trim()
 
     if (v == "none") return true
+    if (v == "currentColor") return true
     if (v == "@android:color/transparent") return true
 
     return Regex("""^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$""")
@@ -1028,6 +1029,7 @@ private fun safeFillColor(value: String?): String {
     return when {
         v.isNullOrBlank() -> "#000000"
         v == "none" -> "@android:color/transparent"
+        v == "currentColor" -> "#000000"
         isUnsupportedPaint(v) -> "@android:color/transparent"
         isValidAndroidColor(v) -> v
         else -> "@android:color/transparent"
@@ -1040,6 +1042,7 @@ private fun safeStrokeColor(value: String?): String? {
     return when {
         v.isNullOrBlank() -> null
         v == "none" -> null
+        v == "currentColor" -> "#000000"
         isUnsupportedPaint(v) -> null
         isValidAndroidColor(v) -> v
         else -> null
@@ -1136,9 +1139,9 @@ private fun appendElementPath(
 
     val style = element.getAttribute("style").ifBlank { null }
 
-    val rawFill = element.getAttribute("fill").ifBlank {
-        styleValue(style, "fill") ?: ""
-    }
+val rawFill = element.getAttribute("fill").ifBlank {
+    styleValue(style, "fill") ?: "none"
+}
 
     val rawStroke = element.getAttribute("stroke").ifBlank {
         styleValue(style, "stroke") ?: ""
@@ -1214,25 +1217,30 @@ private fun appendFlatPathsFallback(
         }
 }
 
-    private fun appendPath(
-        output: StringBuilder,
-        d: String,
-        fill: String,
-        stroke: String?,
-        strokeWidth: String?,
-        indent: String
-    ) {
-        output.appendLine("${indent}<path")
-        output.appendLine("""${indent}    android:pathData="${escapeXml(d)}"""")
+private fun appendPath(
+    output: StringBuilder,
+    d: String,
+    fill: String,
+    stroke: String?,
+    strokeWidth: String?,
+    indent: String
+) {
+    output.appendLine("${indent}<path")
+    output.appendLine("""${indent}    android:pathData="${escapeXml(d)}"""")
 
-    output.appendLine("""${indent}    android:fillColor="$fill"""")
-
-if (stroke != null) {
-    output.appendLine("""${indent}    android:strokeColor="$stroke"""")
-    output.appendLine("""${indent}    android:strokeWidth="${strokeWidth ?: "1"}"""")
-}
-        output.appendLine("${indent}/>")
+    if (fill != "@android:color/transparent") {
+        output.appendLine("""${indent}    android:fillColor="$fill"""")
+    } else {
+        output.appendLine("""${indent}    android:fillColor="@android:color/transparent"""")
     }
+
+    if (stroke != null) {
+        output.appendLine("""${indent}    android:strokeColor="$stroke"""")
+        output.appendLine("""${indent}    android:strokeWidth="${strokeWidth ?: "1"}"""")
+    }
+
+    output.appendLine("${indent}/>")
+}
 
     private fun getViewBox(svg: String): List<Float>? {
         return Regex("""viewBox=["']([^"']+)["']""")
