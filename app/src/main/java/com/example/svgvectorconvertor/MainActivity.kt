@@ -1071,12 +1071,29 @@ private fun appendConvertedSvgTree(output: StringBuilder, svg: String) {
 private fun walkSvgNode(
     output: StringBuilder,
     node: Node,
-    indent: String
+    indent: String,
+    inheritedFill: String? = null,
+    inheritedStroke: String? = null,
+    inheritedStrokeWidth: String? = null
 ) {
     if (node.nodeType != Node.ELEMENT_NODE) return
 
     val element = node as Element
-    val tagName = element.tagName.substringAfter(":")
+val style = element.getAttribute("style").ifBlank { null }
+
+val currentFill = element.getAttribute("fill").ifBlank {
+    styleValue(style, "fill") ?: inheritedFill ?: ""
+}
+
+val currentStroke = element.getAttribute("stroke").ifBlank {
+    styleValue(style, "stroke") ?: inheritedStroke ?: ""
+}
+
+val currentStrokeWidth = element.getAttribute("stroke-width").ifBlank {
+    styleValue(style, "stroke-width") ?: inheritedStrokeWidth ?: ""
+} 
+
+   val tagName = element.tagName.substringAfter(":")
 
     when (tagName) {
         "g" -> {
@@ -1132,7 +1149,10 @@ private fun walkSvgNode(
 private fun appendElementPath(
     output: StringBuilder,
     element: Element,
-    indent: String
+    indent: String,
+    inheritedFill: String?,
+    inheritedStroke: String?,
+    inheritedStrokeWidth: String?
 ) {
     val d = element.getAttribute("d").trim()
     if (d.isBlank()) return
@@ -1140,16 +1160,16 @@ private fun appendElementPath(
     val style = element.getAttribute("style").ifBlank { null }
 
 val rawFill = element.getAttribute("fill").ifBlank {
-    styleValue(style, "fill") ?: "none"
+    styleValue(style, "fill") ?: inheritedFill ?: "none"
 }
 
-    val rawStroke = element.getAttribute("stroke").ifBlank {
-        styleValue(style, "stroke") ?: ""
-    }
+val rawStroke = element.getAttribute("stroke").ifBlank {
+    styleValue(style, "stroke") ?: inheritedStroke ?: ""
+}
 
-    val strokeWidth = element.getAttribute("stroke-width").ifBlank {
-        styleValue(style, "stroke-width") ?: ""
-    }
+val strokeWidth = element.getAttribute("stroke-width").ifBlank {
+    styleValue(style, "stroke-width") ?: inheritedStrokeWidth ?: ""
+}
 
     val fill = safeFillColor(rawFill)
     val stroke = safeStrokeColor(rawStroke)
