@@ -810,6 +810,13 @@ val definitionPathCount = validPathCount - drawableValidPathCount
 val emptyPathCount = pathCount - validPathCount
 val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
 
+val basicShapeTags = listOf("rect", "circle", "ellipse", "line", "polyline", "polygon")
+val basicShapeCount = basicShapeTags.sumOf { tag ->
+    Regex("""<\s*$tag\b[^>]*>""", RegexOption.IGNORE_CASE)
+        .findAll(drawableSvgForStats)
+        .count()
+}
+
 val unsupported = mutableListOf<String>()
 
 if (hasTag(svg, "linearGradient")) unsupported.add("Linear gradients")
@@ -866,6 +873,8 @@ val finalXml = if (endIndex >= 0) {
 }
 
 val convertedPathCount = Regex("""<path\b""").findAll(finalXml).count()
+val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
+val convertedOriginalPathCount = convertedPathCount - convertedBasicShapeCount
 val generatedGroupCount = Regex("""<group\b""").findAll(finalXml).count()
 
 val elapsedMs =
@@ -901,7 +910,8 @@ appendLine()
 
     appendLine("Conversion Statistics")
     appendLine()
-appendLine("✓ Paths converted: $convertedPathCount / $validPathCount")
+appendLine("✓ Paths converted: $convertedOriginalPathCount / $drawableValidPathCount")
+appendLine("✓ Basic shapes converted: $convertedBasicShapeCount / $basicShapeCount")
 
 if (definitionPathCount > 0) {
     appendLine("✓ Definition paths skipped: $definitionPathCount")
@@ -932,6 +942,8 @@ if (definitionPathCount > 0) {
     appendLine("✓ Paths found: $pathCount")
     appendLine("✓ Valid paths: $validPathCount")
     appendLine("✓ Empty paths skipped: $emptyPathCount")
+    appendLine("✓ Basic shapes found: $basicShapeCount")
+    appendLine("✓ Basic shapes converted: $convertedBasicShapeCount")
 if (definitionPathCount > 0) {
     appendLine("✓ Definition paths skipped: $definitionPathCount")
 }
@@ -987,6 +999,12 @@ return ConversionResult(finalXml, report)
 
 
     }
+
+private fun countConvertedBasicShapes(xml: String): Int {
+    return Regex("""<!-- converted from <(rect|circle|ellipse|line|polyline|polygon)> -->""")
+        .findAll(xml)
+        .count()
+}
 
     private fun hasTag(svg: String, tagName: String): Boolean {
         return Regex("""<\s*$tagName\b""", RegexOption.IGNORE_CASE)
@@ -1093,7 +1111,7 @@ val currentStrokeWidth = element.getAttribute("stroke-width").ifBlank {
     styleValue(style, "stroke-width") ?: inheritedStrokeWidth ?: ""
 } 
 
-   val tagName = element.tagName.substringAfter(":")
+   val tagName = element.tagName.substringAfter(":").lowercase()
 
     when (tagName) {
         "g" -> {
@@ -1158,6 +1176,18 @@ walkSvgNode(
     )
 }
 
+        "rect", "circle", "ellipse", "line", "polyline", "polygon" -> {
+            appendBasicShapePath(
+                output,
+                element,
+                tagName,
+                indent,
+                currentFill,
+                currentStroke,
+                currentStrokeWidth
+            )
+        }
+
         else -> {
             val children = element.childNodes
             for (i in 0 until children.length) {
@@ -1174,6 +1204,30 @@ walkSvgNode(
     }
 }
 
+
+private fun appendBasicShapePath(
+    output: StringBuilder,
+    element: Element,
+    tagName: String,
+    indent: String,
+    inheritedFill: String?,
+    inheritedStroke: String?,
+    inheritedStrokeWidth: String?
+) {
+    val d = basicShapeToPathData(element, tagName) ?: return
+
+    appendElementPathData(
+        output,
+        element,
+        d,
+        indent,
+        inheritedFill,
+        inheritedStroke,
+        inheritedStrokeWidth,
+        sourceTag = tagName
+    )
+}
+
 private fun appendElementPath(
     output: StringBuilder,
     element: Element,
@@ -1185,6 +1239,28 @@ private fun appendElementPath(
     val d = element.getAttribute("d").trim()
     if (d.isBlank()) return
 
+    appendElementPathData(
+        output,
+        element,
+        d,
+        indent,
+        inheritedFill,
+        inheritedStroke,
+        inheritedStrokeWidth,
+        sourceTag = null
+    )
+}
+
+private fun appendElementPathData(
+    output: StringBuilder,
+    element: Element,
+    d: String,
+    indent: String,
+    inheritedFill: String?,
+    inheritedStroke: String?,
+    inheritedStrokeWidth: String?,
+    sourceTag: String?
+) {
     val style = element.getAttribute("style").ifBlank { null }
 
 val rawFill = element.getAttribute("fill").ifBlank {
@@ -1222,13 +1298,134 @@ val strokeWidth = element.getAttribute("stroke-width").ifBlank {
         }
 
         output.appendLine("${indent}>")
+        if (sourceTag != null) {
+            output.appendLine("${indent}    <!-- converted from <$sourceTag> -->")
+        }
         appendPath(output, d, fill, stroke, strokeWidth.ifBlank { null }, indent + "    ")
         output.appendLine("${indent}</group>")
     } else {
+        if (sourceTag != null) {
+            output.appendLine("${indent}<!-- converted from <$sourceTag> -->")
+        }
         appendPath(output, d, fill, stroke, strokeWidth.ifBlank { null }, indent)
     }
 
     output.appendLine()
+}
+
+
+private fun basicShapeToPathData(element: Element, tagName: String): String? {
+    return when (tagName) {
+        "rect" -> rectToPathData(element)
+        "circle" -> circleToPathData(element)
+        "ellipse" -> ellipseToPathData(element)
+        "line" -> lineToPathData(element)
+        "polyline" -> pointsToPathData(element, close = false)
+        "polygon" -> pointsToPathData(element, close = true)
+        else -> null
+    }?.takeIf { it.isNotBlank() }
+}
+
+private fun rectToPathData(element: Element): String {
+    val x = floatAttr(element, "x") ?: 0f
+    val y = floatAttr(element, "y") ?: 0f
+    val width = floatAttr(element, "width") ?: return ""
+    val height = floatAttr(element, "height") ?: return ""
+
+    if (width <= 0f || height <= 0f) return ""
+
+    val rxRaw = floatAttr(element, "rx")
+    val ryRaw = floatAttr(element, "ry")
+    val hasRoundedCorners = rxRaw != null || ryRaw != null
+
+    if (!hasRoundedCorners) {
+        return "M $x,$y L ${x + width},$y L ${x + width},${y + height} L $x,${y + height} Z"
+    }
+
+    val rx = minOf(rxRaw ?: ryRaw ?: 0f, width / 2f)
+    val ry = minOf(ryRaw ?: rxRaw ?: 0f, height / 2f)
+
+    if (rx <= 0f || ry <= 0f) {
+        return "M $x,$y L ${x + width},$y L ${x + width},${y + height} L $x,${y + height} Z"
+    }
+
+    val right = x + width
+    val bottom = y + height
+
+    return "M ${x + rx},$y " +
+        "L ${right - rx},$y " +
+        "A $rx,$ry 0,0,1 $right,${y + ry} " +
+        "L $right,${bottom - ry} " +
+        "A $rx,$ry 0,0,1 ${right - rx},$bottom " +
+        "L ${x + rx},$bottom " +
+        "A $rx,$ry 0,0,1 $x,${bottom - ry} " +
+        "L $x,${y + ry} " +
+        "A $rx,$ry 0,0,1 ${x + rx},$y Z"
+}
+
+private fun circleToPathData(element: Element): String {
+    val cx = floatAttr(element, "cx") ?: 0f
+    val cy = floatAttr(element, "cy") ?: 0f
+    val r = floatAttr(element, "r") ?: return ""
+
+    if (r <= 0f) return ""
+
+    return "M ${cx - r},$cy " +
+        "A $r,$r 0,1,0 ${cx + r},$cy " +
+        "A $r,$r 0,1,0 ${cx - r},$cy Z"
+}
+
+private fun ellipseToPathData(element: Element): String {
+    val cx = floatAttr(element, "cx") ?: 0f
+    val cy = floatAttr(element, "cy") ?: 0f
+    val rx = floatAttr(element, "rx") ?: return ""
+    val ry = floatAttr(element, "ry") ?: return ""
+
+    if (rx <= 0f || ry <= 0f) return ""
+
+    return "M ${cx - rx},$cy " +
+        "A $rx,$ry 0,1,0 ${cx + rx},$cy " +
+        "A $rx,$ry 0,1,0 ${cx - rx},$cy Z"
+}
+
+private fun lineToPathData(element: Element): String {
+    val x1 = floatAttr(element, "x1") ?: 0f
+    val y1 = floatAttr(element, "y1") ?: 0f
+    val x2 = floatAttr(element, "x2") ?: 0f
+    val y2 = floatAttr(element, "y2") ?: 0f
+
+    return "M $x1,$y1 L $x2,$y2"
+}
+
+private fun pointsToPathData(element: Element, close: Boolean): String {
+    val values = element.getAttribute("points")
+        .trim()
+        .replace(",", " ")
+        .split(Regex("\\s+"))
+        .mapNotNull { it.toFloatOrNull() }
+
+    if (values.size < 4) return ""
+
+    val output = StringBuilder("M ${values[0]},${values[1]}")
+
+    var i = 2
+    while (i + 1 < values.size) {
+        output.append(" L ${values[i]},${values[i + 1]}")
+        i += 2
+    }
+
+    if (close) output.append(" Z")
+
+    return output.toString()
+}
+
+private fun floatAttr(element: Element, name: String): Float? {
+    return element.getAttribute(name)
+        .replace("px", "")
+        .replace("dp", "")
+        .trim()
+        .takeIf { it.isNotBlank() }
+        ?.toFloatOrNull()
 }
 
 private fun appendFlatPathsFallback(
