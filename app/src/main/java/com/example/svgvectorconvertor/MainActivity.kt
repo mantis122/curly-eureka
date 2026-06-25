@@ -1326,41 +1326,40 @@ private fun basicShapeToPathData(element: Element, tagName: String): String? {
     }?.takeIf { it.isNotBlank() }
 }
 
-private fun rectToPathData(element: Element): String {
-    val x = floatAttr(element, "x") ?: 0f
-    val y = floatAttr(element, "y") ?: 0f
-    val width = floatAttr(element, "width") ?: return ""
-    val height = floatAttr(element, "height") ?: return ""
+private fun rectToPath(el: Element): String {
+    val x = parseFloatAttr(el, "x")
+    val y = parseFloatAttr(el, "y")
+    val w = parseFloatAttr(el, "width")
+    val h = parseFloatAttr(el, "height")
 
-    if (width <= 0f || height <= 0f) return ""
+    var rx = parseFloatAttr(el, "rx", 0f)
+    var ry = parseFloatAttr(el, "ry", 0f)
 
-    val rxRaw = floatAttr(element, "rx")
-    val ryRaw = floatAttr(element, "ry")
-    val hasRoundedCorners = rxRaw != null || ryRaw != null
+    // SVG rule: if only rx or ry is provided, the missing one uses the same value.
+    if (rx > 0f && ry == 0f) ry = rx
+    if (ry > 0f && rx == 0f) rx = ry
 
-    if (!hasRoundedCorners) {
-        return "M $x,$y L ${x + width},$y L ${x + width},${y + height} L $x,${y + height} Z"
-    }
+    // Clamp radii so they cannot exceed half the rectangle size.
+    rx = rx.coerceAtMost(w / 2f)
+    ry = ry.coerceAtMost(h / 2f)
 
-    val rx = minOf(rxRaw ?: ryRaw ?: 0f, width / 2f)
-    val ry = minOf(ryRaw ?: rxRaw ?: 0f, height / 2f)
-
+    // Normal sharp rectangle
     if (rx <= 0f || ry <= 0f) {
-        return "M $x,$y L ${x + width},$y L ${x + width},${y + height} L $x,${y + height} Z"
+        return "M $x,$y L ${x + w},$y L ${x + w},${y + h} L $x,${y + h} Z"
     }
 
-    val right = x + width
-    val bottom = y + height
+    val right = x + w
+    val bottom = y + h
 
     return "M ${x + rx},$y " +
-        "L ${right - rx},$y " +
-        "A $rx,$ry 0,0,1 $right,${y + ry} " +
-        "L $right,${bottom - ry} " +
-        "A $rx,$ry 0,0,1 ${right - rx},$bottom " +
-        "L ${x + rx},$bottom " +
-        "A $rx,$ry 0,0,1 $x,${bottom - ry} " +
-        "L $x,${y + ry} " +
-        "A $rx,$ry 0,0,1 ${x + rx},$y Z"
+            "L ${right - rx},$y " +
+            "A $rx,$ry 0,0,1 $right,${y + ry} " +
+            "L $right,${bottom - ry} " +
+            "A $rx,$ry 0,0,1 ${right - rx},$bottom " +
+            "L ${x + rx},$bottom " +
+            "A $rx,$ry 0,0,1 $x,${bottom - ry} " +
+            "L $x,${y + ry} " +
+            "A $rx,$ry 0,0,1 ${x + rx},$y Z"
 }
 
 private fun circleToPathData(element: Element): String {
