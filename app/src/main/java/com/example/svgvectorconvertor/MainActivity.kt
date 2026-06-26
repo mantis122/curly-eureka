@@ -821,6 +821,7 @@ val definitionDrawableElementCount = countDefinitionDrawableElements(svg)
 val emptyPathCount = pathCount - validPathCount
 val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
 val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
+val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
 
 val basicShapeTags = listOf("rect", "circle", "ellipse", "line", "polyline", "polygon")
 val basicShapeCount = basicShapeTags.sumOf { tag ->
@@ -930,11 +931,13 @@ appendLine()
 
     appendLine("Conversion Statistics")
     appendLine()
+appendLine("✓ Final VectorDrawable paths: $convertedPathCount")
+appendLine("✓ Visible SVG paths converted: $convertedOriginalPathCount / $drawableValidPathCount")
 if (useCount > 0) {
-    appendLine("✓ Drawable paths converted: $convertedOriginalPathCount")
     appendLine("✓ Use references expanded: $useCount")
-} else {
-    appendLine("✓ Paths converted: $convertedOriginalPathCount / $drawableValidPathCount")
+}
+if (symbolCount > 0) {
+    appendLine("✓ Symbol definitions available: $symbolCount")
 }
 appendLine("✓ Basic shapes converted: $convertedBasicShapeCount / $basicShapeCount")
 if (gradientFallbackColors.isNotEmpty()) {
@@ -970,8 +973,9 @@ if (definitionDrawableElementCount > 0) {
     appendLine("SVG Analysis")
     appendLine()
     appendLine("✓ Viewport: ${viewportWidth} × ${viewportHeight}")
-    appendLine("✓ Paths found: $pathCount")
-    appendLine("✓ Valid paths: $validPathCount")
+    appendLine("✓ SVG paths total: $pathCount")
+    appendLine("✓ Visible SVG paths: $drawableValidPathCount")
+    appendLine("✓ Definition drawable elements: $definitionDrawableElementCount")
     appendLine("✓ Empty paths skipped: $emptyPathCount")
     appendLine("✓ Basic shapes found: $basicShapeCount")
     appendLine("✓ Basic shapes converted: $convertedBasicShapeCount")
@@ -983,6 +987,9 @@ if (clipPathData.isNotEmpty()) {
 }
 if (definitionDrawableElementCount > 0) {
     appendLine("✓ Definition drawable elements available: $definitionDrawableElementCount")
+}
+if (symbolCount > 0) {
+    appendLine("✓ Symbol definitions available: $symbolCount")
 }
     appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
@@ -1734,6 +1741,29 @@ val currentClipPath = element.getAttribute("clip-path").ifBlank {
             return
         }
 
+        "symbol" -> {
+            // Symbols are reusable definitions. Draw them only when expanded from a <use>.
+            if (useDepth <= 0) return
+            appendChildrenWithClipGrouping(
+                output,
+                element,
+                indent,
+                currentFill,
+                currentStroke,
+                currentStrokeWidth,
+                currentStrokeLineCap,
+                currentStrokeLineJoin,
+                currentFillRule,
+                currentOpacity,
+                currentFillOpacity,
+                currentStrokeOpacity,
+                currentClipPath,
+                definitions,
+                useDepth,
+                activeClipPathId
+            )
+        }
+
         "use" -> {
             appendUseElement(
                 output,
@@ -1898,6 +1928,22 @@ val currentClipPath = element.getAttribute("clip-path").ifBlank {
 }
 
 
+private data class SvgViewBox(val minX: Float, val minY: Float, val width: Float, val height: Float)
+
+private fun elementViewBox(element: Element): SvgViewBox? {
+    val parts = element.getAttribute("viewBox")
+        .trim()
+        .split(Regex("[,\\s]+"))
+        .mapNotNull { it.toFloatOrNull() }
+
+    return if (parts.size >= 4 && parts[2] != 0f && parts[3] != 0f) {
+        SvgViewBox(parts[0], parts[1], parts[2], parts[3])
+    } else {
+        null
+    }
+}
+
+
 private fun appendUseElement(
     output: StringBuilder,
     element: Element,
@@ -1928,6 +1974,13 @@ private fun appendUseElement(
     if (id.isBlank()) return
 
     val referenced = definitions[id] ?: return
+    val referencedTag = referenced.tagName.substringAfter(":").lowercase()
+    val referencedViewBox = if (referencedTag == "symbol") elementViewBox(referenced) else null
+    val useWidth = floatAttr(element, "width")
+    val useHeight = floatAttr(element, "height")
+    val symbolScaleX = if (referencedViewBox != null && useWidth != null) useWidth / referencedViewBox.width else 1f
+    val symbolScaleY = if (referencedViewBox != null && useHeight != null) useHeight / referencedViewBox.height else 1f
+    val hasSymbolViewBoxTransform = referencedViewBox != null && (symbolScaleX != 1f || symbolScaleY != 1f || referencedViewBox.minX != 0f || referencedViewBox.minY != 0f)
 
     val x = floatAttr(element, "x") ?: 0f
     val y = floatAttr(element, "y") ?: 0f
@@ -1937,13 +1990,13 @@ private fun appendUseElement(
     val rotate = parseRotate(transform)
 
     val needsGroup =
-        x != 0f || y != 0f || translate != null || scale != null || rotate != null
+        x != 0f || y != 0f || translate != null || scale != null || rotate != null || hasSymbolViewBoxTransform
 
     if (needsGroup) {
         output.appendLine("${indent}<group")
 
-        val totalTranslateX = x + (translate?.first ?: 0f)
-        val totalTranslateY = y + (translate?.second ?: 0f)
+        val totalTranslateX = x + (translate?.first ?: 0f) - ((referencedViewBox?.minX ?: 0f) * symbolScaleX)
+        val totalTranslateY = y + (translate?.second ?: 0f) - ((referencedViewBox?.minY ?: 0f) * symbolScaleY)
 
         if (totalTranslateX != 0f) {
             output.appendLine("""${indent}    android:translateX="$totalTranslateX"""")
@@ -1953,9 +2006,12 @@ private fun appendUseElement(
             output.appendLine("""${indent}    android:translateY="$totalTranslateY"""")
         }
 
-        if (scale != null) {
-            output.appendLine("""${indent}    android:scaleX="${scale.first}"""")
-            output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
+        val effectiveScaleX = (scale?.first ?: 1f) * symbolScaleX
+        val effectiveScaleY = (scale?.second ?: 1f) * symbolScaleY
+
+        if (effectiveScaleX != 1f || effectiveScaleY != 1f) {
+            output.appendLine("""${indent}    android:scaleX="$effectiveScaleX"""")
+            output.appendLine("""${indent}    android:scaleY="$effectiveScaleY"""")
         }
 
         if (rotate != null) {
