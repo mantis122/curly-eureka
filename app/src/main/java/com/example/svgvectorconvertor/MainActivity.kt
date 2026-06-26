@@ -2271,12 +2271,21 @@ private fun appendFlatPathsFallback(
     xml: String,
     indent: String
 ) {
-    Regex("""<path\b[^>]*>""")
+    val drawableTags = Regex("""<(path|rect|circle|ellipse|line|polyline|polygon)\b[^>]*>""", RegexOption.IGNORE_CASE)
+
+    drawableTags
         .findAll(xml)
         .forEach { match ->
             val tag = match.value
-            val d = attr(tag, "d")?.trim()
-            if (d.isNullOrBlank()) return@forEach
+            val tagName = match.groupValues[1].lowercase()
+
+            val d = if (tagName == "path") {
+                attr(tag, "d")?.trim().orEmpty()
+            } else {
+                basicShapeTagToPathData(tag, tagName)
+            }
+
+            if (d.isBlank()) return@forEach
 
             val rawFill = attr(tag, "fill")
                 ?: styleValue(attr(tag, "style"), "fill")
@@ -2305,6 +2314,10 @@ private fun appendFlatPathsFallback(
             val fillRule = attr(tag, "fill-rule")
                 ?: styleValue(attr(tag, "style"), "fill-rule")
 
+            if (tagName != "path") {
+                output.appendLine("${indent}<!-- converted from <$tagName> -->")
+            }
+
             appendPath(
                 output,
                 d,
@@ -2321,6 +2334,97 @@ private fun appendFlatPathsFallback(
 
             output.appendLine()
         }
+}
+
+private fun basicShapeTagToPathData(tag: String, tagName: String): String {
+    fun floatAttrFromTag(name: String): Float? =
+        attr(tag, name)
+            ?.replace("px", "")
+            ?.replace("dp", "")
+            ?.trim()
+            ?.toFloatOrNull()
+
+    fun pointsAttrToPathData(close: Boolean): String {
+        val values = attr(tag, "points")
+            ?.trim()
+            ?.replace(",", " ")
+            ?.split(Regex("\\s+"))
+            ?.mapNotNull { it.toFloatOrNull() }
+            ?: return ""
+
+        if (values.size < 4) return ""
+
+        val output = StringBuilder("M ${values[0]},${values[1]}")
+        var i = 2
+        while (i + 1 < values.size) {
+            output.append(" L ${values[i]},${values[i + 1]}")
+            i += 2
+        }
+        if (close) output.append(" Z")
+        return output.toString()
+    }
+
+    return when (tagName) {
+        "rect" -> {
+            val x = floatAttrFromTag("x") ?: 0f
+            val y = floatAttrFromTag("y") ?: 0f
+            val w = floatAttrFromTag("width") ?: return ""
+            val h = floatAttrFromTag("height") ?: return ""
+            if (w <= 0f || h <= 0f) return ""
+
+            var rx = floatAttrFromTag("rx") ?: 0f
+            var ry = floatAttrFromTag("ry") ?: 0f
+            if (rx > 0f && ry == 0f) ry = rx
+            if (ry > 0f && rx == 0f) rx = ry
+            rx = rx.coerceAtMost(w / 2f)
+            ry = ry.coerceAtMost(h / 2f)
+
+            if (rx <= 0f || ry <= 0f) {
+                "M $x,$y L ${x + w},$y L ${x + w},${y + h} L $x,${y + h} Z"
+            } else {
+                val right = x + w
+                val bottom = y + h
+                "M ${x + rx},$y " +
+                    "L ${right - rx},$y " +
+                    "A $rx,$ry 0,0,1 $right,${y + ry} " +
+                    "L $right,${bottom - ry} " +
+                    "A $rx,$ry 0,0,1 ${right - rx},$bottom " +
+                    "L ${x + rx},$bottom " +
+                    "A $rx,$ry 0,0,1 $x,${bottom - ry} " +
+                    "L $x,${y + ry} " +
+                    "A $rx,$ry 0,0,1 ${x + rx},$y Z"
+            }
+        }
+
+        "circle" -> {
+            val cx = floatAttrFromTag("cx") ?: 0f
+            val cy = floatAttrFromTag("cy") ?: 0f
+            val r = floatAttrFromTag("r") ?: return ""
+            if (r <= 0f) return ""
+            "M ${cx - r},$cy A $r,$r 0,1,0 ${cx + r},$cy A $r,$r 0,1,0 ${cx - r},$cy Z"
+        }
+
+        "ellipse" -> {
+            val cx = floatAttrFromTag("cx") ?: 0f
+            val cy = floatAttrFromTag("cy") ?: 0f
+            val rx = floatAttrFromTag("rx") ?: return ""
+            val ry = floatAttrFromTag("ry") ?: return ""
+            if (rx <= 0f || ry <= 0f) return ""
+            "M ${cx - rx},$cy A $rx,$ry 0,1,0 ${cx + rx},$cy A $rx,$ry 0,1,0 ${cx - rx},$cy Z"
+        }
+
+        "line" -> {
+            val x1 = floatAttrFromTag("x1") ?: 0f
+            val y1 = floatAttrFromTag("y1") ?: 0f
+            val x2 = floatAttrFromTag("x2") ?: 0f
+            val y2 = floatAttrFromTag("y2") ?: 0f
+            "M $x1,$y1 L $x2,$y2"
+        }
+
+        "polyline" -> pointsAttrToPathData(close = false)
+        "polygon" -> pointsAttrToPathData(close = true)
+        else -> ""
+    }
 }
 
 private fun appendPath(
