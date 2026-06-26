@@ -1105,7 +1105,8 @@ private fun walkSvgNode(
     inheritedStroke: String? = null,
     inheritedStrokeWidth: String? = null,
     inheritedStrokeLineCap: String? = null,
-    inheritedStrokeLineJoin: String? = null
+    inheritedStrokeLineJoin: String? = null,
+    inheritedFillRule: String? = null
 ) {
     if (node.nodeType != Node.ELEMENT_NODE) return
 
@@ -1130,6 +1131,10 @@ val currentStrokeLineCap = element.getAttribute("stroke-linecap").ifBlank {
 
 val currentStrokeLineJoin = element.getAttribute("stroke-linejoin").ifBlank {
     styleValue(style, "stroke-linejoin") ?: inheritedStrokeLineJoin ?: ""
+}
+
+val currentFillRule = element.getAttribute("fill-rule").ifBlank {
+    styleValue(style, "fill-rule") ?: inheritedFillRule ?: ""
 }
 
    val tagName = element.tagName.substringAfter(":").lowercase()
@@ -1176,7 +1181,8 @@ val currentStrokeLineJoin = element.getAttribute("stroke-linejoin").ifBlank {
     currentStroke,
     currentStrokeWidth,
     currentStrokeLineCap,
-    currentStrokeLineJoin
+    currentStrokeLineJoin,
+    currentFillRule
 )
                 }
 
@@ -1193,24 +1199,26 @@ walkSvgNode(
     currentStroke,
     currentStrokeWidth,
     currentStrokeLineCap,
-    currentStrokeLineJoin
+    currentStrokeLineJoin,
+    currentFillRule
 )
                 }
             }
         }
 
         "path" -> {
-    appendElementPath(
-        output,
-        element,
-        indent,
-        currentFill,
-        currentStroke,
-        currentStrokeWidth,
-        currentStrokeLineCap,
-        currentStrokeLineJoin
-    )
-}
+            appendElementPath(
+                output,
+                element,
+                indent,
+                currentFill,
+                currentStroke,
+                currentStrokeWidth,
+                currentStrokeLineCap,
+                currentStrokeLineJoin,
+                currentFillRule
+            )
+        }
 
         "rect", "circle", "ellipse", "line", "polyline", "polygon" -> {
             appendBasicShapePath(
@@ -1222,7 +1230,8 @@ walkSvgNode(
                 currentStroke,
                 currentStrokeWidth,
                 currentStrokeLineCap,
-                currentStrokeLineJoin
+                currentStrokeLineJoin,
+                currentFillRule
             )
         }
 
@@ -1237,7 +1246,8 @@ walkSvgNode(
     currentStroke,
     currentStrokeWidth,
     currentStrokeLineCap,
-    currentStrokeLineJoin
+    currentStrokeLineJoin,
+    currentFillRule
 )
             }
         }
@@ -1254,7 +1264,8 @@ private fun appendBasicShapePath(
     inheritedStroke: String?,
     inheritedStrokeWidth: String?,
     inheritedStrokeLineCap: String?,
-    inheritedStrokeLineJoin: String?
+    inheritedStrokeLineJoin: String?,
+    inheritedFillRule: String?
 ) {
     val d = basicShapeToPathData(element, tagName) ?: return
 
@@ -1268,6 +1279,7 @@ private fun appendBasicShapePath(
         inheritedStrokeWidth,
         inheritedStrokeLineCap,
         inheritedStrokeLineJoin,
+        inheritedFillRule,
         sourceTag = tagName
     )
 }
@@ -1280,7 +1292,8 @@ private fun appendElementPath(
     inheritedStroke: String?,
     inheritedStrokeWidth: String?,
     inheritedStrokeLineCap: String?,
-    inheritedStrokeLineJoin: String?
+    inheritedStrokeLineJoin: String?,
+    inheritedFillRule: String?
 ) {
     val d = element.getAttribute("d").trim()
     if (d.isBlank()) return
@@ -1295,6 +1308,7 @@ private fun appendElementPath(
         inheritedStrokeWidth,
         inheritedStrokeLineCap,
         inheritedStrokeLineJoin,
+        inheritedFillRule,
         sourceTag = null
     )
 }
@@ -1309,6 +1323,7 @@ private fun appendElementPathData(
     inheritedStrokeWidth: String?,
     inheritedStrokeLineCap: String?,
     inheritedStrokeLineJoin: String?,
+    inheritedFillRule: String?,
     sourceTag: String?
 ) {
     val style = element.getAttribute("style").ifBlank { null }
@@ -1331,6 +1346,10 @@ val strokeLineCap = element.getAttribute("stroke-linecap").ifBlank {
 
 val strokeLineJoin = element.getAttribute("stroke-linejoin").ifBlank {
     styleValue(style, "stroke-linejoin") ?: inheritedStrokeLineJoin ?: ""
+}
+
+val fillRule = element.getAttribute("fill-rule").ifBlank {
+    styleValue(style, "fill-rule") ?: inheritedFillRule ?: ""
 }
 
     val fill = safeFillColor(rawFill)
@@ -1376,6 +1395,7 @@ val strokeLineJoin = element.getAttribute("stroke-linejoin").ifBlank {
             strokeWidth.ifBlank { null },
             strokeLineCap.ifBlank { null },
             strokeLineJoin.ifBlank { null },
+            fillRule.ifBlank { null },
             indent + "    "
         )
         output.appendLine("${indent}</group>")
@@ -1391,6 +1411,7 @@ val strokeLineJoin = element.getAttribute("stroke-linejoin").ifBlank {
             strokeWidth.ifBlank { null },
             strokeLineCap.ifBlank { null },
             strokeLineJoin.ifBlank { null },
+            fillRule.ifBlank { null },
             indent
         )
     }
@@ -1541,6 +1562,9 @@ private fun appendFlatPathsFallback(
             val strokeLineJoin = attr(tag, "stroke-linejoin")
                 ?: styleValue(attr(tag, "style"), "stroke-linejoin")
 
+            val fillRule = attr(tag, "fill-rule")
+                ?: styleValue(attr(tag, "style"), "fill-rule")
+
             appendPath(
                 output,
                 d,
@@ -1549,6 +1573,7 @@ private fun appendFlatPathsFallback(
                 strokeWidth,
                 strokeLineCap,
                 strokeLineJoin,
+                fillRule,
                 indent
             )
 
@@ -1564,6 +1589,7 @@ private fun appendPath(
     strokeWidth: String?,
     strokeLineCap: String?,
     strokeLineJoin: String?,
+    fillRule: String?,
     indent: String
 ) {
     output.appendLine("${indent}<path")
@@ -1573,6 +1599,11 @@ private fun appendPath(
         output.appendLine("""${indent}    android:fillColor="$fill"""")
     } else {
         output.appendLine("""${indent}    android:fillColor="@android:color/transparent"""")
+    }
+
+    when (fillRule?.trim()?.lowercase()) {
+        "evenodd" -> output.appendLine("""${indent}    android:fillType="evenOdd"""")
+        "nonzero" -> output.appendLine("""${indent}    android:fillType="nonZero"""")
     }
 
     if (stroke != null) {
@@ -1795,6 +1826,8 @@ private fun drawPathElement(
         val path = androidx.core.graphics.PathParser
             .createPathFromPathData(pathData)
 
+        path.fillType = parsePathFillType(element.getAttribute("android:fillType"))
+
         val fillColor = element.getAttribute("android:fillColor")
         val strokeColor = element.getAttribute("android:strokeColor")
         val strokeWidth = element.getAttribute("android:strokeWidth")
@@ -1837,6 +1870,13 @@ this.strokeWidth = strokeWidth
             }
 
             canvas.drawPath(path, strokePaint)
+        }
+    }
+
+    private fun parsePathFillType(value: String?): Path.FillType {
+        return when (value?.trim()?.lowercase()) {
+            "evenodd" -> Path.FillType.EVEN_ODD
+            else -> Path.FillType.WINDING
         }
     }
 
