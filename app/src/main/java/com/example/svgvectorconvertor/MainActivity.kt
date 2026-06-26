@@ -1832,11 +1832,27 @@ private fun drawPathElement(
                 }
 
 this.strokeWidth = strokeWidth / strokeScale
-                strokeCap = Paint.Cap.BUTT
-                strokeJoin = Paint.Join.MITER
+                strokeCap = parseStrokeCap(element.getAttribute("android:strokeLineCap"))
+                strokeJoin = parseStrokeJoin(element.getAttribute("android:strokeLineJoin"))
             }
 
             canvas.drawPath(path, strokePaint)
+        }
+    }
+
+    private fun parseStrokeCap(value: String?): Paint.Cap {
+        return when (value?.trim()?.lowercase()) {
+            "round" -> Paint.Cap.ROUND
+            "square" -> Paint.Cap.SQUARE
+            else -> Paint.Cap.BUTT
+        }
+    }
+
+    private fun parseStrokeJoin(value: String?): Paint.Join {
+        return when (value?.trim()?.lowercase()) {
+            "round" -> Paint.Join.ROUND
+            "bevel" -> Paint.Join.BEVEL
+            else -> Paint.Join.MITER
         }
     }
 
