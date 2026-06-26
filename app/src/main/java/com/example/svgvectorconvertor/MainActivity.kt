@@ -2076,7 +2076,12 @@ val hasClipPath = clipPathId != null && clipPathId != activeClipPathId && active
 val fillAlpha = resolveDrawableAlpha(inheritedOpacity, fillOpacity)
 val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
 
-    val fill = safeFillColor(rawFill)
+    val fill =
+        if (sourceTag == "line") {
+            "@android:color/transparent"
+        } else {
+            safeFillColor(rawFill)
+        }
     val stroke = safeStrokeColor(rawStroke)
 
     val pathTransform = element.getAttribute("transform")
@@ -2318,10 +2323,17 @@ private fun appendFlatPathsFallback(
                 output.appendLine("${indent}<!-- converted from <$tagName> -->")
             }
 
+            val fillColor =
+                if (tagName == "line") {
+                    "@android:color/transparent"
+                } else {
+                    safeFillColor(rawFill)
+                }
+
             appendPath(
                 output,
                 d,
-                safeFillColor(rawFill),
+                fillColor,
                 safeStrokeColor(rawStroke),
                 strokeWidth,
                 strokeLineCap,
