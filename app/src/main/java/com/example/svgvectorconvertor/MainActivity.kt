@@ -812,6 +812,7 @@ val drawableValidPathCount = Regex("""<path\b[^>]*>""")
 val definitionPathCount = validPathCount - drawableValidPathCount
 val emptyPathCount = pathCount - validPathCount
 val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
+val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
 
 val basicShapeTags = listOf("rect", "circle", "ellipse", "line", "polyline", "polygon")
 val basicShapeCount = basicShapeTags.sumOf { tag ->
@@ -830,8 +831,6 @@ if (hasTag(svg, "text")) unsupported.add("Text elements")
 if (hasTag(svg, "clipPath")) unsupported.add("Clip paths")
 if (hasTag(svg, "pattern")) unsupported.add("Patterns")
 if (hasTag(svg, "image")) unsupported.add("Embedded images")
-if (hasTag(svg, "symbol")) unsupported.add("Symbols")
-if (hasTag(svg, "use")) unsupported.add("Referenced elements")
 
         val viewBoxValues = getViewBox(svg)
 
@@ -861,7 +860,7 @@ val vectorHeightDp =
         output.appendLine("""    android:viewportHeight="$viewportHeight">""")
         output.appendLine()
 
-        appendConvertedSvgTree(output, stripDefs(svg))
+        appendConvertedSvgTree(output, svg)
 
         output.appendLine("</vector>")
 
@@ -913,11 +912,16 @@ appendLine()
 
     appendLine("Conversion Statistics")
     appendLine()
-appendLine("✓ Paths converted: $convertedOriginalPathCount / $drawableValidPathCount")
+if (useCount > 0) {
+    appendLine("✓ Paths converted: $convertedOriginalPathCount")
+    appendLine("✓ Use references expanded: $useCount")
+} else {
+    appendLine("✓ Paths converted: $convertedOriginalPathCount / $drawableValidPathCount")
+}
 appendLine("✓ Basic shapes converted: $convertedBasicShapeCount / $basicShapeCount")
 
 if (definitionPathCount > 0) {
-    appendLine("✓ Definition paths skipped: $definitionPathCount")
+    appendLine(if (useCount > 0) "✓ Definition paths available: $definitionPathCount" else "✓ Definition paths skipped: $definitionPathCount")
 }
     appendLine("✓ Groups generated: $generatedGroupCount")
     appendLine("✓ Warnings: $warningCount")
@@ -948,7 +952,7 @@ if (definitionPathCount > 0) {
     appendLine("✓ Basic shapes found: $basicShapeCount")
     appendLine("✓ Basic shapes converted: $convertedBasicShapeCount")
 if (definitionPathCount > 0) {
-    appendLine("✓ Definition paths skipped: $definitionPathCount")
+    appendLine(if (useCount > 0) "✓ Definition paths available: $definitionPathCount" else "✓ Definition paths skipped: $definitionPathCount")
 }
     appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
@@ -1090,11 +1094,40 @@ private fun appendConvertedSvgTree(output: StringBuilder, svg: String) {
             .parse(InputSource(StringReader(svg)))
 
         val root = document.documentElement
-        walkSvgNode(output, root, "    ")
+        val definitions = collectSvgDefinitions(root)
+
+        walkSvgNode(
+            output = output,
+            node = root,
+            indent = "    ",
+            definitions = definitions
+        )
     } catch (e: Exception) {
         // Fallback for imperfect SVG/XML files
         appendFlatPathsFallback(output, svg, "    ")
     }
+}
+
+private fun collectSvgDefinitions(root: Element): Map<String, Element> {
+    val definitions = mutableMapOf<String, Element>()
+
+    fun visit(node: Node) {
+        if (node.nodeType != Node.ELEMENT_NODE) return
+
+        val element = node as Element
+        val id = element.getAttribute("id").trim()
+        if (id.isNotBlank()) {
+            definitions[id] = element
+        }
+
+        val children = element.childNodes
+        for (i in 0 until children.length) {
+            visit(children.item(i))
+        }
+    }
+
+    visit(root)
+    return definitions
 }
 
 private fun walkSvgNode(
@@ -1109,7 +1142,9 @@ private fun walkSvgNode(
     inheritedFillRule: String? = null,
     inheritedOpacity: String? = null,
     inheritedFillOpacity: String? = null,
-    inheritedStrokeOpacity: String? = null
+    inheritedStrokeOpacity: String? = null,
+    definitions: Map<String, Element> = emptyMap(),
+    useDepth: Int = 0
 ) {
     if (node.nodeType != Node.ELEMENT_NODE) return
 
@@ -1158,6 +1193,30 @@ val currentStrokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
    val tagName = element.tagName.substringAfter(":").lowercase()
 
     when (tagName) {
+        "defs" -> {
+            // Definitions are not drawn directly. They are expanded when a <use> references them.
+            return
+        }
+
+        "use" -> {
+            appendUseElement(
+                output,
+                element,
+                indent,
+                currentFill,
+                currentStroke,
+                currentStrokeWidth,
+                currentStrokeLineCap,
+                currentStrokeLineJoin,
+                currentFillRule,
+                currentOpacity,
+                currentFillOpacity,
+                currentStrokeOpacity,
+                definitions,
+                useDepth
+            )
+        }
+
         "g" -> {
             val transform = element.getAttribute("transform")
             val translate = parseTranslate(transform)
@@ -1203,7 +1262,9 @@ val currentStrokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
     currentFillRule,
     currentOpacity,
     currentFillOpacity,
-    currentStrokeOpacity
+    currentStrokeOpacity,
+    definitions,
+    useDepth
 )
                 }
 
@@ -1224,7 +1285,9 @@ walkSvgNode(
     currentFillRule,
     currentOpacity,
     currentFillOpacity,
-    currentStrokeOpacity
+    currentStrokeOpacity,
+    definitions,
+    useDepth
 )
                 }
             }
@@ -1280,10 +1343,123 @@ walkSvgNode(
     currentFillRule,
     currentOpacity,
     currentFillOpacity,
-    currentStrokeOpacity
+    currentStrokeOpacity,
+    definitions,
+    useDepth
 )
             }
         }
+    }
+}
+
+
+private fun appendUseElement(
+    output: StringBuilder,
+    element: Element,
+    indent: String,
+    inheritedFill: String?,
+    inheritedStroke: String?,
+    inheritedStrokeWidth: String?,
+    inheritedStrokeLineCap: String?,
+    inheritedStrokeLineJoin: String?,
+    inheritedFillRule: String?,
+    inheritedOpacity: String?,
+    inheritedFillOpacity: String?,
+    inheritedStrokeOpacity: String?,
+    definitions: Map<String, Element>,
+    useDepth: Int
+) {
+    if (useDepth >= 20) return
+
+    val href = element.getAttribute("href").ifBlank {
+        element.getAttribute("xlink:href").ifBlank {
+            element.getAttributeNS("http://www.w3.org/1999/xlink", "href")
+        }
+    }.trim()
+
+    val id = href.removePrefix("#").trim()
+    if (id.isBlank()) return
+
+    val referenced = definitions[id] ?: return
+
+    val x = floatAttr(element, "x") ?: 0f
+    val y = floatAttr(element, "y") ?: 0f
+    val transform = element.getAttribute("transform")
+    val translate = parseTranslate(transform)
+    val scale = parseScale(transform)
+    val rotate = parseRotate(transform)
+
+    val needsGroup =
+        x != 0f || y != 0f || translate != null || scale != null || rotate != null
+
+    if (needsGroup) {
+        output.appendLine("${indent}<group")
+
+        val totalTranslateX = x + (translate?.first ?: 0f)
+        val totalTranslateY = y + (translate?.second ?: 0f)
+
+        if (totalTranslateX != 0f) {
+            output.appendLine("""${indent}    android:translateX="$totalTranslateX"""")
+        }
+
+        if (totalTranslateY != 0f) {
+            output.appendLine("""${indent}    android:translateY="$totalTranslateY"""")
+        }
+
+        if (scale != null) {
+            output.appendLine("""${indent}    android:scaleX="${scale.first}"""")
+            output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
+        }
+
+        if (rotate != null) {
+            output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
+            if (rotate.pivotX != null && rotate.pivotY != null) {
+                output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
+                output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
+            }
+        }
+
+        output.appendLine("${indent}>")
+        output.appendLine("${indent}    <!-- expanded from <use href=\"#$id\"> -->")
+
+        walkSvgNode(
+            output,
+            referenced,
+            indent + "    ",
+            inheritedFill,
+            inheritedStroke,
+            inheritedStrokeWidth,
+            inheritedStrokeLineCap,
+            inheritedStrokeLineJoin,
+            inheritedFillRule,
+            inheritedOpacity,
+            inheritedFillOpacity,
+            inheritedStrokeOpacity,
+            definitions,
+            useDepth + 1
+        )
+
+        output.appendLine("${indent}</group>")
+        output.appendLine()
+    } else {
+        output.appendLine("${indent}<!-- expanded from <use href=\"#$id\"> -->")
+
+        walkSvgNode(
+            output,
+            referenced,
+            indent,
+            inheritedFill,
+            inheritedStroke,
+            inheritedStrokeWidth,
+            inheritedStrokeLineCap,
+            inheritedStrokeLineJoin,
+            inheritedFillRule,
+            inheritedOpacity,
+            inheritedFillOpacity,
+            inheritedStrokeOpacity,
+            definitions,
+            useDepth + 1
+        )
     }
 }
 
