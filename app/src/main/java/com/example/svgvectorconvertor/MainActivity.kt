@@ -779,6 +779,7 @@ private fun updatePreview(xml: String) {
 
 object SvgToVectorConverter {
 private var activeGradientFallbackColors: Map<String, String> = emptyMap()
+private var activeClipPathData: Map<String, String> = emptyMap()
 
 fun convert(
     svg: String,
@@ -791,6 +792,8 @@ val startTime = System.nanoTime()
 val svgForTransformStats = stripSvgComments(svg)
 val gradientFallbackColors = collectGradientFallbackColors(svg)
 activeGradientFallbackColors = gradientFallbackColors
+val clipPathData = collectClipPathData(svg)
+activeClipPathData = clipPathData
 
 
 val translateCount = Regex("""translate\(""").findAll(svgForTransformStats).count()
@@ -841,7 +844,8 @@ if (hasTag(svg, "radialGradient")) {
 if (hasTag(svg, "mask")) unsupported.add("Masks")
 if (hasTag(svg, "filter")) unsupported.add("Filters")
 if (hasTag(svg, "text")) unsupported.add("Text elements")
-if (hasTag(svg, "clipPath")) unsupported.add("Clip paths")
+if (hasTag(svg, "clipPath") && clipPathData.isEmpty()) unsupported.add("Clip paths")
+if (clipPathData.isNotEmpty()) unsupported.add("Clip paths converted to VectorDrawable clip-paths")
 if (hasTag(svg, "pattern")) unsupported.add("Patterns")
 if (hasTag(svg, "image")) unsupported.add("Embedded images")
 
@@ -935,6 +939,9 @@ appendLine("✓ Basic shapes converted: $convertedBasicShapeCount / $basicShapeC
 if (gradientFallbackColors.isNotEmpty()) {
     appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
 }
+if (clipPathData.isNotEmpty()) {
+    appendLine("✓ Clip paths available: ${clipPathData.size}")
+}
 
 if (definitionPathCount > 0) {
     appendLine(if (useCount > 0) "✓ Definition paths available: $definitionPathCount" else "✓ Definition paths skipped: $definitionPathCount")
@@ -969,6 +976,9 @@ if (definitionPathCount > 0) {
     appendLine("✓ Basic shapes converted: $convertedBasicShapeCount")
 if (gradientFallbackColors.isNotEmpty()) {
     appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
+}
+if (clipPathData.isNotEmpty()) {
+    appendLine("✓ Clip paths available: ${clipPathData.size}")
 }
 if (definitionPathCount > 0) {
     appendLine(if (useCount > 0) "✓ Definition paths available: $definitionPathCount" else "✓ Definition paths skipped: $definitionPathCount")
@@ -1213,6 +1223,104 @@ private fun collectGradientFallbackColors(svg: String): Map<String, String> {
     return result
 }
 
+
+private fun collectClipPathData(svg: String): Map<String, String> {
+    val result = mutableMapOf<String, String>()
+
+    try {
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            isIgnoringComments = true
+        }
+
+        val document = factory
+            .newDocumentBuilder()
+            .parse(InputSource(StringReader(svg)))
+
+        val root = document.documentElement
+        val definitions = collectSvgDefinitions(root)
+
+        fun elementToPathData(element: Element, depth: Int = 0): String {
+            if (depth > 20) return ""
+
+            val tag = element.tagName.substringAfter(":").lowercase()
+
+            return when (tag) {
+                "path" -> element.getAttribute("d").trim()
+                "rect", "circle", "ellipse", "line", "polyline", "polygon" ->
+                    basicShapeToPathData(element, tag).orEmpty()
+                "use" -> {
+                    val href = element.getAttribute("href").ifBlank {
+                        element.getAttribute("xlink:href").ifBlank {
+                            element.getAttributeNS("http://www.w3.org/1999/xlink", "href")
+                        }
+                    }.trim()
+                    val id = href.removePrefix("#").trim()
+                    val referenced = definitions[id] ?: return ""
+                    elementToPathData(referenced, depth + 1)
+                }
+                else -> {
+                    val parts = mutableListOf<String>()
+                    val children = element.childNodes
+                    for (i in 0 until children.length) {
+                        val child = children.item(i)
+                        if (child.nodeType != Node.ELEMENT_NODE) continue
+                        val childPath = elementToPathData(child as Element, depth + 1)
+                        if (childPath.isNotBlank()) parts.add(childPath)
+                    }
+                    parts.joinToString(" ")
+                }
+            }
+        }
+
+        fun visit(node: Node) {
+            if (node.nodeType != Node.ELEMENT_NODE) return
+
+            val element = node as Element
+            val tag = element.tagName.substringAfter(":").lowercase()
+
+            if (tag == "clippath") {
+                val id = element.getAttribute("id").trim()
+                val pathData = elementToPathData(element)
+                if (id.isNotBlank() && pathData.isNotBlank()) {
+                    result[id] = pathData
+                }
+            }
+
+            val children = element.childNodes
+            for (i in 0 until children.length) {
+                visit(children.item(i))
+            }
+        }
+
+        visit(root)
+    } catch (_: Exception) {
+        return emptyMap()
+    }
+
+    return result
+}
+
+private fun clipPathIdFromValue(value: String?): String? {
+    val v = value?.trim() ?: return null
+    return Regex("""url\(\s*#([^)'"\s]+)\s*\)""")
+        .find(v)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+}
+
+private fun appendClipPath(output: StringBuilder, clipPathId: String?, indent: String): Boolean {
+    val id = clipPathId ?: return false
+    val pathData = activeClipPathData[id] ?: return false
+
+    output.appendLine("""${indent}<clip-path""")
+    output.appendLine("""${indent}    android:pathData="$pathData"""")
+    output.appendLine("""${indent}/>""")
+    return true
+}
+
 private fun averageStopColor(stops: List<Pair<String, Float>>): String? {
     if (stops.isEmpty()) return null
 
@@ -1345,6 +1453,7 @@ private fun walkSvgNode(
     inheritedOpacity: String? = null,
     inheritedFillOpacity: String? = null,
     inheritedStrokeOpacity: String? = null,
+    inheritedClipPath: String? = null,
     definitions: Map<String, Element> = emptyMap(),
     useDepth: Int = 0
 ) {
@@ -1392,6 +1501,10 @@ val currentStrokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
     styleValue(style, "stroke-opacity") ?: inheritedStrokeOpacity ?: ""
 }
 
+val currentClipPath = element.getAttribute("clip-path").ifBlank {
+    styleValue(style, "clip-path") ?: inheritedClipPath ?: ""
+}
+
    val tagName = element.tagName.substringAfter(":").lowercase()
 
     when (tagName) {
@@ -1414,6 +1527,7 @@ val currentStrokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
                 currentOpacity,
                 currentFillOpacity,
                 currentStrokeOpacity,
+                currentClipPath,
                 definitions,
                 useDepth
             )
@@ -1424,8 +1538,10 @@ val currentStrokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
             val translate = parseTranslate(transform)
             val scale = parseScale(transform)
             val rotate = parseRotate(transform)
+            val groupClipPathId = clipPathIdFromValue(currentClipPath)
+            val hasClipPath = groupClipPathId != null && activeClipPathData.containsKey(groupClipPathId)
 
-            val needsGroup = translate != null || scale != null || rotate != null
+            val needsGroup = translate != null || scale != null || rotate != null || hasClipPath
 
             if (needsGroup) {
                 output.appendLine("${indent}<group")
@@ -1450,6 +1566,10 @@ val currentStrokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
 
                 output.appendLine("${indent}>")
 
+                if (hasClipPath) {
+                    appendClipPath(output, groupClipPathId, indent + "    ")
+                }
+
                 val children = element.childNodes
                 for (i in 0 until children.length) {
                  walkSvgNode(
@@ -1465,6 +1585,7 @@ val currentStrokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
     currentOpacity,
     currentFillOpacity,
     currentStrokeOpacity,
+    currentClipPath,
     definitions,
     useDepth
 )
@@ -1488,6 +1609,7 @@ walkSvgNode(
     currentOpacity,
     currentFillOpacity,
     currentStrokeOpacity,
+    currentClipPath,
     definitions,
     useDepth
 )
@@ -1508,7 +1630,8 @@ walkSvgNode(
                 currentFillRule,
                 currentOpacity,
                 currentFillOpacity,
-                currentStrokeOpacity
+                currentStrokeOpacity,
+                currentClipPath
             )
         }
 
@@ -1526,7 +1649,8 @@ walkSvgNode(
                 currentFillRule,
                 currentOpacity,
                 currentFillOpacity,
-                currentStrokeOpacity
+                currentStrokeOpacity,
+                currentClipPath
             )
         }
 
@@ -1546,6 +1670,7 @@ walkSvgNode(
     currentOpacity,
     currentFillOpacity,
     currentStrokeOpacity,
+    currentClipPath,
     definitions,
     useDepth
 )
@@ -1568,6 +1693,7 @@ private fun appendUseElement(
     inheritedOpacity: String?,
     inheritedFillOpacity: String?,
     inheritedStrokeOpacity: String?,
+    inheritedClipPath: String?,
     definitions: Map<String, Element>,
     useDepth: Int
 ) {
@@ -1637,6 +1763,7 @@ private fun appendUseElement(
             inheritedOpacity,
             inheritedFillOpacity,
             inheritedStrokeOpacity,
+            inheritedClipPath,
             definitions,
             useDepth + 1
         )
@@ -1659,6 +1786,7 @@ private fun appendUseElement(
             inheritedOpacity,
             inheritedFillOpacity,
             inheritedStrokeOpacity,
+            inheritedClipPath,
             definitions,
             useDepth + 1
         )
@@ -1679,7 +1807,8 @@ private fun appendBasicShapePath(
     inheritedFillRule: String?,
     inheritedOpacity: String?,
     inheritedFillOpacity: String?,
-    inheritedStrokeOpacity: String?
+    inheritedStrokeOpacity: String?,
+    inheritedClipPath: String?
 ) {
     val d = basicShapeToPathData(element, tagName) ?: return
 
@@ -1697,6 +1826,7 @@ private fun appendBasicShapePath(
         inheritedOpacity,
         inheritedFillOpacity,
         inheritedStrokeOpacity,
+        inheritedClipPath,
         sourceTag = tagName
     )
 }
@@ -1713,7 +1843,8 @@ private fun appendElementPath(
     inheritedFillRule: String?,
     inheritedOpacity: String?,
     inheritedFillOpacity: String?,
-    inheritedStrokeOpacity: String?
+    inheritedStrokeOpacity: String?,
+    inheritedClipPath: String?
 ) {
     val d = element.getAttribute("d").trim()
     if (d.isBlank()) return
@@ -1732,6 +1863,7 @@ private fun appendElementPath(
         inheritedOpacity,
         inheritedFillOpacity,
         inheritedStrokeOpacity,
+        inheritedClipPath,
         sourceTag = null
     )
 }
@@ -1750,6 +1882,7 @@ private fun appendElementPathData(
     inheritedOpacity: String?,
     inheritedFillOpacity: String?,
     inheritedStrokeOpacity: String?,
+    inheritedClipPath: String?,
     sourceTag: String?
 ) {
     val style = element.getAttribute("style").ifBlank { null }
@@ -1786,6 +1919,12 @@ val strokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
     styleValue(style, "stroke-opacity") ?: inheritedStrokeOpacity ?: ""
 }
 
+val clipPathValue = element.getAttribute("clip-path").ifBlank {
+    styleValue(style, "clip-path") ?: inheritedClipPath ?: ""
+}
+val clipPathId = clipPathIdFromValue(clipPathValue)
+val hasClipPath = clipPathId != null && activeClipPathData.containsKey(clipPathId)
+
 val fillAlpha = resolveDrawableAlpha(inheritedOpacity, fillOpacity)
 val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
 
@@ -1797,7 +1936,7 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
     val scale = parseScale(pathTransform)
     val rotate = parseRotate(pathTransform)
 
-    val pathNeedsGroup = translate != null || scale != null || rotate != null
+    val pathNeedsGroup = translate != null || scale != null || rotate != null || hasClipPath
 
     if (pathNeedsGroup) {
         output.appendLine("${indent}<group")
@@ -1821,6 +1960,9 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
         }
 
         output.appendLine("${indent}>")
+        if (hasClipPath) {
+            appendClipPath(output, clipPathId, indent + "    ")
+        }
         if (sourceTag != null) {
             output.appendLine("${indent}    <!-- converted from <$sourceTag> -->")
         }
@@ -2312,6 +2454,10 @@ private fun walkVectorNode(canvas: Canvas, node: Node, strokeScale: Float) {
                 canvas.restore()
             }
 
+            "clip-path" -> {
+                applyClipPathElement(canvas, element)
+            }
+
             "path" -> {
                 drawPathElement(canvas, element, strokeScale)
             }
@@ -2324,6 +2470,17 @@ private fun walkVectorNode(canvas: Canvas, node: Node, strokeScale: Float) {
             }
         }
     }
+
+
+private fun applyClipPathElement(canvas: Canvas, element: Element) {
+    val pathData = element.getAttribute("android:pathData")
+    if (pathData.isBlank()) return
+
+    val path = androidx.core.graphics.PathParser
+        .createPathFromPathData(pathData)
+
+    canvas.clipPath(path)
+}
 
 private fun drawPathElement(
     canvas: Canvas,
