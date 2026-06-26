@@ -884,11 +884,13 @@ val vectorHeightDp =
         val endTag = "</vector>"
         val endIndex = result.indexOf(endTag)
 
-val finalXml = if (endIndex >= 0) {
+val rawFinalXml = if (endIndex >= 0) {
     result.substring(0, endIndex + endTag.length)
 } else {
     result
 }
+
+val finalXml = optimizeDuplicateClipPathGroups(rawFinalXml)
 
 val convertedPathCount = Regex("""<path\b""").findAll(finalXml).count()
 val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
@@ -1044,6 +1046,50 @@ private fun countConvertedBasicShapes(xml: String): Int {
     return Regex("""<!-- converted from <(rect|circle|ellipse|line|polyline|polygon)> -->""")
         .findAll(xml)
         .count()
+}
+
+private fun optimizeDuplicateClipPathGroups(xml: String): String {
+    fun reindentBlock(block: String, indent: String): String {
+        return block
+            .lines()
+            .joinToString("\n") { line ->
+                if (line.isBlank()) line else indent + line.trimStart()
+            }
+    }
+
+    val pattern = Regex(
+        """(?s)([ \t]*)<group\s*>\s*(<clip-path\s+android:pathData="([^"]+)"\s*/>)\s*(.*?)\s*\1</group>\s*\1<group\s*>\s*<clip-path\s+android:pathData="\3"\s*/>\s*(.*?)\s*\1</group>"""
+    )
+
+    var current = xml
+
+    while (true) {
+        val updated = pattern.replace(current) { match ->
+            val indent = match.groupValues[1]
+            val clipPath = match.groupValues[2]
+            val firstBody = match.groupValues[4].trimEnd()
+            val secondBody = match.groupValues[5].trim()
+
+            buildString {
+                appendLine("${indent}<group")
+                appendLine("${indent}>")
+                appendLine(reindentBlock(clipPath, "$indent    "))
+
+                if (firstBody.isNotBlank()) {
+                    appendLine(firstBody)
+                }
+
+                if (secondBody.isNotBlank()) {
+                    appendLine(secondBody)
+                }
+
+                append("${indent}</group>")
+            }
+        }
+
+        if (updated == current) return current
+        current = updated
+    }
 }
 
     private fun hasTag(svg: String, tagName: String): Boolean {
