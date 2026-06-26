@@ -108,7 +108,7 @@ val result = SvgToVectorConverter.convert(
         result.report.lines().count { it.startsWith("⚠") }
 
 val definitionPathCount =
-    Regex("""Definition paths skipped:\s*(\d+)""")
+    Regex("""Definition drawable elements available:\s*(\d+)""")
         .find(result.report)
         ?.groupValues
         ?.getOrNull(1)
@@ -729,7 +729,7 @@ batchGallery.addView(heading)
     append(result.fileName)
 
     if (result.definitionPathCount > 0) {
-        append("  (${result.definitionPathCount} defs skipped)")
+        append("  (${result.definitionPathCount} defs available)")
     }
 }
     textSize = 16f
@@ -817,7 +817,7 @@ val drawableValidPathCount = Regex("""<path\b[^>]*>""")
         !d.isNullOrBlank()
     }
 
-val definitionPathCount = validPathCount - drawableValidPathCount
+val definitionDrawableElementCount = countDefinitionDrawableElements(svg)
 val emptyPathCount = pathCount - validPathCount
 val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
 val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
@@ -931,7 +931,7 @@ appendLine()
     appendLine("Conversion Statistics")
     appendLine()
 if (useCount > 0) {
-    appendLine("✓ Paths converted: $convertedOriginalPathCount")
+    appendLine("✓ Drawable paths converted: $convertedOriginalPathCount")
     appendLine("✓ Use references expanded: $useCount")
 } else {
     appendLine("✓ Paths converted: $convertedOriginalPathCount / $drawableValidPathCount")
@@ -944,8 +944,8 @@ if (clipPathData.isNotEmpty()) {
     appendLine("✓ Clip paths converted: ${clipPathData.size}")
 }
 
-if (definitionPathCount > 0) {
-    appendLine(if (useCount > 0) "✓ Definition paths available: $definitionPathCount" else "✓ Definition paths skipped: $definitionPathCount")
+if (definitionDrawableElementCount > 0) {
+    appendLine("✓ Definition drawable elements available: $definitionDrawableElementCount")
 }
     appendLine("✓ Groups generated: $generatedGroupCount")
     appendLine("✓ Warnings: $warningCount")
@@ -981,8 +981,8 @@ if (gradientFallbackColors.isNotEmpty()) {
 if (clipPathData.isNotEmpty()) {
     appendLine("✓ Clip paths converted: ${clipPathData.size}")
 }
-if (definitionPathCount > 0) {
-    appendLine(if (useCount > 0) "✓ Definition paths available: $definitionPathCount" else "✓ Definition paths skipped: $definitionPathCount")
+if (definitionDrawableElementCount > 0) {
+    appendLine("✓ Definition drawable elements available: $definitionDrawableElementCount")
 }
     appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
@@ -1102,6 +1102,84 @@ private fun stripSvgComments(xml: String): String {
         """<!--.*?-->""",
         RegexOption.DOT_MATCHES_ALL
     ).replace(xml, "")
+}
+
+
+private fun countDefinitionDrawableElements(svg: String): Int {
+    val basicShapeTags = setOf("rect", "circle", "ellipse", "line", "polyline", "polygon")
+    var count = 0
+
+    fun countDrawableElement(element: Element) {
+        val tag = element.tagName.substringAfter(":").lowercase()
+
+        when (tag) {
+            "path" -> {
+                if (element.getAttribute("d").trim().isNotBlank()) {
+                    count++
+                }
+            }
+            in basicShapeTags -> {
+                if (basicShapeToPathData(element, tag) != null) {
+                    count++
+                }
+            }
+        }
+
+        val children = element.childNodes
+        for (i in 0 until children.length) {
+            val child = children.item(i)
+            if (child.nodeType == Node.ELEMENT_NODE) {
+                countDrawableElement(child as Element)
+            }
+        }
+    }
+
+    return try {
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            isIgnoringComments = true
+        }
+
+        val document = factory
+            .newDocumentBuilder()
+            .parse(InputSource(StringReader(svg)))
+
+        val defsNodes = document.getElementsByTagName("defs")
+
+        for (i in 0 until defsNodes.length) {
+            val defs = defsNodes.item(i)
+            val children = defs.childNodes
+
+            for (j in 0 until children.length) {
+                val child = children.item(j)
+                if (child.nodeType == Node.ELEMENT_NODE) {
+                    countDrawableElement(child as Element)
+                }
+            }
+        }
+
+        count
+    } catch (e: Exception) {
+        val defsBlocks = Regex(
+            """<defs\b[^>]*>.*?</defs>""",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        ).findAll(svg)
+
+        defsBlocks.sumOf { block ->
+            val value = block.value
+            val pathCount = Regex("""<path\b[^>]*\bd\s*=\s*["'][^"']+["']""", RegexOption.IGNORE_CASE)
+                .findAll(value)
+                .count()
+
+            val shapeCount = basicShapeTags.sumOf { tag ->
+                Regex("""<\s*$tag\b[^>]*>""", RegexOption.IGNORE_CASE)
+                    .findAll(value)
+                    .count()
+            }
+
+            pathCount + shapeCount
+        }
+    }
 }
 
 private fun stripDefs(xml: String): String {
