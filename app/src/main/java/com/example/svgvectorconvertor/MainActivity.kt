@@ -788,6 +788,7 @@ val startTime = System.nanoTime()
 
 val translateCount = Regex("""translate\(""").findAll(svg).count()
 val scaleCount = Regex("""scale\(""").findAll(svg).count()
+val rotateCount = Regex("""rotate\(""").findAll(svg).count()
 val matrixCount = Regex("""matrix\(""").findAll(svg).count()
 
 val pathCount = Regex("""<path\b[^>]*>""").findAll(svg).count()
@@ -956,6 +957,7 @@ if (definitionPathCount > 0) {
 
     appendLine("✓ Translate transforms: $translateCount")
     appendLine("✓ Scale transforms: $scaleCount")
+    appendLine("✓ Rotate transforms: $rotateCount")
 
 if (matrixCount > 0) {
     appendLine("⚠ Unsupported matrix transforms: $matrixCount")
@@ -1118,8 +1120,9 @@ val currentStrokeWidth = element.getAttribute("stroke-width").ifBlank {
             val transform = element.getAttribute("transform")
             val translate = parseTranslate(transform)
             val scale = parseScale(transform)
+            val rotate = parseRotate(transform)
 
-            val needsGroup = translate != null || scale != null
+            val needsGroup = translate != null || scale != null || rotate != null
 
             if (needsGroup) {
                 output.appendLine("${indent}<group")
@@ -1132,6 +1135,14 @@ val currentStrokeWidth = element.getAttribute("stroke-width").ifBlank {
                 if (scale != null) {
                     output.appendLine("""${indent}    android:scaleX="${scale.first}"""")
                     output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
+                }
+
+                if (rotate != null) {
+                    output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
+                    if (rotate.pivotX != null && rotate.pivotY != null) {
+                        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
+                        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
+                    }
                 }
 
                 output.appendLine("${indent}>")
@@ -1281,8 +1292,9 @@ val strokeWidth = element.getAttribute("stroke-width").ifBlank {
     val pathTransform = element.getAttribute("transform")
     val translate = parseTranslate(pathTransform)
     val scale = parseScale(pathTransform)
+    val rotate = parseRotate(pathTransform)
 
-    val pathNeedsGroup = translate != null || scale != null
+    val pathNeedsGroup = translate != null || scale != null || rotate != null
 
     if (pathNeedsGroup) {
         output.appendLine("${indent}<group")
@@ -1295,6 +1307,14 @@ val strokeWidth = element.getAttribute("stroke-width").ifBlank {
         if (scale != null) {
             output.appendLine("""${indent}    android:scaleX="${scale.first}"""")
             output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
+        }
+
+        if (rotate != null) {
+            output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
+            if (rotate.pivotX != null && rotate.pivotY != null) {
+                output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
+                output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
+            }
         }
 
         output.appendLine("${indent}>")
@@ -1528,6 +1548,32 @@ private fun appendPath(
             ?.trim()
     }
 
+    private data class RotateTransform(
+        val degrees: Float,
+        val pivotX: Float?,
+        val pivotY: Float?
+    )
+
+    private fun parseRotate(transform: String?): RotateTransform? {
+        if (transform == null) return null
+
+        val match = Regex("""rotate\(([^)]*)\)""")
+            .find(transform)
+            ?: return null
+
+        val nums = match.groupValues[1]
+            .split(Regex("[,\\s]+"))
+            .filter { it.isNotBlank() }
+            .mapNotNull { it.toFloatOrNull() }
+
+        if (nums.isEmpty()) return null
+
+        val pivotX = nums.getOrNull(1)
+        val pivotY = nums.getOrNull(2)
+
+        return RotateTransform(nums[0], pivotX, pivotY)
+    }
+
     private fun parseTranslate(transform: String?): Pair<Float, Float>? {
         if (transform == null) return null
 
@@ -1617,8 +1663,17 @@ private fun walkVectorNode(canvas: Canvas, node: Node, strokeScale: Float) {
                     element.getAttribute("android:scaleX").toFloatOrNull() ?: 1f
                 val scaleY =
                     element.getAttribute("android:scaleY").toFloatOrNull() ?: 1f
+                val rotation =
+                    element.getAttribute("android:rotation").toFloatOrNull() ?: 0f
+                val pivotX =
+                    element.getAttribute("android:pivotX").toFloatOrNull() ?: 0f
+                val pivotY =
+                    element.getAttribute("android:pivotY").toFloatOrNull() ?: 0f
 
                 canvas.translate(translateX, translateY)
+                if (rotation != 0f) {
+                    canvas.rotate(rotation, pivotX, pivotY)
+                }
                 canvas.scale(scaleX, scaleY)
 
                 val children = element.childNodes
