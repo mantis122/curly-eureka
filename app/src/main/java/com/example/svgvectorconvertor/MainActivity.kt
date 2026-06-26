@@ -1831,7 +1831,7 @@ private fun drawPathElement(
                     Color.TRANSPARENT
                 }
 
-this.strokeWidth = strokeWidth / strokeScale
+this.strokeWidth = strokeWidth
                 strokeCap = parseStrokeCap(element.getAttribute("android:strokeLineCap"))
                 strokeJoin = parseStrokeJoin(element.getAttribute("android:strokeLineJoin"))
             }
