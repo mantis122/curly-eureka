@@ -786,10 +786,12 @@ fun convert(
 
 val startTime = System.nanoTime()
 
-val translateCount = Regex("""translate\(""").findAll(svg).count()
-val scaleCount = Regex("""scale\(""").findAll(svg).count()
-val rotateCount = Regex("""rotate\(""").findAll(svg).count()
-val matrixCount = Regex("""matrix\(""").findAll(svg).count()
+val svgForTransformStats = stripSvgComments(svg)
+
+val translateCount = Regex("""translate\(""").findAll(svgForTransformStats).count()
+val scaleCount = Regex("""scale\(""").findAll(svgForTransformStats).count()
+val rotateCount = Regex("""rotate\(""").findAll(svgForTransformStats).count()
+val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
 
 val pathCount = Regex("""<path\b[^>]*>""").findAll(svg).count()
 val validPathCount = Regex("""<path\b[^>]*>""")
@@ -1012,6 +1014,13 @@ private fun countConvertedBasicShapes(xml: String): Int {
         return Regex("""<\s*$tagName\b""", RegexOption.IGNORE_CASE)
             .containsMatchIn(svg)
     }
+
+private fun stripSvgComments(xml: String): String {
+    return Regex(
+        """<!--.*?-->""",
+        RegexOption.DOT_MATCHES_ALL
+    ).replace(xml, "")
+}
 
 private fun stripDefs(xml: String): String {
     return Regex(
