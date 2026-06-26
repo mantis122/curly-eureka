@@ -1326,14 +1326,16 @@ private fun basicShapeToPathData(element: Element, tagName: String): String? {
     }?.takeIf { it.isNotBlank() }
 }
 
-private fun rectToPath(el: Element): String {
-    val x = parseFloatAttr(el, "x")
-    val y = parseFloatAttr(el, "y")
-    val w = parseFloatAttr(el, "width")
-    val h = parseFloatAttr(el, "height")
+private fun rectToPathData(element: Element): String {
+    val x = floatAttr(element, "x") ?: 0f
+    val y = floatAttr(element, "y") ?: 0f
+    val w = floatAttr(element, "width") ?: return ""
+    val h = floatAttr(element, "height") ?: return ""
 
-    var rx = parseFloatAttr(el, "rx", 0f)
-    var ry = parseFloatAttr(el, "ry", 0f)
+    if (w <= 0f || h <= 0f) return ""
+
+    var rx = floatAttr(element, "rx") ?: 0f
+    var ry = floatAttr(element, "ry") ?: 0f
 
     // SVG rule: if only rx or ry is provided, the missing one uses the same value.
     if (rx > 0f && ry == 0f) ry = rx
@@ -1343,7 +1345,7 @@ private fun rectToPath(el: Element): String {
     rx = rx.coerceAtMost(w / 2f)
     ry = ry.coerceAtMost(h / 2f)
 
-    // Normal sharp rectangle
+    // Normal sharp rectangle.
     if (rx <= 0f || ry <= 0f) {
         return "M $x,$y L ${x + w},$y L ${x + w},${y + h} L $x,${y + h} Z"
     }
@@ -1352,14 +1354,14 @@ private fun rectToPath(el: Element): String {
     val bottom = y + h
 
     return "M ${x + rx},$y " +
-            "L ${right - rx},$y " +
-            "A $rx,$ry 0,0,1 $right,${y + ry} " +
-            "L $right,${bottom - ry} " +
-            "A $rx,$ry 0,0,1 ${right - rx},$bottom " +
-            "L ${x + rx},$bottom " +
-            "A $rx,$ry 0,0,1 $x,${bottom - ry} " +
-            "L $x,${y + ry} " +
-            "A $rx,$ry 0,0,1 ${x + rx},$y Z"
+        "L ${right - rx},$y " +
+        "A $rx,$ry 0,0,1 $right,${y + ry} " +
+        "L $right,${bottom - ry} " +
+        "A $rx,$ry 0,0,1 ${right - rx},$bottom " +
+        "L ${x + rx},$bottom " +
+        "A $rx,$ry 0,0,1 $x,${bottom - ry} " +
+        "L $x,${y + ry} " +
+        "A $rx,$ry 0,0,1 ${x + rx},$y Z"
 }
 
 private fun circleToPathData(element: Element): String {
