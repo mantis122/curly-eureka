@@ -1106,7 +1106,10 @@ private fun walkSvgNode(
     inheritedStrokeWidth: String? = null,
     inheritedStrokeLineCap: String? = null,
     inheritedStrokeLineJoin: String? = null,
-    inheritedFillRule: String? = null
+    inheritedFillRule: String? = null,
+    inheritedOpacity: String? = null,
+    inheritedFillOpacity: String? = null,
+    inheritedStrokeOpacity: String? = null
 ) {
     if (node.nodeType != Node.ELEMENT_NODE) return
 
@@ -1135,6 +1138,21 @@ val currentStrokeLineJoin = element.getAttribute("stroke-linejoin").ifBlank {
 
 val currentFillRule = element.getAttribute("fill-rule").ifBlank {
     styleValue(style, "fill-rule") ?: inheritedFillRule ?: ""
+}
+
+val currentOpacity = combineAlpha(
+    inheritedOpacity,
+    element.getAttribute("opacity").ifBlank {
+        styleValue(style, "opacity") ?: ""
+    }
+)
+
+val currentFillOpacity = element.getAttribute("fill-opacity").ifBlank {
+    styleValue(style, "fill-opacity") ?: inheritedFillOpacity ?: ""
+}
+
+val currentStrokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
+    styleValue(style, "stroke-opacity") ?: inheritedStrokeOpacity ?: ""
 }
 
    val tagName = element.tagName.substringAfter(":").lowercase()
@@ -1182,7 +1200,10 @@ val currentFillRule = element.getAttribute("fill-rule").ifBlank {
     currentStrokeWidth,
     currentStrokeLineCap,
     currentStrokeLineJoin,
-    currentFillRule
+    currentFillRule,
+    currentOpacity,
+    currentFillOpacity,
+    currentStrokeOpacity
 )
                 }
 
@@ -1200,7 +1221,10 @@ walkSvgNode(
     currentStrokeWidth,
     currentStrokeLineCap,
     currentStrokeLineJoin,
-    currentFillRule
+    currentFillRule,
+    currentOpacity,
+    currentFillOpacity,
+    currentStrokeOpacity
 )
                 }
             }
@@ -1216,7 +1240,10 @@ walkSvgNode(
                 currentStrokeWidth,
                 currentStrokeLineCap,
                 currentStrokeLineJoin,
-                currentFillRule
+                currentFillRule,
+                currentOpacity,
+                currentFillOpacity,
+                currentStrokeOpacity
             )
         }
 
@@ -1231,7 +1258,10 @@ walkSvgNode(
                 currentStrokeWidth,
                 currentStrokeLineCap,
                 currentStrokeLineJoin,
-                currentFillRule
+                currentFillRule,
+                currentOpacity,
+                currentFillOpacity,
+                currentStrokeOpacity
             )
         }
 
@@ -1247,7 +1277,10 @@ walkSvgNode(
     currentStrokeWidth,
     currentStrokeLineCap,
     currentStrokeLineJoin,
-    currentFillRule
+    currentFillRule,
+    currentOpacity,
+    currentFillOpacity,
+    currentStrokeOpacity
 )
             }
         }
@@ -1265,7 +1298,10 @@ private fun appendBasicShapePath(
     inheritedStrokeWidth: String?,
     inheritedStrokeLineCap: String?,
     inheritedStrokeLineJoin: String?,
-    inheritedFillRule: String?
+    inheritedFillRule: String?,
+    inheritedOpacity: String?,
+    inheritedFillOpacity: String?,
+    inheritedStrokeOpacity: String?
 ) {
     val d = basicShapeToPathData(element, tagName) ?: return
 
@@ -1280,6 +1316,9 @@ private fun appendBasicShapePath(
         inheritedStrokeLineCap,
         inheritedStrokeLineJoin,
         inheritedFillRule,
+        inheritedOpacity,
+        inheritedFillOpacity,
+        inheritedStrokeOpacity,
         sourceTag = tagName
     )
 }
@@ -1293,7 +1332,10 @@ private fun appendElementPath(
     inheritedStrokeWidth: String?,
     inheritedStrokeLineCap: String?,
     inheritedStrokeLineJoin: String?,
-    inheritedFillRule: String?
+    inheritedFillRule: String?,
+    inheritedOpacity: String?,
+    inheritedFillOpacity: String?,
+    inheritedStrokeOpacity: String?
 ) {
     val d = element.getAttribute("d").trim()
     if (d.isBlank()) return
@@ -1309,6 +1351,9 @@ private fun appendElementPath(
         inheritedStrokeLineCap,
         inheritedStrokeLineJoin,
         inheritedFillRule,
+        inheritedOpacity,
+        inheritedFillOpacity,
+        inheritedStrokeOpacity,
         sourceTag = null
     )
 }
@@ -1324,6 +1369,9 @@ private fun appendElementPathData(
     inheritedStrokeLineCap: String?,
     inheritedStrokeLineJoin: String?,
     inheritedFillRule: String?,
+    inheritedOpacity: String?,
+    inheritedFillOpacity: String?,
+    inheritedStrokeOpacity: String?,
     sourceTag: String?
 ) {
     val style = element.getAttribute("style").ifBlank { null }
@@ -1351,6 +1399,17 @@ val strokeLineJoin = element.getAttribute("stroke-linejoin").ifBlank {
 val fillRule = element.getAttribute("fill-rule").ifBlank {
     styleValue(style, "fill-rule") ?: inheritedFillRule ?: ""
 }
+
+val fillOpacity = element.getAttribute("fill-opacity").ifBlank {
+    styleValue(style, "fill-opacity") ?: inheritedFillOpacity ?: ""
+}
+
+val strokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
+    styleValue(style, "stroke-opacity") ?: inheritedStrokeOpacity ?: ""
+}
+
+val fillAlpha = resolveDrawableAlpha(inheritedOpacity, fillOpacity)
+val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
 
     val fill = safeFillColor(rawFill)
     val stroke = safeStrokeColor(rawStroke)
@@ -1396,6 +1455,8 @@ val fillRule = element.getAttribute("fill-rule").ifBlank {
             strokeLineCap.ifBlank { null },
             strokeLineJoin.ifBlank { null },
             fillRule.ifBlank { null },
+            fillAlpha,
+            strokeAlpha,
             indent + "    "
         )
         output.appendLine("${indent}</group>")
@@ -1412,6 +1473,8 @@ val fillRule = element.getAttribute("fill-rule").ifBlank {
             strokeLineCap.ifBlank { null },
             strokeLineJoin.ifBlank { null },
             fillRule.ifBlank { null },
+            fillAlpha,
+            strokeAlpha,
             indent
         )
     }
@@ -1562,6 +1625,15 @@ private fun appendFlatPathsFallback(
             val strokeLineJoin = attr(tag, "stroke-linejoin")
                 ?: styleValue(attr(tag, "style"), "stroke-linejoin")
 
+            val opacity = attr(tag, "opacity")
+                ?: styleValue(attr(tag, "style"), "opacity")
+
+            val fillOpacity = attr(tag, "fill-opacity")
+                ?: styleValue(attr(tag, "style"), "fill-opacity")
+
+            val strokeOpacity = attr(tag, "stroke-opacity")
+                ?: styleValue(attr(tag, "style"), "stroke-opacity")
+
             val fillRule = attr(tag, "fill-rule")
                 ?: styleValue(attr(tag, "style"), "fill-rule")
 
@@ -1574,6 +1646,8 @@ private fun appendFlatPathsFallback(
                 strokeLineCap,
                 strokeLineJoin,
                 fillRule,
+                resolveDrawableAlpha(opacity, fillOpacity),
+                resolveDrawableAlpha(opacity, strokeOpacity),
                 indent
             )
 
@@ -1590,6 +1664,8 @@ private fun appendPath(
     strokeLineCap: String?,
     strokeLineJoin: String?,
     fillRule: String?,
+    fillAlpha: String?,
+    strokeAlpha: String?,
     indent: String
 ) {
     output.appendLine("${indent}<path")
@@ -1597,6 +1673,9 @@ private fun appendPath(
 
     if (fill != "@android:color/transparent") {
         output.appendLine("""${indent}    android:fillColor="$fill"""")
+        if (fillAlpha != null) {
+            output.appendLine("""${indent}    android:fillAlpha="$fillAlpha"""")
+        }
     } else {
         output.appendLine("""${indent}    android:fillColor="@android:color/transparent"""")
     }
@@ -1609,6 +1688,9 @@ private fun appendPath(
     if (stroke != null) {
         output.appendLine("""${indent}    android:strokeColor="$stroke"""")
         output.appendLine("""${indent}    android:strokeWidth="${strokeWidth ?: "1"}"""")
+        if (strokeAlpha != null) {
+            output.appendLine("""${indent}    android:strokeAlpha="$strokeAlpha"""")
+        }
 
         when (strokeLineCap?.trim()?.lowercase()) {
             "butt" -> output.appendLine("""${indent}    android:strokeLineCap="butt"""")
@@ -1726,6 +1808,44 @@ private fun appendPath(
         return Pair(nums[0], nums.getOrNull(1) ?: nums[0])
     }
 
+
+    private fun resolveDrawableAlpha(opacity: String?, channelOpacity: String?): String? {
+        return combineAlpha(opacity, channelOpacity)
+    }
+
+    private fun combineAlpha(baseAlpha: String?, localAlpha: String?): String? {
+        val base = parseSvgAlpha(baseAlpha)
+        val local = parseSvgAlpha(localAlpha)
+
+        val combined = when {
+            base != null && local != null -> base * local
+            base != null -> base
+            local != null -> local
+            else -> return null
+        }.coerceIn(0f, 1f)
+
+        if (combined >= 0.999f) return null
+
+        return java.lang.String.format(java.util.Locale.US, "%.3f", combined)
+            .trimEnd('0')
+            .trimEnd('.')
+    }
+
+    private fun parseSvgAlpha(value: String?): Float? {
+        val raw = value
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        val parsed = if (raw.endsWith("%")) {
+            raw.removeSuffix("%").trim().toFloatOrNull()?.div(100f)
+        } else {
+            raw.toFloatOrNull()
+        }
+
+        return parsed?.coerceIn(0f, 1f)
+    }
+
     private fun escapeXml(value: String): String {
         return value
             .replace("&", "&amp;")
@@ -1833,6 +1953,8 @@ private fun drawPathElement(
         val strokeWidth = element.getAttribute("android:strokeWidth")
             .toFloatOrNull()
             ?: 1f
+        val fillAlpha = parsePreviewAlpha(element.getAttribute("android:fillAlpha"))
+        val strokeAlpha = parsePreviewAlpha(element.getAttribute("android:strokeAlpha"))
 
         if (
             fillColor.isNotBlank() &&
@@ -1841,11 +1963,13 @@ private fun drawPathElement(
         ) {
             val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.FILL
-                color = try {
+                val parsedColor = try {
                     Color.parseColor(fillColor)
                 } catch (e: Exception) {
                     Color.TRANSPARENT
                 }
+                color = parsedColor
+                alpha = (Color.alpha(parsedColor) * fillAlpha).toInt().coerceIn(0, 255)
             }
 
             canvas.drawPath(path, fillPaint)
@@ -1858,11 +1982,13 @@ private fun drawPathElement(
         ) {
             val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
-                color = try {
+                val parsedColor = try {
                     Color.parseColor(strokeColor)
                 } catch (e: Exception) {
                     Color.TRANSPARENT
                 }
+                color = parsedColor
+                alpha = (Color.alpha(parsedColor) * strokeAlpha).toInt().coerceIn(0, 255)
 
 this.strokeWidth = strokeWidth
                 strokeCap = parseStrokeCap(element.getAttribute("android:strokeLineCap"))
@@ -1871,6 +1997,15 @@ this.strokeWidth = strokeWidth
 
             canvas.drawPath(path, strokePaint)
         }
+    }
+
+    private fun parsePreviewAlpha(value: String?): Float {
+        return value
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.toFloatOrNull()
+            ?.coerceIn(0f, 1f)
+            ?: 1f
     }
 
     private fun parsePathFillType(value: String?): Path.FillType {
