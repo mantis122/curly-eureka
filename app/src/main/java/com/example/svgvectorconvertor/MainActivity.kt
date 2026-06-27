@@ -822,6 +822,24 @@ val emptyPathCount = pathCount - validPathCount
 val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
 val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
 val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
+val styleAttributeCount = Regex("""\bstyle\s*=""", RegexOption.IGNORE_CASE)
+    .findAll(svgForTransformStats)
+    .count()
+val presentationStyleAttributeCount = listOf(
+    "fill",
+    "stroke",
+    "stroke-width",
+    "stroke-linecap",
+    "stroke-linejoin",
+    "fill-rule",
+    "opacity",
+    "fill-opacity",
+    "stroke-opacity"
+).sumOf { name ->
+    Regex("""\b$name\s*=""", RegexOption.IGNORE_CASE)
+        .findAll(svgForTransformStats)
+        .count()
+}
 
 val basicShapeTags = listOf("rect", "circle", "ellipse", "line", "polyline", "polygon")
 val basicShapeCount = basicShapeTags.sumOf { tag ->
@@ -948,6 +966,8 @@ appendLine()
     if (clipPathData.isNotEmpty()) {
         appendLine("✓ Clip paths converted: ${clipPathData.size}")
     }
+    appendLine("✓ Style attributes parsed: $styleAttributeCount")
+    appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
     appendLine("✓ Groups generated: $generatedGroupCount")
     appendLine("✓ Warnings: $warningCount")
     appendLine()
@@ -990,6 +1010,8 @@ appendLine()
     if (clipPathData.isNotEmpty()) {
         appendLine("✓ Clip paths converted: ${clipPathData.size}")
     }
+    appendLine("✓ Style attributes parsed: $styleAttributeCount")
+    appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
 
     appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
@@ -1231,16 +1253,59 @@ private fun fallbackColorForPaint(value: String?): String? {
     return activeGradientFallbackColors[id]
 }
 
+private fun normalizedAndroidColor(value: String?): String? {
+    val v = value?.trim() ?: return null
+
+    if (isValidAndroidColor(v) && v != "none" && v != "currentColor") return v
+
+    if (v.equals("currentColor", ignoreCase = true)) return "#000000"
+
+    svgNamedColor(v)?.let { return it }
+
+    parseRgbColor(v)?.let { rgb ->
+        return "#%02X%02X%02X".format(rgb.first, rgb.second, rgb.third)
+    }
+
+    return null
+}
+
+private fun svgNamedColor(value: String): String? {
+    return when (value.trim().lowercase()) {
+        "black" -> "#000000"
+        "white" -> "#FFFFFF"
+        "red" -> "#FF0000"
+        "green" -> "#008000"
+        "blue" -> "#0000FF"
+        "yellow" -> "#FFFF00"
+        "cyan", "aqua" -> "#00FFFF"
+        "magenta", "fuchsia" -> "#FF00FF"
+        "gray", "grey" -> "#808080"
+        "darkgray", "darkgrey" -> "#A9A9A9"
+        "lightgray", "lightgrey" -> "#D3D3D3"
+        "orange" -> "#FFA500"
+        "purple" -> "#800080"
+        "brown" -> "#A52A2A"
+        "pink" -> "#FFC0CB"
+        "lime" -> "#00FF00"
+        "navy" -> "#000080"
+        "teal" -> "#008080"
+        "olive" -> "#808000"
+        "maroon" -> "#800000"
+        "silver" -> "#C0C0C0"
+        "transparent" -> "#00000000"
+        else -> null
+    }
+}
+
 private fun safeFillColor(value: String?): String {
     val v = value?.trim()
 
     return when {
         v.isNullOrBlank() -> "#000000"
-        v == "none" -> "@android:color/transparent"
-        v == "currentColor" -> "#000000"
+        v.equals("none", ignoreCase = true) -> "@android:color/transparent"
         fallbackColorForPaint(v) != null -> fallbackColorForPaint(v)!!
         isUnsupportedPaint(v) -> "@android:color/transparent"
-        isValidAndroidColor(v) -> v
+        normalizedAndroidColor(v) != null -> normalizedAndroidColor(v)!!
         else -> "@android:color/transparent"
     }
 }
@@ -1250,11 +1315,10 @@ private fun safeStrokeColor(value: String?): String? {
 
     return when {
         v.isNullOrBlank() -> null
-        v == "none" -> null
-        v == "currentColor" -> "#000000"
+        v.equals("none", ignoreCase = true) -> null
         fallbackColorForPaint(v) != null -> fallbackColorForPaint(v)
         isUnsupportedPaint(v) -> null
-        isValidAndroidColor(v) -> v
+        normalizedAndroidColor(v) != null -> normalizedAndroidColor(v)
         else -> null
     }
 }
@@ -1690,48 +1754,38 @@ private fun walkSvgNode(
     val element = node as Element
 val style = element.getAttribute("style").ifBlank { null }
 
-val currentFill = element.getAttribute("fill").ifBlank {
-    styleValue(style, "fill") ?: inheritedFill ?: ""
-}
+val currentFill = styleValue(style, "fill")
+    ?: element.getAttribute("fill").ifBlank { inheritedFill ?: "" }
 
-val currentStroke = element.getAttribute("stroke").ifBlank {
-    styleValue(style, "stroke") ?: inheritedStroke ?: ""
-}
+val currentStroke = styleValue(style, "stroke")
+    ?: element.getAttribute("stroke").ifBlank { inheritedStroke ?: "" }
 
-val currentStrokeWidth = element.getAttribute("stroke-width").ifBlank {
-    styleValue(style, "stroke-width") ?: inheritedStrokeWidth ?: ""
-}
+val currentStrokeWidth = styleValue(style, "stroke-width")
+    ?: element.getAttribute("stroke-width").ifBlank { inheritedStrokeWidth ?: "" }
 
-val currentStrokeLineCap = element.getAttribute("stroke-linecap").ifBlank {
-    styleValue(style, "stroke-linecap") ?: inheritedStrokeLineCap ?: ""
-}
+val currentStrokeLineCap = styleValue(style, "stroke-linecap")
+    ?: element.getAttribute("stroke-linecap").ifBlank { inheritedStrokeLineCap ?: "" }
 
-val currentStrokeLineJoin = element.getAttribute("stroke-linejoin").ifBlank {
-    styleValue(style, "stroke-linejoin") ?: inheritedStrokeLineJoin ?: ""
-}
+val currentStrokeLineJoin = styleValue(style, "stroke-linejoin")
+    ?: element.getAttribute("stroke-linejoin").ifBlank { inheritedStrokeLineJoin ?: "" }
 
-val currentFillRule = element.getAttribute("fill-rule").ifBlank {
-    styleValue(style, "fill-rule") ?: inheritedFillRule ?: ""
-}
+val currentFillRule = styleValue(style, "fill-rule")
+    ?: element.getAttribute("fill-rule").ifBlank { inheritedFillRule ?: "" }
 
 val currentOpacity = combineAlpha(
     inheritedOpacity,
-    element.getAttribute("opacity").ifBlank {
-        styleValue(style, "opacity") ?: ""
-    }
+    styleValue(style, "opacity")
+        ?: element.getAttribute("opacity").ifBlank { "" }
 )
 
-val currentFillOpacity = element.getAttribute("fill-opacity").ifBlank {
-    styleValue(style, "fill-opacity") ?: inheritedFillOpacity ?: ""
-}
+val currentFillOpacity = styleValue(style, "fill-opacity")
+    ?: element.getAttribute("fill-opacity").ifBlank { inheritedFillOpacity ?: "" }
 
-val currentStrokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
-    styleValue(style, "stroke-opacity") ?: inheritedStrokeOpacity ?: ""
-}
+val currentStrokeOpacity = styleValue(style, "stroke-opacity")
+    ?: element.getAttribute("stroke-opacity").ifBlank { inheritedStrokeOpacity ?: "" }
 
-val currentClipPath = element.getAttribute("clip-path").ifBlank {
-    styleValue(style, "clip-path") ?: inheritedClipPath ?: ""
-}
+val currentClipPath = styleValue(style, "clip-path")
+    ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
 
    val tagName = element.tagName.substringAfter(":").lowercase()
 
@@ -2169,41 +2223,32 @@ private fun appendElementPathData(
 ) {
     val style = element.getAttribute("style").ifBlank { null }
 
-val rawFill = element.getAttribute("fill").ifBlank {
-    styleValue(style, "fill") ?: inheritedFill ?: "none"
-}
+val rawFill = styleValue(style, "fill")
+    ?: element.getAttribute("fill").ifBlank { inheritedFill ?: "#000000" }
 
-val rawStroke = element.getAttribute("stroke").ifBlank {
-    styleValue(style, "stroke") ?: inheritedStroke ?: ""
-}
+val rawStroke = styleValue(style, "stroke")
+    ?: element.getAttribute("stroke").ifBlank { inheritedStroke ?: "" }
 
-val strokeWidth = element.getAttribute("stroke-width").ifBlank {
-    styleValue(style, "stroke-width") ?: inheritedStrokeWidth ?: ""
-}
+val strokeWidth = styleValue(style, "stroke-width")
+    ?: element.getAttribute("stroke-width").ifBlank { inheritedStrokeWidth ?: "" }
 
-val strokeLineCap = element.getAttribute("stroke-linecap").ifBlank {
-    styleValue(style, "stroke-linecap") ?: inheritedStrokeLineCap ?: ""
-}
+val strokeLineCap = styleValue(style, "stroke-linecap")
+    ?: element.getAttribute("stroke-linecap").ifBlank { inheritedStrokeLineCap ?: "" }
 
-val strokeLineJoin = element.getAttribute("stroke-linejoin").ifBlank {
-    styleValue(style, "stroke-linejoin") ?: inheritedStrokeLineJoin ?: ""
-}
+val strokeLineJoin = styleValue(style, "stroke-linejoin")
+    ?: element.getAttribute("stroke-linejoin").ifBlank { inheritedStrokeLineJoin ?: "" }
 
-val fillRule = element.getAttribute("fill-rule").ifBlank {
-    styleValue(style, "fill-rule") ?: inheritedFillRule ?: ""
-}
+val fillRule = styleValue(style, "fill-rule")
+    ?: element.getAttribute("fill-rule").ifBlank { inheritedFillRule ?: "" }
 
-val fillOpacity = element.getAttribute("fill-opacity").ifBlank {
-    styleValue(style, "fill-opacity") ?: inheritedFillOpacity ?: ""
-}
+val fillOpacity = styleValue(style, "fill-opacity")
+    ?: element.getAttribute("fill-opacity").ifBlank { inheritedFillOpacity ?: "" }
 
-val strokeOpacity = element.getAttribute("stroke-opacity").ifBlank {
-    styleValue(style, "stroke-opacity") ?: inheritedStrokeOpacity ?: ""
-}
+val strokeOpacity = styleValue(style, "stroke-opacity")
+    ?: element.getAttribute("stroke-opacity").ifBlank { inheritedStrokeOpacity ?: "" }
 
-val clipPathValue = element.getAttribute("clip-path").ifBlank {
-    styleValue(style, "clip-path") ?: inheritedClipPath ?: ""
-}
+val clipPathValue = styleValue(style, "clip-path")
+    ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
 val clipPathId = clipPathIdFromValue(clipPathValue)
 val hasClipPath = clipPathId != null && clipPathId != activeClipPathId && activeClipPathData.containsKey(clipPathId)
 
@@ -2426,32 +2471,32 @@ private fun appendFlatPathsFallback(
 
             if (d.isBlank()) return@forEach
 
-            val rawFill = attr(tag, "fill")
-                ?: styleValue(attr(tag, "style"), "fill")
+            val rawFill = styleValue(attr(tag, "style"), "fill")
+                ?: attr(tag, "fill")
 
-            val rawStroke = attr(tag, "stroke")
-                ?: styleValue(attr(tag, "style"), "stroke")
+            val rawStroke = styleValue(attr(tag, "style"), "stroke")
+                ?: attr(tag, "stroke")
 
-            val strokeWidth = attr(tag, "stroke-width")
-                ?: styleValue(attr(tag, "style"), "stroke-width")
+            val strokeWidth = styleValue(attr(tag, "style"), "stroke-width")
+                ?: attr(tag, "stroke-width")
 
-            val strokeLineCap = attr(tag, "stroke-linecap")
-                ?: styleValue(attr(tag, "style"), "stroke-linecap")
+            val strokeLineCap = styleValue(attr(tag, "style"), "stroke-linecap")
+                ?: attr(tag, "stroke-linecap")
 
-            val strokeLineJoin = attr(tag, "stroke-linejoin")
-                ?: styleValue(attr(tag, "style"), "stroke-linejoin")
+            val strokeLineJoin = styleValue(attr(tag, "style"), "stroke-linejoin")
+                ?: attr(tag, "stroke-linejoin")
 
-            val opacity = attr(tag, "opacity")
-                ?: styleValue(attr(tag, "style"), "opacity")
+            val opacity = styleValue(attr(tag, "style"), "opacity")
+                ?: attr(tag, "opacity")
 
-            val fillOpacity = attr(tag, "fill-opacity")
-                ?: styleValue(attr(tag, "style"), "fill-opacity")
+            val fillOpacity = styleValue(attr(tag, "style"), "fill-opacity")
+                ?: attr(tag, "fill-opacity")
 
-            val strokeOpacity = attr(tag, "stroke-opacity")
-                ?: styleValue(attr(tag, "style"), "stroke-opacity")
+            val strokeOpacity = styleValue(attr(tag, "style"), "stroke-opacity")
+                ?: attr(tag, "stroke-opacity")
 
-            val fillRule = attr(tag, "fill-rule")
-                ?: styleValue(attr(tag, "style"), "fill-rule")
+            val fillRule = styleValue(attr(tag, "style"), "fill-rule")
+                ?: attr(tag, "fill-rule")
 
             if (tagName != "path") {
                 output.appendLine("${indent}<!-- converted from <$tagName> -->")
@@ -2667,10 +2712,23 @@ private fun appendPath(
 
         return style
             .split(";")
+            .asSequence()
             .map { it.trim() }
-            .firstOrNull { it.startsWith("$name:") }
-            ?.substringAfter(":")
-            ?.trim()
+            .filter { it.isNotBlank() }
+            .mapNotNull { declaration ->
+                val parts = declaration.split(":", limit = 2)
+                if (parts.size != 2) return@mapNotNull null
+
+                val propertyName = parts[0].trim()
+                val propertyValue = parts[1].trim()
+
+                if (propertyName.equals(name, ignoreCase = true) && propertyValue.isNotBlank()) {
+                    propertyValue
+                } else {
+                    null
+                }
+            }
+            .firstOrNull()
     }
 
     private data class RotateTransform(
