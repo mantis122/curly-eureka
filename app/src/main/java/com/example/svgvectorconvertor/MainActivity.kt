@@ -17,6 +17,10 @@ import org.w3c.dom.Node
 import javax.xml.parsers.DocumentBuilderFactory
 import org.xml.sax.InputSource
 import java.io.StringReader
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.sqrt
+import kotlin.math.PI
 
 data class ConversionResult(
     val xml: String,
@@ -783,8 +787,9 @@ private var activeClipPathData: Map<String, String> = emptyMap()
 private var activeAppliedClipPaths = 0
 private var activeResolvedUseExpansions = 0
 private var activeUnresolvedUseReferences = 0
-
-
+private var activeSupportedMatrixTransforms = 0
+private var activeUnsupportedMatrixTransforms = 0
+  
 fun convert(
     svg: String,
     outputDpSize: Int,
@@ -793,6 +798,8 @@ fun convert(
 
 val startTime = System.nanoTime()
 
+activeSupportedMatrixTransforms = 0
+activeUnsupportedMatrixTransforms = 0
 val svgForTransformStats = stripSvgComments(svg)
 val gradientFallbackColors = collectGradientFallbackColors(svg)
 activeGradientFallbackColors = gradientFallbackColors
@@ -929,7 +936,7 @@ val elapsedMs =
 
 val warningCount =
     unsupported.size +
-    if (matrixCount > 0) 1 else 0
+    if (activeUnsupportedMatrixTransforms > 0) 1 else 0
 
 val summaryTitle =
     if (warningCount == 0)
@@ -1036,7 +1043,8 @@ appendLine()
     appendLine("✓ Rotate transforms: $rotateCount")
 
 if (matrixCount > 0) {
-    appendLine("⚠ Unsupported matrix transforms: $matrixCount")
+    appendLine("✓ Matrix transforms supported: $activeSupportedMatrixTransforms"
+appendLine("⚠ Matrix transforms unsupported: $activeUnsupportedMatrixTransforms")
 } else {
     appendLine("✓ Unsupported matrix transforms: 0")
 }
@@ -1856,10 +1864,11 @@ val currentClipPath = styleValue(style, "clip-path")
             val translate = parseTranslate(transform)
             val scale = parseScale(transform)
             val rotate = parseRotate(transform)
+            val matrix = parseMatrix(transform)
             val groupClipPathId = clipPathIdFromValue(currentClipPath)
             val hasClipPath = groupClipPathId != null && groupClipPathId != activeClipPathId && activeClipPathData.containsKey(groupClipPathId)
 
-            val needsGroup = translate != null || scale != null || rotate != null || hasClipPath
+            val needsGroup = translate != null || scale != null || rotate != null || matrix != null || hasClipPath
 
             if (needsGroup) {
                 output.appendLine("${indent}<group")
@@ -1880,6 +1889,25 @@ val currentClipPath = styleValue(style, "clip-path")
                         output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
                         output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
                     }
+                    
+                    if (matrix != null) {
+    if (matrix.translateX != 0f) {
+        output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
+    }
+
+    if (matrix.translateY != 0f) {
+        output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
+    }
+
+    if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
+        output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
+        output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
+    }
+
+    if (matrix.rotation != 0f) {
+        output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
+    }
+                          }
                 }
 
                 output.appendLine("${indent}>")
@@ -2090,6 +2118,7 @@ private fun appendUseElement(
     val translate = parseTranslate(transform)
     val scale = parseScale(transform)
     val rotate = parseRotate(transform)
+    val matrix = parseMatrix(transform)
 
     val viewBoxTranslateX = -((referencedViewBox?.minX ?: 0f) * symbolScaleX)
     val viewBoxTranslateY = -((referencedViewBox?.minY ?: 0f) * symbolScaleY)
@@ -2129,6 +2158,24 @@ private fun appendUseElement(
                 output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
                 output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
             }
+            if (matrix != null) {
+    if (matrix.translateX != 0f) {
+        output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
+    }
+
+    if (matrix.translateY != 0f) {
+        output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
+    }
+
+    if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
+        output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
+        output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
+    }
+
+    if (matrix.rotation != 0f) {
+        output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
+    }
+                          }
         }
 
         output.appendLine("${indent}>")
@@ -2344,6 +2391,24 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
                 output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
                 output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
             }
+            if (matrix != null) {
+    if (matrix.translateX != 0f) {
+        output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
+    }
+
+    if (matrix.translateY != 0f) {
+        output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
+    }
+
+    if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
+        output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
+        output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
+    }
+
+    if (matrix.rotation != 0f) {
+        output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
+    }
+                          }
         }
 
         output.appendLine("${indent}>")
@@ -2791,6 +2856,68 @@ private fun appendPath(
         val pivotX: Float?,
         val pivotY: Float?
     )
+
+    private data class MatrixTransform(
+    val translateX: Float,
+    val translateY: Float,
+    val scaleX: Float,
+    val scaleY: Float,
+    val rotation: Float
+)
+
+private fun parseMatrix(transform: String?): MatrixTransform? {
+    if (transform == null) return null
+
+    val match = Regex("""matrix\(([^)]*)\)""")
+        .find(transform)
+        ?: return null
+
+    val nums = match.groupValues[1]
+        .split(Regex("[,\\s]+"))
+        .filter { it.isNotBlank() }
+        .mapNotNull { it.toFloatOrNull() }
+
+    if (nums.size != 6) {
+        activeUnsupportedMatrixTransforms++
+        return null
+    }
+
+    val a = nums[0]
+    val b = nums[1]
+    val c = nums[2]
+    val d = nums[3]
+    val e = nums[4]
+    val f = nums[5]
+
+    val scaleX = sqrt(a * a + b * b)
+    val scaleY = sqrt(c * c + d * d)
+
+    if (scaleX == 0f || scaleY == 0f) {
+        activeUnsupportedMatrixTransforms++
+        return null
+    }
+
+    val dot = a * c + b * d
+    val hasSkew = abs(dot) > 0.0001f
+
+    if (hasSkew) {
+        activeUnsupportedMatrixTransforms++
+        return null
+    }
+
+    val rotation = (atan2(b, a) * 180f / PI.toFloat())
+
+    activeSupportedMatrixTransforms++
+
+    return MatrixTransform(
+        translateX = e,
+        translateY = f,
+        scaleX = scaleX,
+        scaleY = scaleY,
+        rotation = rotation
+    )
+}
+    
 
     private fun parseRotate(transform: String?): RotateTransform? {
         if (transform == null) return null
