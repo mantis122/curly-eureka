@@ -108,7 +108,7 @@ val result = SvgToVectorConverter.convert(
         result.report.lines().count { it.startsWith("⚠") }
 
 val definitionPathCount =
-    Regex("""Definition drawable elements available:\s*(\d+)""")
+    Regex("""Definition drawable elements:\s*(\d+)""")
         .find(result.report)
         ?.groupValues
         ?.getOrNull(1)
@@ -934,12 +934,12 @@ appendLine()
 appendLine("✓ Final VectorDrawable paths: $convertedPathCount")
 appendLine("✓ Visible SVG paths converted: $convertedOriginalPathCount / $drawableValidPathCount")
 if (useCount > 0) {
-    appendLine("✓ Use references expanded: $useCount")
+    appendLine("✓ Definition expansions: $useCount")
 }
 if (symbolCount > 0) {
-    appendLine("✓ Symbol definitions available: $symbolCount")
+    appendLine("✓ Symbol definitions: $symbolCount")
 }
-appendLine("✓ Basic shapes converted: $convertedBasicShapeCount / $basicShapeCount")
+appendLine("✓ Basic shapes generated: $convertedBasicShapeCount / $basicShapeCount")
 if (gradientFallbackColors.isNotEmpty()) {
     appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
 }
@@ -948,7 +948,7 @@ if (clipPathData.isNotEmpty()) {
 }
 
 if (definitionDrawableElementCount > 0) {
-    appendLine("✓ Definition drawable elements available: $definitionDrawableElementCount")
+    appendLine("✓ Definition drawable elements: $definitionDrawableElementCount")
 }
     appendLine("✓ Groups generated: $generatedGroupCount")
     appendLine("✓ Warnings: $warningCount")
@@ -978,7 +978,7 @@ if (definitionDrawableElementCount > 0) {
     appendLine("✓ Definition drawable elements: $definitionDrawableElementCount")
     appendLine("✓ Empty paths skipped: $emptyPathCount")
     appendLine("✓ Basic shapes found: $basicShapeCount")
-    appendLine("✓ Basic shapes converted: $convertedBasicShapeCount")
+    appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
 if (gradientFallbackColors.isNotEmpty()) {
     appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
 }
@@ -986,10 +986,10 @@ if (clipPathData.isNotEmpty()) {
     appendLine("✓ Clip paths converted: ${clipPathData.size}")
 }
 if (definitionDrawableElementCount > 0) {
-    appendLine("✓ Definition drawable elements available: $definitionDrawableElementCount")
+    appendLine("✓ Definition drawable elements: $definitionDrawableElementCount")
 }
 if (symbolCount > 0) {
-    appendLine("✓ Symbol definitions available: $symbolCount")
+    appendLine("✓ Symbol definitions: $symbolCount")
 }
     appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
