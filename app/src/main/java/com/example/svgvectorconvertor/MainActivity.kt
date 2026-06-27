@@ -108,7 +108,7 @@ val result = SvgToVectorConverter.convert(
         result.report.lines().count { it.startsWith("⚠") }
 
 val definitionPathCount =
-    Regex("""Definition drawable elements:\s*(\d+)""")
+    Regex("""Drawable definitions:\s*(\d+)""")
         .find(result.report)
         ?.groupValues
         ?.getOrNull(1)
@@ -931,25 +931,23 @@ appendLine()
 
     appendLine("Conversion Statistics")
     appendLine()
-appendLine("✓ Final VectorDrawable paths: $convertedPathCount")
-appendLine("✓ Visible SVG paths converted: $convertedOriginalPathCount")
-if (useCount > 0) {
-    appendLine("✓ Definitions expanded: $useCount")
-}
-if (symbolCount > 0) {
-    appendLine("✓ Symbol definitions: $symbolCount")
-}
-appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
-if (gradientFallbackColors.isNotEmpty()) {
-    appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
-}
-if (clipPathData.isNotEmpty()) {
-    appendLine("✓ Clip paths converted: ${clipPathData.size}")
-}
-
-if (definitionDrawableElementCount > 0) {
-    appendLine("✓ Definition drawable elements: $definitionDrawableElementCount")
-}
+    appendLine("✓ Visible SVG paths converted: $convertedOriginalPathCount")
+    if (useCount > 0) {
+        appendLine("✓ Definitions expanded: $useCount")
+    }
+    if (symbolCount > 0) {
+        appendLine("✓ Symbol definitions: $symbolCount")
+    }
+    appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
+    if (definitionDrawableElementCount > 0) {
+        appendLine("✓ Drawable definitions: $definitionDrawableElementCount")
+    }
+    if (gradientFallbackColors.isNotEmpty()) {
+        appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
+    }
+    if (clipPathData.isNotEmpty()) {
+        appendLine("✓ Clip paths converted: ${clipPathData.size}")
+    }
     appendLine("✓ Groups generated: $generatedGroupCount")
     appendLine("✓ Warnings: $warningCount")
     appendLine()
@@ -973,21 +971,26 @@ if (definitionDrawableElementCount > 0) {
     appendLine("SVG Analysis")
     appendLine()
     appendLine("✓ Viewport: ${viewportWidth} × ${viewportHeight}")
+    appendLine()
+
     appendLine("✓ Visible SVG paths: $drawableValidPathCount")
     appendLine("✓ Empty paths skipped: $emptyPathCount")
+    appendLine()
+
     appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
-if (gradientFallbackColors.isNotEmpty()) {
-    appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
-}
-if (clipPathData.isNotEmpty()) {
-    appendLine("✓ Clip paths converted: ${clipPathData.size}")
-}
-if (definitionDrawableElementCount > 0) {
-    appendLine("✓ Definition drawable elements: $definitionDrawableElementCount")
-}
-if (symbolCount > 0) {
-    appendLine("✓ Symbol definitions: $symbolCount")
-}
+    if (definitionDrawableElementCount > 0) {
+        appendLine("✓ Drawable definitions: $definitionDrawableElementCount")
+    }
+    if (symbolCount > 0) {
+        appendLine("✓ Symbol definitions: $symbolCount")
+    }
+    if (gradientFallbackColors.isNotEmpty()) {
+        appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
+    }
+    if (clipPathData.isNotEmpty()) {
+        appendLine("✓ Clip paths converted: ${clipPathData.size}")
+    }
+
     appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
 
