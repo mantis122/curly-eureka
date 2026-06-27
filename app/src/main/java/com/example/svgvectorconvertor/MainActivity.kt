@@ -1883,14 +1883,15 @@ val currentClipPath = styleValue(style, "clip-path")
                     output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
                 }
 
-                if (rotate != null) {
-                    output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
-                    if (rotate.pivotX != null && rotate.pivotY != null) {
-                        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
-                        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
-                    }
-                    
-                    if (matrix != null) {
+if (rotate != null) {
+    output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
+    if (rotate.pivotX != null && rotate.pivotY != null) {
+        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
+        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
+    }
+}
+
+if (matrix != null) {
     if (matrix.translateX != 0f) {
         output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
     }
@@ -1908,7 +1909,6 @@ val currentClipPath = styleValue(style, "clip-path")
         output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
     }
                           }
-                }
 
                 output.appendLine("${indent}>")
 
@@ -2152,13 +2152,15 @@ private fun appendUseElement(
             output.appendLine("""${indent}    android:scaleY="$effectiveScaleY"""")
         }
 
-        if (rotate != null) {
-            output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
-            if (rotate.pivotX != null && rotate.pivotY != null) {
-                output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
-                output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
-            }
-            if (matrix != null) {
+if (rotate != null) {
+    output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
+    if (rotate.pivotX != null && rotate.pivotY != null) {
+        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
+        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
+    }
+}
+
+if (matrix != null) {
     if (matrix.translateX != 0f) {
         output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
     }
@@ -2176,7 +2178,6 @@ private fun appendUseElement(
         output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
     }
                           }
-        }
 
         output.appendLine("${indent}>")
         output.appendLine("${indent}    <!-- expanded from <use href=\"#$id\"> -->")
