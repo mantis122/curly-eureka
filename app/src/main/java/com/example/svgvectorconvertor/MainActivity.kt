@@ -1613,13 +1613,14 @@ private fun appendConvertedSvgTree(output: StringBuilder, svg: String) {
 }
 
 private fun collectSvgDefinitions(root: Element): Map<String, Element> {
-    val definitions = mutableMapOf<String, Element>()
+    val definitions = linkedMapOf<String, Element>()
 
     fun visit(node: Node) {
         if (node.nodeType != Node.ELEMENT_NODE) return
 
         val element = node as Element
         val id = element.getAttribute("id").trim()
+
         if (id.isNotBlank()) {
             definitions[id] = element
         }
@@ -1633,7 +1634,6 @@ private fun collectSvgDefinitions(root: Element): Map<String, Element> {
     visit(root)
     return definitions
 }
-
 
 private fun childClipPathId(node: Node, inheritedClipPath: String?): String? {
     if (node.nodeType != Node.ELEMENT_NODE) return null
@@ -1997,7 +1997,6 @@ private fun elementViewBox(element: Element): SvgViewBox? {
     }
 }
 
-
 private fun appendUseElement(
     output: StringBuilder,
     element: Element,
@@ -2016,41 +2015,77 @@ private fun appendUseElement(
     useDepth: Int,
     activeClipPathId: String? = null
 ) {
-    if (useDepth >= 20) return
+    if (useDepth >= 20) {
+        activeUnresolvedUseReferences++
+        output.appendLine("${indent}<!-- unresolved <use>: nesting limit reached -->")
+        return
+    }
 
-    val href = element.getAttribute("href").ifBlank {
-        element.getAttribute("xlink:href").ifBlank {
-            element.getAttributeNS("http://www.w3.org/1999/xlink", "href")
-        }
-    }.trim()
+    val id = useHrefId(element)
+    if (id == null) {
+        activeUnresolvedUseReferences++
+        output.appendLine("${indent}<!-- unresolved <use>: missing href -->")
+        return
+    }
 
-    val id = href.removePrefix("#").trim()
-    if (id.isBlank()) return
+    val referenced = definitions[id]
+    if (referenced == null) {
+        activeUnresolvedUseReferences++
+        output.appendLine("${indent}<!-- unresolved <use href=\"#$id\"> -->")
+        return
+    }
 
-    val referenced = definitions[id] ?: return
     val referencedTag = referenced.tagName.substringAfter(":").lowercase()
-    val referencedViewBox = if (referencedTag == "symbol") elementViewBox(referenced) else null
+
+    if (referencedTag == "defs" || referencedTag == "clippath" || referencedTag == "lineargradient" ||
+        referencedTag == "radialgradient" || referencedTag == "mask" || referencedTag == "filter" ||
+        referencedTag == "pattern"
+    ) {
+        activeUnresolvedUseReferences++
+        output.appendLine("${indent}<!-- unresolved <use href=\"#$id\">: referenced <$referencedTag> is not drawable -->")
+        return
+    }
+
+    activeResolvedUseExpansions++
+
+    val referencedViewBox =
+        if (referencedTag == "symbol" || referencedTag == "svg") elementViewBox(referenced) else null
+
     val useWidth = floatAttr(element, "width")
     val useHeight = floatAttr(element, "height")
-    val symbolScaleX = if (referencedViewBox != null && useWidth != null) useWidth / referencedViewBox.width else 1f
-    val symbolScaleY = if (referencedViewBox != null && useHeight != null) useHeight / referencedViewBox.height else 1f
-    val hasSymbolViewBoxTransform = referencedViewBox != null && (symbolScaleX != 1f || symbolScaleY != 1f || referencedViewBox.minX != 0f || referencedViewBox.minY != 0f)
+
+    val symbolScaleX =
+        if (referencedViewBox != null && useWidth != null) useWidth / referencedViewBox.width else 1f
+
+    val symbolScaleY =
+        if (referencedViewBox != null && useHeight != null) useHeight / referencedViewBox.height else 1f
 
     val x = floatAttr(element, "x") ?: 0f
     val y = floatAttr(element, "y") ?: 0f
+
     val transform = element.getAttribute("transform")
     val translate = parseTranslate(transform)
     val scale = parseScale(transform)
     val rotate = parseRotate(transform)
 
+    val viewBoxTranslateX = -((referencedViewBox?.minX ?: 0f) * symbolScaleX)
+    val viewBoxTranslateY = -((referencedViewBox?.minY ?: 0f) * symbolScaleY)
+
+    val totalTranslateX = x + (translate?.first ?: 0f) + viewBoxTranslateX
+    val totalTranslateY = y + (translate?.second ?: 0f) + viewBoxTranslateY
+
+    val effectiveScaleX = (scale?.first ?: 1f) * symbolScaleX
+    val effectiveScaleY = (scale?.second ?: 1f) * symbolScaleY
+
     val needsGroup =
-        x != 0f || y != 0f || translate != null || scale != null || rotate != null || hasSymbolViewBoxTransform
+        totalTranslateX != 0f ||
+        totalTranslateY != 0f ||
+        effectiveScaleX != 1f ||
+        effectiveScaleY != 1f ||
+        rotate != null
 
     if (needsGroup) {
         output.appendLine("${indent}<group")
-
-        val totalTranslateX = x + (translate?.first ?: 0f) - ((referencedViewBox?.minX ?: 0f) * symbolScaleX)
-        val totalTranslateY = y + (translate?.second ?: 0f) - ((referencedViewBox?.minY ?: 0f) * symbolScaleY)
 
         if (totalTranslateX != 0f) {
             output.appendLine("""${indent}    android:translateX="$totalTranslateX"""")
@@ -2059,9 +2094,6 @@ private fun appendUseElement(
         if (totalTranslateY != 0f) {
             output.appendLine("""${indent}    android:translateY="$totalTranslateY"""")
         }
-
-        val effectiveScaleX = (scale?.first ?: 1f) * symbolScaleX
-        val effectiveScaleY = (scale?.second ?: 1f) * symbolScaleY
 
         if (effectiveScaleX != 1f || effectiveScaleY != 1f) {
             output.appendLine("""${indent}    android:scaleX="$effectiveScaleX"""")
@@ -2122,7 +2154,7 @@ private fun appendUseElement(
             activeClipPathId
         )
     }
-}
+                                  }
 
 
 private fun appendBasicShapePath(
