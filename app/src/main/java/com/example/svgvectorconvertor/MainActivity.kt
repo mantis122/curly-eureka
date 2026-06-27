@@ -1043,8 +1043,8 @@ appendLine()
     appendLine("✓ Rotate transforms: $rotateCount")
 
 if (matrixCount > 0) {
-    appendLine("✓ Matrix transforms supported: $activeSupportedMatrixTransforms"
-appendLine("⚠ Matrix transforms unsupported: $activeUnsupportedMatrixTransforms")
+    appendLine("✓ Matrix transforms supported: $activeSupportedMatrixTransforms")
+    appendLine("⚠ Matrix transforms unsupported: $activeUnsupportedMatrixTransforms")
 } else {
     appendLine("✓ Unsupported matrix transforms: 0")
 }
