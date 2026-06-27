@@ -780,6 +780,9 @@ private fun updatePreview(xml: String) {
 object SvgToVectorConverter {
 private var activeGradientFallbackColors: Map<String, String> = emptyMap()
 private var activeClipPathData: Map<String, String> = emptyMap()
+private var activeResolvedUseExpansions = 0
+private var activeUnresolvedUseReferences = 0
+
 
 fun convert(
     svg: String,
@@ -1981,6 +1984,17 @@ val currentClipPath = styleValue(style, "clip-path")
     }
 }
 
+private fun useHrefId(element: Element): String? {
+    val href = element.getAttribute("href").ifBlank {
+        element.getAttribute("xlink:href").ifBlank {
+            element.getAttributeNS("http://www.w3.org/1999/xlink", "href")
+        }
+    }.trim()
+
+    return href
+        .removePrefix("#")
+        .takeIf { it.isNotBlank() }
+}
 
 private data class SvgViewBox(val minX: Float, val minY: Float, val width: Float, val height: Float)
 
@@ -2154,7 +2168,7 @@ private fun appendUseElement(
             activeClipPathId
         )
     }
-                                  }
+}
 
 
 private fun appendBasicShapePath(
