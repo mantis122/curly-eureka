@@ -932,14 +932,14 @@ appendLine()
     appendLine("Conversion Statistics")
     appendLine()
 appendLine("✓ Final VectorDrawable paths: $convertedPathCount")
-appendLine("✓ Visible SVG paths converted: $convertedOriginalPathCount / $drawableValidPathCount")
+appendLine("✓ Visible SVG paths converted: $convertedOriginalPathCount")
 if (useCount > 0) {
     appendLine("✓ Definition expansions: $useCount")
 }
 if (symbolCount > 0) {
     appendLine("✓ Symbol definitions: $symbolCount")
 }
-appendLine("✓ Basic shapes generated: $convertedBasicShapeCount / $basicShapeCount")
+appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
 if (gradientFallbackColors.isNotEmpty()) {
     appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
 }
@@ -975,7 +975,6 @@ if (definitionDrawableElementCount > 0) {
     appendLine("✓ Viewport: ${viewportWidth} × ${viewportHeight}")
     appendLine("✓ SVG paths total: $pathCount")
     appendLine("✓ Visible SVG paths: $drawableValidPathCount")
-    appendLine("✓ Definition drawable elements: $definitionDrawableElementCount")
     appendLine("✓ Empty paths skipped: $emptyPathCount")
     appendLine("✓ Basic shapes found: $basicShapeCount")
     appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
