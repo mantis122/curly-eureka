@@ -2134,7 +2134,8 @@ private fun appendUseElement(
         totalTranslateY != 0f ||
         effectiveScaleX != 1f ||
         effectiveScaleY != 1f ||
-        rotate != null
+        rotate != null ||
+        matrix != null
 
     if (needsGroup) {
         output.appendLine("${indent}<group")
@@ -2368,6 +2369,7 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
 
     val pathTransform = element.getAttribute("transform")
     val translate = parseTranslate(pathTransform)
+    val matrix = parseMatrix(pathTransform)
     val scale = parseScale(pathTransform)
     val rotate = parseRotate(pathTransform)
 
