@@ -780,6 +780,7 @@ private fun updatePreview(xml: String) {
 object SvgToVectorConverter {
 private var activeGradientFallbackColors: Map<String, String> = emptyMap()
 private var activeClipPathData: Map<String, String> = emptyMap()
+private var activeAppliedClipPaths = 0
 private var activeResolvedUseExpansions = 0
 private var activeUnresolvedUseReferences = 0
 
@@ -797,6 +798,7 @@ val gradientFallbackColors = collectGradientFallbackColors(svg)
 activeGradientFallbackColors = gradientFallbackColors
 val clipPathData = collectClipPathData(svg)
 activeClipPathData = clipPathData
+activeAppliedClipPaths = 0
 
 
 val translateCount = Regex("""translate\(""").findAll(svgForTransformStats).count()
@@ -825,6 +827,9 @@ val emptyPathCount = pathCount - validPathCount
 val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
 val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
 val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
+val clipPathReferenceCount = Regex("""clip-path\s*[:=]""", RegexOption.IGNORE_CASE)
+    .findAll(svgForTransformStats)
+    .count()
 val styleAttributeCount = Regex("""\bstyle\s*=""", RegexOption.IGNORE_CASE)
     .findAll(svgForTransformStats)
     .count()
@@ -967,7 +972,8 @@ appendLine()
         appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
     }
     if (clipPathData.isNotEmpty()) {
-        appendLine("✓ Clip paths converted: ${clipPathData.size}")
+        appendLine("✓ Clip paths found: ${clipPathData.size}")
+        appendLine("✓ Clip paths applied: $activeAppliedClipPaths")
     }
     appendLine("✓ Style attributes parsed: $styleAttributeCount")
     appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
@@ -1011,7 +1017,9 @@ appendLine()
         appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
     }
     if (clipPathData.isNotEmpty()) {
-        appendLine("✓ Clip paths converted: ${clipPathData.size}")
+        appendLine("✓ Clip paths found: ${clipPathData.size}")
+        appendLine("✓ Clip path references: $clipPathReferenceCount")
+        appendLine("✓ Clip paths applied: $activeAppliedClipPaths")
     }
     appendLine("✓ Style attributes parsed: $styleAttributeCount")
     appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
@@ -1512,8 +1520,10 @@ private fun appendClipPath(output: StringBuilder, clipPathId: String?, indent: S
     val id = clipPathId ?: return false
     val pathData = activeClipPathData[id] ?: return false
 
+    activeAppliedClipPaths++
+
     output.appendLine("""${indent}<clip-path""")
-    output.appendLine("""${indent}    android:pathData="$pathData"""")
+    output.appendLine("""${indent}    android:pathData="${escapeXml(pathData)}"""")
     output.appendLine("""${indent}/>""")
     return true
 }
@@ -1643,9 +1653,8 @@ private fun childClipPathId(node: Node, inheritedClipPath: String?): String? {
 
     val element = node as Element
     val style = element.getAttribute("style").ifBlank { null }
-    val clipPathValue = element.getAttribute("clip-path").ifBlank {
-        styleValue(style, "clip-path") ?: inheritedClipPath ?: ""
-    }
+    val clipPathValue = styleValue(style, "clip-path")
+        ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
 
     val clipId = clipPathIdFromValue(clipPathValue)
     return clipId?.takeIf { activeClipPathData.containsKey(it) }
