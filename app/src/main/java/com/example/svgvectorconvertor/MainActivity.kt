@@ -2282,19 +2282,23 @@ private fun appendElementPath(
     if (d.isBlank()) return
 
     appendElementPathData(
-            strokeWidth.ifBlank { null },
-            strokeLineCap.ifBlank { null },
-            strokeLineJoin.ifBlank { null },
-            fillRule.ifBlank { null },
-            fillAlpha,
-            strokeAlpha,
-            indent
-        )
-    }
-
-    output.appendLine()
-}
-
+        output,
+        element,
+        d,
+        indent,
+        inheritedFill,
+        inheritedStroke,
+        inheritedStrokeWidth,
+        inheritedStrokeLineCap,
+        inheritedStrokeLineJoin,
+        inheritedFillRule,
+        inheritedOpacity,
+        inheritedFillOpacity,
+        inheritedStrokeOpacity,
+        inheritedClipPath,
+        activeClipPathId,
+        sourceTag = "path"
+    )
 }
 
 private fun appendElementPathData(
@@ -2363,7 +2367,7 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
     val scale = parseScale(pathTransform)
     val rotate = parseRotate(pathTransform)
 
-
+val pathNeedsGroup = translate != null || scale != null || rotate != null || matrix != null || hasClipPath
 
     if (pathNeedsGroup) {
         output.appendLine("${indent}<group")
@@ -2378,14 +2382,15 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
             output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
         }
 
-        if (rotate != null) {
-            output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
-            if (rotate.pivotX != null && rotate.pivotY != null) {
-                output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
-                output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
-            }
-            
-            if (matrix != null) {
+if (rotate != null) {
+    output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
+    if (rotate.pivotX != null && rotate.pivotY != null) {
+        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
+        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
+    }
+}
+
+if (matrix != null) {
     if (matrix.translateX != 0f) {
         output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
     }
@@ -2400,12 +2405,7 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
         output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
     }
                           }
-}
-
-        output.appendLine("${indent}>")
-        if (hasClipPath) {
-            appendClipPath(output, clipPathId, indent + "    ")
-        }
+                          
         if (sourceTag != null) {
             output.appendLine("${indent}    <!-- converted from <$sourceTag> -->")
         }
