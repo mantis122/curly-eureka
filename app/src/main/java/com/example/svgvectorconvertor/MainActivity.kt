@@ -1060,14 +1060,14 @@ if (matrixCount > 0) {
     appendLine()
 
 
-if (unsupported.isEmpty() && matrixCount == 0) {
+if (unsupported.isEmpty() && activeUnsupportedMatrixTransforms == 0) {
     appendLine("✓ No warnings detected")
 } else {
     appendLine("Warnings")
     appendLine()
 
-    if (matrixCount > 0) {
-        appendLine("⚠ Unsupported matrix transforms: $matrixCount")
+    if (activeUnsupportedMatrixTransforms > 0) {
+        appendLine("⚠ Unsupported matrix transforms: $activeUnsupportedMatrixTransforms")
     }
 
     unsupported.forEach {
@@ -2405,6 +2405,8 @@ if (matrix != null) {
         output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
     }
                           }
+
+                          output.appendLine("${indent}>")
                           
         if (sourceTag != null) {
             output.appendLine("${indent}    <!-- converted from <$sourceTag> -->")
