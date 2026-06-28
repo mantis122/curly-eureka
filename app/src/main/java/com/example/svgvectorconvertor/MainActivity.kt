@@ -1895,16 +1895,13 @@ if (matrix != null) {
     if (matrix.translateX != 0f) {
         output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
     }
-
     if (matrix.translateY != 0f) {
         output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
     }
-
     if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
         output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
         output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
     }
-
     if (matrix.rotation != 0f) {
         output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
     }
@@ -2165,16 +2162,13 @@ if (matrix != null) {
     if (matrix.translateX != 0f) {
         output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
     }
-
     if (matrix.translateY != 0f) {
         output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
     }
-
     if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
         output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
         output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
     }
-
     if (matrix.rotation != 0f) {
         output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
     }
@@ -2369,7 +2363,7 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
     val scale = parseScale(pathTransform)
     val rotate = parseRotate(pathTransform)
 
-val pathNeedsGroup = translate != null || scale != null || rotate != null || matrix != null || hasClipPath
+
 
     if (pathNeedsGroup) {
         output.appendLine("${indent}<group")
@@ -2384,32 +2378,29 @@ val pathNeedsGroup = translate != null || scale != null || rotate != null || mat
             output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
         }
 
-if (rotate != null) {
-    output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
-    if (rotate.pivotX != null && rotate.pivotY != null) {
-        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
-        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
-    }
-}
-
-if (matrix != null) {
+        if (rotate != null) {
+            output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
+            if (rotate.pivotX != null && rotate.pivotY != null) {
+                output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
+                output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
+            }
+            
+            if (matrix != null) {
     if (matrix.translateX != 0f) {
         output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
     }
-
     if (matrix.translateY != 0f) {
         output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
     }
-
     if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
         output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
         output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
     }
-
     if (matrix.rotation != 0f) {
         output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
     }
                           }
+}
 
         output.appendLine("${indent}>")
         if (hasClipPath) {
