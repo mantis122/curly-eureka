@@ -1,5 +1,11 @@
 package com.example.svgvectorconverter
 
+import org.w3c.dom.Node
+import javax.xml.parsers.DocumentBuilderFactory
+import org.xml.sax.InputSource
+import java.io.StringReader
+import java.util.Locale
+
 object SvgToVectorConverter {
 private var activeGradientFallbackColors: Map<String, String> = emptyMap()
 private var activeClipPathData: Map<String, String> = emptyMap()
