@@ -1,7 +1,13 @@
 package com.example.svgvectorconverter
 
+import android.graphics.*
+import android.graphics.Color
 import org.w3c.dom.Element
 import org.w3c.dom.Node
+import android.graphics.drawable.BitmapDrawable
+import javax.xml.parsers.DocumentBuilderFactory
+import org.xml.sax.InputSource
+import java.io.StringReader
 
 object VectorPreviewRenderer {
     fun render(xml: String, width: Int, height: Int): Bitmap {
