@@ -6,6 +6,10 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.xml.sax.InputSource
 import java.io.StringReader
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.sqrt
+import kotlin.math.PI
 
 object SvgToVectorConverter {
 private var activeGradientFallbackColors: Map<String, String> = emptyMap()
