@@ -1,26 +1,26 @@
 package com.example.svgvectorconverter
 
-import android.os.*
-import android.content.*
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Color
-import android.view.*
-import android.widget.*
+import android.graphics.drawable.BitmapDrawable
+import android.net.Uri
+import android.os.Bundle
+import android.provider.OpenableColumns
+import android.view.Gravity
+import android.view.View
+import android.widget.Button
+import android.widget.EditText
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.Space
+import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
-import android.graphics.*
-import android.graphics.drawable.BitmapDrawable
-import android.provider.OpenableColumns
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
-import org.w3c.dom.Element
-import org.w3c.dom.Node
-import javax.xml.parsers.DocumentBuilderFactory
-import org.xml.sax.InputSource
-import java.io.StringReader
-import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.sqrt
-import kotlin.math.PI
 
 class MainActivity : ComponentActivity() {
     private lateinit var outputBox: EditText
@@ -36,167 +36,33 @@ class MainActivity : ComponentActivity() {
     private lateinit var copyButton: Button
     private lateinit var saveXmlButton: Button
     private lateinit var saveZipButton: Button
-private val prefs by lazy {
-    getSharedPreferences("svg_converter_settings", MODE_PRIVATE)
-}
 
-private val openSvg = registerForActivityResult(
-    ActivityResultContracts.OpenDocument()
-) { uri ->
-    if (uri != null) {
-        suggestedFileName = makeXmlFileName(uri)
-
-        val svg = contentResolver.openInputStream(uri)
-            ?.bufferedReader()
-            ?.use { it.readText() }
-            ?: ""
-
-val result = SvgToVectorConverter.convert(
-    svg,
-    outputDpSize,
-    conversionProfile
-)
-previewBox.visibility = View.VISIBLE
-        convertedXml = result.xml
-        reportBox.text = result.report
-        outputBox.setText(convertedXml)
-        updatePreview(convertedXml)
-        batchGallery.removeAllViews()
-        batchResults.clear()
-        updateActionButtons()
-
+    private val prefs by lazy {
+        getSharedPreferences("svg_converter_settings", MODE_PRIVATE)
     }
-}
 
-private val openMultipleSvgs = registerForActivityResult(
-    ActivityResultContracts.OpenMultipleDocuments()
-) { uris ->
-    if (uris.isNotEmpty()) {
-        batchResults.clear()
+    private val openSvg = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { convertSingleSvg(it) }
+    }
 
-convertedXml = ""
-previewBox.setImageDrawable(null)
-outputBox.setText("")
-updateActionButtons()
-
-        uris.forEach { uri ->
-            val svg = contentResolver.openInputStream(uri)
-                ?.bufferedReader()
-                ?.use { it.readText() }
-                ?: ""
-
-    val fileName = makeXmlFileName(uri)
-
-try {
-val result = SvgToVectorConverter.convert(
-    svg,
-    outputDpSize,
-    conversionProfile
-)   
-
-    val warningCount =
-        result.report.lines().count { it.startsWith("⚠") }
-
-val definitionPathCount =
-    Regex("""Drawable definitions:\s*(\d+)""")
-        .find(result.report)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toIntOrNull()
-        ?: 0
-
-    batchResults.add(
-        BatchResult(
-    fileName = fileName,
-    xml = result.xml,
-    warningCount = warningCount,
-    definitionPathCount = definitionPathCount,
-    success = true
-)
-    )
-} catch (e: Exception) {
-    batchResults.add(
-        BatchResult(
-            fileName = fileName,
-            xml = null,
-            warningCount = 0,
-            success = false,
-            error = e.message
-        )
-    )
-}       
-
+    private val openMultipleSvgs = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            convertBatchSvgs(uris)
         }
+    }
 
-        val successCount = batchResults.count { it.success }
-val warningCount = batchResults.count {
-    it.success && it.warningCount > 0
-}
-val failureCount = batchResults.count { !it.success }
-
-reportBox.text =
-    """
-🟢 Batch Conversion Complete
-
-Success: $successCount
-Warnings: $warningCount
-Failed: $failureCount
-
-Ready to save ZIP
-""".trimIndent()
-
-val xmlOutput = buildString {
-    appendLine("Batch XML Output")
-    appendLine("${batchResults.size} files selected")
-    appendLine("${batchResults.count { it.success }} converted")
-    appendLine("${batchResults.count { !it.success }} failed")
-    appendLine()
-    appendLine("────────────────────")
-    appendLine()
-
-    batchResults.forEach { result ->
-        appendLine("===== ${result.fileName} =====")
-
-        if (result.success && result.xml != null) {
-            appendLine(result.xml)
-        } else {
-            appendLine("FAILED: ${result.error ?: "Unknown error"}")
+    private val saveZip = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            saveBatchZip(uri)
+            toast("ZIP saved")
         }
-
-        appendLine()
     }
-}
-
-outputBox.setText(xmlOutput)
-
-        showBatchGallery()
-
-previewBox.visibility = View.GONE
-updateActionButtons()
-
-        toast("${batchResults.size} files converted")
-    }
-}
-
-private val saveZip = registerForActivityResult(
-    ActivityResultContracts.CreateDocument("application/zip")
-) { uri ->
-    if (uri != null) {
-        contentResolver.openOutputStream(uri)?.use { output ->
-            ZipOutputStream(output).use { zip ->
-                batchResults
-    .filter { it.success && it.xml != null }
-    .forEach { result ->
-                    zip.putNextEntry(ZipEntry(result.fileName))
-                    zip.write(result.xml!!.toByteArray()) 
-                    zip.closeEntry()
-                }
-            }
-        }
-        toast("ZIP saved")
-    }
-}
-
 
     private val saveXml = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/xml")
@@ -224,25 +90,17 @@ private val saveZip = registerForActivityResult(
             setBackgroundColor(Color.rgb(250, 248, 240))
         }
 
-val versionName = try {
-    packageManager
-        .getPackageInfo(packageName, 0)
-        .versionName
-} catch (e: Exception) {
-    "1.0"
-}
+        val title = TextView(this).apply {
+            text = "SVG → Android Vector"
+            textSize = 24f
+            setTextColor(Color.BLACK)
+        }
 
-val title = TextView(this).apply {
-    text = "SVG → Android Vector"
-    textSize = 24f
-    setTextColor(Color.BLACK)
-}
-
-val versionLabel = TextView(this).apply {
-    text = "v$versionName"
-    textSize = 12f
-    setTextColor(Color.GRAY)
-}        
+        val versionLabel = TextView(this).apply {
+            text = "v${getVersionName()}"
+            textSize = 12f
+            setTextColor(Color.GRAY)
+        }
 
         val openButton = Button(this).apply {
             text = "Open SVG"
@@ -253,135 +111,22 @@ val versionLabel = TextView(this).apply {
 
         copyButton = Button(this).apply {
             text = "Copy XML"
+            setOnClickListener { copyConvertedXml() }
+        }
+
+        val sizeButton = Button(this).apply {
+            text = sizeButtonText()
             setOnClickListener {
-                if (convertedXml.isBlank()) {
-                    toast("Nothing to copy yet")
-                } else {
-                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("vector.xml", convertedXml))
-                    toast("Copied")
-                }
+                showOutputSizeDialog(this)
             }
         }
 
-
-val sizeButton = Button(this).apply {
-    text =
-    if (outputDpSize > 0)
-        "Size: ${outputDpSize}dp"
-    else
-        "Size: SVG"
-    setOnClickListener {
-        val options = arrayOf("24dp", "48dp", "Keep SVG size", "Custom...")
-        android.app.AlertDialog.Builder(this@MainActivity)
-            .setTitle("Output Size")
-            .setItems(options) { _, which ->
-               when (which) {
-    0 -> {
-        outputDpSize = 24
-
-        prefs.edit()
-        .putInt("outputDpSize", outputDpSize)
-        .apply()
-
-        text = "Size: 24dp"
-    }
-    1 -> {
-        outputDpSize = 48
-
-        prefs.edit()
-        .putInt("outputDpSize", outputDpSize)
-        .apply()
-
-        text = "Size: 48dp"
-    }
-    2 -> {
-        outputDpSize = -1
-
-        prefs.edit()
-        .putInt("outputDpSize", outputDpSize)
-        .apply()
-
-        text = "Size: SVG"
-    }
-    3 -> {
-        showCustomSizeDialog(this)
-    }
-}
+        val profileButton = Button(this).apply {
+            text = "Profile: $conversionProfile"
+            setOnClickListener {
+                showProfileDialog(this, sizeButton)
             }
-            .show()
-    }
-}
-
-
-val profileButton = Button(this).apply {
-    text = "Profile: $conversionProfile"
-    setOnClickListener {
-        val options = arrayOf(
-            "Default",
-            "Android Icon",
-            "Material Icon",
-            "Keep SVG"
-        )
-
-        android.app.AlertDialog.Builder(this@MainActivity)
-            .setTitle("Conversion Profile")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        conversionProfile = "Default"
-                        outputDpSize = 24
-
-                        prefs.edit()
-                        .putString("conversionProfile", conversionProfile)
-                        .putInt("outputDpSize", outputDpSize)
-                        .apply()
-
-                        text = "Profile: Default"
-                        sizeButton.text = "Size: 24dp"
-                    }
-                    1 -> {
-                        conversionProfile = "Android Icon"
-                        outputDpSize = 24
-
-                        prefs.edit()
-                        .putString("conversionProfile", conversionProfile)
-                        .putInt("outputDpSize", outputDpSize)
-                        .apply()
-
-                        text = "Profile: Android Icon"
-                        sizeButton.text = "Size: 24dp"
-                    }
-                    2 -> {
-                        conversionProfile = "Material Icon"
-                        outputDpSize = 24
-
-                        prefs.edit()
-                        .putString("conversionProfile", conversionProfile)
-                        .putInt("outputDpSize", outputDpSize)
-                        .apply()
-
-                        text = "Profile: Material"
-                        sizeButton.text = "Size: 24dp"
-                    }
-                    3 -> {
-                        conversionProfile = "Keep SVG"
-                        outputDpSize = -1
-
-                        prefs.edit()
-                        .putString("conversionProfile", conversionProfile)
-                        .putInt("outputDpSize", outputDpSize)
-                        .apply()
-
-                        text = "Profile: Keep SVG"
-                        sizeButton.text = "Size: SVG"
-                    }
-                }
-            }
-            .show()
-    }
-}
-
+        }
 
         val batchButton = Button(this).apply {
             text = "Batch SVGs"
@@ -419,91 +164,50 @@ val profileButton = Button(this).apply {
             }
         }
 
-    previewBox = ImageView(this).apply {
-        setBackgroundColor(Color.WHITE)
-        setPadding(24, 24, 24, 24)
-        scaleType = ImageView.ScaleType.FIT_CENTER
-    }
+        previewBox = ImageView(this).apply {
+            setBackgroundColor(Color.WHITE)
+            setPadding(24, 24, 24, 24)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
 
-    batchGallery = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-    }
-
-    val bottomSpacer = Space(this)
+        batchGallery = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
 
         outputBox = EditText(this).apply {
-    hint = "Converted VectorDrawable XML will appear here"
-    setTextColor(Color.BLACK)
-    setHintTextColor(Color.GRAY)
-    textSize = 12f
-    gravity = Gravity.TOP or Gravity.START
-    isSingleLine = false
-    setHorizontallyScrolling(true)
-    minLines = 20
-}
-        outputBox.visibility = View.GONE
-
-    
-
-val previewTab = Button(this).apply {
-    text = "Preview"
-    setOnClickListener {
-        previewBox.visibility = View.VISIBLE
-        reportBox.visibility = View.VISIBLE
-        batchGallery.visibility = View.VISIBLE
-        outputBox.visibility = View.GONE
-    }
-}
-
-val xmlTab = Button(this).apply {
-    text = "XML"
-    setOnClickListener {
-        previewBox.visibility = View.GONE
-        reportBox.visibility = View.GONE
-        batchGallery.visibility = View.GONE
-        outputBox.visibility = View.VISIBLE
-    }
-}
-val openRow = LinearLayout(this).apply {
-    orientation = LinearLayout.HORIZONTAL
-    addView(openButton, LinearLayout.LayoutParams(0, -2, 1f))
-    addView(batchButton, LinearLayout.LayoutParams(0, -2, 1f))
-}
-
-val saveRow = LinearLayout(this).apply {
-    orientation = LinearLayout.HORIZONTAL
-    addView(saveXmlButton, LinearLayout.LayoutParams(0, -2, 1f))
-    addView(saveZipButton, LinearLayout.LayoutParams(0, -2, 1f))
-}
-
-val utilityRow = LinearLayout(this).apply {
-    orientation = LinearLayout.VERTICAL
-
-    addView(
-        LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(copyButton, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(sizeButton, LinearLayout.LayoutParams(0, -2, 1f))
+            hint = "Converted VectorDrawable XML will appear here"
+            setTextColor(Color.BLACK)
+            setHintTextColor(Color.GRAY)
+            textSize = 12f
+            gravity = Gravity.TOP or Gravity.START
+            isSingleLine = false
+            setHorizontallyScrolling(true)
+            minLines = 20
+            visibility = View.GONE
         }
-    )
 
-    addView(
-        profileButton,
-        LinearLayout.LayoutParams(-1, -2)
-    )
+        val previewTab = Button(this).apply {
+            text = "Preview"
+            setOnClickListener { showPreviewTab() }
+        }
 
-    addView(
-        aboutButton,
-        LinearLayout.LayoutParams(-1, -2)
-    )
+        val xmlTab = Button(this).apply {
+            text = "XML"
+            setOnClickListener { showXmlTab() }
+        }
 
-}
+        val openRow = horizontalRow(openButton, batchButton)
+        val saveRow = horizontalRow(saveXmlButton, saveZipButton)
 
-val tabRow = LinearLayout(this).apply {
-    orientation = LinearLayout.HORIZONTAL
-    addView(previewTab, LinearLayout.LayoutParams(0, -2, 1f))
-    addView(xmlTab, LinearLayout.LayoutParams(0, -2, 1f))
-}
+        val utilityRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+
+            addView(horizontalRow(copyButton, sizeButton))
+            addView(profileButton, LinearLayout.LayoutParams(-1, -2))
+            addView(aboutButton, LinearLayout.LayoutParams(-1, -2))
+        }
+
+        val tabRow = horizontalRow(previewTab, xmlTab)
 
         reportBox = TextView(this).apply {
             text = "No SVG converted yet"
@@ -513,224 +217,482 @@ val tabRow = LinearLayout(this).apply {
         }
 
         mainPanel = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.VERTICAL
         }
 
-val scrollView = ScrollView(this).apply {
-    addView(mainPanel)
-}
+        val scrollView = ScrollView(this).apply {
+            addView(mainPanel)
+        }
 
         mainPanel.addView(previewBox, LinearLayout.LayoutParams(-1, 450))
-mainPanel.addView(outputBox, LinearLayout.LayoutParams(-1, -2))
-mainPanel.addView(reportBox)
-mainPanel.addView(batchGallery)
-mainPanel.addView(bottomSpacer, LinearLayout.LayoutParams(-1, 96))
+        mainPanel.addView(outputBox, LinearLayout.LayoutParams(-1, -2))
+        mainPanel.addView(reportBox)
+        mainPanel.addView(batchGallery)
+        mainPanel.addView(Space(this), LinearLayout.LayoutParams(-1, 96))
 
-root.addView(title)
-root.addView(versionLabel)
-root.addView(openRow)
-root.addView(saveRow)
-root.addView(utilityRow)
-root.addView(tabRow)
-root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(title)
+        root.addView(versionLabel)
+        root.addView(openRow)
+        root.addView(saveRow)
+        root.addView(utilityRow)
+        root.addView(tabRow)
+        root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
 
-         setContentView(root)
-         updateActionButtons()
+        setContentView(root)
+        updateActionButtons()
     }
 
-private fun showCustomSizeDialog(sizeButton: Button) {
-    val input = EditText(this).apply {
-        hint = "Example: 32"
-        inputType = android.text.InputType.TYPE_CLASS_NUMBER
+    private fun convertSingleSvg(uri: Uri) {
+        suggestedFileName = makeXmlFileName(uri)
+
+        val result = SvgToVectorConverter.convert(
+            readTextFromUri(uri),
+            outputDpSize,
+            conversionProfile
+        )
+
+        convertedXml = result.xml
+        reportBox.text = result.report
+        outputBox.setText(convertedXml)
+        updatePreview(convertedXml)
+
+        batchResults.clear()
+        batchGallery.removeAllViews()
+        previewBox.visibility = View.VISIBLE
+        updateActionButtons()
     }
 
-    android.app.AlertDialog.Builder(this)
-        .setTitle("Custom Output Size")
-        .setMessage("Enter dp size:")
-        .setView(input)
-        .setPositiveButton("Apply") { _, _ ->
-            val size = input.text.toString().toIntOrNull()
+    private fun convertBatchSvgs(uris: List<Uri>) {
+        batchResults.clear()
+        clearSingleConversionUi()
 
-            if (size == null || size <= 0) {
-                toast("Invalid size")
-            } else {
-                outputDpSize = size
-                sizeButton.text = "Size: ${size}dp"
-                prefs.edit()
-                .putInt("outputDpSize", outputDpSize)
-                .apply()
-        
-    }
+        uris.forEach { uri ->
+            batchResults.add(convertBatchSvg(uri))
         }
-        .setNegativeButton("Cancel", null)
-        .show()
-}
 
-private fun showAboutDialog() {
-    val versionName = try {
-        packageManager
-            .getPackageInfo(packageName, 0)
-            .versionName
-    } catch (e: Exception) {
-        "1.0"
+        reportBox.text = buildBatchReport()
+        outputBox.setText(buildBatchXmlOutput())
+        showBatchGallery()
+
+        previewBox.visibility = View.GONE
+        updateActionButtons()
+
+        toast("${batchResults.size} files converted")
     }
 
-    val layout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(64, 48, 64, 24)
-        gravity = Gravity.CENTER_HORIZONTAL
-    }
+    private fun convertBatchSvg(uri: Uri): BatchResult {
+        val fileName = makeXmlFileName(uri)
 
-    val icon = ImageView(this).apply {
-        setImageResource(R.mipmap.ic_launcher)
-        layoutParams = LinearLayout.LayoutParams(160, 160)
-    }
+        return try {
+            val result = SvgToVectorConverter.convert(
+                readTextFromUri(uri),
+                outputDpSize,
+                conversionProfile
+            )
 
-    val title = TextView(this).apply {
-        text = "SVG → Android Vector"
-        textSize = 22f
-        setTextColor(Color.BLACK)
-        gravity = Gravity.CENTER
-        setPadding(0, 16, 0, 16)
-    }
-
-    val description = TextView(this).apply {
-        text =
-            """
-Convert SVG artwork into
-Android VectorDrawable XML.
-            """.trimIndent()
-
-        textSize = 16f
-        setTextColor(Color.DKGRAY)
-        gravity = Gravity.CENTER
-        setPadding(0, 0, 0, 28)
-    }
-
-    val features = TextView(this).apply {
-        text =
-            """
-Features
-
-✓ SVG → VectorDrawable conversion
-✓ Batch ZIP export
-✓ Preview rendering
-✓ Size presets
-✓ Conversion profiles
-            """.trimIndent()
-
-        textSize = 16f
-        setTextColor(Color.DKGRAY)
-        gravity = Gravity.CENTER
-        setPadding(0, 0, 0, 28)
-    }
-
-    val note = TextView(this).apply {
-        text =
-            """
-Unsupported SVG features are reported
-when detected.
-            """.trimIndent()
-
-        textSize = 16f
-        setTextColor(Color.DKGRAY)
-        gravity = Gravity.CENTER
-        setPadding(0, 0, 0, 28)
-    }
-
-    val footer = TextView(this).apply {
-        text =
-            """
-Version $versionName
-© 2026 Nathan Harris
-            """.trimIndent()
-
-        textSize = 14f
-        setTextColor(Color.GRAY)
-        gravity = Gravity.CENTER
-    }
-
-    layout.addView(icon)
-    layout.addView(title)
-    layout.addView(description)
-    layout.addView(features)
-    layout.addView(note)
-    layout.addView(footer)
-
-    android.app.AlertDialog.Builder(this)
-        .setView(layout)
-        .setPositiveButton("OK", null)
-        .show()
-}
-
-private fun updateActionButtons() {
-    copyButton.isEnabled = convertedXml.isNotBlank()
-    saveXmlButton.isEnabled = convertedXml.isNotBlank()
-    saveZipButton.isEnabled = batchResults.isNotEmpty()
-}
-
-private fun makeXmlFileName(uri: android.net.Uri): String {
-    var displayName: String? = null
-
-    contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-        if (nameIndex >= 0 && cursor.moveToFirst()) {
-            displayName = cursor.getString(nameIndex)
+            BatchResult(
+                fileName = fileName,
+                xml = result.xml,
+                warningCount = countWarnings(result.report),
+                definitionPathCount = countDefinitionPaths(result.report),
+                success = true
+            )
+        } catch (e: Exception) {
+            BatchResult(
+                fileName = fileName,
+                xml = null,
+                warningCount = 0,
+                success = false,
+                error = e.message
+            )
         }
     }
 
-    val name = displayName ?: "converted_vector.svg"
-
-    val baseName = name
-        .substringBeforeLast(".")
-        .lowercase()
-        .replace(Regex("[^a-z0-9_]+"), "_")
-        .trim('_')
-        .ifBlank { "converted_vector" }
-
-    return "$baseName.xml"
-} 
-
-private fun showBatchGallery() {
-    batchGallery.removeAllViews()
-    
-val heading = TextView(this).apply {
-    text = "Batch Results"
-    textSize = 20f
-    setTextColor(Color.BLACK)
-    setPadding(0, 24, 0, 12)
-}
-
-batchGallery.addView(heading)
-
-    batchResults.forEach { result ->
-
- val label = TextView(this).apply {
-    text = buildString {
-
-    append(
-        when {
-            !result.success -> "✕ "
-            result.warningCount > 0 -> "⚠ "
-            else -> "✓ "
-        }
-    )
-
-    append(result.fileName)
-
-    if (result.definitionPathCount > 0) {
-        append("  (${result.definitionPathCount} defs available)")
+    private fun clearSingleConversionUi() {
+        convertedXml = ""
+        previewBox.setImageDrawable(null)
+        outputBox.setText("")
+        updateActionButtons()
     }
-}
-    textSize = 16f
-    setTextColor(Color.BLACK)
-    setPadding(0, 16, 0, 6)
-}
-        batchGallery.addView(label)
 
-        val xml = result.xml ?: return@forEach
+    private fun readTextFromUri(uri: Uri): String {
+        return contentResolver.openInputStream(uri)
+            ?.bufferedReader()
+            ?.use { it.readText() }
+            ?: ""
+    }
 
-        val image = ImageView(this).apply {
+    private fun saveBatchZip(uri: Uri) {
+        contentResolver.openOutputStream(uri)?.use { output ->
+            ZipOutputStream(output).use { zip ->
+                batchResults
+                    .filter { it.success && it.xml != null }
+                    .forEach { result ->
+                        zip.putNextEntry(ZipEntry(result.fileName))
+                        zip.write(result.xml!!.toByteArray())
+                        zip.closeEntry()
+                    }
+            }
+        }
+    }
+
+    private fun buildBatchReport(): String {
+        val successCount = batchResults.count { it.success }
+        val warningCount = batchResults.count {
+            it.success && it.warningCount > 0
+        }
+        val failureCount = batchResults.count { !it.success }
+
+        return """
+            🟢 Batch Conversion Complete
+
+            Success: $successCount
+            Warnings: $warningCount
+            Failed: $failureCount
+
+            Ready to save ZIP
+        """.trimIndent()
+    }
+
+    private fun buildBatchXmlOutput(): String {
+        return buildString {
+            appendLine("Batch XML Output")
+            appendLine("${batchResults.size} files selected")
+            appendLine("${batchResults.count { it.success }} converted")
+            appendLine("${batchResults.count { !it.success }} failed")
+            appendLine()
+            appendLine("────────────────────")
+            appendLine()
+
+            batchResults.forEach { result ->
+                appendLine("===== ${result.fileName} =====")
+
+                if (result.success && result.xml != null) {
+                    appendLine(result.xml)
+                } else {
+                    appendLine("FAILED: ${result.error ?: "Unknown error"}")
+                }
+
+                appendLine()
+            }
+        }
+    }
+
+    private fun countWarnings(report: String): Int {
+        return report.lines().count { it.startsWith("⚠") }
+    }
+
+    private fun countDefinitionPaths(report: String): Int {
+        return Regex("""Drawable definitions:\s*(\d+)""")
+            .find(report)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?: 0
+    }
+
+    private fun showOutputSizeDialog(sizeButton: Button) {
+        val options = arrayOf("24dp", "48dp", "Keep SVG size", "Custom...")
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Output Size")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> setOutputDpSize(24, sizeButton)
+                    1 -> setOutputDpSize(48, sizeButton)
+                    2 -> setOutputDpSize(-1, sizeButton)
+                    3 -> showCustomSizeDialog(sizeButton)
+                }
+            }
+            .show()
+    }
+
+    private fun setOutputDpSize(size: Int, sizeButton: Button) {
+        outputDpSize = size
+        saveOutputDpSize()
+        sizeButton.text = sizeButtonText()
+    }
+
+    private fun showProfileDialog(profileButton: Button, sizeButton: Button) {
+        val options = arrayOf(
+            "Default",
+            "Android Icon",
+            "Material Icon",
+            "Keep SVG"
+        )
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Conversion Profile")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> applyProfile("Default", 24, profileButton, sizeButton)
+                    1 -> applyProfile("Android Icon", 24, profileButton, sizeButton)
+                    2 -> applyProfile("Material Icon", 24, profileButton, sizeButton)
+                    3 -> applyProfile("Keep SVG", -1, profileButton, sizeButton)
+                }
+            }
+            .show()
+    }
+
+    private fun applyProfile(
+        profile: String,
+        size: Int,
+        profileButton: Button,
+        sizeButton: Button
+    ) {
+        conversionProfile = profile
+        outputDpSize = size
+
+        prefs.edit()
+            .putString("conversionProfile", conversionProfile)
+            .putInt("outputDpSize", outputDpSize)
+            .apply()
+
+        profileButton.text = "Profile: $conversionProfile"
+        sizeButton.text = sizeButtonText()
+    }
+
+    private fun showCustomSizeDialog(sizeButton: Button) {
+        val input = EditText(this).apply {
+            hint = "Example: 32"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Custom Output Size")
+            .setMessage("Enter dp size:")
+            .setView(input)
+            .setPositiveButton("Apply") { _, _ ->
+                val size = input.text.toString().toIntOrNull()
+
+                if (size == null || size <= 0) {
+                    toast("Invalid size")
+                } else {
+                    setOutputDpSize(size, sizeButton)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun saveOutputDpSize() {
+        prefs.edit()
+            .putInt("outputDpSize", outputDpSize)
+            .apply()
+    }
+
+    private fun sizeButtonText(): String {
+        return if (outputDpSize > 0) {
+            "Size: ${outputDpSize}dp"
+        } else {
+            "Size: SVG"
+        }
+    }
+
+    private fun copyConvertedXml() {
+        if (convertedXml.isBlank()) {
+            toast("Nothing to copy yet")
+            return
+        }
+
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText("vector.xml", convertedXml)
+        )
+        toast("Copied")
+    }
+
+    private fun showPreviewTab() {
+        previewBox.visibility = View.VISIBLE
+        reportBox.visibility = View.VISIBLE
+        batchGallery.visibility = View.VISIBLE
+        outputBox.visibility = View.GONE
+    }
+
+    private fun showXmlTab() {
+        previewBox.visibility = View.GONE
+        reportBox.visibility = View.GONE
+        batchGallery.visibility = View.GONE
+        outputBox.visibility = View.VISIBLE
+    }
+
+    private fun horizontalRow(
+        left: View,
+        right: View
+    ): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(left, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(right, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+    }
+
+    private fun showAboutDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(64, 48, 64, 24)
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+
+        val icon = ImageView(this).apply {
+            setImageResource(R.mipmap.ic_launcher)
+            layoutParams = LinearLayout.LayoutParams(160, 160)
+        }
+
+        val title = TextView(this).apply {
+            text = "SVG → Android Vector"
+            textSize = 22f
+            setTextColor(Color.BLACK)
+            gravity = Gravity.CENTER
+            setPadding(0, 16, 0, 16)
+        }
+
+        val description = TextView(this).apply {
+            text =
+                """
+                Convert SVG artwork into
+                Android VectorDrawable XML.
+                """.trimIndent()
+
+            textSize = 16f
+            setTextColor(Color.DKGRAY)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 28)
+        }
+
+        val features = TextView(this).apply {
+            text =
+                """
+                Features
+
+                ✓ SVG → VectorDrawable conversion
+                ✓ Batch ZIP export
+                ✓ Preview rendering
+                ✓ Size presets
+                ✓ Conversion profiles
+                """.trimIndent()
+
+            textSize = 16f
+            setTextColor(Color.DKGRAY)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 28)
+        }
+
+        val note = TextView(this).apply {
+            text =
+                """
+                Unsupported SVG features are reported
+                when detected.
+                """.trimIndent()
+
+            textSize = 16f
+            setTextColor(Color.DKGRAY)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 28)
+        }
+
+        val footer = TextView(this).apply {
+            text =
+                """
+                Version ${getVersionName()}
+                © 2026 Nathan Harris
+                """.trimIndent()
+
+            textSize = 14f
+            setTextColor(Color.GRAY)
+            gravity = Gravity.CENTER
+        }
+
+        layout.addView(icon)
+        layout.addView(title)
+        layout.addView(description)
+        layout.addView(features)
+        layout.addView(note)
+        layout.addView(footer)
+
+        android.app.AlertDialog.Builder(this)
+            .setView(layout)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun updateActionButtons() {
+        copyButton.isEnabled = convertedXml.isNotBlank()
+        saveXmlButton.isEnabled = convertedXml.isNotBlank()
+        saveZipButton.isEnabled = batchResults.isNotEmpty()
+    }
+
+    private fun makeXmlFileName(uri: Uri): String {
+        var displayName: String? = null
+
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex >= 0 && cursor.moveToFirst()) {
+                displayName = cursor.getString(nameIndex)
+            }
+        }
+
+        val name = displayName ?: "converted_vector.svg"
+
+        val baseName = name
+            .substringBeforeLast(".")
+            .lowercase()
+            .replace(Regex("[^a-z0-9_]+"), "_")
+            .trim('_')
+            .ifBlank { "converted_vector" }
+
+        return "$baseName.xml"
+    }
+
+    private fun showBatchGallery() {
+        batchGallery.removeAllViews()
+
+        val heading = TextView(this).apply {
+            text = "Batch Results"
+            textSize = 20f
+            setTextColor(Color.BLACK)
+            setPadding(0, 24, 0, 12)
+        }
+
+        batchGallery.addView(heading)
+
+        batchResults.forEach { result ->
+            batchGallery.addView(makeBatchResultLabel(result))
+
+            val xml = result.xml ?: return@forEach
+            batchGallery.addView(
+                makeBatchPreviewImage(xml),
+                LinearLayout.LayoutParams(-1, 220)
+            )
+        }
+    }
+
+    private fun makeBatchResultLabel(result: BatchResult): TextView {
+        return TextView(this).apply {
+            text = buildString {
+                append(
+                    when {
+                        !result.success -> "✕ "
+                        result.warningCount > 0 -> "⚠ "
+                        else -> "✓ "
+                    }
+                )
+
+                append(result.fileName)
+
+                if (result.definitionPathCount > 0) {
+                    append("  (${result.definitionPathCount} defs available)")
+                }
+            }
+
+            textSize = 16f
+            setTextColor(Color.BLACK)
+            setPadding(0, 16, 0, 6)
+        }
+    }
+
+    private fun makeBatchPreviewImage(xml: String): ImageView {
+        return ImageView(this).apply {
             setBackgroundColor(Color.WHITE)
             setPadding(16, 16, 16, 16)
             scaleType = ImageView.ScaleType.FIT_CENTER
@@ -742,29 +704,29 @@ batchGallery.addView(heading)
                 setImageDrawable(null)
             }
         }
-
-        batchGallery.addView(
-            image,
-            LinearLayout.LayoutParams(-1, 220)
-        )
     }
-}
+
+    private fun updatePreview(xml: String) {
+        try {
+            val bitmap = VectorPreviewRenderer.render(xml, 512, 512)
+            previewBox.setImageDrawable(BitmapDrawable(resources, bitmap))
+        } catch (e: Exception) {
+            previewBox.setImageDrawable(null)
+            reportBox.text = reportBox.text.toString() + "\n\nPreview failed: ${e.message}"
+        }
+    }
+
+    private fun getVersionName(): String {
+        return try {
+            packageManager
+                .getPackageInfo(packageName, 0)
+                .versionName
+        } catch (e: Exception) {
+            "1.0"
+        }
+    }
 
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
-
-
-private fun updatePreview(xml: String) {
-    try {
-        val bitmap = VectorPreviewRenderer.render(xml, 512, 512)
-        previewBox.setImageDrawable(BitmapDrawable(resources, bitmap))
-    } catch (e: Exception) {
-        previewBox.setImageDrawable(null)
-        reportBox.text = reportBox.text.toString() + "\n\nPreview failed: ${e.message}"
-    }
 }
-
-}
-
-
