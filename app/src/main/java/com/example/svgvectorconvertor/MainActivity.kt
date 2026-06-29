@@ -716,15 +716,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun getVersionName(): String {
-        return try {
-            packageManager
-                .getPackageInfo(packageName, 0)
-                .versionName
-        } catch (e: Exception) {
-            "1.0"
-        }
+private fun getVersionName(): String {
+    return try {
+        packageManager
+            .getPackageInfo(packageName, 0)
+            .versionName ?: "1.0"
+    } catch (e: Exception) {
+        "1.0"
     }
+}
 
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
