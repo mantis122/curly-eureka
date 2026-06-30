@@ -19,6 +19,14 @@ private var activeResolvedUseExpansions = 0
 private var activeUnresolvedUseReferences = 0
 private var activeSupportedMatrixTransforms = 0
 private var activeUnsupportedMatrixTransforms = 0
+
+private data class BasicShapeBreakdown(
+    val rectangles: Int = 0,
+    val roundedRectangles: Int = 0,
+    val circles: Int = 0,
+    val ellipses: Int = 0,
+    val polygons: Int = 0
+)
   
 fun convert(
     svg: String,
@@ -158,6 +166,7 @@ val finalXml = optimizeDuplicateClipPathGroups(rawFinalXml)
 
 val convertedPathCount = Regex("""<path\b""").findAll(finalXml).count()
 val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
+val basicShapeBreakdown = countDrawableBasicShapeBreakdown(drawableSvgForStats)
 val convertedOriginalPathCount = convertedPathCount - convertedBasicShapeCount
 val generatedGroupCount = Regex("""<group\b""").findAll(finalXml).count()
 
@@ -202,6 +211,7 @@ appendLine()
         appendLine("✓ Symbol definitions: $symbolCount")
     }
     appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
+    appendBasicShapeBreakdown(basicShapeBreakdown)
     if (definitionDrawableElementCount > 0) {
         appendLine("✓ Drawable definitions: $definitionDrawableElementCount")
     }
@@ -244,6 +254,7 @@ appendLine()
     appendLine()
 
     appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
+    appendBasicShapeBreakdown(basicShapeBreakdown)
     if (definitionDrawableElementCount > 0) {
         appendLine("✓ Drawable definitions: $definitionDrawableElementCount")
     }
@@ -324,6 +335,95 @@ private fun countConvertedBasicShapes(xml: String): Int {
     return Regex("""<!-- converted from <(rect|circle|ellipse|line|polyline|polygon)> -->""")
         .findAll(xml)
         .count()
+}
+
+private fun StringBuilder.appendBasicShapeBreakdown(breakdown: BasicShapeBreakdown) {
+    appendLine("    • Rectangles: ${breakdown.rectangles}")
+    appendLine("    • Rounded rectangles: ${breakdown.roundedRectangles}")
+    appendLine("    • Circles: ${breakdown.circles}")
+    appendLine("    • Ellipses: ${breakdown.ellipses}")
+    appendLine("    • Polygons: ${breakdown.polygons}")
+}
+
+private fun countDrawableBasicShapeBreakdown(svg: String): BasicShapeBreakdown {
+    var rectangles = 0
+    var roundedRectangles = 0
+    var circles = 0
+    var ellipses = 0
+    var polygons = 0
+
+    fun countElement(element: Element) {
+        val tag = element.tagName.substringAfter(":").lowercase()
+
+        when (tag) {
+            "rect" -> {
+                if (basicShapeToPathData(element, tag) != null) {
+                    val rx = floatAttr(element, "rx") ?: 0f
+                    val ry = floatAttr(element, "ry") ?: 0f
+                    if (rx > 0f || ry > 0f) {
+                        roundedRectangles++
+                    } else {
+                        rectangles++
+                    }
+                }
+            }
+            "circle" -> {
+                if (basicShapeToPathData(element, tag) != null) circles++
+            }
+            "ellipse" -> {
+                if (basicShapeToPathData(element, tag) != null) ellipses++
+            }
+            "polygon" -> {
+                if (basicShapeToPathData(element, tag) != null) polygons++
+            }
+        }
+
+        val children = element.childNodes
+        for (i in 0 until children.length) {
+            val child = children.item(i)
+            if (child.nodeType == Node.ELEMENT_NODE) {
+                countElement(child as Element)
+            }
+        }
+    }
+
+    return try {
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            isIgnoringComments = true
+        }
+
+        val document = factory
+            .newDocumentBuilder()
+            .parse(InputSource(StringReader(svg)))
+
+        countElement(document.documentElement)
+
+        BasicShapeBreakdown(
+            rectangles = rectangles,
+            roundedRectangles = roundedRectangles,
+            circles = circles,
+            ellipses = ellipses,
+            polygons = polygons
+        )
+    } catch (e: Exception) {
+        val rectTagMatches = Regex("""<\s*rect\b[^>]*>""", RegexOption.IGNORE_CASE)
+            .findAll(svg)
+            .map { it.value }
+            .toList()
+
+        val roundedRectFallbackCount = rectTagMatches.count { tag ->
+            Regex("""\b(rx|ry)\s*=""", RegexOption.IGNORE_CASE).containsMatchIn(tag)
+        }
+
+        BasicShapeBreakdown(
+            rectangles = rectTagMatches.size - roundedRectFallbackCount,
+            roundedRectangles = roundedRectFallbackCount,
+            circles = Regex("""<\s*circle\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count(),
+            ellipses = Regex("""<\s*ellipse\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count(),
+            polygons = Regex("""<\s*polygon\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
+        )
+    }
 }
 
 private fun optimizeDuplicateClipPathGroups(xml: String): String {
