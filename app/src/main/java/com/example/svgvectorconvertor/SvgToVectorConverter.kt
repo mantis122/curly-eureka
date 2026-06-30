@@ -1748,9 +1748,26 @@ private fun ellipseToPathData(element: Element): String {
 
     if (rx <= 0f || ry <= 0f) return ""
 
-    return "M ${cx - rx},$cy " +
-        "A $rx,$ry 0,1,0 ${cx + rx},$cy " +
-        "A $rx,$ry 0,1,0 ${cx - rx},$cy Z"
+    return ellipsePathData(cx, cy, rx, ry)
+}
+
+private fun ellipsePathData(cx: Float, cy: Float, rx: Float, ry: Float): String {
+    // Approximate the ellipse with four cubic Bézier curves.
+    // This avoids relying on SVG arc commands in VectorDrawable output.
+    val k = 0.55228475f
+
+    val left = cx - rx
+    val right = cx + rx
+    val top = cy - ry
+    val bottom = cy + ry
+    val ox = rx * k
+    val oy = ry * k
+
+    return "M $cx,$top " +
+        "C ${cx + ox},$top $right,${cy - oy} $right,$cy " +
+        "C $right,${cy + oy} ${cx + ox},$bottom $cx,$bottom " +
+        "C ${cx - ox},$bottom $left,${cy + oy} $left,$cy " +
+        "C $left,${cy - oy} ${cx - ox},$top $cx,$top Z"
 }
 
 private fun lineToPathData(element: Element): String {
@@ -1944,7 +1961,7 @@ private fun basicShapeTagToPathData(tag: String, tagName: String): String {
             val rx = floatAttrFromTag("rx") ?: return ""
             val ry = floatAttrFromTag("ry") ?: return ""
             if (rx <= 0f || ry <= 0f) return ""
-            "M ${cx - rx},$cy A $rx,$ry 0,1,0 ${cx + rx},$cy A $rx,$ry 0,1,0 ${cx - rx},$cy Z"
+            ellipsePathData(cx, cy, rx, ry)
         }
 
         "line" -> {
