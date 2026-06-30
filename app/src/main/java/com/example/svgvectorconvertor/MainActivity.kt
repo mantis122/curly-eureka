@@ -20,6 +20,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import android.graphics.drawable.BitmapDrawable
 
 class MainActivity : ComponentActivity() {
     private lateinit var outputBox: EditText
