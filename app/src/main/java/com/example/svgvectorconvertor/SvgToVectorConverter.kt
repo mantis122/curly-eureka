@@ -1191,62 +1191,33 @@ val currentClipPath = styleValue(style, "clip-path")
 
         "g" -> {
             val transform = element.getAttribute("transform")
-            val translate = parseTranslate(transform)
-            val scale = parseScale(transform)
-            val rotate = parseRotate(transform)
-            val matrix = parseMatrix(transform)
+            val transforms = parseTransformList(transform)
             val groupClipPathId = clipPathIdFromValue(currentClipPath)
             val hasClipPath = groupClipPathId != null && groupClipPathId != activeClipPathId && activeClipPathData.containsKey(groupClipPathId)
 
-            val needsGroup = translate != null || scale != null || rotate != null || matrix != null || hasClipPath
+            val needsGroup = transforms.isNotEmpty() || hasClipPath
 
             if (needsGroup) {
-                output.appendLine("${indent}<group")
-
-                if (translate != null) {
-                    output.appendLine("""${indent}    android:translateX="${translate.first}"""")
-                    output.appendLine("""${indent}    android:translateY="${translate.second}"""")
-                }
-
-                if (scale != null) {
-                    output.appendLine("""${indent}    android:scaleX="${scale.first}"""")
-                    output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
-                }
-
-if (rotate != null) {
-    output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
-    if (rotate.pivotX != null && rotate.pivotY != null) {
-        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
-        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
-    }
-}
-
-if (matrix != null) {
-    if (matrix.translateX != 0f) {
-        output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
-    }
-    if (matrix.translateY != 0f) {
-        output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
-    }
-    if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
-        output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
-        output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
-    }
-    if (matrix.rotation != 0f) {
-        output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
-    }
-                          }
-
-                output.appendLine("${indent}>")
+                var currentIndent = indent
+                var openedGroupCount = 0
 
                 if (hasClipPath) {
-                    appendClipPath(output, groupClipPathId, indent + "    ")
+                    output.appendLine("${currentIndent}<group>")
+                    appendClipPath(output, groupClipPathId, currentIndent + "    ")
+                    currentIndent += "    "
+                    openedGroupCount++
+                }
+
+                transforms.forEach { parsedTransform ->
+                    appendTransformGroupStart(output, parsedTransform, currentIndent)
+                    currentIndent += "    "
+                    openedGroupCount++
                 }
 
                 appendChildrenWithClipGrouping(
                     output,
                     element,
-                    indent + "    ",
+                    currentIndent,
                     currentFill,
                     currentStroke,
                     currentStrokeWidth,
@@ -1262,7 +1233,10 @@ if (matrix != null) {
                     if (hasClipPath) groupClipPathId else activeClipPathId
                 )
 
-                output.appendLine("${indent}</group>")
+                repeat(openedGroupCount) {
+                    currentIndent = currentIndent.dropLast(4)
+                    output.appendLine("${currentIndent}</group>")
+                }
                 output.appendLine()
             } else {
                 appendChildrenWithClipGrouping(
@@ -1692,54 +1666,29 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
     val stroke = safeStrokeColor(rawStroke)
 
     val pathTransform = element.getAttribute("transform")
-    val translate = parseTranslate(pathTransform)
-    val matrix = parseMatrix(pathTransform)
-    val scale = parseScale(pathTransform)
-    val rotate = parseRotate(pathTransform)
+    val transforms = parseTransformList(pathTransform)
 
-val pathNeedsGroup = translate != null || scale != null || rotate != null || matrix != null || hasClipPath
+    val pathNeedsGroup = transforms.isNotEmpty() || hasClipPath
 
     if (pathNeedsGroup) {
-        output.appendLine("${indent}<group")
+        var currentIndent = indent
+        var openedGroupCount = 0
 
-        if (translate != null) {
-            output.appendLine("""${indent}    android:translateX="${translate.first}"""")
-            output.appendLine("""${indent}    android:translateY="${translate.second}"""")
+        if (hasClipPath) {
+            output.appendLine("${currentIndent}<group>")
+            appendClipPath(output, clipPathId, currentIndent + "    ")
+            currentIndent += "    "
+            openedGroupCount++
         }
 
-        if (scale != null) {
-            output.appendLine("""${indent}    android:scaleX="${scale.first}"""")
-            output.appendLine("""${indent}    android:scaleY="${scale.second}"""")
+        transforms.forEach { parsedTransform ->
+            appendTransformGroupStart(output, parsedTransform, currentIndent)
+            currentIndent += "    "
+            openedGroupCount++
         }
 
-if (rotate != null) {
-    output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
-    if (rotate.pivotX != null && rotate.pivotY != null) {
-        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
-        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
-    }
-}
-
-if (matrix != null) {
-    if (matrix.translateX != 0f) {
-        output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
-    }
-    if (matrix.translateY != 0f) {
-        output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
-    }
-    if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
-        output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
-        output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
-    }
-    if (matrix.rotation != 0f) {
-        output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
-    }
-                          }
-
-                          output.appendLine("${indent}>")
-                          
         if (sourceTag != null) {
-            output.appendLine("${indent}    <!-- converted from <$sourceTag> -->")
+            output.appendLine("${currentIndent}<!-- converted from <$sourceTag> -->")
         }
         appendPath(
             output,
@@ -1752,9 +1701,13 @@ if (matrix != null) {
             fillRule.ifBlank { null },
             fillAlpha,
             strokeAlpha,
-            indent + "    "
+            currentIndent
         )
-        output.appendLine("${indent}</group>")
+
+        repeat(openedGroupCount) {
+            currentIndent = currentIndent.dropLast(4)
+            output.appendLine("${currentIndent}</group>")
+        }
     } else {
         if (sourceTag != null) {
             output.appendLine("${indent}<!-- converted from <$sourceTag> -->")
@@ -2191,6 +2144,96 @@ private fun appendPath(
             .firstOrNull()
     }
 
+
+    private sealed class ParsedTransform {
+        data class Translate(val x: Float, val y: Float) : ParsedTransform()
+        data class Scale(val x: Float, val y: Float) : ParsedTransform()
+        data class Rotate(val degrees: Float, val pivotX: Float?, val pivotY: Float?) : ParsedTransform()
+        data class Matrix(val value: MatrixTransform) : ParsedTransform()
+    }
+
+    private fun parseTransformList(transform: String?): List<ParsedTransform> {
+        if (transform.isNullOrBlank()) return emptyList()
+
+        return Regex("""([A-Za-z]+)\s*\(([^)]*)\)""")
+            .findAll(transform)
+            .mapNotNull { match ->
+                val name = match.groupValues[1].lowercase(Locale.US)
+                val nums = parseTransformNumbers(match.groupValues[2])
+
+                when (name) {
+                    "translate" -> {
+                        if (nums.isEmpty()) null
+                        else ParsedTransform.Translate(nums[0], nums.getOrNull(1) ?: 0f)
+                    }
+                    "scale" -> {
+                        if (nums.isEmpty()) null
+                        else ParsedTransform.Scale(nums[0], nums.getOrNull(1) ?: nums[0])
+                    }
+                    "rotate" -> {
+                        if (nums.isEmpty()) null
+                        else ParsedTransform.Rotate(nums[0], nums.getOrNull(1), nums.getOrNull(2))
+                    }
+                    "matrix" -> parseMatrixValues(nums)?.let { ParsedTransform.Matrix(it) }
+                    else -> null
+                }
+            }
+            .toList()
+    }
+
+    private fun parseTransformNumbers(value: String): List<Float> {
+        return value
+            .trim()
+            .split(Regex("[,\\s]+"))
+            .filter { it.isNotBlank() }
+            .mapNotNull { it.toFloatOrNull() }
+    }
+
+    private fun appendTransformGroupStart(
+        output: StringBuilder,
+        transform: ParsedTransform,
+        indent: String
+    ) {
+        output.appendLine("${indent}<group")
+
+        when (transform) {
+            is ParsedTransform.Translate -> {
+                output.appendLine("""${indent}    android:translateX="${transform.x}"""")
+                output.appendLine("""${indent}    android:translateY="${transform.y}"""")
+            }
+            is ParsedTransform.Scale -> {
+                output.appendLine("""${indent}    android:scaleX="${transform.x}"""")
+                output.appendLine("""${indent}    android:scaleY="${transform.y}"""")
+            }
+            is ParsedTransform.Rotate -> {
+                output.appendLine("""${indent}    android:rotation="${transform.degrees}"""")
+                if (transform.pivotX != null && transform.pivotY != null) {
+                    output.appendLine("""${indent}    android:pivotX="${transform.pivotX}"""")
+                    output.appendLine("""${indent}    android:pivotY="${transform.pivotY}"""")
+                }
+            }
+            is ParsedTransform.Matrix -> {
+                val matrix = transform.value
+
+                if (matrix.translateX != 0f) {
+                    output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
+                }
+                if (matrix.translateY != 0f) {
+                    output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
+                }
+                if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
+                    output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
+                    output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
+                }
+                if (matrix.rotation != 0f) {
+                    output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
+                }
+            }
+        }
+
+        output.appendLine("${indent}>")
+    }
+
     private data class RotateTransform(
         val degrees: Float,
         val pivotX: Float?,
@@ -2212,11 +2255,10 @@ private fun parseMatrix(transform: String?): MatrixTransform? {
         .find(transform)
         ?: return null
 
-    val nums = match.groupValues[1]
-        .split(Regex("[,\\s]+"))
-        .filter { it.isNotBlank() }
-        .mapNotNull { it.toFloatOrNull() }
+    return parseMatrixValues(parseTransformNumbers(match.groupValues[1]))
+}
 
+private fun parseMatrixValues(nums: List<Float>): MatrixTransform? {
     if (nums.size != 6) {
         activeUnsupportedMatrixTransforms++
         return null
@@ -2257,7 +2299,7 @@ private fun parseMatrix(transform: String?): MatrixTransform? {
         rotation = rotation
     )
 }
-    
+
 
     private fun parseRotate(transform: String?): RotateTransform? {
         if (transform == null) return null
