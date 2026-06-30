@@ -3,7 +3,6 @@ package com.example.svgvectorconverter
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.graphics.Color
-import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -645,65 +644,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showBatchGallery() {
-        batchGallery.removeAllViews()
-
-        val heading = TextView(this).apply {
-            text = "Batch Results"
-            textSize = 20f
-            setTextColor(Color.BLACK)
-            setPadding(0, 24, 0, 12)
-        }
-
-        batchGallery.addView(heading)
-
-        batchResults.forEach { result ->
-            batchGallery.addView(makeBatchResultLabel(result))
-
-            val xml = result.xml ?: return@forEach
-            batchGallery.addView(
-                makeBatchPreviewImage(xml),
-                LinearLayout.LayoutParams(-1, 220)
-            )
-        }
-    }
-
-    private fun makeBatchResultLabel(result: BatchResult): TextView {
-        return TextView(this).apply {
-            text = buildString {
-                append(
-                    when {
-                        !result.success -> "✕ "
-                        result.warningCount > 0 -> "⚠ "
-                        else -> "✓ "
-                    }
-                )
-
-                append(result.fileName)
-
-                if (result.definitionPathCount > 0) {
-                    append("  (${result.definitionPathCount} defs available)")
-                }
-            }
-
-            textSize = 16f
-            setTextColor(Color.BLACK)
-            setPadding(0, 16, 0, 6)
-        }
-    }
-
-    private fun makeBatchPreviewImage(xml: String): ImageView {
-        return ImageView(this).apply {
-            setBackgroundColor(Color.WHITE)
-            setPadding(16, 16, 16, 16)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-
-            try {
-                val bitmap = VectorPreviewRenderer.render(xml, 256, 256)
-                setImageDrawable(BitmapDrawable(resources, bitmap))
-            } catch (e: Exception) {
-                setImageDrawable(null)
-            }
-        }
+        BatchGalleryRenderer.render(
+            context = this,
+            container = batchGallery,
+            results = batchResults
+        )
     }
 
     private fun updatePreview(xml: String) {
