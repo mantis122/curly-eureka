@@ -159,14 +159,11 @@ object SvgShapeConverters {
     }
 
     private fun pointsToPathData(points: String, close: Boolean): String {
-        val values = points
-            .trim()
-            .replace(",", " ")
-            .split(Regex("\\s+"))
-            .mapNotNull { it.toFloatOrNull() }
+        val values = parsePointNumbers(points)
 
         if (values.size < 4) return ""
 
+        // SVG point lists are pairs. If an odd trailing number exists, ignore it.
         val output = StringBuilder("M ${values[0]},${values[1]}")
 
         var i = 2
@@ -178,6 +175,18 @@ object SvgShapeConverters {
         if (close) output.append(" Z")
 
         return output.toString()
+    }
+
+    private fun parsePointNumbers(points: String): List<Float> {
+        // Handles common SVG point formats:
+        // 10,20 30,40
+        // 10 20 30 40
+        // 10,20,30,40
+        // 10-20 30-40
+        val numberPattern = Regex("""[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?""")
+        return numberPattern.findAll(points)
+            .mapNotNull { it.value.toFloatOrNull() }
+            .toList()
     }
 
     private fun floatAttr(element: Element, name: String): Float? {
