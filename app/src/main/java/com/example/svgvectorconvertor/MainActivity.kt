@@ -34,10 +34,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var saveXmlButton: Button
     private lateinit var saveZipButton: Button
 
-    private val prefs by lazy {
-        getSharedPreferences("svg_converter_settings", MODE_PRIVATE)
-    }
-
     private val openSvg = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -73,11 +69,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        outputDpSize = prefs.getInt("outputDpSize", 24)
-        conversionProfile = prefs.getString(
-            "conversionProfile",
-            "Default"
-        ) ?: "Default"
+        val savedSettings = ConverterSettingsStore.load(this)
+        outputDpSize = savedSettings.outputDpSize
+        conversionProfile = savedSettings.conversionProfile
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -417,10 +411,13 @@ class MainActivity : ComponentActivity() {
         conversionProfile = profile
         outputDpSize = size
 
-        prefs.edit()
-            .putString("conversionProfile", conversionProfile)
-            .putInt("outputDpSize", outputDpSize)
-            .apply()
+        ConverterSettingsStore.save(
+            this,
+            ConverterSettings(
+                outputDpSize = outputDpSize,
+                conversionProfile = conversionProfile
+            )
+        )
 
         profileButton.text = "Profile: $conversionProfile"
         sizeButton.text = sizeButtonText()
@@ -450,9 +447,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun saveOutputDpSize() {
-        prefs.edit()
-            .putInt("outputDpSize", outputDpSize)
-            .apply()
+        ConverterSettingsStore.saveOutputDpSize(this, outputDpSize)
     }
 
     private fun sizeButtonText(): String {
