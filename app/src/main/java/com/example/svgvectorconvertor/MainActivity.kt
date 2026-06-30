@@ -34,6 +34,43 @@ class MainActivity : ComponentActivity() {
     private lateinit var saveXmlButton: Button
     private lateinit var saveZipButton: Button
 
+    private fun makeButton(
+        label: String,
+        onClick: () -> Unit
+    ): Button {
+        return Button(this).apply {
+            text = label
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun makeText(
+        value: String,
+        sizeSp: Float,
+        color: Int,
+        gravityValue: Int = Gravity.START,
+        paddingBottom: Int = 0
+    ): TextView {
+        return TextView(this).apply {
+            text = value
+            textSize = sizeSp
+            setTextColor(color)
+            gravity = gravityValue
+            if (paddingBottom > 0) {
+                setPadding(0, 0, 0, paddingBottom)
+            }
+        }
+    }
+
+    private fun setMainContentState(
+        showPreviewContent: Boolean
+    ) {
+        previewBox.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
+        reportBox.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
+        batchGallery.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
+        outputBox.visibility = if (showPreviewContent) View.GONE else View.VISIBLE
+    }
+
     private val openSvg = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -79,29 +116,14 @@ class MainActivity : ComponentActivity() {
             setBackgroundColor(Color.rgb(250, 248, 240))
         }
 
-        val title = TextView(this).apply {
-            text = "SVG → Android Vector"
-            textSize = 24f
-            setTextColor(Color.BLACK)
+        val title = makeText("SVG → Android Vector", 24f, Color.BLACK)
+        val versionLabel = makeText("v${getVersionName()}", 12f, Color.GRAY)
+
+        val openButton = makeButton("Open SVG") {
+            openSvg.launch(arrayOf("image/svg+xml", "text/xml", "text/plain"))
         }
 
-        val versionLabel = TextView(this).apply {
-            text = "v${getVersionName()}"
-            textSize = 12f
-            setTextColor(Color.GRAY)
-        }
-
-        val openButton = Button(this).apply {
-            text = "Open SVG"
-            setOnClickListener {
-                openSvg.launch(arrayOf("image/svg+xml", "text/xml", "text/plain"))
-            }
-        }
-
-        copyButton = Button(this).apply {
-            text = "Copy XML"
-            setOnClickListener { copyConvertedXml() }
-        }
+        copyButton = makeButton("Copy XML") { copyConvertedXml() }
 
         val sizeButton = Button(this).apply {
             text = sizeButtonText()
@@ -117,41 +139,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val batchButton = Button(this).apply {
-            text = "Batch SVGs"
-            setOnClickListener {
-                openMultipleSvgs.launch(arrayOf("image/svg+xml", "text/xml", "text/plain"))
-            }
+        val batchButton = makeButton("Batch SVGs") {
+            openMultipleSvgs.launch(arrayOf("image/svg+xml", "text/xml", "text/plain"))
         }
 
-        saveZipButton = Button(this).apply {
-            text = "Save ZIP"
-            setOnClickListener {
-                if (batchResults.isEmpty()) {
-                    toast("No batch results yet")
-                } else {
-                    saveZip.launch("converted_vectors.zip")
-                }
-            }
-        }
-
-        saveXmlButton = Button(this).apply {
-            text = "Save XML"
-            setOnClickListener {
-                if (convertedXml.isBlank()) {
-                    toast("Nothing to save yet")
-                } else {
-                    saveXml.launch(suggestedFileName)
-                }
-            }
-        }
-
-        val aboutButton = Button(this).apply {
-            text = "About"
-            setOnClickListener {
-                showAboutDialog()
-            }
-        }
+        saveZipButton = makeButton("Save ZIP") { saveBatchZip() }
+        saveXmlButton = makeButton("Save XML") { saveSingleXml() }
+        val aboutButton = makeButton("About") { showAboutDialog() }
 
         previewBox = ImageView(this).apply {
             setBackgroundColor(Color.WHITE)
@@ -175,15 +169,8 @@ class MainActivity : ComponentActivity() {
             visibility = View.GONE
         }
 
-        val previewTab = Button(this).apply {
-            text = "Preview"
-            setOnClickListener { showPreviewTab() }
-        }
-
-        val xmlTab = Button(this).apply {
-            text = "XML"
-            setOnClickListener { showXmlTab() }
-        }
+        val previewTab = makeButton("Preview") { showPreviewTab() }
+        val xmlTab = makeButton("XML") { showXmlTab() }
 
         val openRow = horizontalRow(openButton, batchButton)
         val saveRow = horizontalRow(saveXmlButton, saveZipButton)
@@ -198,10 +185,7 @@ class MainActivity : ComponentActivity() {
 
         val tabRow = horizontalRow(previewTab, xmlTab)
 
-        reportBox = TextView(this).apply {
-            text = "No SVG converted yet"
-            textSize = 14f
-            setTextColor(Color.BLACK)
+        reportBox = makeText("No SVG converted yet", 14f, Color.BLACK).apply {
             setPadding(0, 16, 0, 16)
         }
 
@@ -377,7 +361,7 @@ class MainActivity : ComponentActivity() {
 
     private fun setOutputDpSize(size: Int, sizeButton: Button) {
         outputDpSize = size
-        saveOutputDpSize()
+        ConverterSettingsStore.saveOutputDpSize(this, outputDpSize)
         sizeButton.text = sizeButtonText()
     }
 
@@ -446,15 +430,28 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-    private fun saveOutputDpSize() {
-        ConverterSettingsStore.saveOutputDpSize(this, outputDpSize)
-    }
 
     private fun sizeButtonText(): String {
         return if (outputDpSize > 0) {
             "Size: ${outputDpSize}dp"
         } else {
             "Size: SVG"
+        }
+    }
+
+    private fun saveSingleXml() {
+        if (convertedXml.isBlank()) {
+            toast("Nothing to save yet")
+        } else {
+            saveXml.launch(suggestedFileName)
+        }
+    }
+
+    private fun saveBatchZip() {
+        if (batchResults.isEmpty()) {
+            toast("No batch results yet")
+        } else {
+            saveZip.launch("converted_vectors.zip")
         }
     }
 
@@ -472,17 +469,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showPreviewTab() {
-        previewBox.visibility = View.VISIBLE
-        reportBox.visibility = View.VISIBLE
-        batchGallery.visibility = View.VISIBLE
-        outputBox.visibility = View.GONE
+        setMainContentState(showPreviewContent = true)
     }
 
     private fun showXmlTab() {
-        previewBox.visibility = View.GONE
-        reportBox.visibility = View.GONE
-        batchGallery.visibility = View.GONE
-        outputBox.visibility = View.VISIBLE
+        setMainContentState(showPreviewContent = false)
     }
 
     private fun horizontalRow(
@@ -508,69 +499,63 @@ class MainActivity : ComponentActivity() {
             layoutParams = LinearLayout.LayoutParams(160, 160)
         }
 
-        val title = TextView(this).apply {
-            text = "SVG → Android Vector"
-            textSize = 22f
-            setTextColor(Color.BLACK)
-            gravity = Gravity.CENTER
+        val title = makeText(
+            "SVG → Android Vector",
+            22f,
+            Color.BLACK,
+            Gravity.CENTER,
+            paddingBottom = 16
+        ).apply {
             setPadding(0, 16, 0, 16)
         }
 
-        val description = TextView(this).apply {
-            text =
-                """
-                Convert SVG artwork into
-                Android VectorDrawable XML.
-                """.trimIndent()
+        val description = makeText(
+            """
+            Convert SVG artwork into
+            Android VectorDrawable XML.
+            """.trimIndent(),
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER,
+            paddingBottom = 28
+        )
 
-            textSize = 16f
-            setTextColor(Color.DKGRAY)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 28)
-        }
+        val features = makeText(
+            """
+            Features
 
-        val features = TextView(this).apply {
-            text =
-                """
-                Features
+            ✓ SVG → VectorDrawable conversion
+            ✓ Batch ZIP export
+            ✓ Preview rendering
+            ✓ Size presets
+            ✓ Conversion profiles
+            """.trimIndent(),
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER,
+            paddingBottom = 28
+        )
 
-                ✓ SVG → VectorDrawable conversion
-                ✓ Batch ZIP export
-                ✓ Preview rendering
-                ✓ Size presets
-                ✓ Conversion profiles
-                """.trimIndent()
+        val note = makeText(
+            """
+            Unsupported SVG features are reported
+            when detected.
+            """.trimIndent(),
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER,
+            paddingBottom = 28
+        )
 
-            textSize = 16f
-            setTextColor(Color.DKGRAY)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 28)
-        }
-
-        val note = TextView(this).apply {
-            text =
-                """
-                Unsupported SVG features are reported
-                when detected.
-                """.trimIndent()
-
-            textSize = 16f
-            setTextColor(Color.DKGRAY)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 28)
-        }
-
-        val footer = TextView(this).apply {
-            text =
-                """
-                Version ${getVersionName()}
-                © 2026 Nathan Harris
-                """.trimIndent()
-
-            textSize = 14f
-            setTextColor(Color.GRAY)
-            gravity = Gravity.CENTER
-        }
+        val footer = makeText(
+            """
+            Version ${getVersionName()}
+            © 2026 Nathan Harris
+            """.trimIndent(),
+            14f,
+            Color.GRAY,
+            Gravity.CENTER
+        )
 
         layout.addView(icon)
         layout.addView(title)
@@ -609,15 +594,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-private fun getVersionName(): String {
-    return try {
-        packageManager
-            .getPackageInfo(packageName, 0)
-            .versionName ?: "1.0"
-    } catch (e: Exception) {
-        "1.0"
+    private fun getVersionName(): String {
+        return try {
+            packageManager
+                .getPackageInfo(packageName, 0)
+                .versionName ?: "1.0"
+        } catch (e: Exception) {
+            "1.0"
+        }
     }
-}
 
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
