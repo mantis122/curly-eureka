@@ -96,6 +96,8 @@ val presentationStyleAttributeCount = listOf(
         .count()
 }
 
+val opacityAttributeCount = countOpacityAttributes(svgForTransformStats)
+
 val basicShapeTags = listOf("rect", "circle", "ellipse", "line", "polyline", "polygon")
 val basicShapeCount = basicShapeTags.sumOf { tag ->
     Regex("""<\s*$tag\b[^>]*>""", RegexOption.IGNORE_CASE)
@@ -227,6 +229,9 @@ appendLine()
     }
     appendLine("✓ Style attributes parsed: $styleAttributeCount")
     appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
+    if (opacityAttributeCount > 0) {
+        appendLine("✓ Opacity attributes parsed: $opacityAttributeCount")
+    }
     appendLine("✓ Groups generated: $generatedGroupCount")
     appendLine("✓ Warnings: $warningCount")
     appendLine()
@@ -274,6 +279,9 @@ appendLine()
     }
     appendLine("✓ Style attributes parsed: $styleAttributeCount")
     appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
+    if (opacityAttributeCount > 0) {
+        appendLine("✓ Opacity attributes parsed: $opacityAttributeCount")
+    }
 
     appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
@@ -1971,7 +1979,30 @@ private fun normalizeFillRuleToVectorFillType(fillRule: String?): String? {
             ?.get(1)
     }
 
-    private fun styleValue(style: String?, name: String): String? {
+    private fun countOpacityAttributes(svg: String): Int {
+    val directOpacityAttributes = listOf(
+        "opacity",
+        "fill-opacity",
+        "stroke-opacity"
+    ).sumOf { name ->
+        Regex("""\b$name\s*=""", RegexOption.IGNORE_CASE)
+            .findAll(svg)
+            .count()
+    }
+
+    val styleOpacityDeclarations = Regex("""\bstyle\s*=\s*["']([^"']*)["']""", RegexOption.IGNORE_CASE)
+        .findAll(svg)
+        .sumOf { match ->
+            val style = match.groupValues.getOrNull(1) ?: ""
+            listOf("opacity", "fill-opacity", "stroke-opacity").count { name ->
+                styleValue(style, name) != null
+            }
+        }
+
+    return directOpacityAttributes + styleOpacityDeclarations
+}
+
+private fun styleValue(style: String?, name: String): String? {
         if (style == null) return null
 
         return style
