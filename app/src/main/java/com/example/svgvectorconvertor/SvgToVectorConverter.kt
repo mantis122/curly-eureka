@@ -1893,9 +1893,8 @@ private fun appendPath(
         output.appendLine("""${indent}    android:fillColor="@android:color/transparent"""")
     }
 
-    when (fillRule?.trim()?.lowercase()) {
-        "evenodd" -> output.appendLine("""${indent}    android:fillType="evenOdd"""")
-        "nonzero" -> output.appendLine("""${indent}    android:fillType="nonZero"""")
+    normalizeFillRuleToVectorFillType(fillRule)?.let { fillType ->
+        output.appendLine("""${indent}    android:fillType="$fillType"""")
     }
 
     if (stroke != null) {
@@ -1932,6 +1931,14 @@ private fun normalizeNumber(value: String?): String? {
     return java.lang.String.format(java.util.Locale.US, "%.3f", number)
         .trimEnd('0')
         .trimEnd('.')
+}
+
+private fun normalizeFillRuleToVectorFillType(fillRule: String?): String? {
+    return when (fillRule?.trim()?.lowercase(Locale.US)?.replace("-", "")) {
+        "evenodd" -> "evenOdd"
+        "nonzero" -> "nonZero"
+        else -> null
+    }
 }
 
     private fun getViewBox(svg: String): List<Float>? {
