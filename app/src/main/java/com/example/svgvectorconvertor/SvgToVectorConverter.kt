@@ -1872,18 +1872,10 @@ private fun appendPath(
             output.appendLine("""${indent}    android:strokeAlpha="$strokeAlpha"""")
         }
 
-        when (strokeLineCap?.trim()?.lowercase()) {
-            "butt" -> output.appendLine("""${indent}    android:strokeLineCap="butt"""")
-            "square" -> output.appendLine("""${indent}    android:strokeLineCap="square"""")
-            "round" -> output.appendLine("""${indent}    android:strokeLineCap="round"""")
-            else -> {
-                // Heroicons Outline and many stroked icon sets expect round line caps.
-                // Android's default is butt, so write round explicitly when no cap is provided.
-                if (stroke != null) {
-                    output.appendLine("""${indent}    android:strokeLineCap="round"""")
-                }
-            }
-        }
+when (strokeLineCap?.trim()?.lowercase()) {
+    "square" -> output.appendLine("""${indent}    android:strokeLineCap="square"""")
+    "round" -> output.appendLine("""${indent}    android:strokeLineCap="round"""")
+}
 
         when (strokeLineJoin?.trim()?.lowercase()) {
             "miter" -> output.appendLine("""${indent}    android:strokeLineJoin="miter"""")
