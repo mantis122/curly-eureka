@@ -904,8 +904,68 @@ private fun averageStopColor(stops: List<Pair<String, Float>>): String? {
 
 private data class RgbColor(val first: Int, val second: Int, val third: Int)
 
+private val cssColors = mapOf(
+    "black" to "#000000",
+    "silver" to "#C0C0C0",
+    "gray" to "#808080",
+    "white" to "#FFFFFF",
+    "maroon" to "#800000",
+    "red" to "#FF0000",
+    "purple" to "#800080",
+    "fuchsia" to "#FF00FF",
+    "green" to "#008000",
+    "lime" to "#00FF00",
+    "olive" to "#808000",
+    "yellow" to "#FFFF00",
+    "navy" to "#000080",
+    "blue" to "#0000FF",
+    "teal" to "#008080",
+    "aqua" to "#00FFFF",
+
+    "orange" to "#FFA500",
+    "gold" to "#FFD700",
+    "pink" to "#FFC0CB",
+    "hotpink" to "#FF69B4",
+    "deeppink" to "#FF1493",
+
+    "brown" to "#A52A2A",
+    "sienna" to "#A0522D",
+    "chocolate" to "#D2691E",
+    "tan" to "#D2B48C",
+
+    "cyan" to "#00FFFF",
+    "magenta" to "#FF00FF",
+    "violet" to "#EE82EE",
+    "indigo" to "#4B0082",
+
+    "lightgray" to "#D3D3D3",
+    "darkgray" to "#A9A9A9",
+    "lightgrey" to "#D3D3D3",
+    "darkgrey" to "#A9A9A9",
+
+    "lightblue" to "#ADD8E6",
+    "skyblue" to "#87CEEB",
+    "steelblue" to "#4682B4",
+
+    "lightgreen" to "#90EE90",
+    "forestgreen" to "#228B22",
+    "seagreen" to "#2E8B57",
+
+    "crimson" to "#DC143C",
+    "coral" to "#FF7F50",
+    "salmon" to "#FA8072",
+
+    "transparent" to "#00000000"
+)
+
 private fun parseRgbColor(value: String?): RgbColor? {
     val v = value?.trim() ?: return null
+    val normalized = v.lowercase()
+
+    cssColors[normalized]?.let {
+        return parseRgbColor(it)
+    }
+
 
     if (v == "currentColor") return RgbColor(0, 0, 0)
 
