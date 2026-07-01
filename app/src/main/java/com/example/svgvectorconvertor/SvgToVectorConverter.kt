@@ -25,7 +25,8 @@ private data class BasicShapeBreakdown(
     val roundedRectangles: Int = 0,
     val circles: Int = 0,
     val ellipses: Int = 0,
-    val polygons: Int = 0
+    val polygons: Int = 0,
+    val polylines: Int = 0
 )
   
 fun convert(
@@ -343,6 +344,7 @@ private fun StringBuilder.appendBasicShapeBreakdown(breakdown: BasicShapeBreakdo
     appendLine("    • Circles: ${breakdown.circles}")
     appendLine("    • Ellipses: ${breakdown.ellipses}")
     appendLine("    • Polygons: ${breakdown.polygons}")
+    appendLine("    • Polylines: ${breakdown.polylines}")
 }
 
 private fun countDrawableBasicShapeBreakdown(svg: String): BasicShapeBreakdown {
@@ -351,6 +353,7 @@ private fun countDrawableBasicShapeBreakdown(svg: String): BasicShapeBreakdown {
     var circles = 0
     var ellipses = 0
     var polygons = 0
+    var polylines = 0
 
     fun countElement(element: Element) {
         val tag = element.tagName.substringAfter(":").lowercase()
@@ -375,6 +378,9 @@ private fun countDrawableBasicShapeBreakdown(svg: String): BasicShapeBreakdown {
             }
             "polygon" -> {
                 if (basicShapeToPathData(element, tag) != null) polygons++
+            }
+            "polyline" -> {
+                if (basicShapeToPathData(element, tag) != null) polylines++
             }
         }
 
@@ -404,7 +410,8 @@ private fun countDrawableBasicShapeBreakdown(svg: String): BasicShapeBreakdown {
             roundedRectangles = roundedRectangles,
             circles = circles,
             ellipses = ellipses,
-            polygons = polygons
+            polygons = polygons,
+            polylines = polylines
         )
     } catch (e: Exception) {
         val rectTagMatches = Regex("""<\s*rect\b[^>]*>""", RegexOption.IGNORE_CASE)
@@ -421,7 +428,8 @@ private fun countDrawableBasicShapeBreakdown(svg: String): BasicShapeBreakdown {
             roundedRectangles = roundedRectFallbackCount,
             circles = Regex("""<\s*circle\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count(),
             ellipses = Regex("""<\s*ellipse\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count(),
-            polygons = Regex("""<\s*polygon\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
+            polygons = Regex("""<\s*polygon\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count(),
+            polylines = Regex("""<\s*polyline\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
         )
     }
 }
