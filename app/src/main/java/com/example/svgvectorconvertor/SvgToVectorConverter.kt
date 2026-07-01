@@ -1910,11 +1910,11 @@ when (strokeLineCap?.trim()?.lowercase()) {
     "round" -> output.appendLine("""${indent}    android:strokeLineCap="round"""")
 }
 
-        when (strokeLineJoin?.trim()?.lowercase()) {
-            "round" -> output.appendLine("""${indent}    android:strokeLineJoin="round"""")
-            "bevel" -> output.appendLine("""${indent}    android:strokeLineJoin="bevel"""")
-            // Omit null and "miter" because Android's default matches SVG's default.
-        }
+when (strokeLineJoin?.trim()?.lowercase()) {
+    "miter" -> output.appendLine("""${indent}    android:strokeLineJoin="miter"""")
+    "round" -> output.appendLine("""${indent}    android:strokeLineJoin="round"""")
+    "bevel" -> output.appendLine("""${indent}    android:strokeLineJoin="bevel"""")
+                                 }
 
         normalizeNumber(strokeMiterLimit)?.takeIf { it != "4" && it != "4.0" }?.let { miterLimit ->
             output.appendLine("""${indent}    android:strokeMiterLimit="$miterLimit"""")
