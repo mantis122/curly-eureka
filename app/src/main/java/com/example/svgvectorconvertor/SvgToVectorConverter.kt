@@ -85,6 +85,7 @@ val presentationStyleAttributeCount = listOf(
     "stroke-width",
     "stroke-linecap",
     "stroke-linejoin",
+    "stroke-miterlimit",
     "fill-rule",
     "opacity",
     "fill-opacity",
@@ -1015,6 +1016,7 @@ private fun appendChildrenWithClipGrouping(
     inheritedStrokeWidth: String?,
     inheritedStrokeLineCap: String?,
     inheritedStrokeLineJoin: String?,
+    inheritedStrokeMiterLimit: String?,
     inheritedFillRule: String?,
     inheritedOpacity: String?,
     inheritedFillOpacity: String?,
@@ -1050,6 +1052,7 @@ private fun appendChildrenWithClipGrouping(
                     inheritedStrokeWidth,
                     inheritedStrokeLineCap,
                     inheritedStrokeLineJoin,
+                    inheritedStrokeMiterLimit,
                     inheritedFillRule,
                     inheritedOpacity,
                     inheritedFillOpacity,
@@ -1075,6 +1078,7 @@ private fun appendChildrenWithClipGrouping(
                 inheritedStrokeWidth,
                 inheritedStrokeLineCap,
                 inheritedStrokeLineJoin,
+                inheritedStrokeMiterLimit,
                 inheritedFillRule,
                 inheritedOpacity,
                 inheritedFillOpacity,
@@ -1098,6 +1102,7 @@ private fun walkSvgNode(
     inheritedStrokeWidth: String? = null,
     inheritedStrokeLineCap: String? = null,
     inheritedStrokeLineJoin: String? = null,
+    inheritedStrokeMiterLimit: String? = null,
     inheritedFillRule: String? = null,
     inheritedOpacity: String? = null,
     inheritedFillOpacity: String? = null,
@@ -1126,6 +1131,9 @@ val currentStrokeLineCap = styleValue(style, "stroke-linecap")
 
 val currentStrokeLineJoin = styleValue(style, "stroke-linejoin")
     ?: element.getAttribute("stroke-linejoin").ifBlank { inheritedStrokeLineJoin ?: "" }
+
+val currentStrokeMiterLimit = styleValue(style, "stroke-miterlimit")
+    ?: element.getAttribute("stroke-miterlimit").ifBlank { inheritedStrokeMiterLimit ?: "" }
 
 val currentFillRule = styleValue(style, "fill-rule")
     ?: element.getAttribute("fill-rule").ifBlank { inheritedFillRule ?: "" }
@@ -1165,6 +1173,7 @@ val currentClipPath = styleValue(style, "clip-path")
                 currentStrokeWidth,
                 currentStrokeLineCap,
                 currentStrokeLineJoin,
+                currentStrokeMiterLimit,
                 currentFillRule,
                 currentOpacity,
                 currentFillOpacity,
@@ -1186,6 +1195,7 @@ val currentClipPath = styleValue(style, "clip-path")
                 currentStrokeWidth,
                 currentStrokeLineCap,
                 currentStrokeLineJoin,
+                currentStrokeMiterLimit,
                 currentFillRule,
                 currentOpacity,
                 currentFillOpacity,
@@ -1232,6 +1242,7 @@ val currentClipPath = styleValue(style, "clip-path")
                     currentStrokeWidth,
                     currentStrokeLineCap,
                     currentStrokeLineJoin,
+                    currentStrokeMiterLimit,
                     currentFillRule,
                     currentOpacity,
                     currentFillOpacity,
@@ -1257,6 +1268,7 @@ val currentClipPath = styleValue(style, "clip-path")
                     currentStrokeWidth,
                     currentStrokeLineCap,
                     currentStrokeLineJoin,
+                    currentStrokeMiterLimit,
                     currentFillRule,
                     currentOpacity,
                     currentFillOpacity,
@@ -1279,6 +1291,7 @@ val currentClipPath = styleValue(style, "clip-path")
                 currentStrokeWidth,
                 currentStrokeLineCap,
                 currentStrokeLineJoin,
+                currentStrokeMiterLimit,
                 currentFillRule,
                 currentOpacity,
                 currentFillOpacity,
@@ -1299,6 +1312,7 @@ val currentClipPath = styleValue(style, "clip-path")
                 currentStrokeWidth,
                 currentStrokeLineCap,
                 currentStrokeLineJoin,
+                currentStrokeMiterLimit,
                 currentFillRule,
                 currentOpacity,
                 currentFillOpacity,
@@ -1318,6 +1332,7 @@ val currentClipPath = styleValue(style, "clip-path")
                 currentStrokeWidth,
                 currentStrokeLineCap,
                 currentStrokeLineJoin,
+                currentStrokeMiterLimit,
                 currentFillRule,
                 currentOpacity,
                 currentFillOpacity,
@@ -1367,6 +1382,7 @@ private fun appendUseElement(
     inheritedStrokeWidth: String?,
     inheritedStrokeLineCap: String?,
     inheritedStrokeLineJoin: String?,
+    inheritedStrokeMiterLimit: String?,
     inheritedFillRule: String?,
     inheritedOpacity: String?,
     inheritedFillOpacity: String?,
@@ -1499,6 +1515,7 @@ if (matrix != null) {
             inheritedStrokeWidth,
             inheritedStrokeLineCap,
             inheritedStrokeLineJoin,
+            inheritedStrokeMiterLimit,
             inheritedFillRule,
             inheritedOpacity,
             inheritedFillOpacity,
@@ -1523,6 +1540,7 @@ if (matrix != null) {
             inheritedStrokeWidth,
             inheritedStrokeLineCap,
             inheritedStrokeLineJoin,
+            inheritedStrokeMiterLimit,
             inheritedFillRule,
             inheritedOpacity,
             inheritedFillOpacity,
@@ -1546,6 +1564,7 @@ private fun appendBasicShapePath(
     inheritedStrokeWidth: String?,
     inheritedStrokeLineCap: String?,
     inheritedStrokeLineJoin: String?,
+    inheritedStrokeMiterLimit: String?,
     inheritedFillRule: String?,
     inheritedOpacity: String?,
     inheritedFillOpacity: String?,
@@ -1565,6 +1584,7 @@ private fun appendBasicShapePath(
         inheritedStrokeWidth,
         inheritedStrokeLineCap,
         inheritedStrokeLineJoin,
+        inheritedStrokeMiterLimit,
         inheritedFillRule,
         inheritedOpacity,
         inheritedFillOpacity,
@@ -1584,6 +1604,7 @@ private fun appendElementPath(
     inheritedStrokeWidth: String?,
     inheritedStrokeLineCap: String?,
     inheritedStrokeLineJoin: String?,
+    inheritedStrokeMiterLimit: String?,
     inheritedFillRule: String?,
     inheritedOpacity: String?,
     inheritedFillOpacity: String?,
@@ -1604,6 +1625,7 @@ private fun appendElementPath(
         inheritedStrokeWidth,
         inheritedStrokeLineCap,
         inheritedStrokeLineJoin,
+        inheritedStrokeMiterLimit,
         inheritedFillRule,
         inheritedOpacity,
         inheritedFillOpacity,
@@ -1624,6 +1646,7 @@ private fun appendElementPathData(
     inheritedStrokeWidth: String?,
     inheritedStrokeLineCap: String?,
     inheritedStrokeLineJoin: String?,
+    inheritedStrokeMiterLimit: String?,
     inheritedFillRule: String?,
     inheritedOpacity: String?,
     inheritedFillOpacity: String?,
@@ -1648,6 +1671,9 @@ val strokeLineCap = styleValue(style, "stroke-linecap")
 
 val strokeLineJoin = styleValue(style, "stroke-linejoin")
     ?: element.getAttribute("stroke-linejoin").ifBlank { inheritedStrokeLineJoin ?: "" }
+
+val strokeMiterLimit = styleValue(style, "stroke-miterlimit")
+    ?: element.getAttribute("stroke-miterlimit").ifBlank { inheritedStrokeMiterLimit ?: "" }
 
 val fillRule = styleValue(style, "fill-rule")
     ?: element.getAttribute("fill-rule").ifBlank { inheritedFillRule ?: "" }
@@ -1708,6 +1734,7 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
             strokeWidth.ifBlank { null },
             strokeLineCap.ifBlank { null },
             strokeLineJoin.ifBlank { null },
+            strokeMiterLimit.ifBlank { null },
             fillRule.ifBlank { null },
             fillAlpha,
             strokeAlpha,
@@ -1730,6 +1757,7 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
             strokeWidth.ifBlank { null },
             strokeLineCap.ifBlank { null },
             strokeLineJoin.ifBlank { null },
+            strokeMiterLimit.ifBlank { null },
             fillRule.ifBlank { null },
             fillAlpha,
             strokeAlpha,
@@ -1790,6 +1818,9 @@ private fun appendFlatPathsFallback(
             val strokeLineJoin = styleValue(attr(tag, "style"), "stroke-linejoin")
                 ?: attr(tag, "stroke-linejoin")
 
+            val strokeMiterLimit = styleValue(attr(tag, "style"), "stroke-miterlimit")
+                ?: attr(tag, "stroke-miterlimit")
+
             val opacity = styleValue(attr(tag, "style"), "opacity")
                 ?: attr(tag, "opacity")
 
@@ -1821,6 +1852,7 @@ private fun appendFlatPathsFallback(
                 strokeWidth,
                 strokeLineCap,
                 strokeLineJoin,
+                strokeMiterLimit,
                 fillRule,
                 resolveDrawableAlpha(opacity, fillOpacity),
                 resolveDrawableAlpha(opacity, strokeOpacity),
@@ -1843,6 +1875,7 @@ private fun appendPath(
     strokeWidth: String?,
     strokeLineCap: String?,
     strokeLineJoin: String?,
+    strokeMiterLimit: String?,
     fillRule: String?,
     fillAlpha: String?,
     strokeAlpha: String?,
@@ -1878,13 +1911,27 @@ when (strokeLineCap?.trim()?.lowercase()) {
 }
 
         when (strokeLineJoin?.trim()?.lowercase()) {
-            "miter" -> output.appendLine("""${indent}    android:strokeLineJoin="miter"""")
             "round" -> output.appendLine("""${indent}    android:strokeLineJoin="round"""")
             "bevel" -> output.appendLine("""${indent}    android:strokeLineJoin="bevel"""")
+            // Omit null and "miter" because Android's default matches SVG's default.
+        }
+
+        normalizeNumber(strokeMiterLimit)?.takeIf { it != "4" && it != "4.0" }?.let { miterLimit ->
+            output.appendLine("""${indent}    android:strokeMiterLimit="$miterLimit"""")
         }
     }
 
     output.appendLine("${indent}/>")
+}
+
+
+private fun normalizeNumber(value: String?): String? {
+    val raw = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    val cleaned = raw.removeSuffix("px").trim()
+    val number = cleaned.toFloatOrNull() ?: return null
+    return java.lang.String.format(java.util.Locale.US, "%.3f", number)
+        .trimEnd('0')
+        .trimEnd('.')
 }
 
     private fun getViewBox(svg: String): List<Float>? {
