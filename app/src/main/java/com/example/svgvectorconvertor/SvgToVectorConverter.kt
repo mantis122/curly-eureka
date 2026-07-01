@@ -96,8 +96,6 @@ val presentationStyleAttributeCount = listOf(
         .count()
 }
 
-val opacityAttributeCount = countOpacityAttributes(svgForTransformStats)
-
 val basicShapeTags = listOf("rect", "circle", "ellipse", "line", "polyline", "polygon")
 val basicShapeCount = basicShapeTags.sumOf { tag ->
     Regex("""<\s*$tag\b[^>]*>""", RegexOption.IGNORE_CASE)
@@ -168,8 +166,7 @@ val rawFinalXml = if (endIndex >= 0) {
 
 val finalXml = optimizeDuplicateClipPathGroups(rawFinalXml)
 
-val finalXmlForStats = stripSvgComments(finalXml)
-val convertedPathCount = Regex("""<path\b""")     .findAll(finalXmlForStats)     .count()
+val convertedPathCount = Regex("""<path\b""").findAll(finalXml).count()
 val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
 val basicShapeBreakdown = countDrawableBasicShapeBreakdown(drawableSvgForStats)
 val convertedOriginalPathCount = convertedPathCount - convertedBasicShapeCount
@@ -229,9 +226,6 @@ appendLine()
     }
     appendLine("✓ Style attributes parsed: $styleAttributeCount")
     appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
-    if (opacityAttributeCount > 0) {
-        appendLine("✓ Opacity attributes parsed: $opacityAttributeCount")
-    }
     appendLine("✓ Groups generated: $generatedGroupCount")
     appendLine("✓ Warnings: $warningCount")
     appendLine()
@@ -279,9 +273,6 @@ appendLine()
     }
     appendLine("✓ Style attributes parsed: $styleAttributeCount")
     appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
-    if (opacityAttributeCount > 0) {
-        appendLine("✓ Opacity attributes parsed: $opacityAttributeCount")
-    }
 
     appendLine("✓ Generated groups: $generatedGroupCount")
     appendLine()
@@ -1902,8 +1893,9 @@ private fun appendPath(
         output.appendLine("""${indent}    android:fillColor="@android:color/transparent"""")
     }
 
-    normalizeFillRuleToVectorFillType(fillRule)?.let { fillType ->
-        output.appendLine("""${indent}    android:fillType="$fillType"""")
+    when (fillRule?.trim()?.lowercase()) {
+        "evenodd" -> output.appendLine("""${indent}    android:fillType="evenOdd"""")
+        "nonzero" -> output.appendLine("""${indent}    android:fillType="nonZero"""")
     }
 
     if (stroke != null) {
@@ -1918,11 +1910,11 @@ when (strokeLineCap?.trim()?.lowercase()) {
     "round" -> output.appendLine("""${indent}    android:strokeLineCap="round"""")
 }
 
-when (strokeLineJoin?.trim()?.lowercase()) {
-    "miter" -> output.appendLine("""${indent}    android:strokeLineJoin="miter"""")
-    "round" -> output.appendLine("""${indent}    android:strokeLineJoin="round"""")
-    "bevel" -> output.appendLine("""${indent}    android:strokeLineJoin="bevel"""")
-                                 }
+        when (strokeLineJoin?.trim()?.lowercase()) {
+            "round" -> output.appendLine("""${indent}    android:strokeLineJoin="round"""")
+            "bevel" -> output.appendLine("""${indent}    android:strokeLineJoin="bevel"""")
+            // Omit null and "miter" because Android's default matches SVG's default.
+        }
 
         normalizeNumber(strokeMiterLimit)?.takeIf { it != "4" && it != "4.0" }?.let { miterLimit ->
             output.appendLine("""${indent}    android:strokeMiterLimit="$miterLimit"""")
@@ -1940,14 +1932,6 @@ private fun normalizeNumber(value: String?): String? {
     return java.lang.String.format(java.util.Locale.US, "%.3f", number)
         .trimEnd('0')
         .trimEnd('.')
-}
-
-private fun normalizeFillRuleToVectorFillType(fillRule: String?): String? {
-    return when (fillRule?.trim()?.lowercase(Locale.US)?.replace("-", "")) {
-        "evenodd" -> "evenOdd"
-        "nonzero" -> "nonZero"
-        else -> null
-    }
 }
 
     private fun getViewBox(svg: String): List<Float>? {
@@ -1979,30 +1963,7 @@ private fun normalizeFillRuleToVectorFillType(fillRule: String?): String? {
             ?.get(1)
     }
 
-    private fun countOpacityAttributes(svg: String): Int {
-    val directOpacityAttributes = listOf(
-        "opacity",
-        "fill-opacity",
-        "stroke-opacity"
-    ).sumOf { name ->
-        Regex("""\b$name\s*=""", RegexOption.IGNORE_CASE)
-            .findAll(svg)
-            .count()
-    }
-
-    val styleOpacityDeclarations = Regex("""\bstyle\s*=\s*["']([^"']*)["']""", RegexOption.IGNORE_CASE)
-        .findAll(svg)
-        .sumOf { match ->
-            val style = match.groupValues.getOrNull(1) ?: ""
-            listOf("opacity", "fill-opacity", "stroke-opacity").count { name ->
-                styleValue(style, name) != null
-            }
-        }
-
-    return directOpacityAttributes + styleOpacityDeclarations
-}
-
-private fun styleValue(style: String?, name: String): String? {
+    private fun styleValue(style: String?, name: String): String? {
         if (style == null) return null
 
         return style
