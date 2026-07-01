@@ -166,7 +166,8 @@ val rawFinalXml = if (endIndex >= 0) {
 
 val finalXml = optimizeDuplicateClipPathGroups(rawFinalXml)
 
-val finalXmlForStats = stripSvgComments(finalXml)  val convertedPathCount = Regex("""<path\b""")     .findAll(finalXmlForStats)     .count()
+val finalXmlForStats = stripSvgComments(finalXml)
+val convertedPathCount = Regex("""<path\b""")     .findAll(finalXmlForStats)     .count()
 val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
 val basicShapeBreakdown = countDrawableBasicShapeBreakdown(drawableSvgForStats)
 val convertedOriginalPathCount = convertedPathCount - convertedBasicShapeCount
