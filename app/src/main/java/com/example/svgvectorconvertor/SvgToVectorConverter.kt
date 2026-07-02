@@ -207,7 +207,7 @@ appendLine()
     appendLine()
     appendLine("✓ Visible SVG paths converted: $convertedOriginalPathCount")
     if (useCount > 0) {
-        appendLine("✓ Definitions expanded: $useCount")
+        appendLine("✓ Use references expanded: $activeResolvedUseExpansions")
     }
     if (symbolCount > 0) {
         appendLine("✓ Symbol definitions: $symbolCount")
@@ -1441,27 +1441,27 @@ private fun appendUseElement(
     val y = floatAttr(element, "y") ?: 0f
 
     val transform = element.getAttribute("transform")
-    val translate = parseTranslate(transform)
-    val scale = parseScale(transform)
-    val rotate = parseRotate(transform)
-    val matrix = parseMatrix(transform)
+    val useTransform = combineTransformList(parseTransformList(transform))
 
     val viewBoxTranslateX = -((referencedViewBox?.minX ?: 0f) * symbolScaleX)
     val viewBoxTranslateY = -((referencedViewBox?.minY ?: 0f) * symbolScaleY)
 
-    val totalTranslateX = x + (translate?.first ?: 0f) + viewBoxTranslateX
-    val totalTranslateY = y + (translate?.second ?: 0f) + viewBoxTranslateY
+    val totalTranslateX = x + viewBoxTranslateX + (useTransform?.translateX ?: 0f)
+    val totalTranslateY = y + viewBoxTranslateY + (useTransform?.translateY ?: 0f)
 
-    val effectiveScaleX = (scale?.first ?: 1f) * symbolScaleX
-    val effectiveScaleY = (scale?.second ?: 1f) * symbolScaleY
+    val effectiveScaleX = symbolScaleX * (useTransform?.scaleX ?: 1f)
+    val effectiveScaleY = symbolScaleY * (useTransform?.scaleY ?: 1f)
+
+    val effectiveRotation = useTransform?.rotation ?: 0f
+    val effectivePivotX = useTransform?.pivotX
+    val effectivePivotY = useTransform?.pivotY
 
     val needsGroup =
         totalTranslateX != 0f ||
         totalTranslateY != 0f ||
         effectiveScaleX != 1f ||
         effectiveScaleY != 1f ||
-        rotate != null ||
-        matrix != null
+        effectiveRotation != 0f
 
     if (needsGroup) {
         output.appendLine("${indent}<group")
@@ -1479,29 +1479,13 @@ private fun appendUseElement(
             output.appendLine("""${indent}    android:scaleY="$effectiveScaleY"""")
         }
 
-if (rotate != null) {
-    output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
-    if (rotate.pivotX != null && rotate.pivotY != null) {
-        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
-        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
-    }
-}
-
-if (matrix != null) {
-    if (matrix.translateX != 0f) {
-        output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
-    }
-    if (matrix.translateY != 0f) {
-        output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
-    }
-    if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
-        output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
-        output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
-    }
-    if (matrix.rotation != 0f) {
-        output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
-    }
-                          }
+        if (effectiveRotation != 0f) {
+            output.appendLine("""${indent}    android:rotation="$effectiveRotation"""")
+            if (effectivePivotX != null && effectivePivotY != null) {
+                output.appendLine("""${indent}    android:pivotX="$effectivePivotX"""")
+                output.appendLine("""${indent}    android:pivotY="$effectivePivotY"""")
+            }
+        }
 
         output.appendLine("${indent}>")
         output.appendLine("${indent}    <!-- expanded from <use href=\"#$id\"> -->")
