@@ -4,13 +4,15 @@ import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 internal sealed class ParsedTransform {
     data class Translate(val x: Float, val y: Float) : ParsedTransform()
     data class Scale(val x: Float, val y: Float) : ParsedTransform()
     data class Rotate(val degrees: Float, val pivotX: Float?, val pivotY: Float?) : ParsedTransform()
-    data class Matrix(val value: MatrixTransform) : ParsedTransform()
+    data class Matrix(val value: AffineTransform) : ParsedTransform()
 
     fun hasVisibleEffect(): Boolean {
         return when (this) {
@@ -22,7 +24,113 @@ internal sealed class ParsedTransform {
     }
 }
 
-internal data class CombinedTransform(
+/**
+ * SVG 2D affine matrix:
+ *
+ *     | a c e |
+ *     | b d f |
+ *     | 0 0 1 |
+ *
+ * Android VectorDrawable does not expose a raw matrix on <group>, so this file keeps
+ * the full SVG matrix internally, then decomposes it into the group attributes Android
+ * can represent: translate, scale, rotation, and optional pivot.
+ */
+internal data class AffineTransform(
+    val a: Float = 1f,
+    val b: Float = 0f,
+    val c: Float = 0f,
+    val d: Float = 1f,
+    val e: Float = 0f,
+    val f: Float = 0f
+) {
+    fun hasVisibleEffect(): Boolean {
+        return !nearlyEqual(a, 1f) ||
+            !nearlyEqual(b, 0f) ||
+            !nearlyEqual(c, 0f) ||
+            !nearlyEqual(d, 1f) ||
+            !nearlyEqual(e, 0f) ||
+            !nearlyEqual(f, 0f)
+    }
+
+    /**
+     * Returns this * other.
+     *
+     * This lets a transform list like:
+     * translate(...) rotate(...) scale(...)
+     *
+     * compose into the same matrix as equivalent nested SVG groups in that order.
+     */
+    fun multiply(other: AffineTransform): AffineTransform {
+        return AffineTransform(
+            a = a * other.a + c * other.b,
+            b = b * other.a + d * other.b,
+            c = a * other.c + c * other.d,
+            d = b * other.c + d * other.d,
+            e = a * other.e + c * other.f + e,
+            f = b * other.e + d * other.f + f
+        )
+    }
+
+    fun toAndroidGroupTransform(): AndroidGroupTransform? {
+        val scaleX = sqrt(a * a + b * b)
+        if (nearlyEqual(scaleX, 0f)) return null
+
+        val rotation = atan2(b, a) * 180f / PI.toFloat()
+
+        // Remove the rotation from the matrix. If Android can represent the result,
+        // it should be diagonal scale only. Non-zero off-diagonal values mean skew.
+        val cosValue = a / scaleX
+        val sinValue = b / scaleX
+
+        val unrotatedC = cosValue * c + sinValue * d
+        val unrotatedD = -sinValue * c + cosValue * d
+
+        if (!nearlyEqual(unrotatedC, 0f)) {
+            return null
+        }
+
+        return AndroidGroupTransform(
+            translateX = e,
+            translateY = f,
+            scaleX = scaleX,
+            scaleY = unrotatedD,
+            rotation = normalizeZero(rotation)
+        ).takeIf { it.hasVisibleEffect() }
+    }
+
+    companion object {
+        fun identity(): AffineTransform = AffineTransform()
+
+        fun translation(x: Float, y: Float): AffineTransform {
+            return AffineTransform(e = x, f = y)
+        }
+
+        fun scale(x: Float, y: Float): AffineTransform {
+            return AffineTransform(a = x, d = y)
+        }
+
+        fun rotation(degrees: Float): AffineTransform {
+            val radians = degrees * PI.toFloat() / 180f
+            val cosValue = cos(radians)
+            val sinValue = sin(radians)
+
+            return AffineTransform(
+                a = cosValue,
+                b = sinValue,
+                c = -sinValue,
+                d = cosValue
+            )
+        }
+
+        fun rotation(degrees: Float, pivotX: Float, pivotY: Float): AffineTransform {
+            return translation(pivotX, pivotY)
+                .multiply(rotation(degrees))
+                .multiply(translation(-pivotX, -pivotY))
+        }
+    }
+}
+
+internal data class AndroidGroupTransform(
     val translateX: Float = 0f,
     val translateY: Float = 0f,
     val scaleX: Float = 1f,
@@ -32,29 +140,16 @@ internal data class CombinedTransform(
     val pivotY: Float? = null
 ) {
     fun hasVisibleEffect(): Boolean {
-        return translateX != 0f ||
-            translateY != 0f ||
-            scaleX != 1f ||
-            scaleY != 1f ||
-            rotation != 0f
+        return !nearlyEqual(translateX, 0f) ||
+            !nearlyEqual(translateY, 0f) ||
+            !nearlyEqual(scaleX, 1f) ||
+            !nearlyEqual(scaleY, 1f) ||
+            !nearlyEqual(rotation, 0f)
     }
 }
 
-internal data class MatrixTransform(
-    val translateX: Float,
-    val translateY: Float,
-    val scaleX: Float,
-    val scaleY: Float,
-    val rotation: Float
-) {
-    fun hasVisibleEffect(): Boolean {
-        return translateX != 0f ||
-            translateY != 0f ||
-            scaleX != 1f ||
-            scaleY != 1f ||
-            rotation != 0f
-    }
-}
+// Compatibility alias so SvgTreeConverter does not need to change everywhere at once.
+internal typealias CombinedTransform = AndroidGroupTransform
 
 internal object SvgTransformParser {
     var supportedMatrixTransforms: Int = 0
@@ -102,56 +197,10 @@ internal object SvgTransformParser {
         transforms: List<ParsedTransform>,
         indent: String
     ): Pair<String, Int> {
-        var currentIndent = indent
-        var openedGroupCount = 0
+        val combinedTransform = combineTransformList(transforms) ?: return Pair(indent, 0)
 
-        transforms.filter { it.hasVisibleEffect() }.forEach { transform ->
-            when (transform) {
-                is ParsedTransform.Translate -> {
-                    output.appendLine("${currentIndent}<group")
-                    if (transform.x != 0f) {
-                        output.appendLine("""${currentIndent}    android:translateX="${transform.x}"""")
-                    }
-                    if (transform.y != 0f) {
-                        output.appendLine("""${currentIndent}    android:translateY="${transform.y}"""")
-                    }
-                    output.appendLine("${currentIndent}>")
-                }
-                is ParsedTransform.Scale -> {
-                    output.appendLine("${currentIndent}<group")
-                    output.appendLine("""${currentIndent}    android:scaleX="${transform.x}"""")
-                    output.appendLine("""${currentIndent}    android:scaleY="${transform.y}"""")
-                    output.appendLine("${currentIndent}>")
-                }
-                is ParsedTransform.Rotate -> {
-                    output.appendLine("${currentIndent}<group")
-                    output.appendLine("""${currentIndent}    android:rotation="${transform.degrees}"""")
-                    if (transform.pivotX != null && transform.pivotY != null) {
-                        output.appendLine("""${currentIndent}    android:pivotX="${transform.pivotX}"""")
-                        output.appendLine("""${currentIndent}    android:pivotY="${transform.pivotY}"""")
-                    }
-                    output.appendLine("${currentIndent}>")
-                }
-                is ParsedTransform.Matrix -> {
-                    appendCombinedTransformGroupStart(
-                        output,
-                        CombinedTransform(
-                            translateX = transform.value.translateX,
-                            translateY = transform.value.translateY,
-                            scaleX = transform.value.scaleX,
-                            scaleY = transform.value.scaleY,
-                            rotation = transform.value.rotation
-                        ),
-                        currentIndent
-                    )
-                }
-            }
-
-            currentIndent += "    "
-            openedGroupCount++
-        }
-
-        return Pair(currentIndent, openedGroupCount)
+        appendCombinedTransformGroupStart(output, combinedTransform, indent)
+        return Pair(indent + "    ", 1)
     }
 
     fun closeGroups(output: StringBuilder, childIndent: String, groupCount: Int) {
@@ -163,53 +212,45 @@ internal object SvgTransformParser {
     }
 
     fun combineTransformList(transforms: List<ParsedTransform>): CombinedTransform? {
-        if (transforms.isEmpty()) return null
+        val matrix = combineTransformListToMatrix(transforms) ?: return null
+        val androidTransform = matrix.toAndroidGroupTransform()
 
-        var translateX = 0f
-        var translateY = 0f
-        var scaleX = 1f
-        var scaleY = 1f
-        var rotation = 0f
-        var pivotX: Float? = null
-        var pivotY: Float? = null
-
-        transforms.forEach { transform ->
-            when (transform) {
-                is ParsedTransform.Translate -> {
-                    translateX += transform.x
-                    translateY += transform.y
-                }
-                is ParsedTransform.Scale -> {
-                    scaleX *= transform.x
-                    scaleY *= transform.y
-                }
-                is ParsedTransform.Rotate -> {
-                    rotation += transform.degrees
-                    if (transform.pivotX != null && transform.pivotY != null) {
-                        pivotX = transform.pivotX
-                        pivotY = transform.pivotY
-                    }
-                }
-                is ParsedTransform.Matrix -> {
-                    val matrix = transform.value
-                    translateX += matrix.translateX
-                    translateY += matrix.translateY
-                    scaleX *= matrix.scaleX
-                    scaleY *= matrix.scaleY
-                    rotation += matrix.rotation
-                }
-            }
+        if (androidTransform == null) {
+            unsupportedMatrixTransforms++
+            return null
         }
 
-        return CombinedTransform(
-            translateX = translateX,
-            translateY = translateY,
-            scaleX = scaleX,
-            scaleY = scaleY,
-            rotation = rotation,
-            pivotX = pivotX,
-            pivotY = pivotY
-        ).takeIf { it.hasVisibleEffect() }
+        if (transforms.any { it is ParsedTransform.Matrix }) {
+            supportedMatrixTransforms++
+        }
+
+        return androidTransform
+    }
+
+    fun combineTransformListToMatrix(transforms: List<ParsedTransform>): AffineTransform? {
+        if (transforms.isEmpty()) return null
+
+        var current = AffineTransform.identity()
+
+        transforms.forEach { transform ->
+            val next = when (transform) {
+                is ParsedTransform.Translate -> AffineTransform.translation(transform.x, transform.y)
+                is ParsedTransform.Scale -> AffineTransform.scale(transform.x, transform.y)
+                is ParsedTransform.Rotate -> {
+                    if (transform.pivotX != null && transform.pivotY != null) {
+                        AffineTransform.rotation(transform.degrees, transform.pivotX, transform.pivotY)
+                    } else {
+                        AffineTransform.rotation(transform.degrees)
+                    }
+                }
+                is ParsedTransform.Matrix -> transform.value
+            }
+
+            // Compose in SVG list order, matching equivalent nested groups.
+            current = current.multiply(next)
+        }
+
+        return current.takeIf { it.hasVisibleEffect() }
     }
 
     fun appendCombinedTransformGroupStart(
@@ -219,24 +260,24 @@ internal object SvgTransformParser {
     ) {
         output.appendLine("${indent}<group")
 
-        if (transform.translateX != 0f) {
-            output.appendLine("""${indent}    android:translateX="${transform.translateX}"""")
+        if (!nearlyEqual(transform.translateX, 0f)) {
+            output.appendLine("""${indent}    android:translateX="${normalizeZero(transform.translateX)}"""")
         }
 
-        if (transform.translateY != 0f) {
-            output.appendLine("""${indent}    android:translateY="${transform.translateY}"""")
+        if (!nearlyEqual(transform.translateY, 0f)) {
+            output.appendLine("""${indent}    android:translateY="${normalizeZero(transform.translateY)}"""")
         }
 
-        if (transform.scaleX != 1f || transform.scaleY != 1f) {
-            output.appendLine("""${indent}    android:scaleX="${transform.scaleX}"""")
-            output.appendLine("""${indent}    android:scaleY="${transform.scaleY}"""")
+        if (!nearlyEqual(transform.scaleX, 1f) || !nearlyEqual(transform.scaleY, 1f)) {
+            output.appendLine("""${indent}    android:scaleX="${normalizeZero(transform.scaleX)}"""")
+            output.appendLine("""${indent}    android:scaleY="${normalizeZero(transform.scaleY)}"""")
         }
 
-        if (transform.rotation != 0f) {
-            output.appendLine("""${indent}    android:rotation="${transform.rotation}"""")
+        if (!nearlyEqual(transform.rotation, 0f)) {
+            output.appendLine("""${indent}    android:rotation="${normalizeZero(transform.rotation)}"""")
             if (transform.pivotX != null && transform.pivotY != null) {
-                output.appendLine("""${indent}    android:pivotX="${transform.pivotX}"""")
-                output.appendLine("""${indent}    android:pivotY="${transform.pivotY}"""")
+                output.appendLine("""${indent}    android:pivotX="${normalizeZero(transform.pivotX)}"""")
+                output.appendLine("""${indent}    android:pivotY="${normalizeZero(transform.pivotY)}"""")
             }
         }
 
@@ -251,45 +292,27 @@ internal object SvgTransformParser {
             .mapNotNull { it.toFloatOrNull() }
     }
 
-    private fun parseMatrixValues(nums: List<Float>): MatrixTransform? {
+    private fun parseMatrixValues(nums: List<Float>): AffineTransform? {
         if (nums.size != 6) {
             unsupportedMatrixTransforms++
             return null
         }
 
-        val a = nums[0]
-        val b = nums[1]
-        val c = nums[2]
-        val d = nums[3]
-        val e = nums[4]
-        val f = nums[5]
-
-        val scaleX = sqrt(a * a + b * b)
-        val scaleY = sqrt(c * c + d * d)
-
-        if (scaleX == 0f || scaleY == 0f) {
-            unsupportedMatrixTransforms++
-            return null
-        }
-
-        val dot = a * c + b * d
-        val hasSkew = abs(dot) > 0.0001f
-
-        if (hasSkew) {
-            unsupportedMatrixTransforms++
-            return null
-        }
-
-        val rotation = atan2(b, a) * 180f / PI.toFloat()
-
-        supportedMatrixTransforms++
-
-        return MatrixTransform(
-            translateX = e,
-            translateY = f,
-            scaleX = scaleX,
-            scaleY = scaleY,
-            rotation = rotation
+        return AffineTransform(
+            a = nums[0],
+            b = nums[1],
+            c = nums[2],
+            d = nums[3],
+            e = nums[4],
+            f = nums[5]
         )
     }
+}
+
+private fun nearlyEqual(a: Float, b: Float, epsilon: Float = 0.0001f): Boolean {
+    return abs(a - b) <= epsilon
+}
+
+private fun normalizeZero(value: Float): Float {
+    return if (nearlyEqual(value, 0f)) 0f else value
 }
