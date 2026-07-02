@@ -45,6 +45,8 @@ activeGradientFallbackColors = gradientFallbackColors
 val clipPathData = collectClipPathData(svg)
 activeClipPathData = clipPathData
 activeAppliedClipPaths = 0
+activeResolvedUseExpansions = 0
+activeUnresolvedUseReferences = 0
 
 
 val translateCount = Regex("""translate\(""").findAll(svgForTransformStats).count()
@@ -177,7 +179,8 @@ val elapsedMs =
 
 val warningCount =
     unsupported.size +
-    if (activeUnsupportedMatrixTransforms > 0) 1 else 0
+    (if (activeUnsupportedMatrixTransforms > 0) 1 else 0) +
+    (if (activeUnresolvedUseReferences > 0) 1 else 0)
 
 val summaryTitle =
     if (warningCount == 0)
@@ -207,7 +210,11 @@ appendLine()
     appendLine()
     appendLine("✓ Visible SVG paths converted: $convertedOriginalPathCount")
     if (useCount > 0) {
-        appendLine("✓ Definitions expanded: $useCount")
+        appendLine("✓ Use references found: $useCount")
+        appendLine("✓ Use references expanded: $activeResolvedUseExpansions")
+        if (activeUnresolvedUseReferences > 0) {
+            appendLine("⚠ Use references unresolved: $activeUnresolvedUseReferences")
+        }
     }
     if (symbolCount > 0) {
         appendLine("✓ Symbol definitions: $symbolCount")
@@ -263,6 +270,13 @@ appendLine()
     if (symbolCount > 0) {
         appendLine("✓ Symbol definitions: $symbolCount")
     }
+    if (useCount > 0) {
+        appendLine("✓ Use references found: $useCount")
+        appendLine("✓ Use references expanded: $activeResolvedUseExpansions")
+        if (activeUnresolvedUseReferences > 0) {
+            appendLine("⚠ Use references unresolved: $activeUnresolvedUseReferences")
+        }
+    }
     if (gradientFallbackColors.isNotEmpty()) {
         appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
     }
@@ -311,6 +325,10 @@ if (unsupported.isEmpty() && activeUnsupportedMatrixTransforms == 0) {
 
     if (activeUnsupportedMatrixTransforms > 0) {
         appendLine("⚠ Unsupported matrix transforms: $activeUnsupportedMatrixTransforms")
+    }
+
+    if (activeUnresolvedUseReferences > 0) {
+        appendLine("⚠ Unresolved <use> references: $activeUnresolvedUseReferences")
     }
 
     unsupported.forEach {
@@ -1510,8 +1528,15 @@ private fun useHrefId(element: Element): String? {
         }
     }.trim()
 
-    return href
-        .removePrefix("#")
+    if (href.isBlank()) return null
+
+    val unquoted = href.trim().trim('"', '\'')
+    val urlMatch = Regex("""url\(\s*['"]?#([^'")\s]+)['"]?\s*\)""", RegexOption.IGNORE_CASE)
+        .find(unquoted)
+
+    return (urlMatch?.groupValues?.getOrNull(1) ?: unquoted.removePrefix("#"))
+        .substringBefore("?")
+        .substringBefore("#")
         .takeIf { it.isNotBlank() }
 }
 
@@ -1571,7 +1596,7 @@ private fun appendUseElement(
 
     val referencedTag = referenced.tagName.substringAfter(":").lowercase()
 
-    if (referencedTag == "defs" || referencedTag == "clippath" || referencedTag == "lineargradient" ||
+    if (referencedTag == "clippath" || referencedTag == "lineargradient" ||
         referencedTag == "radialgradient" || referencedTag == "mask" || referencedTag == "filter" ||
         referencedTag == "pattern"
     ) {
@@ -1597,119 +1622,71 @@ private fun appendUseElement(
     val x = floatAttr(element, "x") ?: 0f
     val y = floatAttr(element, "y") ?: 0f
 
-    val transform = element.getAttribute("transform")
-    val translate = parseTranslate(transform)
-    val scale = parseScale(transform)
-    val rotate = parseRotate(transform)
-    val matrix = parseMatrix(transform)
+    val combinedTransform = combineTransformList(parseTransformList(element.getAttribute("transform")))
 
     val viewBoxTranslateX = -((referencedViewBox?.minX ?: 0f) * symbolScaleX)
     val viewBoxTranslateY = -((referencedViewBox?.minY ?: 0f) * symbolScaleY)
 
-    val totalTranslateX = x + (translate?.first ?: 0f) + viewBoxTranslateX
-    val totalTranslateY = y + (translate?.second ?: 0f) + viewBoxTranslateY
+    val useTransform = CombinedTransform(
+        translateX = x + viewBoxTranslateX + (combinedTransform?.translateX ?: 0f),
+        translateY = y + viewBoxTranslateY + (combinedTransform?.translateY ?: 0f),
+        scaleX = symbolScaleX * (combinedTransform?.scaleX ?: 1f),
+        scaleY = symbolScaleY * (combinedTransform?.scaleY ?: 1f),
+        rotation = combinedTransform?.rotation ?: 0f,
+        pivotX = combinedTransform?.pivotX,
+        pivotY = combinedTransform?.pivotY
+    ).takeIf { it.hasVisibleEffect() }
 
-    val effectiveScaleX = (scale?.first ?: 1f) * symbolScaleX
-    val effectiveScaleY = (scale?.second ?: 1f) * symbolScaleY
+    val useClipPathId = clipPathIdFromValue(inheritedClipPath)
+        ?.takeIf { it != activeClipPathId && activeClipPathData.containsKey(it) }
 
-    val needsGroup =
-        totalTranslateX != 0f ||
-        totalTranslateY != 0f ||
-        effectiveScaleX != 1f ||
-        effectiveScaleY != 1f ||
-        rotate != null ||
-        matrix != null
+    var currentIndent = indent
+    var openedGroupCount = 0
 
-    if (needsGroup) {
-        output.appendLine("${indent}<group")
-
-        if (totalTranslateX != 0f) {
-            output.appendLine("""${indent}    android:translateX="$totalTranslateX"""")
-        }
-
-        if (totalTranslateY != 0f) {
-            output.appendLine("""${indent}    android:translateY="$totalTranslateY"""")
-        }
-
-        if (effectiveScaleX != 1f || effectiveScaleY != 1f) {
-            output.appendLine("""${indent}    android:scaleX="$effectiveScaleX"""")
-            output.appendLine("""${indent}    android:scaleY="$effectiveScaleY"""")
-        }
-
-if (rotate != null) {
-    output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
-    if (rotate.pivotX != null && rotate.pivotY != null) {
-        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
-        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
+    if (useClipPathId != null) {
+        output.appendLine("${currentIndent}<group>")
+        appendClipPath(output, useClipPathId, currentIndent + "    ")
+        currentIndent += "    "
+        openedGroupCount++
     }
-}
 
-if (matrix != null) {
-    if (matrix.translateX != 0f) {
-        output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
+    if (useTransform != null) {
+        appendCombinedTransformGroupStart(output, useTransform, currentIndent)
+        currentIndent += "    "
+        openedGroupCount++
     }
-    if (matrix.translateY != 0f) {
-        output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
-    }
-    if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
-        output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
-        output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
-    }
-    if (matrix.rotation != 0f) {
-        output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
-    }
-                          }
 
-        output.appendLine("${indent}>")
-        output.appendLine("${indent}    <!-- expanded from <use href=\"#$id\"> -->")
+    output.appendLine("${currentIndent}<!-- expanded from <use href=\"#$id\"> -->")
 
-        walkSvgNode(
-            output,
-            referenced,
-            indent + "    ",
-            inheritedFill,
-            inheritedStroke,
-            inheritedStrokeWidth,
-            inheritedStrokeLineCap,
-            inheritedStrokeLineJoin,
-            inheritedStrokeMiterLimit,
-            inheritedFillRule,
-            inheritedOpacity,
-            inheritedFillOpacity,
-            inheritedStrokeOpacity,
-            inheritedClipPath,
-            definitions,
-            useDepth + 1,
-            activeClipPathId
-        )
+    walkSvgNode(
+        output,
+        referenced,
+        currentIndent,
+        inheritedFill,
+        inheritedStroke,
+        inheritedStrokeWidth,
+        inheritedStrokeLineCap,
+        inheritedStrokeLineJoin,
+        inheritedStrokeMiterLimit,
+        inheritedFillRule,
+        inheritedOpacity,
+        inheritedFillOpacity,
+        inheritedStrokeOpacity,
+        inheritedClipPath,
+        definitions,
+        useDepth + 1,
+        useClipPathId ?: activeClipPathId
+    )
 
-        output.appendLine("${indent}</group>")
+    repeat(openedGroupCount) {
+        currentIndent = currentIndent.dropLast(4)
+        output.appendLine("${currentIndent}</group>")
+    }
+
+    if (openedGroupCount > 0) {
         output.appendLine()
-    } else {
-        output.appendLine("${indent}<!-- expanded from <use href=\"#$id\"> -->")
-
-        walkSvgNode(
-            output,
-            referenced,
-            indent,
-            inheritedFill,
-            inheritedStroke,
-            inheritedStrokeWidth,
-            inheritedStrokeLineCap,
-            inheritedStrokeLineJoin,
-            inheritedStrokeMiterLimit,
-            inheritedFillRule,
-            inheritedOpacity,
-            inheritedFillOpacity,
-            inheritedStrokeOpacity,
-            inheritedClipPath,
-            definitions,
-            useDepth + 1,
-            activeClipPathId
-        )
     }
 }
-
 
 private fun appendBasicShapePath(
     output: StringBuilder,
