@@ -45,8 +45,6 @@ activeGradientFallbackColors = gradientFallbackColors
 val clipPathData = collectClipPathData(svg)
 activeClipPathData = clipPathData
 activeAppliedClipPaths = 0
-activeResolvedUseExpansions = 0
-activeUnresolvedUseReferences = 0
 
 
 val translateCount = Regex("""translate\(""").findAll(svgForTransformStats).count()
@@ -179,8 +177,7 @@ val elapsedMs =
 
 val warningCount =
     unsupported.size +
-    (if (activeUnsupportedMatrixTransforms > 0) 1 else 0) +
-    (if (activeUnresolvedUseReferences > 0) 1 else 0)
+    if (activeUnsupportedMatrixTransforms > 0) 1 else 0
 
 val summaryTitle =
     if (warningCount == 0)
@@ -210,11 +207,7 @@ appendLine()
     appendLine()
     appendLine("✓ Visible SVG paths converted: $convertedOriginalPathCount")
     if (useCount > 0) {
-        appendLine("✓ Use references found: $useCount")
-        appendLine("✓ Use references expanded: $activeResolvedUseExpansions")
-        if (activeUnresolvedUseReferences > 0) {
-            appendLine("⚠ Use references unresolved: $activeUnresolvedUseReferences")
-        }
+        appendLine("✓ Definitions expanded: $useCount")
     }
     if (symbolCount > 0) {
         appendLine("✓ Symbol definitions: $symbolCount")
@@ -270,13 +263,6 @@ appendLine()
     if (symbolCount > 0) {
         appendLine("✓ Symbol definitions: $symbolCount")
     }
-    if (useCount > 0) {
-        appendLine("✓ Use references found: $useCount")
-        appendLine("✓ Use references expanded: $activeResolvedUseExpansions")
-        if (activeUnresolvedUseReferences > 0) {
-            appendLine("⚠ Use references unresolved: $activeUnresolvedUseReferences")
-        }
-    }
     if (gradientFallbackColors.isNotEmpty()) {
         appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
     }
@@ -325,10 +311,6 @@ if (unsupported.isEmpty() && activeUnsupportedMatrixTransforms == 0) {
 
     if (activeUnsupportedMatrixTransforms > 0) {
         appendLine("⚠ Unsupported matrix transforms: $activeUnsupportedMatrixTransforms")
-    }
-
-    if (activeUnresolvedUseReferences > 0) {
-        appendLine("⚠ Unresolved <use> references: $activeUnresolvedUseReferences")
     }
 
     unsupported.forEach {
@@ -922,165 +904,8 @@ private fun averageStopColor(stops: List<Pair<String, Float>>): String? {
 
 private data class RgbColor(val first: Int, val second: Int, val third: Int)
 
-private val cssColors = mapOf(
-    "aliceblue" to "#F0F8FF",
-    "antiquewhite" to "#FAEBD7",
-    "aqua" to "#00FFFF",
-    "aquamarine" to "#7FFFD4",
-    "azure" to "#F0FFFF",
-    "beige" to "#F5F5DC",
-    "bisque" to "#FFE4C4",
-    "black" to "#000000",
-    "blanchedalmond" to "#FFEBCD",
-    "blue" to "#0000FF",
-    "blueviolet" to "#8A2BE2",
-    "brown" to "#A52A2A",
-    "burlywood" to "#DEB887",
-    "cadetblue" to "#5F9EA0",
-    "chartreuse" to "#7FFF00",
-    "chocolate" to "#D2691E",
-    "coral" to "#FF7F50",
-    "cornflowerblue" to "#6495ED",
-    "cornsilk" to "#FFF8DC",
-    "crimson" to "#DC143C",
-    "cyan" to "#00FFFF",
-    "darkblue" to "#00008B",
-    "darkcyan" to "#008B8B",
-    "darkgoldenrod" to "#B8860B",
-    "darkgray" to "#A9A9A9",
-    "darkgreen" to "#006400",
-    "darkgrey" to "#A9A9A9",
-    "darkkhaki" to "#BDB76B",
-    "darkmagenta" to "#8B008B",
-    "darkolivegreen" to "#556B2F",
-    "darkorange" to "#FF8C00",
-    "darkorchid" to "#9932CC",
-    "darkred" to "#8B0000",
-    "darksalmon" to "#E9967A",
-    "darkseagreen" to "#8FBC8F",
-    "darkslateblue" to "#483D8B",
-    "darkslategray" to "#2F4F4F",
-    "darkslategrey" to "#2F4F4F",
-    "darkturquoise" to "#00CED1",
-    "darkviolet" to "#9400D3",
-    "deeppink" to "#FF1493",
-    "deepskyblue" to "#00BFFF",
-    "dimgray" to "#696969",
-    "dimgrey" to "#696969",
-    "dodgerblue" to "#1E90FF",
-    "firebrick" to "#B22222",
-    "floralwhite" to "#FFFAF0",
-    "forestgreen" to "#228B22",
-    "fuchsia" to "#FF00FF",
-    "gainsboro" to "#DCDCDC",
-    "ghostwhite" to "#F8F8FF",
-    "gold" to "#FFD700",
-    "goldenrod" to "#DAA520",
-    "gray" to "#808080",
-    "green" to "#008000",
-    "greenyellow" to "#ADFF2F",
-    "grey" to "#808080",
-    "honeydew" to "#F0FFF0",
-    "hotpink" to "#FF69B4",
-    "indianred" to "#CD5C5C",
-    "indigo" to "#4B0082",
-    "ivory" to "#FFFFF0",
-    "khaki" to "#F0E68C",
-    "lavender" to "#E6E6FA",
-    "lavenderblush" to "#FFF0F5",
-    "lawngreen" to "#7CFC00",
-    "lemonchiffon" to "#FFFACD",
-    "lightblue" to "#ADD8E6",
-    "lightcoral" to "#F08080",
-    "lightcyan" to "#E0FFFF",
-    "lightgoldenrodyellow" to "#FAFAD2",
-    "lightgray" to "#D3D3D3",
-    "lightgreen" to "#90EE90",
-    "lightgrey" to "#D3D3D3",
-    "lightpink" to "#FFB6C1",
-    "lightsalmon" to "#FFA07A",
-    "lightseagreen" to "#20B2AA",
-    "lightskyblue" to "#87CEFA",
-    "lightslategray" to "#778899",
-    "lightslategrey" to "#778899",
-    "lightsteelblue" to "#B0C4DE",
-    "lightyellow" to "#FFFFE0",
-    "lime" to "#00FF00",
-    "limegreen" to "#32CD32",
-    "linen" to "#FAF0E6",
-    "magenta" to "#FF00FF",
-    "maroon" to "#800000",
-    "mediumaquamarine" to "#66CDAA",
-    "mediumblue" to "#0000CD",
-    "mediumorchid" to "#BA55D3",
-    "mediumpurple" to "#9370DB",
-    "mediumseagreen" to "#3CB371",
-    "mediumslateblue" to "#7B68EE",
-    "mediumspringgreen" to "#00FA9A",
-    "mediumturquoise" to "#48D1CC",
-    "mediumvioletred" to "#C71585",
-    "midnightblue" to "#191970",
-    "mintcream" to "#F5FFFA",
-    "mistyrose" to "#FFE4E1",
-    "moccasin" to "#FFE4B5",
-    "navajowhite" to "#FFDEAD",
-    "navy" to "#000080",
-    "oldlace" to "#FDF5E6",
-    "olive" to "#808000",
-    "olivedrab" to "#6B8E23",
-    "orange" to "#FFA500",
-    "orangered" to "#FF4500",
-    "orchid" to "#DA70D6",
-    "palegoldenrod" to "#EEE8AA",
-    "palegreen" to "#98FB98",
-    "paleturquoise" to "#AFEEEE",
-    "palevioletred" to "#DB7093",
-    "papayawhip" to "#FFEFD5",
-    "peachpuff" to "#FFDAB9",
-    "peru" to "#CD853F",
-    "pink" to "#FFC0CB",
-    "plum" to "#DDA0DD",
-    "powderblue" to "#B0E0E6",
-    "purple" to "#800080",
-    "rebeccapurple" to "#663399",
-    "red" to "#FF0000",
-    "rosybrown" to "#BC8F8F",
-    "royalblue" to "#4169E1",
-    "saddlebrown" to "#8B4513",
-    "salmon" to "#FA8072",
-    "sandybrown" to "#F4A460",
-    "seagreen" to "#2E8B57",
-    "seashell" to "#FFF5EE",
-    "sienna" to "#A0522D",
-    "silver" to "#C0C0C0",
-    "skyblue" to "#87CEEB",
-    "slateblue" to "#6A5ACD",
-    "slategray" to "#708090",
-    "slategrey" to "#708090",
-    "snow" to "#FFFAFA",
-    "springgreen" to "#00FF7F",
-    "steelblue" to "#4682B4",
-    "tan" to "#D2B48C",
-    "teal" to "#008080",
-    "thistle" to "#D8BFD8",
-    "tomato" to "#FF6347",
-    "transparent" to "#00000000",
-    "turquoise" to "#40E0D0",
-    "violet" to "#EE82EE",
-    "wheat" to "#F5DEB3",
-    "white" to "#FFFFFF",
-    "whitesmoke" to "#F5F5F5",
-    "yellow" to "#FFFF00",
-    "yellowgreen" to "#9ACD32"
-)
 private fun parseRgbColor(value: String?): RgbColor? {
     val v = value?.trim() ?: return null
-    val normalized = v.lowercase()
-
-    cssColors[normalized]?.let {
-        return parseRgbColor(it)
-    }
-
 
     if (v == "currentColor") return RgbColor(0, 0, 0)
 
@@ -1528,15 +1353,8 @@ private fun useHrefId(element: Element): String? {
         }
     }.trim()
 
-    if (href.isBlank()) return null
-
-    val unquoted = href.trim().trim('"', '\'')
-    val urlMatch = Regex("""url\(\s*['"]?#([^'")\s]+)['"]?\s*\)""", RegexOption.IGNORE_CASE)
-        .find(unquoted)
-
-    return (urlMatch?.groupValues?.getOrNull(1) ?: unquoted.removePrefix("#"))
-        .substringBefore("?")
-        .substringBefore("#")
+    return href
+        .removePrefix("#")
         .takeIf { it.isNotBlank() }
 }
 
@@ -1596,7 +1414,7 @@ private fun appendUseElement(
 
     val referencedTag = referenced.tagName.substringAfter(":").lowercase()
 
-    if (referencedTag == "clippath" || referencedTag == "lineargradient" ||
+    if (referencedTag == "defs" || referencedTag == "clippath" || referencedTag == "lineargradient" ||
         referencedTag == "radialgradient" || referencedTag == "mask" || referencedTag == "filter" ||
         referencedTag == "pattern"
     ) {
@@ -1622,71 +1440,119 @@ private fun appendUseElement(
     val x = floatAttr(element, "x") ?: 0f
     val y = floatAttr(element, "y") ?: 0f
 
-    val combinedTransform = combineTransformList(parseTransformList(element.getAttribute("transform")))
+    val transform = element.getAttribute("transform")
+    val translate = parseTranslate(transform)
+    val scale = parseScale(transform)
+    val rotate = parseRotate(transform)
+    val matrix = parseMatrix(transform)
 
     val viewBoxTranslateX = -((referencedViewBox?.minX ?: 0f) * symbolScaleX)
     val viewBoxTranslateY = -((referencedViewBox?.minY ?: 0f) * symbolScaleY)
 
-    val useTransform = CombinedTransform(
-        translateX = x + viewBoxTranslateX + (combinedTransform?.translateX ?: 0f),
-        translateY = y + viewBoxTranslateY + (combinedTransform?.translateY ?: 0f),
-        scaleX = symbolScaleX * (combinedTransform?.scaleX ?: 1f),
-        scaleY = symbolScaleY * (combinedTransform?.scaleY ?: 1f),
-        rotation = combinedTransform?.rotation ?: 0f,
-        pivotX = combinedTransform?.pivotX,
-        pivotY = combinedTransform?.pivotY
-    ).takeIf { it.hasVisibleEffect() }
+    val totalTranslateX = x + (translate?.first ?: 0f) + viewBoxTranslateX
+    val totalTranslateY = y + (translate?.second ?: 0f) + viewBoxTranslateY
 
-    val useClipPathId = clipPathIdFromValue(inheritedClipPath)
-        ?.takeIf { it != activeClipPathId && activeClipPathData.containsKey(it) }
+    val effectiveScaleX = (scale?.first ?: 1f) * symbolScaleX
+    val effectiveScaleY = (scale?.second ?: 1f) * symbolScaleY
 
-    var currentIndent = indent
-    var openedGroupCount = 0
+    val needsGroup =
+        totalTranslateX != 0f ||
+        totalTranslateY != 0f ||
+        effectiveScaleX != 1f ||
+        effectiveScaleY != 1f ||
+        rotate != null ||
+        matrix != null
 
-    if (useClipPathId != null) {
-        output.appendLine("${currentIndent}<group>")
-        appendClipPath(output, useClipPathId, currentIndent + "    ")
-        currentIndent += "    "
-        openedGroupCount++
-    }
+    if (needsGroup) {
+        output.appendLine("${indent}<group")
 
-    if (useTransform != null) {
-        appendCombinedTransformGroupStart(output, useTransform, currentIndent)
-        currentIndent += "    "
-        openedGroupCount++
-    }
+        if (totalTranslateX != 0f) {
+            output.appendLine("""${indent}    android:translateX="$totalTranslateX"""")
+        }
 
-    output.appendLine("${currentIndent}<!-- expanded from <use href=\"#$id\"> -->")
+        if (totalTranslateY != 0f) {
+            output.appendLine("""${indent}    android:translateY="$totalTranslateY"""")
+        }
 
-    walkSvgNode(
-        output,
-        referenced,
-        currentIndent,
-        inheritedFill,
-        inheritedStroke,
-        inheritedStrokeWidth,
-        inheritedStrokeLineCap,
-        inheritedStrokeLineJoin,
-        inheritedStrokeMiterLimit,
-        inheritedFillRule,
-        inheritedOpacity,
-        inheritedFillOpacity,
-        inheritedStrokeOpacity,
-        inheritedClipPath,
-        definitions,
-        useDepth + 1,
-        useClipPathId ?: activeClipPathId
-    )
+        if (effectiveScaleX != 1f || effectiveScaleY != 1f) {
+            output.appendLine("""${indent}    android:scaleX="$effectiveScaleX"""")
+            output.appendLine("""${indent}    android:scaleY="$effectiveScaleY"""")
+        }
 
-    repeat(openedGroupCount) {
-        currentIndent = currentIndent.dropLast(4)
-        output.appendLine("${currentIndent}</group>")
-    }
-
-    if (openedGroupCount > 0) {
-        output.appendLine()
+if (rotate != null) {
+    output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
+    if (rotate.pivotX != null && rotate.pivotY != null) {
+        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
+        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
     }
 }
+
+if (matrix != null) {
+    if (matrix.translateX != 0f) {
+        output.appendLine("""${indent}    android:translateX="${matrix.translateX}"""")
+    }
+    if (matrix.translateY != 0f) {
+        output.appendLine("""${indent}    android:translateY="${matrix.translateY}"""")
+    }
+    if (matrix.scaleX != 1f || matrix.scaleY != 1f) {
+        output.appendLine("""${indent}    android:scaleX="${matrix.scaleX}"""")
+        output.appendLine("""${indent}    android:scaleY="${matrix.scaleY}"""")
+    }
+    if (matrix.rotation != 0f) {
+        output.appendLine("""${indent}    android:rotation="${matrix.rotation}"""")
+    }
+                          }
+
+        output.appendLine("${indent}>")
+        output.appendLine("${indent}    <!-- expanded from <use href=\"#$id\"> -->")
+
+        walkSvgNode(
+            output,
+            referenced,
+            indent + "    ",
+            inheritedFill,
+            inheritedStroke,
+            inheritedStrokeWidth,
+            inheritedStrokeLineCap,
+            inheritedStrokeLineJoin,
+            inheritedStrokeMiterLimit,
+            inheritedFillRule,
+            inheritedOpacity,
+            inheritedFillOpacity,
+            inheritedStrokeOpacity,
+            inheritedClipPath,
+            definitions,
+            useDepth + 1,
+            activeClipPathId
+        )
+
+        output.appendLine("${indent}</group>")
+        output.appendLine()
+    } else {
+        output.appendLine("${indent}<!-- expanded from <use href=\"#$id\"> -->")
+
+        walkSvgNode(
+            output,
+            referenced,
+            indent,
+            inheritedFill,
+            inheritedStroke,
+            inheritedStrokeWidth,
+            inheritedStrokeLineCap,
+            inheritedStrokeLineJoin,
+            inheritedStrokeMiterLimit,
+            inheritedFillRule,
+            inheritedOpacity,
+            inheritedFillOpacity,
+            inheritedStrokeOpacity,
+            inheritedClipPath,
+            definitions,
+            useDepth + 1,
+            activeClipPathId
+        )
+    }
+}
+
 
 private fun appendBasicShapePath(
     output: StringBuilder,
