@@ -6,10 +6,6 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.xml.sax.InputSource
 import java.io.StringReader
 import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.sqrt
-import kotlin.math.PI
 
 object SvgToVectorConverter {
 private var activeGradientFallbackColors: Map<String, String> = emptyMap()
@@ -17,8 +13,6 @@ private var activeClipPathData: Map<String, String> = emptyMap()
 private var activeAppliedClipPaths = 0
 private var activeResolvedUseExpansions = 0
 private var activeUnresolvedUseReferences = 0
-private var activeSupportedMatrixTransforms = 0
-private var activeUnsupportedMatrixTransforms = 0
 
 private data class BasicShapeBreakdown(
     val rectangles: Int = 0,
@@ -37,8 +31,7 @@ fun convert(
 
 val startTime = System.nanoTime()
 
-activeSupportedMatrixTransforms = 0
-activeUnsupportedMatrixTransforms = 0
+SvgTransformParser.resetMatrixStats()
 val svgForTransformStats = stripSvgComments(svg)
 val gradientFallbackColors = collectGradientFallbackColors(svg)
 activeGradientFallbackColors = gradientFallbackColors
@@ -177,7 +170,7 @@ val elapsedMs =
 
 val warningCount =
     unsupported.size +
-    if (activeUnsupportedMatrixTransforms > 0) 1 else 0
+    if (SvgTransformParser.unsupportedMatrixTransforms > 0) 1 else 0
 
 val summaryTitle =
     if (warningCount == 0)
@@ -286,8 +279,8 @@ appendLine()
     appendLine("✓ Rotate transforms: $rotateCount")
 
 if (matrixCount > 0) {
-    appendLine("✓ Matrix transforms supported: $activeSupportedMatrixTransforms")
-    appendLine("⚠ Matrix transforms unsupported: $activeUnsupportedMatrixTransforms")
+    appendLine("✓ Matrix transforms supported: ${SvgTransformParser.supportedMatrixTransforms}")
+    appendLine("⚠ Matrix transforms unsupported: ${SvgTransformParser.unsupportedMatrixTransforms}")
 } else {
     appendLine("✓ Unsupported matrix transforms: 0")
 }
@@ -303,14 +296,14 @@ if (matrixCount > 0) {
     appendLine()
 
 
-if (unsupported.isEmpty() && activeUnsupportedMatrixTransforms == 0) {
+if (unsupported.isEmpty() && SvgTransformParser.unsupportedMatrixTransforms == 0) {
     appendLine("✓ No warnings detected")
 } else {
     appendLine("Warnings")
     appendLine()
 
-    if (activeUnsupportedMatrixTransforms > 0) {
-        appendLine("⚠ Unsupported matrix transforms: $activeUnsupportedMatrixTransforms")
+    if (SvgTransformParser.unsupportedMatrixTransforms > 0) {
+        appendLine("⚠ Unsupported matrix transforms: ${SvgTransformParser.unsupportedMatrixTransforms}")
     }
 
     unsupported.forEach {
@@ -1209,7 +1202,7 @@ val currentClipPath = styleValue(style, "clip-path")
 
         "g" -> {
             val transform = element.getAttribute("transform")
-            val transforms = parseTransformList(transform)
+            val transforms = SvgTransformParser.parseTransformList(transform)
             val groupClipPathId = clipPathIdFromValue(currentClipPath)
             val hasClipPath = groupClipPathId != null && groupClipPathId != activeClipPathId && activeClipPathData.containsKey(groupClipPathId)
 
@@ -1226,7 +1219,7 @@ val currentClipPath = styleValue(style, "clip-path")
                     openedGroupCount++
                 }
 
-                val openedTransformGroups = appendTransformGroupsStart(output, transforms, currentIndent)
+                val openedTransformGroups = SvgTransformParser.appendTransformGroupsStart(output, transforms, currentIndent)
                 currentIndent = openedTransformGroups.first
                 openedGroupCount += openedTransformGroups.second
 
@@ -1439,7 +1432,7 @@ private fun appendUseElement(
 
     val transform = element.getAttribute("transform")
     val placementTransforms = mutableListOf<ParsedTransform>()
-    placementTransforms.addAll(parseTransformList(transform))
+    placementTransforms.addAll(SvgTransformParser.parseTransformList(transform))
 
     val viewBoxTranslateX = -((referencedViewBox?.minX ?: 0f) * symbolScaleX)
     val viewBoxTranslateY = -((referencedViewBox?.minY ?: 0f) * symbolScaleY)
@@ -1455,7 +1448,7 @@ private fun appendUseElement(
     val needsGroup = placementTransforms.any { it.hasVisibleEffect() }
 
     if (needsGroup) {
-        val openedTransformGroups = appendTransformGroupsStart(output, placementTransforms, indent)
+        val openedTransformGroups = SvgTransformParser.appendTransformGroupsStart(output, placementTransforms, indent)
         val childIndent = openedTransformGroups.first
 
         output.appendLine("${childIndent}<!-- expanded from <use href=\"#$id\"> -->")
@@ -1480,7 +1473,7 @@ private fun appendUseElement(
             activeClipPathId
         )
 
-        closeGroups(output, childIndent, openedTransformGroups.second)
+        SvgTransformParser.closeGroups(output, childIndent, openedTransformGroups.second)
         output.appendLine()
     } else {
         output.appendLine("${indent}<!-- expanded from <use href=\"#$id\"> -->")
@@ -1654,7 +1647,7 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
     val stroke = safeStrokeColor(rawStroke)
 
     val pathTransform = element.getAttribute("transform")
-    val transforms = parseTransformList(pathTransform)
+    val transforms = SvgTransformParser.parseTransformList(pathTransform)
 
     val pathNeedsGroup = transforms.any { it.hasVisibleEffect() } || hasClipPath
 
@@ -1669,7 +1662,7 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
             openedGroupCount++
         }
 
-        val openedTransformGroups = appendTransformGroupsStart(output, transforms, currentIndent)
+        val openedTransformGroups = SvgTransformParser.appendTransformGroupsStart(output, transforms, currentIndent)
         currentIndent = openedTransformGroups.first
         openedGroupCount += openedTransformGroups.second
 
@@ -1936,355 +1929,6 @@ private fun normalizeNumber(value: String?): String? {
             }
             .firstOrNull()
     }
-
-
-    private sealed class ParsedTransform {
-        data class Translate(val x: Float, val y: Float) : ParsedTransform()
-        data class Scale(val x: Float, val y: Float) : ParsedTransform()
-        data class Rotate(val degrees: Float, val pivotX: Float?, val pivotY: Float?) : ParsedTransform()
-        data class Matrix(val value: MatrixTransform) : ParsedTransform()
-    }
-
-    private data class CombinedTransform(
-        val translateX: Float = 0f,
-        val translateY: Float = 0f,
-        val scaleX: Float = 1f,
-        val scaleY: Float = 1f,
-        val rotation: Float = 0f,
-        val pivotX: Float? = null,
-        val pivotY: Float? = null
-    ) {
-        fun hasVisibleEffect(): Boolean {
-            return translateX != 0f ||
-                translateY != 0f ||
-                scaleX != 1f ||
-                scaleY != 1f ||
-                rotation != 0f
-        }
-    }
-
-
-    private fun parseTransformList(transform: String?): List<ParsedTransform> {
-        if (transform.isNullOrBlank()) return emptyList()
-
-        return Regex("""([A-Za-z]+)\s*\(([^)]*)\)""")
-            .findAll(transform)
-            .mapNotNull { match ->
-                val name = match.groupValues[1].lowercase(Locale.US)
-                val nums = parseTransformNumbers(match.groupValues[2])
-
-                when (name) {
-                    "translate" -> {
-                        if (nums.isEmpty()) null
-                        else ParsedTransform.Translate(nums[0], nums.getOrNull(1) ?: 0f)
-                    }
-                    "scale" -> {
-                        if (nums.isEmpty()) null
-                        else ParsedTransform.Scale(nums[0], nums.getOrNull(1) ?: nums[0])
-                    }
-                    "rotate" -> {
-                        if (nums.isEmpty()) null
-                        else ParsedTransform.Rotate(nums[0], nums.getOrNull(1), nums.getOrNull(2))
-                    }
-                    "matrix" -> parseMatrixValues(nums)?.let { ParsedTransform.Matrix(it) }
-                    else -> null
-                }
-            }
-            .toList()
-    }
-
-    private fun parseTransformNumbers(value: String): List<Float> {
-        return value
-            .trim()
-            .split(Regex("[,\\s]+"))
-            .filter { it.isNotBlank() }
-            .mapNotNull { it.toFloatOrNull() }
-    }
-
-    private fun ParsedTransform.hasVisibleEffect(): Boolean {
-        return when (this) {
-            is ParsedTransform.Translate -> x != 0f || y != 0f
-            is ParsedTransform.Scale -> x != 1f || y != 1f
-            is ParsedTransform.Rotate -> degrees != 0f
-            is ParsedTransform.Matrix -> value.hasVisibleEffect()
-        }
-    }
-
-    private fun MatrixTransform.hasVisibleEffect(): Boolean {
-        return translateX != 0f ||
-            translateY != 0f ||
-            scaleX != 1f ||
-            scaleY != 1f ||
-            rotation != 0f
-    }
-
-    private fun appendTransformGroupsStart(
-        output: StringBuilder,
-        transforms: List<ParsedTransform>,
-        indent: String
-    ): Pair<String, Int> {
-        var currentIndent = indent
-        var openedGroupCount = 0
-
-        transforms.filter { it.hasVisibleEffect() }.forEach { transform ->
-            when (transform) {
-                is ParsedTransform.Translate -> {
-                    output.appendLine("${currentIndent}<group")
-                    if (transform.x != 0f) {
-                        output.appendLine("""${currentIndent}    android:translateX="${transform.x}"""")
-                    }
-                    if (transform.y != 0f) {
-                        output.appendLine("""${currentIndent}    android:translateY="${transform.y}"""")
-                    }
-                    output.appendLine("${currentIndent}>")
-                }
-                is ParsedTransform.Scale -> {
-                    output.appendLine("${currentIndent}<group")
-                    output.appendLine("""${currentIndent}    android:scaleX="${transform.x}"""")
-                    output.appendLine("""${currentIndent}    android:scaleY="${transform.y}"""")
-                    output.appendLine("${currentIndent}>")
-                }
-                is ParsedTransform.Rotate -> {
-                    output.appendLine("${currentIndent}<group")
-                    output.appendLine("""${currentIndent}    android:rotation="${transform.degrees}"""")
-                    if (transform.pivotX != null && transform.pivotY != null) {
-                        output.appendLine("""${currentIndent}    android:pivotX="${transform.pivotX}"""")
-                        output.appendLine("""${currentIndent}    android:pivotY="${transform.pivotY}"""")
-                    }
-                    output.appendLine("${currentIndent}>")
-                }
-                is ParsedTransform.Matrix -> {
-                    appendCombinedTransformGroupStart(
-                        output,
-                        CombinedTransform(
-                            translateX = transform.value.translateX,
-                            translateY = transform.value.translateY,
-                            scaleX = transform.value.scaleX,
-                            scaleY = transform.value.scaleY,
-                            rotation = transform.value.rotation
-                        ),
-                        currentIndent
-                    )
-                }
-            }
-
-            currentIndent += "    "
-            openedGroupCount++
-        }
-
-        return Pair(currentIndent, openedGroupCount)
-    }
-
-    private fun closeGroups(output: StringBuilder, childIndent: String, groupCount: Int) {
-        var currentIndent = childIndent
-        repeat(groupCount) {
-            currentIndent = currentIndent.dropLast(4)
-            output.appendLine("${currentIndent}</group>")
-        }
-    }
-
-    private fun combineTransformList(transforms: List<ParsedTransform>): CombinedTransform? {
-        if (transforms.isEmpty()) return null
-
-        var translateX = 0f
-        var translateY = 0f
-        var scaleX = 1f
-        var scaleY = 1f
-        var rotation = 0f
-        var pivotX: Float? = null
-        var pivotY: Float? = null
-
-        transforms.forEach { transform ->
-            when (transform) {
-                is ParsedTransform.Translate -> {
-                    translateX += transform.x
-                    translateY += transform.y
-                }
-                is ParsedTransform.Scale -> {
-                    scaleX *= transform.x
-                    scaleY *= transform.y
-                }
-                is ParsedTransform.Rotate -> {
-                    rotation += transform.degrees
-                    if (transform.pivotX != null && transform.pivotY != null) {
-                        pivotX = transform.pivotX
-                        pivotY = transform.pivotY
-                    }
-                }
-                is ParsedTransform.Matrix -> {
-                    val matrix = transform.value
-                    translateX += matrix.translateX
-                    translateY += matrix.translateY
-                    scaleX *= matrix.scaleX
-                    scaleY *= matrix.scaleY
-                    rotation += matrix.rotation
-                }
-            }
-        }
-
-        return CombinedTransform(
-            translateX = translateX,
-            translateY = translateY,
-            scaleX = scaleX,
-            scaleY = scaleY,
-            rotation = rotation,
-            pivotX = pivotX,
-            pivotY = pivotY
-        ).takeIf { it.hasVisibleEffect() }
-    }
-
-    private fun appendCombinedTransformGroupStart(
-        output: StringBuilder,
-        transform: CombinedTransform,
-        indent: String
-    ) {
-        output.appendLine("${indent}<group")
-
-        if (transform.translateX != 0f) {
-            output.appendLine("""${indent}    android:translateX="${transform.translateX}"""")
-        }
-
-        if (transform.translateY != 0f) {
-            output.appendLine("""${indent}    android:translateY="${transform.translateY}"""")
-        }
-
-        if (transform.scaleX != 1f || transform.scaleY != 1f) {
-            output.appendLine("""${indent}    android:scaleX="${transform.scaleX}"""")
-            output.appendLine("""${indent}    android:scaleY="${transform.scaleY}"""")
-        }
-
-        if (transform.rotation != 0f) {
-            output.appendLine("""${indent}    android:rotation="${transform.rotation}"""")
-            if (transform.pivotX != null && transform.pivotY != null) {
-                output.appendLine("""${indent}    android:pivotX="${transform.pivotX}"""")
-                output.appendLine("""${indent}    android:pivotY="${transform.pivotY}"""")
-            }
-        }
-
-        output.appendLine("${indent}>")
-    }
-
-    private data class RotateTransform(
-        val degrees: Float,
-        val pivotX: Float?,
-        val pivotY: Float?
-    )
-
-    private data class MatrixTransform(
-    val translateX: Float,
-    val translateY: Float,
-    val scaleX: Float,
-    val scaleY: Float,
-    val rotation: Float
-)
-
-private fun parseMatrix(transform: String?): MatrixTransform? {
-    if (transform == null) return null
-
-    val match = Regex("""matrix\(([^)]*)\)""")
-        .find(transform)
-        ?: return null
-
-    return parseMatrixValues(parseTransformNumbers(match.groupValues[1]))
-}
-
-private fun parseMatrixValues(nums: List<Float>): MatrixTransform? {
-    if (nums.size != 6) {
-        activeUnsupportedMatrixTransforms++
-        return null
-    }
-
-    val a = nums[0]
-    val b = nums[1]
-    val c = nums[2]
-    val d = nums[3]
-    val e = nums[4]
-    val f = nums[5]
-
-    val scaleX = sqrt(a * a + b * b)
-    val scaleY = sqrt(c * c + d * d)
-
-    if (scaleX == 0f || scaleY == 0f) {
-        activeUnsupportedMatrixTransforms++
-        return null
-    }
-
-    val dot = a * c + b * d
-    val hasSkew = abs(dot) > 0.0001f
-
-    if (hasSkew) {
-        activeUnsupportedMatrixTransforms++
-        return null
-    }
-
-    val rotation = (atan2(b, a) * 180f / PI.toFloat())
-
-    activeSupportedMatrixTransforms++
-
-    return MatrixTransform(
-        translateX = e,
-        translateY = f,
-        scaleX = scaleX,
-        scaleY = scaleY,
-        rotation = rotation
-    )
-}
-
-
-    private fun parseRotate(transform: String?): RotateTransform? {
-        if (transform == null) return null
-
-        val match = Regex("""rotate\(([^)]*)\)""")
-            .find(transform)
-            ?: return null
-
-        val nums = match.groupValues[1]
-            .split(Regex("[,\\s]+"))
-            .filter { it.isNotBlank() }
-            .mapNotNull { it.toFloatOrNull() }
-
-        if (nums.isEmpty()) return null
-
-        val pivotX = nums.getOrNull(1)
-        val pivotY = nums.getOrNull(2)
-
-        return RotateTransform(nums[0], pivotX, pivotY)
-    }
-
-    private fun parseTranslate(transform: String?): Pair<Float, Float>? {
-        if (transform == null) return null
-
-        val match = Regex("""translate\(([^)]*)\)""")
-            .find(transform)
-            ?: return null
-
-        val nums = match.groupValues[1]
-            .split(Regex("[,\\s]+"))
-            .filter { it.isNotBlank() }
-            .mapNotNull { it.toFloatOrNull() }
-
-        if (nums.isEmpty()) return null
-
-        return Pair(nums[0], nums.getOrNull(1) ?: 0f)
-    }
-
-    private fun parseScale(transform: String?): Pair<Float, Float>? {
-        if (transform == null) return null
-
-        val match = Regex("""scale\(([^)]*)\)""")
-            .find(transform)
-            ?: return null
-
-        val nums = match.groupValues[1]
-            .split(Regex("[,\\s]+"))
-            .filter { it.isNotBlank() }
-            .mapNotNull { it.toFloatOrNull() }
-
-        if (nums.isEmpty()) return null
-
-        return Pair(nums[0], nums.getOrNull(1) ?: nums[0])
-    }
-
 
 
 private fun parseAlphaValue(value: String?): Float? {
