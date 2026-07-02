@@ -71,7 +71,7 @@ internal data class AffineTransform(
         )
     }
 
-    fun toAndroidGroupTransform(): AndroidGroupTransform? {
+    fun toAndroidGroupTransform(preferredPivotX: Float? = null, preferredPivotY: Float? = null): AndroidGroupTransform? {
         val scaleX = sqrt(a * a + b * b)
         if (nearlyEqual(scaleX, 0f)) return null
 
@@ -89,12 +89,35 @@ internal data class AffineTransform(
             return null
         }
 
+        val hasRotationOrScale = !nearlyEqual(rotation, 0f) ||
+            !nearlyEqual(scaleX, 1f) ||
+            !nearlyEqual(unrotatedD, 1f)
+
+        val pivotX = if (hasRotationOrScale) preferredPivotX ?: 0f else null
+        val pivotY = if (hasRotationOrScale) preferredPivotY ?: 0f else null
+
+        // Android VectorDrawable groups apply rotation/scale around pivot, then translate.
+        // For a matrix with linear part A and translation (e, f), the translate needed
+        // for a chosen pivot p is: t = e - p + A*p.
+        val adjustedTranslateX = if (pivotX != null && pivotY != null) {
+            e - pivotX + (a * pivotX + c * pivotY)
+        } else {
+            e
+        }
+        val adjustedTranslateY = if (pivotX != null && pivotY != null) {
+            f - pivotY + (b * pivotX + d * pivotY)
+        } else {
+            f
+        }
+
         return AndroidGroupTransform(
-            translateX = e,
-            translateY = f,
-            scaleX = scaleX,
-            scaleY = unrotatedD,
-            rotation = normalizeZero(rotation)
+            translateX = normalizeZero(adjustedTranslateX),
+            translateY = normalizeZero(adjustedTranslateY),
+            scaleX = normalizeZero(scaleX),
+            scaleY = normalizeZero(unrotatedD),
+            rotation = normalizeZero(rotation),
+            pivotX = pivotX?.let { normalizeZero(it) },
+            pivotY = pivotY?.let { normalizeZero(it) }
         ).takeIf { it.hasVisibleEffect() }
     }
 
@@ -213,7 +236,13 @@ internal object SvgTransformParser {
 
     fun combineTransformList(transforms: List<ParsedTransform>): CombinedTransform? {
         val matrix = combineTransformListToMatrix(transforms) ?: return null
-        val androidTransform = matrix.toAndroidGroupTransform()
+        val preferredPivot = transforms
+            .filterIsInstance<ParsedTransform.Rotate>()
+            .lastOrNull { it.pivotX != null && it.pivotY != null }
+        val androidTransform = matrix.toAndroidGroupTransform(
+            preferredPivotX = preferredPivot?.pivotX,
+            preferredPivotY = preferredPivot?.pivotY
+        )
 
         if (androidTransform == null) {
             unsupportedMatrixTransforms++
@@ -261,23 +290,23 @@ internal object SvgTransformParser {
         output.appendLine("${indent}<group")
 
         if (!nearlyEqual(transform.translateX, 0f)) {
-            output.appendLine("""${indent}    android:translateX="${normalizeZero(transform.translateX)}"""")
+            output.appendLine("""${indent}    android:translateX="${formatFloat(transform.translateX)}"""")
         }
 
         if (!nearlyEqual(transform.translateY, 0f)) {
-            output.appendLine("""${indent}    android:translateY="${normalizeZero(transform.translateY)}"""")
+            output.appendLine("""${indent}    android:translateY="${formatFloat(transform.translateY)}"""")
         }
 
         if (!nearlyEqual(transform.scaleX, 1f) || !nearlyEqual(transform.scaleY, 1f)) {
-            output.appendLine("""${indent}    android:scaleX="${normalizeZero(transform.scaleX)}"""")
-            output.appendLine("""${indent}    android:scaleY="${normalizeZero(transform.scaleY)}"""")
+            output.appendLine("""${indent}    android:scaleX="${formatFloat(transform.scaleX)}"""")
+            output.appendLine("""${indent}    android:scaleY="${formatFloat(transform.scaleY)}"""")
         }
 
         if (!nearlyEqual(transform.rotation, 0f)) {
-            output.appendLine("""${indent}    android:rotation="${normalizeZero(transform.rotation)}"""")
+            output.appendLine("""${indent}    android:rotation="${formatFloat(transform.rotation)}"""")
             if (transform.pivotX != null && transform.pivotY != null) {
-                output.appendLine("""${indent}    android:pivotX="${normalizeZero(transform.pivotX)}"""")
-                output.appendLine("""${indent}    android:pivotY="${normalizeZero(transform.pivotY)}"""")
+                output.appendLine("""${indent}    android:pivotX="${formatFloat(transform.pivotX)}"""")
+                output.appendLine("""${indent}    android:pivotY="${formatFloat(transform.pivotY)}"""")
             }
         }
 
@@ -315,4 +344,17 @@ private fun nearlyEqual(a: Float, b: Float, epsilon: Float = 0.0001f): Boolean {
 
 private fun normalizeZero(value: Float): Float {
     return if (nearlyEqual(value, 0f)) 0f else value
+}
+
+private fun formatFloat(value: Float): String {
+    val normalized = normalizeZero(value)
+    val snapped = when {
+        nearlyEqual(normalized, normalized.toInt().toFloat()) -> normalized.toInt().toFloat()
+        nearlyEqual(normalized, (normalized * 1000f).toInt() / 1000f) -> (normalized * 1000f).toInt() / 1000f
+        else -> normalized
+    }
+
+    return String.format(Locale.US, "%.4f", snapped)
+        .trimEnd('0')
+        .trimEnd('.')
 }
