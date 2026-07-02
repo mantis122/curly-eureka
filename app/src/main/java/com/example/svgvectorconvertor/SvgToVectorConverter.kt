@@ -1210,11 +1210,10 @@ val currentClipPath = styleValue(style, "clip-path")
         "g" -> {
             val transform = element.getAttribute("transform")
             val transforms = parseTransformList(transform)
-            val combinedTransform = combineTransformList(transforms)
             val groupClipPathId = clipPathIdFromValue(currentClipPath)
             val hasClipPath = groupClipPathId != null && groupClipPathId != activeClipPathId && activeClipPathData.containsKey(groupClipPathId)
 
-            val needsGroup = combinedTransform != null || hasClipPath
+            val needsGroup = transforms.any { it.hasVisibleEffect() } || hasClipPath
 
             if (needsGroup) {
                 var currentIndent = indent
@@ -1227,11 +1226,9 @@ val currentClipPath = styleValue(style, "clip-path")
                     openedGroupCount++
                 }
 
-                if (combinedTransform != null) {
-                    appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
-                    currentIndent += "    "
-                    openedGroupCount++
-                }
+                val openedTransformGroups = appendTransformGroupsStart(output, transforms, currentIndent)
+                currentIndent = openedTransformGroups.first
+                openedGroupCount += openedTransformGroups.second
 
                 appendChildrenWithClipGrouping(
                     output,
@@ -1441,59 +1438,32 @@ private fun appendUseElement(
     val y = floatAttr(element, "y") ?: 0f
 
     val transform = element.getAttribute("transform")
-    val useTransform = combineTransformList(parseTransformList(transform))
+    val placementTransforms = mutableListOf<ParsedTransform>()
+    placementTransforms.addAll(parseTransformList(transform))
 
     val viewBoxTranslateX = -((referencedViewBox?.minX ?: 0f) * symbolScaleX)
     val viewBoxTranslateY = -((referencedViewBox?.minY ?: 0f) * symbolScaleY)
 
-    val totalTranslateX = x + viewBoxTranslateX + (useTransform?.translateX ?: 0f)
-    val totalTranslateY = y + viewBoxTranslateY + (useTransform?.translateY ?: 0f)
+    if (x + viewBoxTranslateX != 0f || y + viewBoxTranslateY != 0f) {
+        placementTransforms.add(ParsedTransform.Translate(x + viewBoxTranslateX, y + viewBoxTranslateY))
+    }
 
-    val effectiveScaleX = symbolScaleX * (useTransform?.scaleX ?: 1f)
-    val effectiveScaleY = symbolScaleY * (useTransform?.scaleY ?: 1f)
+    if (symbolScaleX != 1f || symbolScaleY != 1f) {
+        placementTransforms.add(ParsedTransform.Scale(symbolScaleX, symbolScaleY))
+    }
 
-    val effectiveRotation = useTransform?.rotation ?: 0f
-    val effectivePivotX = useTransform?.pivotX
-    val effectivePivotY = useTransform?.pivotY
-
-    val needsGroup =
-        totalTranslateX != 0f ||
-        totalTranslateY != 0f ||
-        effectiveScaleX != 1f ||
-        effectiveScaleY != 1f ||
-        effectiveRotation != 0f
+    val needsGroup = placementTransforms.any { it.hasVisibleEffect() }
 
     if (needsGroup) {
-        output.appendLine("${indent}<group")
+        val openedTransformGroups = appendTransformGroupsStart(output, placementTransforms, indent)
+        val childIndent = openedTransformGroups.first
 
-        if (totalTranslateX != 0f) {
-            output.appendLine("""${indent}    android:translateX="$totalTranslateX"""")
-        }
-
-        if (totalTranslateY != 0f) {
-            output.appendLine("""${indent}    android:translateY="$totalTranslateY"""")
-        }
-
-        if (effectiveScaleX != 1f || effectiveScaleY != 1f) {
-            output.appendLine("""${indent}    android:scaleX="$effectiveScaleX"""")
-            output.appendLine("""${indent}    android:scaleY="$effectiveScaleY"""")
-        }
-
-        if (effectiveRotation != 0f) {
-            output.appendLine("""${indent}    android:rotation="$effectiveRotation"""")
-            if (effectivePivotX != null && effectivePivotY != null) {
-                output.appendLine("""${indent}    android:pivotX="$effectivePivotX"""")
-                output.appendLine("""${indent}    android:pivotY="$effectivePivotY"""")
-            }
-        }
-
-        output.appendLine("${indent}>")
-        output.appendLine("${indent}    <!-- expanded from <use href=\"#$id\"> -->")
+        output.appendLine("${childIndent}<!-- expanded from <use href=\"#$id\"> -->")
 
         walkSvgNode(
             output,
             referenced,
-            indent + "    ",
+            childIndent,
             inheritedFill,
             inheritedStroke,
             inheritedStrokeWidth,
@@ -1510,7 +1480,7 @@ private fun appendUseElement(
             activeClipPathId
         )
 
-        output.appendLine("${indent}</group>")
+        closeGroups(output, childIndent, openedTransformGroups.second)
         output.appendLine()
     } else {
         output.appendLine("${indent}<!-- expanded from <use href=\"#$id\"> -->")
@@ -1536,7 +1506,6 @@ private fun appendUseElement(
         )
     }
 }
-
 
 private fun appendBasicShapePath(
     output: StringBuilder,
@@ -1686,9 +1655,8 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
 
     val pathTransform = element.getAttribute("transform")
     val transforms = parseTransformList(pathTransform)
-    val combinedTransform = combineTransformList(transforms)
 
-    val pathNeedsGroup = combinedTransform != null || hasClipPath
+    val pathNeedsGroup = transforms.any { it.hasVisibleEffect() } || hasClipPath
 
     if (pathNeedsGroup) {
         var currentIndent = indent
@@ -1701,11 +1669,9 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
             openedGroupCount++
         }
 
-        if (combinedTransform != null) {
-            appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
-            currentIndent += "    "
-            openedGroupCount++
-        }
+        val openedTransformGroups = appendTransformGroupsStart(output, transforms, currentIndent)
+        currentIndent = openedTransformGroups.first
+        openedGroupCount += openedTransformGroups.second
 
         if (sourceTag != null) {
             output.appendLine("${currentIndent}<!-- converted from <$sourceTag> -->")
@@ -2033,6 +1999,88 @@ private fun normalizeNumber(value: String?): String? {
             .split(Regex("[,\\s]+"))
             .filter { it.isNotBlank() }
             .mapNotNull { it.toFloatOrNull() }
+    }
+
+    private fun ParsedTransform.hasVisibleEffect(): Boolean {
+        return when (this) {
+            is ParsedTransform.Translate -> x != 0f || y != 0f
+            is ParsedTransform.Scale -> x != 1f || y != 1f
+            is ParsedTransform.Rotate -> degrees != 0f
+            is ParsedTransform.Matrix -> value.hasVisibleEffect()
+        }
+    }
+
+    private fun MatrixTransform.hasVisibleEffect(): Boolean {
+        return translateX != 0f ||
+            translateY != 0f ||
+            scaleX != 1f ||
+            scaleY != 1f ||
+            rotation != 0f
+    }
+
+    private fun appendTransformGroupsStart(
+        output: StringBuilder,
+        transforms: List<ParsedTransform>,
+        indent: String
+    ): Pair<String, Int> {
+        var currentIndent = indent
+        var openedGroupCount = 0
+
+        transforms.filter { it.hasVisibleEffect() }.forEach { transform ->
+            when (transform) {
+                is ParsedTransform.Translate -> {
+                    output.appendLine("${currentIndent}<group")
+                    if (transform.x != 0f) {
+                        output.appendLine("""${currentIndent}    android:translateX="${transform.x}"""")
+                    }
+                    if (transform.y != 0f) {
+                        output.appendLine("""${currentIndent}    android:translateY="${transform.y}"""")
+                    }
+                    output.appendLine("${currentIndent}>")
+                }
+                is ParsedTransform.Scale -> {
+                    output.appendLine("${currentIndent}<group")
+                    output.appendLine("""${currentIndent}    android:scaleX="${transform.x}"""")
+                    output.appendLine("""${currentIndent}    android:scaleY="${transform.y}"""")
+                    output.appendLine("${currentIndent}>")
+                }
+                is ParsedTransform.Rotate -> {
+                    output.appendLine("${currentIndent}<group")
+                    output.appendLine("""${currentIndent}    android:rotation="${transform.degrees}"""")
+                    if (transform.pivotX != null && transform.pivotY != null) {
+                        output.appendLine("""${currentIndent}    android:pivotX="${transform.pivotX}"""")
+                        output.appendLine("""${currentIndent}    android:pivotY="${transform.pivotY}"""")
+                    }
+                    output.appendLine("${currentIndent}>")
+                }
+                is ParsedTransform.Matrix -> {
+                    appendCombinedTransformGroupStart(
+                        output,
+                        CombinedTransform(
+                            translateX = transform.value.translateX,
+                            translateY = transform.value.translateY,
+                            scaleX = transform.value.scaleX,
+                            scaleY = transform.value.scaleY,
+                            rotation = transform.value.rotation
+                        ),
+                        currentIndent
+                    )
+                }
+            }
+
+            currentIndent += "    "
+            openedGroupCount++
+        }
+
+        return Pair(currentIndent, openedGroupCount)
+    }
+
+    private fun closeGroups(output: StringBuilder, childIndent: String, groupCount: Int) {
+        var currentIndent = childIndent
+        repeat(groupCount) {
+            currentIndent = currentIndent.dropLast(4)
+            output.appendLine("${currentIndent}</group>")
+        }
     }
 
     private fun combineTransformList(transforms: List<ParsedTransform>): CombinedTransform? {
