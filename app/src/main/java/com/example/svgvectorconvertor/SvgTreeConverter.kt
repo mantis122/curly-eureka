@@ -450,9 +450,12 @@ val currentClipPath = SvgPaintResolver.styleValue(style, "clip-path")
                     openedGroupCount++
                 }
 
-                val openedTransformGroups = SvgTransformParser.appendTransformGroupsStart(output, transforms, currentIndent)
-                currentIndent = openedTransformGroups.first
-                openedGroupCount += openedTransformGroups.second
+                val combinedTransform = SvgTransformParser.combineTransformList(transforms)
+                if (combinedTransform != null) {
+                    SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
+                    currentIndent += "    "
+                    openedGroupCount++
+                }
 
                 appendChildrenWithClipGrouping(
                     output,
@@ -679,33 +682,37 @@ private fun appendUseElement(
     val needsGroup = placementTransforms.any { it.hasVisibleEffect() }
 
     if (needsGroup) {
-        val openedTransformGroups = SvgTransformParser.appendTransformGroupsStart(output, placementTransforms, indent)
-        val childIndent = openedTransformGroups.first
+        val combinedTransform = SvgTransformParser.combineTransformList(placementTransforms)
 
-        output.appendLine("${childIndent}<!-- expanded from <use href=\"#$id\"> -->")
+        if (combinedTransform != null) {
+            SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, indent)
+            val childIndent = indent + "    "
 
-        walkSvgNode(
-            output,
-            referenced,
-            childIndent,
-            inheritedFill,
-            inheritedStroke,
-            inheritedStrokeWidth,
-            inheritedStrokeLineCap,
-            inheritedStrokeLineJoin,
-            inheritedStrokeMiterLimit,
-            inheritedFillRule,
-            inheritedOpacity,
-            inheritedFillOpacity,
-            inheritedStrokeOpacity,
-            inheritedClipPath,
-            definitions,
-            useDepth + 1,
-            activeClipPathId
-        )
+            output.appendLine("${childIndent}<!-- expanded from <use href=\"#$id\"> -->")
 
-        SvgTransformParser.closeGroups(output, childIndent, openedTransformGroups.second)
-        output.appendLine()
+            walkSvgNode(
+                output,
+                referenced,
+                childIndent,
+                inheritedFill,
+                inheritedStroke,
+                inheritedStrokeWidth,
+                inheritedStrokeLineCap,
+                inheritedStrokeLineJoin,
+                inheritedStrokeMiterLimit,
+                inheritedFillRule,
+                inheritedOpacity,
+                inheritedFillOpacity,
+                inheritedStrokeOpacity,
+                inheritedClipPath,
+                definitions,
+                useDepth + 1,
+                activeClipPathId
+            )
+
+            output.appendLine("${indent}</group>")
+            output.appendLine()
+        }
     } else {
         output.appendLine("${indent}<!-- expanded from <use href=\"#$id\"> -->")
 
