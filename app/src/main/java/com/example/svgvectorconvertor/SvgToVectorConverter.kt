@@ -12,15 +12,6 @@ private var activeAppliedClipPaths = 0
 private var activeResolvedUseExpansions = 0
 private var activeUnresolvedUseReferences = 0
 
-private data class BasicShapeBreakdown(
-    val rectangles: Int = 0,
-    val roundedRectangles: Int = 0,
-    val circles: Int = 0,
-    val ellipses: Int = 0,
-    val polygons: Int = 0,
-    val polylines: Int = 0
-)
-  
 fun convert(
     svg: String,
     outputDpSize: Int,
@@ -59,9 +50,8 @@ val drawableValidPathCount = Regex("""<path\b[^>]*>""")
         !d.isNullOrBlank()
     }
 
-val definitionDrawableElementCount = countDefinitionDrawableElements(svg)
+val definitionDrawableElementCount = SvgConversionReporter.countDefinitionDrawableElements(svg)
 val emptyPathCount = pathCount - validPathCount
-val groupCount = Regex("""<g\b[^>]*>""").findAll(svg).count()
 val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
 val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
 val clipPathReferenceCount = Regex("""clip-path\s*[:=]""", RegexOption.IGNORE_CASE)
@@ -87,31 +77,25 @@ val presentationStyleAttributeCount = listOf(
         .count()
 }
 
-val basicShapeTags = listOf("rect", "circle", "ellipse", "line", "polyline", "polygon")
-val basicShapeCount = basicShapeTags.sumOf { tag ->
-    Regex("""<\s*$tag\b[^>]*>""", RegexOption.IGNORE_CASE)
-        .findAll(drawableSvgForStats)
-        .count()
-}
 
 val unsupported = mutableListOf<String>()
 
-if (hasTag(svg, "linearGradient")) {
+if (SvgConversionReporter.hasTag(svg, "linearGradient")) {
     unsupported.add(
         if (gradientFallbackColors.isNotEmpty()) "Linear gradients converted to fallback colors" else "Linear gradients"
     )
 }
-if (hasTag(svg, "radialGradient")) {
+if (SvgConversionReporter.hasTag(svg, "radialGradient")) {
     unsupported.add(
         if (gradientFallbackColors.isNotEmpty()) "Radial gradients converted to fallback colors" else "Radial gradients"
     )
 }
-if (hasTag(svg, "mask")) unsupported.add("Masks")
-if (hasTag(svg, "filter")) unsupported.add("Filters")
-if (hasTag(svg, "text")) unsupported.add("Text elements")
-if (hasTag(svg, "clipPath") && clipPathData.isEmpty()) unsupported.add("Clip paths")
-if (hasTag(svg, "pattern")) unsupported.add("Patterns")
-if (hasTag(svg, "image")) unsupported.add("Embedded images")
+if (SvgConversionReporter.hasTag(svg, "mask")) unsupported.add("Masks")
+if (SvgConversionReporter.hasTag(svg, "filter")) unsupported.add("Filters")
+if (SvgConversionReporter.hasTag(svg, "text")) unsupported.add("Text elements")
+if (SvgConversionReporter.hasTag(svg, "clipPath") && clipPathData.isEmpty()) unsupported.add("Clip paths")
+if (SvgConversionReporter.hasTag(svg, "pattern")) unsupported.add("Patterns")
+if (SvgConversionReporter.hasTag(svg, "image")) unsupported.add("Embedded images")
 
         val viewBoxValues = getViewBox(svg)
 
@@ -158,8 +142,8 @@ val rawFinalXml = if (endIndex >= 0) {
 val finalXml = optimizeDuplicateClipPathGroups(rawFinalXml)
 
 val convertedPathCount = Regex("""<path\b""").findAll(finalXml).count()
-val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
-val basicShapeBreakdown = countDrawableBasicShapeBreakdown(drawableSvgForStats)
+val convertedBasicShapeCount = SvgConversionReporter.countConvertedBasicShapes(finalXml)
+val basicShapeBreakdown = SvgConversionReporter.countDrawableBasicShapeBreakdown(drawableSvgForStats)
 val convertedOriginalPathCount = convertedPathCount - convertedBasicShapeCount
 val generatedGroupCount = Regex("""<group\b""").findAll(finalXml).count()
 
@@ -170,261 +154,46 @@ val warningCount =
     unsupported.size +
     if (SvgTransformParser.unsupportedMatrixTransforms > 0) 1 else 0
 
-val summaryTitle =
-    if (warningCount == 0)
-        "🟢 Conversion Successful"
-    else
-        "🟡 Conversion Completed With Warnings"
 
-val summaryLine1 =
-    "$convertedPathCount drawable paths created"
-
-val summaryLine2 =
-    if (warningCount == 0)
-        "No warnings detected"
-    else
-        "$warningCount warning(s) detected"
-
-val report = buildString {
-    appendLine(summaryTitle)
-    appendLine(summaryLine1)
-    appendLine(summaryLine2)
-    appendLine()
-
-appendLine("Converted in ${elapsedMs} ms")
-appendLine()
-
-    appendLine("Conversion Statistics")
-    appendLine()
-    appendLine("✓ Visible SVG paths converted: $convertedOriginalPathCount")
-    if (useCount > 0) {
-        appendLine("✓ Use references expanded: $activeResolvedUseExpansions")
-    }
-    if (symbolCount > 0) {
-        appendLine("✓ Symbol definitions: $symbolCount")
-    }
-    appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
-    appendBasicShapeBreakdown(basicShapeBreakdown)
-    if (definitionDrawableElementCount > 0) {
-        appendLine("✓ Drawable definitions: $definitionDrawableElementCount")
-    }
-    if (gradientFallbackColors.isNotEmpty()) {
-        appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
-    }
-    if (clipPathData.isNotEmpty()) {
-        appendLine("✓ Clip paths found: ${clipPathData.size}")
-        appendLine("✓ Clip paths applied: $activeAppliedClipPaths")
-    }
-    appendLine("✓ Style attributes parsed: $styleAttributeCount")
-    appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
-    appendLine("✓ Groups generated: $generatedGroupCount")
-    appendLine("✓ Warnings: $warningCount")
-    appendLine()
-
-    appendLine("────────────────────")
-
-    appendLine()
-    appendLine("✓ Profile: $conversionProfile")
-
-    appendLine(
-        if (outputDpSize > 0)
-            "✓ Output size: ${outputDpSize}dp"
-        else
-            "✓ Output size: Keep SVG size"
+val report = SvgConversionReporter.buildReport(
+    SvgConversionReportData(
+        convertedPathCount = convertedPathCount,
+        convertedOriginalPathCount = convertedOriginalPathCount,
+        convertedBasicShapeCount = convertedBasicShapeCount,
+        basicShapeBreakdown = basicShapeBreakdown,
+        definitionDrawableElementCount = definitionDrawableElementCount,
+        drawableValidPathCount = drawableValidPathCount,
+        emptyPathCount = emptyPathCount,
+        generatedGroupCount = generatedGroupCount,
+        useCount = useCount,
+        resolvedUseExpansions = activeResolvedUseExpansions,
+        symbolCount = symbolCount,
+        gradientFallbackColorCount = gradientFallbackColors.size,
+        clipPathCount = clipPathData.size,
+        clipPathReferenceCount = clipPathReferenceCount,
+        appliedClipPaths = activeAppliedClipPaths,
+        styleAttributeCount = styleAttributeCount,
+        presentationStyleAttributeCount = presentationStyleAttributeCount,
+        warningCount = warningCount,
+        unsupportedWarnings = unsupported,
+        unsupportedMatrixTransforms = SvgTransformParser.unsupportedMatrixTransforms,
+        supportedMatrixTransforms = SvgTransformParser.supportedMatrixTransforms,
+        matrixCount = matrixCount,
+        translateCount = translateCount,
+        scaleCount = scaleCount,
+        rotateCount = rotateCount,
+        conversionProfile = conversionProfile,
+        outputDpSize = outputDpSize,
+        viewportWidth = viewportWidth,
+        viewportHeight = viewportHeight,
+        elapsedMs = elapsedMs
     )
-
-    appendLine()
-
-    appendLine("────────────────────")
-    appendLine()
-    appendLine("SVG Analysis")
-    appendLine()
-    appendLine("✓ Viewport: ${viewportWidth} × ${viewportHeight}")
-    appendLine()
-
-    appendLine("✓ Visible SVG paths: $drawableValidPathCount")
-    appendLine("✓ Empty paths skipped: $emptyPathCount")
-    appendLine()
-
-    appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
-    appendBasicShapeBreakdown(basicShapeBreakdown)
-    if (definitionDrawableElementCount > 0) {
-        appendLine("✓ Drawable definitions: $definitionDrawableElementCount")
-    }
-    if (symbolCount > 0) {
-        appendLine("✓ Symbol definitions: $symbolCount")
-    }
-    if (gradientFallbackColors.isNotEmpty()) {
-        appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
-    }
-    if (clipPathData.isNotEmpty()) {
-        appendLine("✓ Clip paths found: ${clipPathData.size}")
-        appendLine("✓ Clip path references: $clipPathReferenceCount")
-        appendLine("✓ Clip paths applied: $activeAppliedClipPaths")
-    }
-    appendLine("✓ Style attributes parsed: $styleAttributeCount")
-    appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
-
-    appendLine("✓ Generated groups: $generatedGroupCount")
-    appendLine()
-
-    appendLine()
-    appendLine("Transforms")
-    appendLine()
-
-    appendLine("✓ Translate transforms: $translateCount")
-    appendLine("✓ Scale transforms: $scaleCount")
-    appendLine("✓ Rotate transforms: $rotateCount")
-
-if (matrixCount > 0) {
-    appendLine("✓ Matrix transforms supported: ${SvgTransformParser.supportedMatrixTransforms}")
-    appendLine("⚠ Matrix transforms unsupported: ${SvgTransformParser.unsupportedMatrixTransforms}")
-} else {
-    appendLine("✓ Unsupported matrix transforms: 0")
-}
-
-    appendLine()
-    appendLine("Conversion Status")
-    appendLine()
-
-    appendLine("✓ Android VectorDrawable generated")
-    appendLine("✓ Drawable paths created: $convertedPathCount")
-    appendLine("✓ XML validation passed")
-    appendLine("✓ Output ready to save")
-    appendLine()
-
-
-if (unsupported.isEmpty() && SvgTransformParser.unsupportedMatrixTransforms == 0) {
-    appendLine("✓ No warnings detected")
-} else {
-    appendLine("Warnings")
-    appendLine()
-
-    if (SvgTransformParser.unsupportedMatrixTransforms > 0) {
-        appendLine("⚠ Unsupported matrix transforms: ${SvgTransformParser.unsupportedMatrixTransforms}")
-    }
-
-    unsupported.forEach {
-        if (it.contains("converted", ignoreCase = true)) {
-            appendLine("⚠ $it")
-        } else {
-            appendLine("⚠ $it detected")
-        }
-    }
-
-    appendLine()
-    appendLine("Some SVG features may not convert correctly.")
-}
-
-}
-
+)
 
 return ConversionResult(finalXml, report)
 
 
     }
-
-private fun countConvertedBasicShapes(xml: String): Int {
-    return Regex("""<!-- converted from <(rect|circle|ellipse|line|polyline|polygon)> -->""")
-        .findAll(xml)
-        .count()
-}
-
-private fun StringBuilder.appendBasicShapeBreakdown(breakdown: BasicShapeBreakdown) {
-    appendLine("    • Rectangles: ${breakdown.rectangles}")
-    appendLine("    • Rounded rectangles: ${breakdown.roundedRectangles}")
-    appendLine("    • Circles: ${breakdown.circles}")
-    appendLine("    • Ellipses: ${breakdown.ellipses}")
-    appendLine("    • Polygons: ${breakdown.polygons}")
-    appendLine("    • Polylines: ${breakdown.polylines}")
-}
-
-private fun countDrawableBasicShapeBreakdown(svg: String): BasicShapeBreakdown {
-    var rectangles = 0
-    var roundedRectangles = 0
-    var circles = 0
-    var ellipses = 0
-    var polygons = 0
-    var polylines = 0
-
-    fun countElement(element: Element) {
-        val tag = element.tagName.substringAfter(":").lowercase()
-
-        when (tag) {
-            "rect" -> {
-                if (basicShapeToPathData(element, tag) != null) {
-                    val rx = floatAttr(element, "rx") ?: 0f
-                    val ry = floatAttr(element, "ry") ?: 0f
-                    if (rx > 0f || ry > 0f) {
-                        roundedRectangles++
-                    } else {
-                        rectangles++
-                    }
-                }
-            }
-            "circle" -> {
-                if (basicShapeToPathData(element, tag) != null) circles++
-            }
-            "ellipse" -> {
-                if (basicShapeToPathData(element, tag) != null) ellipses++
-            }
-            "polygon" -> {
-                if (basicShapeToPathData(element, tag) != null) polygons++
-            }
-            "polyline" -> {
-                if (basicShapeToPathData(element, tag) != null) polylines++
-            }
-        }
-
-        val children = element.childNodes
-        for (i in 0 until children.length) {
-            val child = children.item(i)
-            if (child.nodeType == Node.ELEMENT_NODE) {
-                countElement(child as Element)
-            }
-        }
-    }
-
-    return try {
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = false
-            isIgnoringComments = true
-        }
-
-        val document = factory
-            .newDocumentBuilder()
-            .parse(InputSource(StringReader(svg)))
-
-        countElement(document.documentElement)
-
-        BasicShapeBreakdown(
-            rectangles = rectangles,
-            roundedRectangles = roundedRectangles,
-            circles = circles,
-            ellipses = ellipses,
-            polygons = polygons,
-            polylines = polylines
-        )
-    } catch (e: Exception) {
-        val rectTagMatches = Regex("""<\s*rect\b[^>]*>""", RegexOption.IGNORE_CASE)
-            .findAll(svg)
-            .map { it.value }
-            .toList()
-
-        val roundedRectFallbackCount = rectTagMatches.count { tag ->
-            Regex("""\b(rx|ry)\s*=""", RegexOption.IGNORE_CASE).containsMatchIn(tag)
-        }
-
-        BasicShapeBreakdown(
-            rectangles = rectTagMatches.size - roundedRectFallbackCount,
-            roundedRectangles = roundedRectFallbackCount,
-            circles = Regex("""<\s*circle\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count(),
-            ellipses = Regex("""<\s*ellipse\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count(),
-            polygons = Regex("""<\s*polygon\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count(),
-            polylines = Regex("""<\s*polyline\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
-        )
-    }
-}
 
 private fun optimizeDuplicateClipPathGroups(xml: String): String {
     fun reindentBlock(block: String, indent: String): String {
@@ -470,11 +239,6 @@ private fun optimizeDuplicateClipPathGroups(xml: String): String {
     }
 }
 
-    private fun hasTag(svg: String, tagName: String): Boolean {
-        return Regex("""<\s*$tagName\b""", RegexOption.IGNORE_CASE)
-            .containsMatchIn(svg)
-    }
-
 private fun stripSvgComments(xml: String): String {
     return Regex(
         """<!--.*?-->""",
@@ -482,83 +246,6 @@ private fun stripSvgComments(xml: String): String {
     ).replace(xml, "")
 }
 
-
-private fun countDefinitionDrawableElements(svg: String): Int {
-    val basicShapeTags = setOf("rect", "circle", "ellipse", "line", "polyline", "polygon")
-    var count = 0
-
-    fun countDrawableElement(element: Element) {
-        val tag = element.tagName.substringAfter(":").lowercase()
-
-        when (tag) {
-            "path" -> {
-                if (element.getAttribute("d").trim().isNotBlank()) {
-                    count++
-                }
-            }
-            in basicShapeTags -> {
-                if (basicShapeToPathData(element, tag) != null) {
-                    count++
-                }
-            }
-        }
-
-        val children = element.childNodes
-        for (i in 0 until children.length) {
-            val child = children.item(i)
-            if (child.nodeType == Node.ELEMENT_NODE) {
-                countDrawableElement(child as Element)
-            }
-        }
-    }
-
-    return try {
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = false
-            isIgnoringComments = true
-        }
-
-        val document = factory
-            .newDocumentBuilder()
-            .parse(InputSource(StringReader(svg)))
-
-        val defsNodes = document.getElementsByTagName("defs")
-
-        for (i in 0 until defsNodes.length) {
-            val defs = defsNodes.item(i)
-            val children = defs.childNodes
-
-            for (j in 0 until children.length) {
-                val child = children.item(j)
-                if (child.nodeType == Node.ELEMENT_NODE) {
-                    countDrawableElement(child as Element)
-                }
-            }
-        }
-
-        count
-    } catch (e: Exception) {
-        val defsBlocks = Regex(
-            """<defs\b[^>]*>.*?</defs>""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        ).findAll(svg)
-
-        defsBlocks.sumOf { block ->
-            val value = block.value
-            val pathCount = Regex("""<path\b[^>]*\bd\s*=\s*["'][^"']+["']""", RegexOption.IGNORE_CASE)
-                .findAll(value)
-                .count()
-
-            val shapeCount = basicShapeTags.sumOf { tag ->
-                Regex("""<\s*$tag\b[^>]*>""", RegexOption.IGNORE_CASE)
-                    .findAll(value)
-                    .count()
-            }
-
-            pathCount + shapeCount
-        }
-    }
-}
 
 private fun stripDefs(xml: String): String {
     return Regex(
