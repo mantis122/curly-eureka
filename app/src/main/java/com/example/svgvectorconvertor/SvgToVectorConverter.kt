@@ -401,6 +401,7 @@ val strokeAlpha = SvgPaintResolver.resolveDrawableAlpha(inheritedOpacity, stroke
     val stroke = SvgPaintResolver.safeStrokeColor(rawStroke)
 
     val pathTransform = element.getAttribute("transform")
+    .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
     val transformOrigin = SvgTransformParser.parseTransformOrigin(
         SvgPaintResolver.styleValue(style, "transform-origin")
             ?: element.getAttribute("transform-origin").ifBlank { "" }

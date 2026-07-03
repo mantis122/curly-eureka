@@ -372,12 +372,11 @@ internal object SvgTransformParser {
     }
 
     private fun parseTransformNumbers(value: String): List<Float> {
-        return value
-            .trim()
-            .split(Regex("[,\\s]+"))
-            .filter { it.isNotBlank() }
-            .mapNotNull { it.toFloatOrNull() }
-    }
+    return Regex("""[-+]?(?:\d+\.\d+|\d+|\.\d+)(?:[eE][-+]?\d+)?""")
+        .findAll(value)
+        .mapNotNull { it.value.toFloatOrNull() }
+        .toList()
+}
 
     private fun parseMatrixValues(nums: List<Float>): AffineTransform? {
         if (nums.size != 6) {

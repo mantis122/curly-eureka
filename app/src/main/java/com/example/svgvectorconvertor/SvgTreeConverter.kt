@@ -438,6 +438,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
 
         "g" -> {
             val transform = element.getAttribute("transform")
+    .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
             val transforms = SvgTransformParser.parseTransformList(transform)
             val groupClipPathId = clipPathIdFromValue(currentClipPath)
             val hasClipPath = groupClipPathId != null && groupClipPathId != activeClipPathId && activeClipPathData.containsKey(groupClipPathId)
@@ -676,6 +677,7 @@ private fun appendUseElement(
     )
 
     val transform = element.getAttribute("transform")
+    .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
     val placementTransforms = mutableListOf<ParsedTransform>()
     placementTransforms.addAll(SvgTransformParser.parseTransformList(transform))
 
