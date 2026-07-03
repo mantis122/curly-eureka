@@ -7,7 +7,6 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.math.tan
 
 internal sealed class ParsedTransform {
     data class Translate(val x: Float, val y: Float) : ParsedTransform()
@@ -24,11 +23,6 @@ internal sealed class ParsedTransform {
         }
     }
 }
-
-internal data class SvgPoint(
-    val x: Float,
-    val y: Float
-)
 
 /**
  * SVG 2D affine matrix:
@@ -75,29 +69,6 @@ internal data class AffineTransform(
             e = a * other.e + c * other.f + e,
             f = b * other.e + d * other.f + f
         )
-    }
-
-    fun applyToX(x: Float, y: Float): Float {
-        return a * x + c * y + e
-    }
-
-    fun applyToY(x: Float, y: Float): Float {
-        return b * x + d * y + f
-    }
-
-    fun applyToPoint(point: SvgPoint): SvgPoint {
-        return SvgPoint(
-            x = normalizeZero(applyToX(point.x, point.y)),
-            y = normalizeZero(applyToY(point.x, point.y))
-        )
-    }
-
-    fun applyToPathPoints(points: List<SvgPoint>): List<SvgPoint> {
-        return points.map { applyToPoint(it) }
-    }
-
-    fun canRepresentAsAndroidGroup(preferredPivotX: Float? = null, preferredPivotY: Float? = null): Boolean {
-        return toAndroidGroupTransform(preferredPivotX, preferredPivotY) != null
     }
 
     fun toAndroidGroupTransform(preferredPivotX: Float? = null, preferredPivotY: Float? = null): AndroidGroupTransform? {
@@ -179,16 +150,6 @@ internal data class AffineTransform(
                 .multiply(rotation(degrees))
                 .multiply(translation(-pivotX, -pivotY))
         }
-
-        fun skewX(degrees: Float): AffineTransform {
-            val radians = degrees * PI.toFloat() / 180f
-            return AffineTransform(c = tan(radians))
-        }
-
-        fun skewY(degrees: Float): AffineTransform {
-            val radians = degrees * PI.toFloat() / 180f
-            return AffineTransform(b = tan(radians))
-        }
     }
 }
 
@@ -247,97 +208,11 @@ internal object SvgTransformParser {
                         if (nums.isEmpty()) null
                         else ParsedTransform.Rotate(nums[0], nums.getOrNull(1), nums.getOrNull(2))
                     }
-                    "skewx" -> {
-                        if (nums.isEmpty()) null
-                        else ParsedTransform.Matrix(AffineTransform.skewX(nums[0]))
-                    }
-                    "skewy" -> {
-                        if (nums.isEmpty()) null
-                        else ParsedTransform.Matrix(AffineTransform.skewY(nums[0]))
-                    }
                     "matrix" -> parseMatrixValues(nums)?.let { ParsedTransform.Matrix(it) }
                     else -> null
                 }
             }
             .toList()
-    }
-
-    fun combineTransformListForGeometry(transforms: List<ParsedTransform>): AffineTransform? {
-        return combineTransformListToMatrix(transforms)
-    }
-
-    fun canApplyAsAndroidGroup(transforms: List<ParsedTransform>): Boolean {
-        val matrix = combineTransformListToMatrix(transforms) ?: return true
-        val preferredPivot = transforms
-            .filterIsInstance<ParsedTransform.Rotate>()
-            .lastOrNull { it.pivotX != null && it.pivotY != null }
-        return matrix.canRepresentAsAndroidGroup(
-            preferredPivotX = preferredPivot?.pivotX,
-            preferredPivotY = preferredPivot?.pivotY
-        )
-    }
-
-fun geometryFallbackTransform(transforms: List<ParsedTransform>): AffineTransform? {
-    if (transforms.isEmpty()) return null
-
-    val matrix = combineTransformListToMatrix(transforms) ?: return null
-
-    val preferredPivot = transforms
-        .filterIsInstance<ParsedTransform.Rotate>()
-        .lastOrNull { it.pivotX != null && it.pivotY != null }
-
-    return if (
-        matrix.canRepresentAsAndroidGroup(
-            preferredPivotX = preferredPivot?.pivotX,
-            preferredPivotY = preferredPivot?.pivotY
-        )
-    ) {
-        null
-    } else {
-        matrix
-    }
-}    
-    
-    fun transformRectPathData(
-        x: Float,
-        y: Float,
-        width: Float,
-        height: Float,
-        transform: AffineTransform
-    ): String {
-        val p1 = transform.applyToPoint(SvgPoint(x, y))
-        val p2 = transform.applyToPoint(SvgPoint(x + width, y))
-        val p3 = transform.applyToPoint(SvgPoint(x + width, y + height))
-        val p4 = transform.applyToPoint(SvgPoint(x, y + height))
-
-        return "M ${formatFloat(p1.x)},${formatFloat(p1.y)} " +
-            "L ${formatFloat(p2.x)},${formatFloat(p2.y)} " +
-            "L ${formatFloat(p3.x)},${formatFloat(p3.y)} " +
-            "L ${formatFloat(p4.x)},${formatFloat(p4.y)} Z"
-    }
-
-    fun transformLinePathData(
-        x1: Float,
-        y1: Float,
-        x2: Float,
-        y2: Float,
-        transform: AffineTransform
-    ): String {
-        val p1 = transform.applyToPoint(SvgPoint(x1, y1))
-        val p2 = transform.applyToPoint(SvgPoint(x2, y2))
-        return "M ${formatFloat(p1.x)},${formatFloat(p1.y)} L ${formatFloat(p2.x)},${formatFloat(p2.y)}"
-    }
-
-    fun transformPolygonPathData(points: List<SvgPoint>, transform: AffineTransform, close: Boolean): String {
-        if (points.isEmpty()) return ""
-        val transformed = transform.applyToPathPoints(points)
-        val first = transformed.first()
-        val builder = StringBuilder("M ${formatFloat(first.x)},${formatFloat(first.y)}")
-        transformed.drop(1).forEach { point ->
-            builder.append(" L ${formatFloat(point.x)},${formatFloat(point.y)}")
-        }
-        if (close) builder.append(" Z")
-        return builder.toString()
     }
 
     fun appendTransformGroupsStart(
