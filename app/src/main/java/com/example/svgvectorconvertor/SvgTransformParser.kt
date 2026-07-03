@@ -7,6 +7,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import java.util.Locale
 
 internal sealed class ParsedTransform {
     data class Translate(val x: Float, val y: Float) : ParsedTransform()
@@ -183,6 +184,14 @@ internal object SvgTransformParser {
     var unsupportedMatrixTransforms: Int = 0
         private set
 
+private var transformOriginReferenceWidth: Float? = null
+private var transformOriginReferenceHeight: Float? = null
+
+fun setTransformOriginReferenceBox(width: Float, height: Float) {
+    transformOriginReferenceWidth = width
+    transformOriginReferenceHeight = height
+}
+  
     fun resetMatrixStats() {
         supportedMatrixTransforms = 0
         unsupportedMatrixTransforms = 0
@@ -340,24 +349,38 @@ internal object SvgTransformParser {
         output.appendLine("${indent}>")
     }
 
-    fun parseTransformOrigin(value: String?): TransformOrigin? {
-        if (value.isNullOrBlank()) return null
+fun parseTransformOrigin(value: String?): TransformOrigin? {
+    if (value.isNullOrBlank()) return null
 
-        val cleaned = value
-            .trim()
-            .replace(',', ' ')
+    val cleaned = value
+        .trim()
+        .replace(',', ' ')
 
-        val parts = cleaned
-            .split(Regex("\\s+"))
-            .filter { it.isNotBlank() }
+    val parts = cleaned
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
 
-        if (parts.size < 2) return null
+    if (parts.size < 2) return null
 
-        val x = parseOriginNumber(parts[0]) ?: return null
-        val y = parseOriginNumber(parts[1]) ?: return null
+    val x = parseOriginNumber(parts[0], transformOriginReferenceWidth) ?: return null
+    val y = parseOriginNumber(parts[1], transformOriginReferenceHeight) ?: return null
 
-        return TransformOrigin(x, y)
+    return TransformOrigin(x, y)
+}
+
+private fun parseOriginNumber(value: String, referenceLength: Float?): Float? {
+    val trimmed = value.trim().lowercase(Locale.US)
+
+    if (trimmed.endsWith("%")) {
+        val percent = trimmed.removeSuffix("%").toFloatOrNull() ?: return null
+        val reference = referenceLength ?: return null
+        return reference * percent / 100f
     }
+
+    return trimmed
+        .removeSuffix("px")
+        .toFloatOrNull()
+}
 
     private fun parseOriginNumber(value: String): Float? {
         val trimmed = value.trim().lowercase(Locale.US)
