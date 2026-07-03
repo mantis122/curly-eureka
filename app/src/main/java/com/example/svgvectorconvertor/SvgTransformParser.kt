@@ -367,16 +367,18 @@ fun parseTransformOrigin(value: String?): TransformOrigin? {
     return TransformOrigin(x, y)
 }
 
-    private fun parseOriginNumber(value: String): Float? {
-        val trimmed = value.trim().lowercase(Locale.US)
+    private fun parseOriginNumber(value: String, referenceLength: Float?): Float? {
+    val trimmed = value.trim().lowercase(Locale.US)
 
-        // VectorDrawable pivots are absolute viewport units. Percentages and keywords
-        // need a reference box, so leave those unsupported rather than guessing.
-        if (trimmed.endsWith("%")) return null
+    if (trimmed.endsWith("%")) {
+        val percent = trimmed.removeSuffix("%").toFloatOrNull() ?: return null
+        val reference = referenceLength ?: return null
+        return reference * percent / 100f
+    }
 
-        return trimmed
-            .removeSuffix("px")
-            .toFloatOrNull()
+    return trimmed
+        .removeSuffix("px")
+        .toFloatOrNull()
     }
 
     private fun parseTransformNumbers(value: String): List<Float> {
