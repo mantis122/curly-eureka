@@ -401,6 +401,10 @@ val strokeAlpha = SvgPaintResolver.resolveDrawableAlpha(inheritedOpacity, stroke
     val stroke = SvgPaintResolver.safeStrokeColor(rawStroke)
 
     val pathTransform = element.getAttribute("transform")
+    val transformOrigin = SvgTransformParser.parseTransformOrigin(
+        SvgPaintResolver.styleValue(style, "transform-origin")
+            ?: element.getAttribute("transform-origin").ifBlank { "" }
+    )
     val transforms = SvgTransformParser.parseTransformList(pathTransform)
 
     val pathNeedsGroup = transforms.any { it.hasVisibleEffect() } || hasClipPath
@@ -416,7 +420,12 @@ val strokeAlpha = SvgPaintResolver.resolveDrawableAlpha(inheritedOpacity, stroke
             openedGroupCount++
         }
 
-        val openedTransformGroups = SvgTransformParser.appendTransformGroupsStart(output, transforms, currentIndent)
+        val openedTransformGroups = SvgTransformParser.appendTransformGroupsStart(
+            output,
+            transforms,
+            currentIndent,
+            transformOrigin
+        )
         currentIndent = openedTransformGroups.first
         openedGroupCount += openedTransformGroups.second
 
