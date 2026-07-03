@@ -7,6 +7,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.tan
 
 internal sealed class ParsedTransform {
     data class Translate(val x: Float, val y: Float) : ParsedTransform()
@@ -150,6 +151,16 @@ internal data class AffineTransform(
                 .multiply(rotation(degrees))
                 .multiply(translation(-pivotX, -pivotY))
         }
+
+        fun skewX(degrees: Float): AffineTransform {
+            val radians = degrees * PI.toFloat() / 180f
+            return AffineTransform(c = tan(radians))
+        }
+
+        fun skewY(degrees: Float): AffineTransform {
+            val radians = degrees * PI.toFloat() / 180f
+            return AffineTransform(b = tan(radians))
+        }
     }
 }
 
@@ -207,6 +218,14 @@ internal object SvgTransformParser {
                     "rotate" -> {
                         if (nums.isEmpty()) null
                         else ParsedTransform.Rotate(nums[0], nums.getOrNull(1), nums.getOrNull(2))
+                    }
+                    "skewx" -> {
+                        if (nums.isEmpty()) null
+                        else ParsedTransform.Matrix(AffineTransform.skewX(nums[0]))
+                    }
+                    "skewy" -> {
+                        if (nums.isEmpty()) null
+                        else ParsedTransform.Matrix(AffineTransform.skewY(nums[0]))
                     }
                     "matrix" -> parseMatrixValues(nums)?.let { ParsedTransform.Matrix(it) }
                     else -> null
