@@ -89,12 +89,9 @@ internal data class AffineTransform(
             return null
         }
 
-        val determinant = a * d - b * c
-        val scaleY = determinant / scaleX
-
         val hasRotationOrScale = !nearlyEqual(rotation, 0f) ||
             !nearlyEqual(scaleX, 1f) ||
-            !nearlyEqual(scaleY, 1f)
+            !nearlyEqual(unrotatedD, 1f)
 
         val pivotX = if (hasRotationOrScale) preferredPivotX ?: 0f else null
         val pivotY = if (hasRotationOrScale) preferredPivotY ?: 0f else null
@@ -117,7 +114,7 @@ internal data class AffineTransform(
             translateX = normalizeZero(adjustedTranslateX),
             translateY = normalizeZero(adjustedTranslateY),
             scaleX = normalizeZero(scaleX),
-            scaleY = normalizeZero(scaleY),
+            scaleY = normalizeZero(unrotatedD),
             rotation = normalizeZero(rotation),
             pivotX = pivotX?.let { normalizeZero(it) },
             pivotY = pivotY?.let { normalizeZero(it) }
