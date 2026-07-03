@@ -377,6 +377,11 @@ val currentStrokeOpacity = SvgPaintResolver.styleValue(style, "stroke-opacity")
 val currentClipPath = SvgPaintResolver.styleValue(style, "clip-path")
     ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
 
+val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
+    SvgPaintResolver.styleValue(style, "transform-origin")
+        ?: element.getAttribute("transform-origin").ifBlank { "" }
+)
+
    val tagName = element.tagName.substringAfter(":").lowercase()
 
     when (tagName) {
@@ -450,7 +455,7 @@ val currentClipPath = SvgPaintResolver.styleValue(style, "clip-path")
                     openedGroupCount++
                 }
 
-                val combinedTransform = SvgTransformParser.combineTransformList(transforms)
+                val combinedTransform = SvgTransformParser.combineTransformList(transforms, currentTransformOrigin)
                 if (combinedTransform != null) {
                     SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
                     currentIndent += "    "
@@ -664,6 +669,12 @@ private fun appendUseElement(
     val x = floatAttrCallback(element, "x") ?: 0f
     val y = floatAttrCallback(element, "y") ?: 0f
 
+    val style = element.getAttribute("style").ifBlank { null }
+    val transformOrigin = SvgTransformParser.parseTransformOrigin(
+        SvgPaintResolver.styleValue(style, "transform-origin")
+            ?: element.getAttribute("transform-origin").ifBlank { "" }
+    )
+
     val transform = element.getAttribute("transform")
     val placementTransforms = mutableListOf<ParsedTransform>()
     placementTransforms.addAll(SvgTransformParser.parseTransformList(transform))
@@ -682,7 +693,7 @@ private fun appendUseElement(
     val needsGroup = placementTransforms.any { it.hasVisibleEffect() }
 
     if (needsGroup) {
-        val combinedTransform = SvgTransformParser.combineTransformList(placementTransforms)
+        val combinedTransform = SvgTransformParser.combineTransformList(placementTransforms, transformOrigin)
 
         if (combinedTransform != null) {
             SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, indent)

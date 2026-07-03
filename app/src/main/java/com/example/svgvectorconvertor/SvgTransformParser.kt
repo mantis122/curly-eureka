@@ -171,6 +171,8 @@ internal data class AndroidGroupTransform(
     }
 }
 
+internal data class TransformOrigin(val x: Float, val y: Float)
+
 // Compatibility alias so SvgTreeConverter does not need to change everywhere at once.
 internal typealias CombinedTransform = AndroidGroupTransform
 
@@ -218,9 +220,10 @@ internal object SvgTransformParser {
     fun appendTransformGroupsStart(
         output: StringBuilder,
         transforms: List<ParsedTransform>,
-        indent: String
+        indent: String,
+        transformOrigin: TransformOrigin? = null
     ): Pair<String, Int> {
-        val combinedTransform = combineTransformList(transforms) ?: return Pair(indent, 0)
+        val combinedTransform = combineTransformList(transforms, transformOrigin) ?: return Pair(indent, 0)
 
         appendCombinedTransformGroupStart(output, combinedTransform, indent)
         return Pair(indent + "    ", 1)
@@ -234,14 +237,28 @@ internal object SvgTransformParser {
         }
     }
 
-    fun combineTransformList(transforms: List<ParsedTransform>): CombinedTransform? {
-        val matrix = combineTransformListToMatrix(transforms) ?: return null
-        val preferredPivot = transforms
+    fun combineTransformList(
+        transforms: List<ParsedTransform>,
+        transformOrigin: TransformOrigin? = null
+    ): CombinedTransform? {
+        val rotatePivot = transforms
             .filterIsInstance<ParsedTransform.Rotate>()
             .lastOrNull { it.pivotX != null && it.pivotY != null }
+
+        // Legacy SVG rotate(a cx cy) already bakes its own pivot into the matrix.
+        // Otherwise, transform-origin changes matrix composition for the whole list.
+        val compositionOrigin = if (rotatePivot == null) transformOrigin else null
+        val matrix = combineTransformListToMatrix(transforms, compositionOrigin) ?: return null
+
+        // SVG rotate(a cx cy) has its own explicit pivot and should win.
+        // Otherwise, SVG/CSS transform-origin supplies the pivot for group-level
+        // rotation/scale decomposition into Android VectorDrawable attributes.
+        val preferredPivotX = rotatePivot?.pivotX ?: transformOrigin?.x
+        val preferredPivotY = rotatePivot?.pivotY ?: transformOrigin?.y
+
         val androidTransform = matrix.toAndroidGroupTransform(
-            preferredPivotX = preferredPivot?.pivotX,
-            preferredPivotY = preferredPivot?.pivotY
+            preferredPivotX = preferredPivotX,
+            preferredPivotY = preferredPivotY
         )
 
         if (androidTransform == null) {
@@ -256,7 +273,10 @@ internal object SvgTransformParser {
         return androidTransform
     }
 
-    fun combineTransformListToMatrix(transforms: List<ParsedTransform>): AffineTransform? {
+    fun combineTransformListToMatrix(
+        transforms: List<ParsedTransform>,
+        transformOrigin: TransformOrigin? = null
+    ): AffineTransform? {
         if (transforms.isEmpty()) return null
 
         var current = AffineTransform.identity()
@@ -277,6 +297,12 @@ internal object SvgTransformParser {
 
             // Compose in SVG list order, matching equivalent nested groups.
             current = current.multiply(next)
+        }
+
+        if (transformOrigin != null) {
+            current = AffineTransform.translation(transformOrigin.x, transformOrigin.y)
+                .multiply(current)
+                .multiply(AffineTransform.translation(-transformOrigin.x, -transformOrigin.y))
         }
 
         return current.takeIf { it.hasVisibleEffect() }
@@ -304,13 +330,45 @@ internal object SvgTransformParser {
 
         if (!nearlyEqual(transform.rotation, 0f)) {
             output.appendLine("""${indent}    android:rotation="${formatFloat(transform.rotation)}"""")
-            if (transform.pivotX != null && transform.pivotY != null) {
-                output.appendLine("""${indent}    android:pivotX="${formatFloat(transform.pivotX)}"""")
-                output.appendLine("""${indent}    android:pivotY="${formatFloat(transform.pivotY)}"""")
-            }
+        }
+
+        if (transform.pivotX != null && transform.pivotY != null) {
+            output.appendLine("""${indent}    android:pivotX="${formatFloat(transform.pivotX)}"""")
+            output.appendLine("""${indent}    android:pivotY="${formatFloat(transform.pivotY)}"""")
         }
 
         output.appendLine("${indent}>")
+    }
+
+    fun parseTransformOrigin(value: String?): TransformOrigin? {
+        if (value.isNullOrBlank()) return null
+
+        val cleaned = value
+            .trim()
+            .replace(',', ' ')
+
+        val parts = cleaned
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+
+        if (parts.size < 2) return null
+
+        val x = parseOriginNumber(parts[0]) ?: return null
+        val y = parseOriginNumber(parts[1]) ?: return null
+
+        return TransformOrigin(x, y)
+    }
+
+    private fun parseOriginNumber(value: String): Float? {
+        val trimmed = value.trim().lowercase(Locale.US)
+
+        // VectorDrawable pivots are absolute viewport units. Percentages and keywords
+        // need a reference box, so leave those unsupported rather than guessing.
+        if (trimmed.endsWith("%")) return null
+
+        return trimmed
+            .removeSuffix("px")
+            .toFloatOrNull()
     }
 
     private fun parseTransformNumbers(value: String): List<Float> {
