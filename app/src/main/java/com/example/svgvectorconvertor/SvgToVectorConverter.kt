@@ -19,6 +19,8 @@ private var activeResolvedUseExpansions = 0
 private var activeUnresolvedUseReferences = 0
 private var activeSupportedMatrixTransforms = 0
 private var activeUnsupportedMatrixTransforms = 0
+private var activeTransformOriginReferenceWidth: Float? = null
+private var activeTransformOriginReferenceHeight: Float? = null
 
 private data class BasicShapeBreakdown(
     val rectangles: Int = 0,
@@ -135,6 +137,8 @@ if (hasTag(svg, "image")) unsupported.add("Embedded images")
             ?: heightFromSvg
             ?: 24f
 
+activeTransformOriginReferenceWidth = viewportWidth
+activeTransformOriginReferenceHeight = viewportHeight
 SvgTransformParser.setTransformOriginReferenceBox(viewportWidth, viewportHeight)
   
 val vectorWidthDp =
@@ -646,6 +650,7 @@ private fun svgNamedColor(value: String): String? {
         "orange" -> "#FFA500"
         "purple" -> "#800080"
         "brown" -> "#A52A2A"
+        "crimson" -> "#DC143C"
         "pink" -> "#FFC0CB"
         "lime" -> "#00FF00"
         "navy" -> "#000080"
@@ -1212,8 +1217,13 @@ val currentClipPath = styleValue(style, "clip-path")
 
         "g" -> {
             val transform = element.getAttribute("transform")
+                .ifBlank { styleValue(style, "transform") ?: "" }
+            val transformOrigin = parseTransformOrigin(
+                element.getAttribute("transform-origin")
+                    .ifBlank { styleValue(style, "transform-origin") ?: "" }
+            )
             val transforms = parseTransformList(transform)
-            val combinedTransform = combineTransformList(transforms)
+            val combinedTransform = combineTransformList(transforms, transformOrigin)
             val groupClipPathId = clipPathIdFromValue(currentClipPath)
             val hasClipPath = groupClipPathId != null && groupClipPathId != activeClipPathId && activeClipPathData.containsKey(groupClipPathId)
 
@@ -1443,7 +1453,13 @@ private fun appendUseElement(
     val x = floatAttr(element, "x") ?: 0f
     val y = floatAttr(element, "y") ?: 0f
 
+    val style = element.getAttribute("style").ifBlank { null }
     val transform = element.getAttribute("transform")
+        .ifBlank { styleValue(style, "transform") ?: "" }
+    val transformOrigin = parseTransformOrigin(
+        element.getAttribute("transform-origin")
+            .ifBlank { styleValue(style, "transform-origin") ?: "" }
+    )
     val translate = parseTranslate(transform)
     val scale = parseScale(transform)
     val rotate = parseRotate(transform)
@@ -1483,10 +1499,13 @@ private fun appendUseElement(
         }
 
 if (rotate != null) {
+    val usePivotX = rotate.pivotX ?: transformOrigin?.x
+    val usePivotY = rotate.pivotY ?: transformOrigin?.y
+
     output.appendLine("""${indent}    android:rotation="${rotate.degrees}"""")
-    if (rotate.pivotX != null && rotate.pivotY != null) {
-        output.appendLine("""${indent}    android:pivotX="${rotate.pivotX}"""")
-        output.appendLine("""${indent}    android:pivotY="${rotate.pivotY}"""")
+    if (usePivotX != null && usePivotY != null) {
+        output.appendLine("""${indent}    android:pivotX="$usePivotX"""")
+        output.appendLine("""${indent}    android:pivotY="$usePivotY"""")
     }
 }
 
@@ -1704,8 +1723,13 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
     val stroke = safeStrokeColor(rawStroke)
 
     val pathTransform = element.getAttribute("transform")
+        .ifBlank { styleValue(style, "transform") ?: "" }
+    val transformOrigin = parseTransformOrigin(
+        element.getAttribute("transform-origin")
+            .ifBlank { styleValue(style, "transform-origin") ?: "" }
+    )
     val transforms = parseTransformList(pathTransform)
-    val combinedTransform = combineTransformList(transforms)
+    val combinedTransform = combineTransformList(transforms, transformOrigin)
 
     val pathNeedsGroup = combinedTransform != null || hasClipPath
 
@@ -1797,6 +1821,7 @@ private fun appendFlatPathsFallback(
         .forEach { match ->
             val tag = match.value
             val tagName = match.groupValues[1].lowercase()
+            val style = attr(tag, "style")
 
             val d = if (tagName == "path") {
                 attr(tag, "d")?.trim().orEmpty()
@@ -1806,39 +1831,49 @@ private fun appendFlatPathsFallback(
 
             if (d.isBlank()) return@forEach
 
-            val rawFill = styleValue(attr(tag, "style"), "fill")
+            val rawFill = styleValue(style, "fill")
                 ?: attr(tag, "fill")
+                ?: "#000000"
 
-            val rawStroke = styleValue(attr(tag, "style"), "stroke")
+            val rawStroke = styleValue(style, "stroke")
                 ?: attr(tag, "stroke")
 
-            val strokeWidth = styleValue(attr(tag, "style"), "stroke-width")
+            val strokeWidth = styleValue(style, "stroke-width")
                 ?: attr(tag, "stroke-width")
 
-            val strokeLineCap = styleValue(attr(tag, "style"), "stroke-linecap")
+            val strokeLineCap = styleValue(style, "stroke-linecap")
                 ?: attr(tag, "stroke-linecap")
 
-            val strokeLineJoin = styleValue(attr(tag, "style"), "stroke-linejoin")
+            val strokeLineJoin = styleValue(style, "stroke-linejoin")
                 ?: attr(tag, "stroke-linejoin")
 
-            val strokeMiterLimit = styleValue(attr(tag, "style"), "stroke-miterlimit")
+            val strokeMiterLimit = styleValue(style, "stroke-miterlimit")
                 ?: attr(tag, "stroke-miterlimit")
 
-            val opacity = styleValue(attr(tag, "style"), "opacity")
+            val opacity = styleValue(style, "opacity")
                 ?: attr(tag, "opacity")
 
-            val fillOpacity = styleValue(attr(tag, "style"), "fill-opacity")
+            val fillOpacity = styleValue(style, "fill-opacity")
                 ?: attr(tag, "fill-opacity")
 
-            val strokeOpacity = styleValue(attr(tag, "style"), "stroke-opacity")
+            val strokeOpacity = styleValue(style, "stroke-opacity")
                 ?: attr(tag, "stroke-opacity")
 
-            val fillRule = styleValue(attr(tag, "style"), "fill-rule")
+            val fillRule = styleValue(style, "fill-rule")
                 ?: attr(tag, "fill-rule")
 
-            if (tagName != "path") {
-                output.appendLine("${indent}<!-- converted from <$tagName> -->")
-            }
+            val transform = attr(tag, "transform")
+                ?: styleValue(style, "transform")
+                ?: ""
+
+            val transformOrigin = parseTransformOrigin(
+                attr(tag, "transform-origin")
+                    ?: styleValue(style, "transform-origin")
+                    ?: ""
+            )
+
+            val transforms = parseTransformList(transform)
+            val combinedTransform = combineTransformList(transforms, transformOrigin)
 
             val fillColor =
                 if (tagName == "line") {
@@ -1846,6 +1881,19 @@ private fun appendFlatPathsFallback(
                 } else {
                     safeFillColor(rawFill)
                 }
+
+            var currentIndent = indent
+            var openedGroupCount = 0
+
+            if (combinedTransform != null) {
+                appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
+                currentIndent += "    "
+                openedGroupCount++
+            }
+
+            if (tagName != "path") {
+                output.appendLine("${currentIndent}<!-- converted from <$tagName> -->")
+            }
 
             appendPath(
                 output,
@@ -1859,8 +1907,13 @@ private fun appendFlatPathsFallback(
                 fillRule,
                 resolveDrawableAlpha(opacity, fillOpacity),
                 resolveDrawableAlpha(opacity, strokeOpacity),
-                indent
+                currentIndent
             )
+
+            repeat(openedGroupCount) {
+                currentIndent = currentIndent.dropLast(4)
+                output.appendLine("${currentIndent}</group>")
+            }
 
             output.appendLine()
         }
@@ -2054,14 +2107,51 @@ private fun normalizeFillRuleToVectorFillType(fillRule: String?): String? {
     }
 
     private fun parseTransformNumbers(value: String): List<Float> {
-        return value
-            .trim()
-            .split(Regex("[,\\s]+"))
-            .filter { it.isNotBlank() }
-            .mapNotNull { it.toFloatOrNull() }
+        return Regex("""[-+]?(?:\d+\.\d+|\d+|\.\d+)(?:[eE][-+]?\d+)?""")
+            .findAll(value)
+            .mapNotNull { it.value.toFloatOrNull() }
+            .toList()
     }
 
-    private fun combineTransformList(transforms: List<ParsedTransform>): CombinedTransform? {
+    private fun parseTransformOrigin(value: String?): TransformOrigin? {
+        if (value.isNullOrBlank()) return null
+
+        val cleaned = value
+            .trim()
+            .replace(',', ' ')
+
+        val parts = cleaned
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+
+        if (parts.size < 2) return null
+
+        val x = parseOriginNumber(parts[0], activeTransformOriginReferenceWidth) ?: return null
+        val y = parseOriginNumber(parts[1], activeTransformOriginReferenceHeight) ?: return null
+
+        return TransformOrigin(x, y)
+    }
+
+    private fun parseOriginNumber(value: String, referenceLength: Float?): Float? {
+        val trimmed = value.trim().lowercase(Locale.US)
+
+        if (trimmed.endsWith("%")) {
+            val percent = trimmed.removeSuffix("%").toFloatOrNull() ?: return null
+            val reference = referenceLength ?: return null
+            return reference * percent / 100f
+        }
+
+        return trimmed
+            .removeSuffix("px")
+            .toFloatOrNull()
+    }
+
+    private data class TransformOrigin(val x: Float, val y: Float)
+
+    private fun combineTransformList(
+        transforms: List<ParsedTransform>,
+        transformOrigin: TransformOrigin? = null
+    ): CombinedTransform? {
         if (transforms.isEmpty()) return null
 
         var translateX = 0f
@@ -2100,14 +2190,18 @@ private fun normalizeFillRuleToVectorFillType(fillRule: String?): String? {
             }
         }
 
+        val hasRotationOrScale = rotation != 0f || scaleX != 1f || scaleY != 1f
+        val finalPivotX = pivotX ?: if (hasRotationOrScale) transformOrigin?.x else null
+        val finalPivotY = pivotY ?: if (hasRotationOrScale) transformOrigin?.y else null
+
         return CombinedTransform(
             translateX = translateX,
             translateY = translateY,
             scaleX = scaleX,
             scaleY = scaleY,
             rotation = rotation,
-            pivotX = pivotX,
-            pivotY = pivotY
+            pivotX = finalPivotX,
+            pivotY = finalPivotY
         ).takeIf { it.hasVisibleEffect() }
     }
 
@@ -2216,10 +2310,7 @@ private fun parseMatrixValues(nums: List<Float>): MatrixTransform? {
             .find(transform)
             ?: return null
 
-        val nums = match.groupValues[1]
-            .split(Regex("[,\\s]+"))
-            .filter { it.isNotBlank() }
-            .mapNotNull { it.toFloatOrNull() }
+        val nums = parseTransformNumbers(match.groupValues[1])
 
         if (nums.isEmpty()) return null
 
@@ -2236,10 +2327,7 @@ private fun parseMatrixValues(nums: List<Float>): MatrixTransform? {
             .find(transform)
             ?: return null
 
-        val nums = match.groupValues[1]
-            .split(Regex("[,\\s]+"))
-            .filter { it.isNotBlank() }
-            .mapNotNull { it.toFloatOrNull() }
+        val nums = parseTransformNumbers(match.groupValues[1])
 
         if (nums.isEmpty()) return null
 
@@ -2253,10 +2341,7 @@ private fun parseMatrixValues(nums: List<Float>): MatrixTransform? {
             .find(transform)
             ?: return null
 
-        val nums = match.groupValues[1]
-            .split(Regex("[,\\s]+"))
-            .filter { it.isNotBlank() }
-            .mapNotNull { it.toFloatOrNull() }
+        val nums = parseTransformNumbers(match.groupValues[1])
 
         if (nums.isEmpty()) return null
 

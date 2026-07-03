@@ -367,20 +367,6 @@ fun parseTransformOrigin(value: String?): TransformOrigin? {
     return TransformOrigin(x, y)
 }
 
-private fun parseOriginNumber(value: String, referenceLength: Float?): Float? {
-    val trimmed = value.trim().lowercase(Locale.US)
-
-    if (trimmed.endsWith("%")) {
-        val percent = trimmed.removeSuffix("%").toFloatOrNull() ?: return null
-        val reference = referenceLength ?: return null
-        return reference * percent / 100f
-    }
-
-    return trimmed
-        .removeSuffix("px")
-        .toFloatOrNull()
-}
-
     private fun parseOriginNumber(value: String): Float? {
         val trimmed = value.trim().lowercase(Locale.US)
 
