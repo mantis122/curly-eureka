@@ -277,7 +277,26 @@ internal object SvgTransformParser {
         )
     }
 
-    
+fun geometryFallbackTransform(transforms: List<ParsedTransform>): AffineTransform? {
+    if (transforms.isEmpty()) return null
+
+    val matrix = combineTransformListToMatrix(transforms) ?: return null
+
+    val preferredPivot = transforms
+        .filterIsInstance<ParsedTransform.Rotate>()
+        .lastOrNull { it.pivotX != null && it.pivotY != null }
+
+    return if (
+        matrix.canRepresentAsAndroidGroup(
+            preferredPivotX = preferredPivot?.pivotX,
+            preferredPivotY = preferredPivot?.pivotY
+        )
+    ) {
+        null
+    } else {
+        matrix
+    }
+}    
     
     fun transformRectPathData(
         x: Float,
