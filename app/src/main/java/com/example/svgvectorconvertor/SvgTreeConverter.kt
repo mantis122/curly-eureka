@@ -699,7 +699,7 @@ private fun transformedBasicShapePathData(
 private fun parseSvgPoints(points: String): List<SvgPoint> {
     val values = points
         .trim()
-        .split(Regex("[,\s]+"))
+        .split(Regex("""[,\s]+"""))
         .filter { it.isNotBlank() }
         .mapNotNull { it.toFloatOrNull() }
 
