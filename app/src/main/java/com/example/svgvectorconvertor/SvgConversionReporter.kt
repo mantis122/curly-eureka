@@ -254,28 +254,8 @@ object SvgConversionReporter {
             appendLine("Drawable elements processed")
             appendLine("✓ Paths: ${data.convertedOriginalPathCount}")
             appendLine("✓ Basic shapes: ${data.convertedBasicShapeCount}")
-            if (data.useCount > 0) {
-                appendLine("✓ Expanded <use> references: ${data.resolvedUseExpansions}")
-            }
-            if (data.definitionDrawableElementCount > 0) {
-                appendLine("✓ Drawable definitions: ${data.definitionDrawableElementCount}")
-            }
-            if (data.symbolCount > 0) {
-                appendLine("✓ Symbol definitions: ${data.symbolCount}")
-            }
-            appendLine()
-            appendBasicShapeBreakdown(data.basicShapeBreakdown)
-            if (data.gradientFallbackColorCount > 0) {
-                appendLine("✓ Gradient fallback colors: ${data.gradientFallbackColorCount}")
-            }
-            if (data.clipPathCount > 0) {
-                appendLine("✓ Clip paths found: ${data.clipPathCount}")
-                appendLine("✓ Clip paths applied: ${data.appliedClipPaths}")
-            }
-            appendLine("✓ Style attributes parsed: ${data.styleAttributeCount}")
-            appendLine("✓ Presentation attributes parsed: ${data.presentationStyleAttributeCount}")
-            appendLine("✓ Groups generated: ${data.generatedGroupCount}")
-            appendLine("✓ Warnings: ${data.warningCount}")
+            appendLine("✓ Expanded <use> references: ${data.resolvedUseExpansions}")
+            appendLine("✓ Drawable definitions: ${data.definitionDrawableElementCount}")
             appendLine()
 
             appendLine("────────────────────")
@@ -299,18 +279,20 @@ object SvgConversionReporter {
             appendLine("✓ Viewport: ${data.viewportWidth} × ${data.viewportHeight}")
             appendLine()
 
-            appendLine("✓ Visible SVG paths: ${data.drawableValidPathCount}")
+            appendLine("Source content")
+            appendLine("✓ Visible SVG paths found: ${data.drawableValidPathCount}")
             appendLine("✓ Empty paths skipped: ${data.emptyPathCount}")
+            appendLine("✓ <use> references found: ${data.useCount}")
+            if (data.symbolCount > 0) {
+                appendLine("✓ Symbol definitions found: ${data.symbolCount}")
+            }
             appendLine()
 
-            appendLine("✓ Basic shapes generated: ${data.convertedBasicShapeCount}")
+            appendLine("Basic shape breakdown")
             appendBasicShapeBreakdown(data.basicShapeBreakdown)
-            if (data.definitionDrawableElementCount > 0) {
-                appendLine("✓ Drawable definitions: ${data.definitionDrawableElementCount}")
-            }
-            if (data.symbolCount > 0) {
-                appendLine("✓ Symbol definitions: ${data.symbolCount}")
-            }
+            appendLine()
+
+            appendLine("Conversion details")
             if (data.gradientFallbackColorCount > 0) {
                 appendLine("✓ Gradient fallback colors: ${data.gradientFallbackColorCount}")
             }
@@ -321,8 +303,8 @@ object SvgConversionReporter {
             }
             appendLine("✓ Style attributes parsed: ${data.styleAttributeCount}")
             appendLine("✓ Presentation attributes parsed: ${data.presentationStyleAttributeCount}")
-
-            appendLine("✓ Generated groups: ${data.generatedGroupCount}")
+            appendLine("✓ Groups generated: ${data.generatedGroupCount}")
+            appendLine("✓ Warnings: ${data.warningCount}")
             appendLine()
 
             appendLine()
