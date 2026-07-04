@@ -251,18 +251,20 @@ object SvgConversionReporter {
 
             appendLine("Conversion Statistics")
             appendLine()
-            appendLine("✓ Visible SVG paths converted: ${data.convertedOriginalPathCount}")
+            appendLine("Drawable elements processed")
+            appendLine("✓ Paths: ${data.convertedOriginalPathCount}")
+            appendLine("✓ Basic shapes: ${data.convertedBasicShapeCount}")
             if (data.useCount > 0) {
-                appendLine("✓ Use references expanded: ${data.resolvedUseExpansions}")
+                appendLine("✓ Expanded <use> references: ${data.resolvedUseExpansions}")
+            }
+            if (data.definitionDrawableElementCount > 0) {
+                appendLine("✓ Drawable definitions: ${data.definitionDrawableElementCount}")
             }
             if (data.symbolCount > 0) {
                 appendLine("✓ Symbol definitions: ${data.symbolCount}")
             }
-            appendLine("✓ Basic shapes generated: ${data.convertedBasicShapeCount}")
+            appendLine()
             appendBasicShapeBreakdown(data.basicShapeBreakdown)
-            if (data.definitionDrawableElementCount > 0) {
-                appendLine("✓ Drawable definitions: ${data.definitionDrawableElementCount}")
-            }
             if (data.gradientFallbackColorCount > 0) {
                 appendLine("✓ Gradient fallback colors: ${data.gradientFallbackColorCount}")
             }
