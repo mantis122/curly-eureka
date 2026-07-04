@@ -644,8 +644,12 @@ private fun appendUseElement(
 
     val referencedTag = referenced.tagName.substringAfter(":").lowercase()
 
-    if (referencedTag == "defs" || referencedTag == "clippath" || referencedTag == "lineargradient" ||
-        referencedTag == "radialgradient" || referencedTag == "mask" || referencedTag == "filter" ||
+    if (referencedTag == "defs" ||
+        referencedTag == "clippath" ||
+        referencedTag == "lineargradient" ||
+        referencedTag == "radialgradient" ||
+        referencedTag == "mask" ||
+        referencedTag == "filter" ||
         referencedTag == "pattern"
     ) {
         activeUnresolvedUseReferences++
@@ -654,6 +658,52 @@ private fun appendUseElement(
     }
 
     activeResolvedUseExpansions++
+
+    val style = element.getAttribute("style").ifBlank { null }
+
+    val useFill = SvgPaintResolver.styleValue(style, "fill")
+        ?: element.getAttribute("fill").ifBlank { inheritedFill ?: "" }
+
+    val useStroke = SvgPaintResolver.styleValue(style, "stroke")
+        ?: element.getAttribute("stroke").ifBlank { inheritedStroke ?: "" }
+
+    val useStrokeWidth = SvgPaintResolver.styleValue(style, "stroke-width")
+        ?: element.getAttribute("stroke-width").ifBlank { inheritedStrokeWidth ?: "" }
+
+    val useStrokeLineCap = SvgPaintResolver.styleValue(style, "stroke-linecap")
+        ?: element.getAttribute("stroke-linecap").ifBlank { inheritedStrokeLineCap ?: "" }
+
+    val useStrokeLineJoin = SvgPaintResolver.styleValue(style, "stroke-linejoin")
+        ?: element.getAttribute("stroke-linejoin").ifBlank { inheritedStrokeLineJoin ?: "" }
+
+    val useStrokeMiterLimit = SvgPaintResolver.styleValue(style, "stroke-miterlimit")
+        ?: element.getAttribute("stroke-miterlimit").ifBlank { inheritedStrokeMiterLimit ?: "" }
+
+    val useFillRule = SvgPaintResolver.styleValue(style, "fill-rule")
+        ?: element.getAttribute("fill-rule").ifBlank { inheritedFillRule ?: "" }
+
+    val useOpacity = SvgPaintResolver.combineAlpha(
+        inheritedOpacity,
+        SvgPaintResolver.styleValue(style, "opacity")
+            ?: element.getAttribute("opacity").ifBlank { "" }
+    )
+
+    val useFillOpacity = SvgPaintResolver.styleValue(style, "fill-opacity")
+        ?: element.getAttribute("fill-opacity").ifBlank { inheritedFillOpacity ?: "" }
+
+    val useStrokeOpacity = SvgPaintResolver.styleValue(style, "stroke-opacity")
+        ?: element.getAttribute("stroke-opacity").ifBlank { inheritedStrokeOpacity ?: "" }
+
+    val useClipPath = SvgPaintResolver.styleValue(style, "clip-path")
+        ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
+
+    val transform = element.getAttribute("transform")
+        .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
+
+    val transformOrigin = SvgTransformParser.parseTransformOrigin(
+        element.getAttribute("transform-origin")
+            .ifBlank { SvgPaintResolver.styleValue(style, "transform-origin") ?: "" }
+    )
 
     val referencedViewBox =
         if (referencedTag == "symbol" || referencedTag == "svg") elementViewBox(referenced) else null
@@ -670,14 +720,6 @@ private fun appendUseElement(
     val x = floatAttrCallback(element, "x") ?: 0f
     val y = floatAttrCallback(element, "y") ?: 0f
 
-    val style = element.getAttribute("style").ifBlank { null }
-    val transformOrigin = SvgTransformParser.parseTransformOrigin(
-        SvgPaintResolver.styleValue(style, "transform-origin")
-            ?: element.getAttribute("transform-origin").ifBlank { "" }
-    )
-
-    val transform = element.getAttribute("transform")
-    .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
     val placementTransforms = mutableListOf<ParsedTransform>()
     placementTransforms.addAll(SvgTransformParser.parseTransformList(transform))
 
@@ -692,63 +734,44 @@ private fun appendUseElement(
         placementTransforms.add(ParsedTransform.Scale(symbolScaleX, symbolScaleY))
     }
 
-    val needsGroup = placementTransforms.any { it.hasVisibleEffect() }
+    val opened = SvgTransformParser.appendTransformGroupsStart(
+        output,
+        placementTransforms,
+        indent,
+        transformOrigin
+    )
 
-    if (needsGroup) {
-        val combinedTransform = SvgTransformParser.combineTransformList(placementTransforms, transformOrigin)
+    val childIndent = opened.first
+    val groupCount = opened.second
 
-        if (combinedTransform != null) {
-            SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, indent)
-            val childIndent = indent + "    "
-
-            output.appendLine("${childIndent}<!-- expanded from <use href=\"#$id\"> -->")
-
-            walkSvgNode(
-                output,
-                referenced,
-                childIndent,
-                inheritedFill,
-                inheritedStroke,
-                inheritedStrokeWidth,
-                inheritedStrokeLineCap,
-                inheritedStrokeLineJoin,
-                inheritedStrokeMiterLimit,
-                inheritedFillRule,
-                inheritedOpacity,
-                inheritedFillOpacity,
-                inheritedStrokeOpacity,
-                inheritedClipPath,
-                definitions,
-                useDepth + 1,
-                activeClipPathId
-            )
-
-            output.appendLine("${indent}</group>")
-            output.appendLine()
-        }
+    if (placementTransforms.any { it.hasVisibleEffect() } && groupCount == 0) {
+        output.appendLine("${indent}<!-- expanded from <use href=\"#$id\">; transform could not be represented -->")
     } else {
-        output.appendLine("${indent}<!-- expanded from <use href=\"#$id\"> -->")
-
-        walkSvgNode(
-            output,
-            referenced,
-            indent,
-            inheritedFill,
-            inheritedStroke,
-            inheritedStrokeWidth,
-            inheritedStrokeLineCap,
-            inheritedStrokeLineJoin,
-            inheritedStrokeMiterLimit,
-            inheritedFillRule,
-            inheritedOpacity,
-            inheritedFillOpacity,
-            inheritedStrokeOpacity,
-            inheritedClipPath,
-            definitions,
-            useDepth + 1,
-            activeClipPathId
-        )
+        output.appendLine("${childIndent}<!-- expanded from <use href=\"#$id\"> -->")
     }
+
+    walkSvgNode(
+        output,
+        referenced,
+        childIndent,
+        useFill,
+        useStroke,
+        useStrokeWidth,
+        useStrokeLineCap,
+        useStrokeLineJoin,
+        useStrokeMiterLimit,
+        useFillRule,
+        useOpacity,
+        useFillOpacity,
+        useStrokeOpacity,
+        useClipPath,
+        definitions,
+        useDepth + 1,
+        activeClipPathId
+    )
+
+    SvgTransformParser.closeGroups(output, childIndent, groupCount)
+    output.appendLine()
 }
 
 
