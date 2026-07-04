@@ -352,6 +352,10 @@ fun buildReport(data: SvgConversionReportData): String {
     }
 }
 
+    private fun basicShapeToPathData(element: Element, tagName: String): String? {
+        return SvgShapeConverters.basicShapeToPathData(element, tagName)
+    }
+
         private fun StringBuilder.appendBasicShapeBreakdown(breakdown: BasicShapeBreakdown) {
     appendLine("    • Rectangles: ${breakdown.rectangles}")
     appendLine("    • Rounded rectangles: ${breakdown.roundedRectangles}")
