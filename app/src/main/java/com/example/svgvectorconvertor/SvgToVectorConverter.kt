@@ -32,11 +32,16 @@ val startTime = System.nanoTime()
 
 SvgTransformParser.resetMatrixStats()
 val svgForTransformStats = stripSvgComments(svg)
-val gradientFallbackColors = collectGradientFallbackColors(svg)
+val gradientFallbackColors = SvgPaintResolver.collectGradientFallbackColors(svg)
 activeGradientFallbackColors = gradientFallbackColors
-val clipPathData = collectClipPathData(svg)
+SvgPaintResolver.setGradientFallbackColors(gradientFallbackColors)
+
+val clipPathData = SvgTreeConverter.collectClipPathData(svg, ::basicShapeToPathData)
 activeClipPathData = clipPathData
 activeAppliedClipPaths = 0
+activeResolvedUseExpansions = 0
+activeUnresolvedUseReferences = 0
+SvgTreeConverter.resetStats(clipPathData)
 
 
 val translateCount = Regex("""translate\(""").findAll(svgForTransformStats).count()
@@ -146,7 +151,16 @@ val vectorHeightDp =
         output.appendLine("""    android:viewportHeight="$viewportHeight">""")
         output.appendLine()
 
-        appendConvertedSvgTree(output, svg)
+        SvgTreeConverter.appendConvertedSvgTree(
+            output = output,
+            svg = svg,
+            appendElementPath = ::appendElementPath,
+            appendBasicShapePath = ::appendBasicShapePath,
+            appendFlatPathsFallback = ::appendFlatPathsFallback,
+            basicShapeToPathData = ::basicShapeToPathData,
+            floatAttr = ::floatAttr,
+            escapeXml = ::escapeXml
+        )
 
         output.appendLine("</vector>")
 
@@ -205,12 +219,12 @@ val report = SvgConversionReporter.buildReport(
         emptyPathCount = emptyPathCount,
         generatedGroupCount = generatedGroupCount,
         useCount = useCount,
-        resolvedUseExpansions = activeResolvedUseExpansions,
+        resolvedUseExpansions = SvgTreeConverter.resolvedUseExpansions,
         symbolCount = symbolCount,
         gradientFallbackColorCount = gradientFallbackColors.size,
         clipPathCount = clipPathData.size,
         clipPathReferenceCount = clipPathReferenceCount,
-        appliedClipPaths = activeAppliedClipPaths,
+        appliedClipPaths = SvgTreeConverter.appliedClipPaths,
         styleAttributeCount = styleAttributeCount,
         presentationStyleAttributeCount = presentationStyleAttributeCount,
         warningCount = warningCount,
@@ -678,104 +692,7 @@ private fun collectGradientFallbackColors(svg: String): Map<String, String> {
 }
 
 
-private fun collectClipPathData(svg: String): Map<String, String> {
-    val result = mutableMapOf<String, String>()
-
-    try {
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = false
-            isIgnoringComments = true
-        }
-
-        val document = factory
-            .newDocumentBuilder()
-            .parse(InputSource(StringReader(svg)))
-
-        val root = document.documentElement
-        val definitions = collectSvgDefinitions(root)
-
-        fun elementToPathData(element: Element, depth: Int = 0): String {
-            if (depth > 20) return ""
-
-            val tag = element.tagName.substringAfter(":").lowercase()
-
-            return when (tag) {
-                "path" -> element.getAttribute("d").trim()
-                "rect", "circle", "ellipse", "line", "polyline", "polygon" ->
-                    basicShapeToPathData(element, tag).orEmpty()
-                "use" -> {
-                    val href = element.getAttribute("href").ifBlank {
-                        element.getAttribute("xlink:href").ifBlank {
-                            element.getAttributeNS("http://www.w3.org/1999/xlink", "href")
-                        }
-                    }.trim()
-                    val id = href.removePrefix("#").trim()
-                    val referenced = definitions[id] ?: return ""
-                    elementToPathData(referenced, depth + 1)
-                }
-                else -> {
-                    val parts = mutableListOf<String>()
-                    val children = element.childNodes
-                    for (i in 0 until children.length) {
-                        val child = children.item(i)
-                        if (child.nodeType != Node.ELEMENT_NODE) continue
-                        val childPath = elementToPathData(child as Element, depth + 1)
-                        if (childPath.isNotBlank()) parts.add(childPath)
-                    }
-                    parts.joinToString(" ")
-                }
-            }
-        }
-
-        fun visit(node: Node) {
-            if (node.nodeType != Node.ELEMENT_NODE) return
-
-            val element = node as Element
-            val tag = element.tagName.substringAfter(":").lowercase()
-
-            if (tag == "clippath") {
-                val id = element.getAttribute("id").trim()
-                val pathData = elementToPathData(element)
-                if (id.isNotBlank() && pathData.isNotBlank()) {
-                    result[id] = pathData
-                }
-            }
-
-            val children = element.childNodes
-            for (i in 0 until children.length) {
-                visit(children.item(i))
-            }
-        }
-
-        visit(root)
-    } catch (_: Exception) {
-        return emptyMap()
-    }
-
-    return result
-}
-
-private fun clipPathIdFromValue(value: String?): String? {
-    val v = value?.trim() ?: return null
-    return Regex("""url\(\s*#([^)'"\s]+)\s*\)""")
-        .find(v)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-}
-
-private fun appendClipPath(output: StringBuilder, clipPathId: String?, indent: String): Boolean {
-    val id = clipPathId ?: return false
-    val pathData = activeClipPathData[id] ?: return false
-
-    activeAppliedClipPaths++
-
-    output.appendLine("""${indent}<clip-path""")
-    output.appendLine("""${indent}    android:pathData="${escapeXml(pathData)}"""")
-    output.appendLine("""${indent}/>""")
-    return true
-}
+// Clip-path collection and clip-path emission live in SvgTreeConverter.
 
 private fun averageStopColor(stops: List<Pair<String, Float>>): String? {
     if (stops.isEmpty()) return null
@@ -848,583 +765,8 @@ private fun parseRgbColor(value: String?): RgbColor? {
     }
 }
 
-private fun appendConvertedSvgTree(output: StringBuilder, svg: String) {
-    try {
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = false
-            isIgnoringComments = true
-        }
-
-        val document = factory
-            .newDocumentBuilder()
-            .parse(InputSource(StringReader(svg)))
-
-        val root = document.documentElement
-        val definitions = collectSvgDefinitions(root)
-
-        walkSvgNode(
-            output = output,
-            node = root,
-            indent = "    ",
-            definitions = definitions
-        )
-    } catch (e: Exception) {
-        // Fallback for imperfect SVG/XML files
-        appendFlatPathsFallback(output, svg, "    ")
-    }
-}
-
-private fun collectSvgDefinitions(root: Element): Map<String, Element> {
-    val definitions = linkedMapOf<String, Element>()
-
-    fun visit(node: Node) {
-        if (node.nodeType != Node.ELEMENT_NODE) return
-
-        val element = node as Element
-        val id = element.getAttribute("id").trim()
-
-        if (id.isNotBlank()) {
-            definitions[id] = element
-        }
-
-        val children = element.childNodes
-        for (i in 0 until children.length) {
-            visit(children.item(i))
-        }
-    }
-
-    visit(root)
-    return definitions
-}
-
-private fun childClipPathId(node: Node, inheritedClipPath: String?): String? {
-    if (node.nodeType != Node.ELEMENT_NODE) return null
-
-    val element = node as Element
-    val style = element.getAttribute("style").ifBlank { null }
-    val clipPathValue = styleValue(style, "clip-path")
-        ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
-
-    val clipId = clipPathIdFromValue(clipPathValue)
-    return clipId?.takeIf { activeClipPathData.containsKey(it) }
-}
-
-private fun appendChildrenWithClipGrouping(
-    output: StringBuilder,
-    parent: Element,
-    indent: String,
-    inheritedFill: String?,
-    inheritedStroke: String?,
-    inheritedStrokeWidth: String?,
-    inheritedStrokeLineCap: String?,
-    inheritedStrokeLineJoin: String?,
-    inheritedStrokeMiterLimit: String?,
-    inheritedFillRule: String?,
-    inheritedOpacity: String?,
-    inheritedFillOpacity: String?,
-    inheritedStrokeOpacity: String?,
-    inheritedClipPath: String?,
-    definitions: Map<String, Element>,
-    useDepth: Int,
-    activeClipPathId: String?
-) {
-    val children = parent.childNodes
-    var i = 0
-
-    while (i < children.length) {
-        val child = children.item(i)
-        val clipId = childClipPathId(child, inheritedClipPath)
-
-        if (clipId != null && clipId != activeClipPathId) {
-            output.appendLine("${indent}<group")
-            output.appendLine("${indent}>")
-            appendClipPath(output, clipId, indent + "    ")
-
-            while (i < children.length) {
-                val groupedChild = children.item(i)
-                val groupedClipId = childClipPathId(groupedChild, inheritedClipPath)
-                if (groupedClipId != clipId) break
-
-                walkSvgNode(
-                    output,
-                    groupedChild,
-                    indent + "    ",
-                    inheritedFill,
-                    inheritedStroke,
-                    inheritedStrokeWidth,
-                    inheritedStrokeLineCap,
-                    inheritedStrokeLineJoin,
-                    inheritedStrokeMiterLimit,
-                    inheritedFillRule,
-                    inheritedOpacity,
-                    inheritedFillOpacity,
-                    inheritedStrokeOpacity,
-                    inheritedClipPath,
-                    definitions,
-                    useDepth,
-                    clipId
-                )
-
-                i++
-            }
-
-            output.appendLine("${indent}</group>")
-            output.appendLine()
-        } else {
-            walkSvgNode(
-                output,
-                child,
-                indent,
-                inheritedFill,
-                inheritedStroke,
-                inheritedStrokeWidth,
-                inheritedStrokeLineCap,
-                inheritedStrokeLineJoin,
-                inheritedStrokeMiterLimit,
-                inheritedFillRule,
-                inheritedOpacity,
-                inheritedFillOpacity,
-                inheritedStrokeOpacity,
-                inheritedClipPath,
-                definitions,
-                useDepth,
-                activeClipPathId
-            )
-            i++
-        }
-    }
-}
-
-private fun walkSvgNode(
-    output: StringBuilder,
-    node: Node,
-    indent: String,
-    inheritedFill: String? = null,
-    inheritedStroke: String? = null,
-    inheritedStrokeWidth: String? = null,
-    inheritedStrokeLineCap: String? = null,
-    inheritedStrokeLineJoin: String? = null,
-    inheritedStrokeMiterLimit: String? = null,
-    inheritedFillRule: String? = null,
-    inheritedOpacity: String? = null,
-    inheritedFillOpacity: String? = null,
-    inheritedStrokeOpacity: String? = null,
-    inheritedClipPath: String? = null,
-    definitions: Map<String, Element> = emptyMap(),
-    useDepth: Int = 0,
-    activeClipPathId: String? = null
-) {
-    if (node.nodeType != Node.ELEMENT_NODE) return
-
-    val element = node as Element
-val style = element.getAttribute("style").ifBlank { null }
-
-val currentFill = styleValue(style, "fill")
-    ?: element.getAttribute("fill").ifBlank { inheritedFill ?: "" }
-
-val currentStroke = styleValue(style, "stroke")
-    ?: element.getAttribute("stroke").ifBlank { inheritedStroke ?: "" }
-
-val currentStrokeWidth = styleValue(style, "stroke-width")
-    ?: element.getAttribute("stroke-width").ifBlank { inheritedStrokeWidth ?: "" }
-
-val currentStrokeLineCap = styleValue(style, "stroke-linecap")
-    ?: element.getAttribute("stroke-linecap").ifBlank { inheritedStrokeLineCap ?: "" }
-
-val currentStrokeLineJoin = styleValue(style, "stroke-linejoin")
-    ?: element.getAttribute("stroke-linejoin").ifBlank { inheritedStrokeLineJoin ?: "" }
-
-val currentStrokeMiterLimit = styleValue(style, "stroke-miterlimit")
-    ?: element.getAttribute("stroke-miterlimit").ifBlank { inheritedStrokeMiterLimit ?: "" }
-
-val currentFillRule = styleValue(style, "fill-rule")
-    ?: element.getAttribute("fill-rule").ifBlank { inheritedFillRule ?: "" }
-
-val currentOpacity = combineAlpha(
-    inheritedOpacity,
-    styleValue(style, "opacity")
-        ?: element.getAttribute("opacity").ifBlank { "" }
-)
-
-val currentFillOpacity = styleValue(style, "fill-opacity")
-    ?: element.getAttribute("fill-opacity").ifBlank { inheritedFillOpacity ?: "" }
-
-val currentStrokeOpacity = styleValue(style, "stroke-opacity")
-    ?: element.getAttribute("stroke-opacity").ifBlank { inheritedStrokeOpacity ?: "" }
-
-val currentClipPath = styleValue(style, "clip-path")
-    ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
-
-   val tagName = element.tagName.substringAfter(":").lowercase()
-
-    when (tagName) {
-        "defs" -> {
-            // Definitions are not drawn directly. They are expanded when a <use> references them.
-            return
-        }
-
-        "symbol" -> {
-            // Symbols are reusable definitions. Draw them only when expanded from a <use>.
-            if (useDepth <= 0) return
-            appendChildrenWithClipGrouping(
-                output,
-                element,
-                indent,
-                currentFill,
-                currentStroke,
-                currentStrokeWidth,
-                currentStrokeLineCap,
-                currentStrokeLineJoin,
-                currentStrokeMiterLimit,
-                currentFillRule,
-                currentOpacity,
-                currentFillOpacity,
-                currentStrokeOpacity,
-                currentClipPath,
-                definitions,
-                useDepth,
-                activeClipPathId
-            )
-        }
-
-        "use" -> {
-            appendUseElement(
-                output,
-                element,
-                indent,
-                currentFill,
-                currentStroke,
-                currentStrokeWidth,
-                currentStrokeLineCap,
-                currentStrokeLineJoin,
-                currentStrokeMiterLimit,
-                currentFillRule,
-                currentOpacity,
-                currentFillOpacity,
-                currentStrokeOpacity,
-                currentClipPath,
-                definitions,
-                useDepth,
-                activeClipPathId
-            )
-        }
-
-        "g" -> {
-            val transform = element.getAttribute("transform")
-                .ifBlank { styleValue(style, "transform") ?: "" }
-            val transformOrigin = SvgTransformParser.parseTransformOrigin(
-                element.getAttribute("transform-origin")
-                    .ifBlank { styleValue(style, "transform-origin") ?: "" }
-            )
-            val transforms = SvgTransformParser.parseTransformList(transform)
-            val combinedTransform = SvgTransformParser.combineTransformList(transforms, transformOrigin)
-            val groupClipPathId = clipPathIdFromValue(currentClipPath)
-            val hasClipPath = groupClipPathId != null && groupClipPathId != activeClipPathId && activeClipPathData.containsKey(groupClipPathId)
-
-            val needsGroup = combinedTransform != null || hasClipPath
-
-            if (needsGroup) {
-                var currentIndent = indent
-                var openedGroupCount = 0
-
-                if (hasClipPath) {
-                    output.appendLine("${currentIndent}<group>")
-                    appendClipPath(output, groupClipPathId, currentIndent + "    ")
-                    currentIndent += "    "
-                    openedGroupCount++
-                }
-
-                if (combinedTransform != null) {
-                    SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
-                    currentIndent += "    "
-                    openedGroupCount++
-                }
-
-                appendChildrenWithClipGrouping(
-                    output,
-                    element,
-                    currentIndent,
-                    currentFill,
-                    currentStroke,
-                    currentStrokeWidth,
-                    currentStrokeLineCap,
-                    currentStrokeLineJoin,
-                    currentStrokeMiterLimit,
-                    currentFillRule,
-                    currentOpacity,
-                    currentFillOpacity,
-                    currentStrokeOpacity,
-                    currentClipPath,
-                    definitions,
-                    useDepth,
-                    if (hasClipPath) groupClipPathId else activeClipPathId
-                )
-
-                repeat(openedGroupCount) {
-                    currentIndent = currentIndent.dropLast(4)
-                    output.appendLine("${currentIndent}</group>")
-                }
-                output.appendLine()
-            } else {
-                appendChildrenWithClipGrouping(
-                    output,
-                    element,
-                    indent,
-                    currentFill,
-                    currentStroke,
-                    currentStrokeWidth,
-                    currentStrokeLineCap,
-                    currentStrokeLineJoin,
-                    currentStrokeMiterLimit,
-                    currentFillRule,
-                    currentOpacity,
-                    currentFillOpacity,
-                    currentStrokeOpacity,
-                    currentClipPath,
-                    definitions,
-                    useDepth,
-                    activeClipPathId
-                )
-            }
-        }
-
-        "path" -> {
-            appendElementPath(
-                output,
-                element,
-                indent,
-                currentFill,
-                currentStroke,
-                currentStrokeWidth,
-                currentStrokeLineCap,
-                currentStrokeLineJoin,
-                currentStrokeMiterLimit,
-                currentFillRule,
-                currentOpacity,
-                currentFillOpacity,
-                currentStrokeOpacity,
-                currentClipPath,
-                activeClipPathId
-            )
-        }
-
-        "rect", "circle", "ellipse", "line", "polyline", "polygon" -> {
-            appendBasicShapePath(
-                output,
-                element,
-                tagName,
-                indent,
-                currentFill,
-                currentStroke,
-                currentStrokeWidth,
-                currentStrokeLineCap,
-                currentStrokeLineJoin,
-                currentStrokeMiterLimit,
-                currentFillRule,
-                currentOpacity,
-                currentFillOpacity,
-                currentStrokeOpacity,
-                currentClipPath,
-                activeClipPathId
-            )
-        }
-
-        else -> {
-            appendChildrenWithClipGrouping(
-                output,
-                element,
-                indent,
-                currentFill,
-                currentStroke,
-                currentStrokeWidth,
-                currentStrokeLineCap,
-                currentStrokeLineJoin,
-                currentStrokeMiterLimit,
-                currentFillRule,
-                currentOpacity,
-                currentFillOpacity,
-                currentStrokeOpacity,
-                currentClipPath,
-                definitions,
-                useDepth,
-                activeClipPathId
-            )
-        }
-    }
-}
-
-private fun useHrefId(element: Element): String? {
-    val href = element.getAttribute("href").ifBlank {
-        element.getAttribute("xlink:href").ifBlank {
-            element.getAttributeNS("http://www.w3.org/1999/xlink", "href")
-        }
-    }.trim()
-
-    return href
-        .removePrefix("#")
-        .takeIf { it.isNotBlank() }
-}
-
-private data class SvgViewBox(val minX: Float, val minY: Float, val width: Float, val height: Float)
-
-private fun elementViewBox(element: Element): SvgViewBox? {
-    val parts = element.getAttribute("viewBox")
-        .trim()
-        .split(Regex("[,\\s]+"))
-        .mapNotNull { it.toFloatOrNull() }
-
-    return if (parts.size >= 4 && parts[2] != 0f && parts[3] != 0f) {
-        SvgViewBox(parts[0], parts[1], parts[2], parts[3])
-    } else {
-        null
-    }
-}
-
-private fun appendUseElement(
-    output: StringBuilder,
-    element: Element,
-    indent: String,
-    inheritedFill: String?,
-    inheritedStroke: String?,
-    inheritedStrokeWidth: String?,
-    inheritedStrokeLineCap: String?,
-    inheritedStrokeLineJoin: String?,
-    inheritedStrokeMiterLimit: String?,
-    inheritedFillRule: String?,
-    inheritedOpacity: String?,
-    inheritedFillOpacity: String?,
-    inheritedStrokeOpacity: String?,
-    inheritedClipPath: String?,
-    definitions: Map<String, Element>,
-    useDepth: Int,
-    activeClipPathId: String? = null
-) {
-    if (useDepth >= 20) {
-        activeUnresolvedUseReferences++
-        output.appendLine("${indent}<!-- unresolved <use>: nesting limit reached -->")
-        return
-    }
-
-    val id = useHrefId(element)
-    if (id == null) {
-        activeUnresolvedUseReferences++
-        output.appendLine("${indent}<!-- unresolved <use>: missing href -->")
-        return
-    }
-
-    val referenced = definitions[id]
-    if (referenced == null) {
-        activeUnresolvedUseReferences++
-        output.appendLine("${indent}<!-- unresolved <use href=\"#$id\"> -->")
-        return
-    }
-
-    val referencedTag = referenced.tagName.substringAfter(":").lowercase()
-
-    if (referencedTag == "defs" || referencedTag == "clippath" || referencedTag == "lineargradient" ||
-        referencedTag == "radialgradient" || referencedTag == "mask" || referencedTag == "filter" ||
-        referencedTag == "pattern"
-    ) {
-        activeUnresolvedUseReferences++
-        output.appendLine("${indent}<!-- unresolved <use href=\"#$id\">: referenced <$referencedTag> is not drawable -->")
-        return
-    }
-
-    activeResolvedUseExpansions++
-
-    val referencedViewBox =
-        if (referencedTag == "symbol" || referencedTag == "svg") elementViewBox(referenced) else null
-
-    val useWidth = floatAttr(element, "width")
-    val useHeight = floatAttr(element, "height")
-
-    val symbolScaleX =
-        if (referencedViewBox != null && useWidth != null) useWidth / referencedViewBox.width else 1f
-
-    val symbolScaleY =
-        if (referencedViewBox != null && useHeight != null) useHeight / referencedViewBox.height else 1f
-
-    val x = floatAttr(element, "x") ?: 0f
-    val y = floatAttr(element, "y") ?: 0f
-
-    val style = element.getAttribute("style").ifBlank { null }
-    val transform = element.getAttribute("transform")
-        .ifBlank { styleValue(style, "transform") ?: "" }
-    val transformOrigin = SvgTransformParser.parseTransformOrigin(
-        element.getAttribute("transform-origin")
-            .ifBlank { styleValue(style, "transform-origin") ?: "" }
-    )
-
-    val useTransforms = mutableListOf<ParsedTransform>()
-    useTransforms.addAll(SvgTransformParser.parseTransformList(transform))
-
-    val viewBoxTranslateX = -((referencedViewBox?.minX ?: 0f) * symbolScaleX)
-    val viewBoxTranslateY = -((referencedViewBox?.minY ?: 0f) * symbolScaleY)
-
-    val totalTranslateX = x + viewBoxTranslateX
-    val totalTranslateY = y + viewBoxTranslateY
-
-    if (totalTranslateX != 0f || totalTranslateY != 0f) {
-        useTransforms.add(ParsedTransform.Translate(totalTranslateX, totalTranslateY))
-    }
-
-    if (symbolScaleX != 1f || symbolScaleY != 1f) {
-        useTransforms.add(ParsedTransform.Scale(symbolScaleX, symbolScaleY))
-    }
-
-    val combinedTransform = SvgTransformParser.combineTransformList(useTransforms, transformOrigin)
-
-    if (combinedTransform != null) {
-        SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, indent)
-        output.appendLine("${indent}    <!-- expanded from <use href=\"#$id\"> -->")
-
-        walkSvgNode(
-            output,
-            referenced,
-            indent + "    ",
-            inheritedFill,
-            inheritedStroke,
-            inheritedStrokeWidth,
-            inheritedStrokeLineCap,
-            inheritedStrokeLineJoin,
-            inheritedStrokeMiterLimit,
-            inheritedFillRule,
-            inheritedOpacity,
-            inheritedFillOpacity,
-            inheritedStrokeOpacity,
-            inheritedClipPath,
-            definitions,
-            useDepth + 1,
-            activeClipPathId
-        )
-
-        output.appendLine("${indent}</group>")
-        output.appendLine()
-    } else {
-        output.appendLine("${indent}<!-- expanded from <use href=\"#$id\"> -->")
-
-        walkSvgNode(
-            output,
-            referenced,
-            indent,
-            inheritedFill,
-            inheritedStroke,
-            inheritedStrokeWidth,
-            inheritedStrokeLineCap,
-            inheritedStrokeLineJoin,
-            inheritedStrokeMiterLimit,
-            inheritedFillRule,
-            inheritedOpacity,
-            inheritedFillOpacity,
-            inheritedStrokeOpacity,
-            inheritedClipPath,
-            definitions,
-            useDepth + 1,
-            activeClipPathId
-        )
-    }
-}
-
+// Tree walking and <use>/<clipPath> expansion live in SvgTreeConverter.
+// SvgToVectorConverter keeps only conversion coordination and path emission callbacks.
 
 private fun appendBasicShapePath(
     output: StringBuilder,
@@ -1558,8 +900,8 @@ val strokeOpacity = styleValue(style, "stroke-opacity")
 
 val clipPathValue = styleValue(style, "clip-path")
     ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
-val clipPathId = clipPathIdFromValue(clipPathValue)
-val hasClipPath = clipPathId != null && clipPathId != activeClipPathId && activeClipPathData.containsKey(clipPathId)
+val clipPathId = SvgTreeConverter.clipPathIdFromValue(clipPathValue)
+val hasClipPath = clipPathId != null && clipPathId != activeClipPathId && SvgTreeConverter.hasClipPathData(clipPathId)
 
 val fillAlpha = resolveDrawableAlpha(inheritedOpacity, fillOpacity)
 val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
@@ -1589,7 +931,7 @@ val strokeAlpha = resolveDrawableAlpha(inheritedOpacity, strokeOpacity)
 
         if (hasClipPath) {
             output.appendLine("${currentIndent}<group>")
-            appendClipPath(output, clipPathId, currentIndent + "    ")
+            SvgTreeConverter.appendClipPath(output, clipPathId, currentIndent + "    ")
             currentIndent += "    "
             openedGroupCount++
         }
