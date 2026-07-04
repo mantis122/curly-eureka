@@ -577,9 +577,9 @@ private fun safeFillColor(value: String?): String {
     return when {
         v.isNullOrBlank() -> "#000000"
         v.equals("none", ignoreCase = true) -> "@android:color/transparent"
-        fallbackColorForPaint(v) != null -> fallbackColorForPaint(v)!!
-        isUnsupportedPaint(v) -> "@android:color/transparent"
-        normalizedAndroidColor(v) != null -> normalizedAndroidColor(v)!!
+        SvgPaintResolver.fallbackColorForPaint(v) != null -> SvgPaintResolver.fallbackColorForPaint(v)!!
+        SvgPaintResolver.isUnsupportedPaint(v) -> "@android:color/transparent"
+        SvgPaintResolver.normalizedAndroidColor(v) != null -> SvgPaintResolver.normalizedAndroidColor(v)!!
         else -> "@android:color/transparent"
     }
 }
@@ -590,9 +590,9 @@ private fun safeStrokeColor(value: String?): String? {
     return when {
         v.isNullOrBlank() -> null
         v.equals("none", ignoreCase = true) -> null
-        fallbackColorForPaint(v) != null -> fallbackColorForPaint(v)
-        isUnsupportedPaint(v) -> null
-        normalizedAndroidColor(v) != null -> normalizedAndroidColor(v)
+        SvgPaintResolver.fallbackColorForPaint(v) != null -> SvgPaintResolver.fallbackColorForPaint(v)
+        SvgPaintResolver.isUnsupportedPaint(v) -> null
+        SvgPaintResolver.normalizedAndroidColor(v) != null -> SvgPaintResolver.normalizedAndroidColor(v)
         else -> null
     }
 }
