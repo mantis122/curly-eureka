@@ -163,6 +163,19 @@ val rawFinalXml = if (endIndex >= 0) {
 val finalXml = optimizeDuplicateClipPathGroups(rawFinalXml)
 
 val finalXmlForStats = stripSvgComments(finalXml)
+
+val generatedTranslateCount = Regex("""android:translate[XY]="""")
+    .findAll(finalXmlForStats)
+    .count()
+
+val generatedScaleCount = Regex("""android:scale[XY]="""")
+    .findAll(finalXmlForStats)
+    .count() / 2
+
+val generatedRotateCount = Regex("""android:rotation="""")
+    .findAll(finalXmlForStats)
+    .count()
+
 val convertedPathCount = Regex("""<path\b""")     .findAll(finalXmlForStats)     .count()
 val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
 val basicShapeBreakdown = countDrawableBasicShapeBreakdown(drawableSvgForStats)
@@ -200,9 +213,9 @@ val report = SvgConversionReporter.buildReport(
         unsupportedMatrixTransforms = SvgTransformParser.unsupportedMatrixTransforms,
         supportedMatrixTransforms = SvgTransformParser.supportedMatrixTransforms,
         matrixCount = matrixCount,
-        translateCount = translateCount,
-        scaleCount = scaleCount,
-        rotateCount = rotateCount,
+        translateCount = generatedTranslateCount,
+        scaleCount = generatedScaleCount,
+        rotateCount = generatedRotateCount,
         conversionProfile = conversionProfile,
         outputDpSize = outputDpSize,
         viewportWidth = viewportWidth,
