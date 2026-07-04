@@ -164,17 +164,22 @@ val finalXml = optimizeDuplicateClipPathGroups(rawFinalXml)
 
 val finalXmlForStats = stripSvgComments(finalXml)
 
-val generatedTranslateCount = Regex("""android:translate[XY]="""")
+val generatedGroups = Regex("""<group[\s\S]*?>""")
     .findAll(finalXmlForStats)
-    .count()
+    .map { it.value }
+    .toList()
 
-val generatedScaleCount = Regex("""android:scale[XY]="""")
-    .findAll(finalXmlForStats)
-    .count() / 2
+val generatedTranslateCount = generatedGroups.count {
+    it.contains("android:translateX=") || it.contains("android:translateY=")
+}
 
-val generatedRotateCount = Regex("""android:rotation="""")
-    .findAll(finalXmlForStats)
-    .count()
+val generatedScaleCount = generatedGroups.count {
+    it.contains("android:scaleX=") || it.contains("android:scaleY=")
+}
+
+val generatedRotateCount = generatedGroups.count {
+    it.contains("android:rotation=")
+}
 
 val convertedPathCount = Regex("""<path\b""")     .findAll(finalXmlForStats)     .count()
 val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
