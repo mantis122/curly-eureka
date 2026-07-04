@@ -224,137 +224,147 @@ object SvgConversionReporter {
         }
     }
 
-    fun buildReport(data: SvgConversionReportData): String {
-        val summaryTitle =
-            if (data.warningCount == 0)
-                "🟢 Conversion Successful"
-            else
-                "🟡 Conversion Completed With Warnings"
 
-        val summaryLine1 =
-            "${data.convertedPathCount} drawable paths created"
+fun buildReport(data: SvgConversionReportData): String {
+    val summaryTitle =
+        if (data.warningCount == 0)
+            "🟢 Conversion Successful"
+        else
+            "🟡 Conversion Completed With Warnings"
 
-        val summaryLine2 =
-            if (data.warningCount == 0)
-                "No warnings detected"
-            else
-                "${data.warningCount} warning(s) detected"
+    val summaryLine1 =
+        "${data.convertedPathCount} drawable paths created"
 
-        return buildString {
-            appendLine(summaryTitle)
-            appendLine(summaryLine1)
-            appendLine(summaryLine2)
-            appendLine()
+    val summaryLine2 =
+        if (data.warningCount == 0)
+            "No warnings detected"
+        else
+            "${data.warningCount} warning(s) detected"
 
-            appendLine("Converted in ${data.elapsedMs} ms")
-            appendLine()
+    return buildString {
 
-            appendLine("Conversion Statistics")
-            appendLine()
-            appendLine("Drawable elements processed")
-            appendLine("✓ Paths: ${data.convertedOriginalPathCount}")
-            appendLine("✓ Basic shapes: ${data.convertedBasicShapeCount}")
-            appendLine("✓ Expanded <use> references: ${data.resolvedUseExpansions}")
-            appendLine("✓ Drawable definitions: ${data.definitionDrawableElementCount}")
-            appendLine()
+        appendLine(summaryTitle)
+        appendLine(summaryLine1)
+        appendLine(summaryLine2)
+        appendLine()
 
-            appendLine("────────────────────")
+        appendLine("Converted in ${data.elapsedMs} ms")
+        appendLine()
 
-            appendLine()
-            appendLine("✓ Profile: ${data.conversionProfile}")
+        appendLine("════════════════════")
+        appendLine("Conversion Summary")
+        appendLine("════════════════════")
+        appendLine()
 
-            appendLine(
-                if (data.outputDpSize > 0)
-                    "✓ Output size: ${data.outputDpSize}dp"
-                else
-                    "✓ Output size: Keep SVG size"
-            )
+        appendLine("✓ Drawable paths created: ${data.convertedPathCount}")
+        appendLine("✓ Groups created: ${data.generatedGroupCount}")
 
-            appendLine()
+        if (data.warningCount == 0)
+            appendLine("✓ Warnings: None")
+        else
+            appendLine("⚠ Warnings: ${data.warningCount}")
 
-            appendLine("────────────────────")
-            appendLine()
-            appendLine("SVG Analysis")
-            appendLine()
-            appendLine("✓ Viewport: ${data.viewportWidth} × ${data.viewportHeight}")
-            appendLine()
+        appendLine()
 
-            appendLine("Source content")
-            appendLine("✓ Visible SVG paths found: ${data.drawableValidPathCount}")
-            appendLine("✓ Empty paths skipped: ${data.emptyPathCount}")
+        appendLine("════════════════════")
+        appendLine("Drawable Elements Processed")
+        appendLine("════════════════════")
+        appendLine()
+
+        appendLine("✓ Paths: ${data.convertedOriginalPathCount}")
+        appendLine("✓ Basic shapes: ${data.convertedBasicShapeCount}")
+        appendLine("✓ Expanded <use> references: ${data.resolvedUseExpansions}")
+        appendLine("✓ Definition elements: ${data.definitionDrawableElementCount}")
+        appendLine()
+
+        appendBasicShapeBreakdown(data.basicShapeBreakdown)
+
+        appendLine()
+        appendLine("════════════════════")
+        appendLine("Transforms")
+        appendLine("════════════════════")
+        appendLine()
+
+        appendLine("✓ Translate: ${data.translateCount}")
+        appendLine("✓ Scale: ${data.scaleCount}")
+        appendLine("✓ Rotate: ${data.rotateCount}")
+
+        if (data.matrixCount > 0) {
+            appendLine("✓ Matrix supported: ${data.supportedMatrixTransforms}")
+            appendLine("⚠ Matrix unsupported: ${data.unsupportedMatrixTransforms}")
+        } else {
+            appendLine("✓ Matrix: 0")
+        }
+
+        appendLine()
+
+        appendLine("════════════════════")
+        appendLine("SVG Analysis")
+        appendLine("════════════════════")
+        appendLine()
+
+        appendLine("✓ Viewport: ${data.viewportWidth} × ${data.viewportHeight}")
+        appendLine("✓ Visible SVG paths: ${data.drawableValidPathCount}")
+        appendLine("✓ Empty paths skipped: ${data.emptyPathCount}")
+
+        if (data.useCount > 0)
             appendLine("✓ <use> references found: ${data.useCount}")
-            if (data.symbolCount > 0) {
-                appendLine("✓ Symbol definitions found: ${data.symbolCount}")
+
+        if (data.symbolCount > 0)
+            appendLine("✓ Symbol definitions: ${data.symbolCount}")
+
+        if (data.gradientFallbackColorCount > 0)
+            appendLine("✓ Gradient fallbacks: ${data.gradientFallbackColorCount}")
+
+        if (data.clipPathCount > 0) {
+            appendLine("✓ Clip paths: ${data.clipPathCount}")
+            appendLine("✓ Clip path references: ${data.clipPathReferenceCount}")
+            appendLine("✓ Clip paths applied: ${data.appliedClipPaths}")
+        }
+
+        appendLine("✓ Style attributes: ${data.styleAttributeCount}")
+        appendLine("✓ Presentation attributes: ${data.presentationStyleAttributeCount}")
+
+        appendLine()
+
+        appendLine("════════════════════")
+        appendLine("Output")
+        appendLine("════════════════════")
+        appendLine()
+
+        appendLine("✓ Profile: ${data.conversionProfile}")
+
+        appendLine(
+            if (data.outputDpSize > 0)
+                "✓ Output size: ${data.outputDpSize}dp"
+            else
+                "✓ Output size: Keep SVG size"
+        )
+
+        appendLine("✓ XML validation passed")
+        appendLine("✓ Output ready to save")
+
+        if (data.unsupportedWarnings.isNotEmpty() || data.unsupportedMatrixTransforms > 0) {
+
+            appendLine()
+            appendLine("════════════════════")
+            appendLine("Warnings")
+            appendLine("════════════════════")
+            appendLine()
+
+            if (data.unsupportedMatrixTransforms > 0) {
+                appendLine("⚠ Unsupported matrix transforms: ${data.unsupportedMatrixTransforms}")
             }
-            appendLine()
 
-            appendLine("Basic shape breakdown")
-            appendBasicShapeBreakdown(data.basicShapeBreakdown)
-            appendLine()
-
-            appendLine("Conversion details")
-            if (data.gradientFallbackColorCount > 0) {
-                appendLine("✓ Gradient fallback colors: ${data.gradientFallbackColorCount}")
-            }
-            if (data.clipPathCount > 0) {
-                appendLine("✓ Clip paths found: ${data.clipPathCount}")
-                appendLine("✓ Clip path references: ${data.clipPathReferenceCount}")
-                appendLine("✓ Clip paths applied: ${data.appliedClipPaths}")
-            }
-            appendLine("✓ Style attributes parsed: ${data.styleAttributeCount}")
-            appendLine("✓ Presentation attributes parsed: ${data.presentationStyleAttributeCount}")
-            appendLine("✓ Groups generated: ${data.generatedGroupCount}")
-            appendLine("✓ Warnings: ${data.warningCount}")
-            appendLine()
-
-            appendLine()
-            appendLine("Transforms")
-            appendLine()
-
-            appendLine("✓ Translate transforms: ${data.translateCount}")
-            appendLine("✓ Scale transforms: ${data.scaleCount}")
-            appendLine("✓ Rotate transforms: ${data.rotateCount}")
-
-            if (data.matrixCount > 0) {
-                appendLine("✓ Matrix transforms supported: ${data.supportedMatrixTransforms}")
-                appendLine("⚠ Matrix transforms unsupported: ${data.unsupportedMatrixTransforms}")
-            } else {
-                appendLine("✓ Unsupported matrix transforms: 0")
-            }
-
-            appendLine()
-            appendLine("Conversion Status")
-            appendLine()
-
-            appendLine("✓ Android VectorDrawable generated")
-            appendLine("✓ Drawable paths created: ${data.convertedPathCount}")
-            appendLine("✓ XML validation passed")
-            appendLine("✓ Output ready to save")
-            appendLine()
-
-            if (data.unsupportedWarnings.isEmpty() && data.unsupportedMatrixTransforms == 0) {
-                appendLine("✓ No warnings detected")
-            } else {
-                appendLine("Warnings")
-                appendLine()
-
-                if (data.unsupportedMatrixTransforms > 0) {
-                    appendLine("⚠ Unsupported matrix transforms: ${data.unsupportedMatrixTransforms}")
-                }
-
-                data.unsupportedWarnings.forEach {
-                    if (it.contains("converted", ignoreCase = true)) {
-                        appendLine("⚠ $it")
-                    } else {
-                        appendLine("⚠ $it detected")
-                    }
-                }
-
-                appendLine()
-                appendLine("Some SVG features may not convert correctly.")
+            data.unsupportedWarnings.forEach {
+                if (it.contains("converted", ignoreCase = true))
+                    appendLine("⚠ $it")
+                else
+                    appendLine("⚠ $it detected")
             }
         }
     }
+}
 
     private fun StringBuilder.appendBasicShapeBreakdown(breakdown: BasicShapeBreakdown) {
         appendLine("    • Rectangles: ${breakdown.rectangles}")
