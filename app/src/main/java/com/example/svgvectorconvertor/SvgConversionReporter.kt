@@ -224,7 +224,7 @@ object SvgConversionReporter {
         }
     }
 
-
+ 
 fun buildReport(data: SvgConversionReportData): String {
     val summaryTitle =
         if (data.warningCount == 0)
@@ -232,38 +232,20 @@ fun buildReport(data: SvgConversionReportData): String {
         else
             "🟡 Conversion Completed With Warnings"
 
-    val summaryLine1 =
-        "${data.convertedPathCount} drawable paths created"
-
-    val summaryLine2 =
-        if (data.warningCount == 0)
-            "No warnings detected"
-        else
-            "${data.warningCount} warning(s) detected"
+    val drawablePathWord =
+        if (data.convertedPathCount == 1) "path" else "paths"
 
     return buildString {
-
         appendLine(summaryTitle)
-        appendLine(summaryLine1)
-        appendLine(summaryLine2)
-        appendLine()
-
-        appendLine("Converted in ${data.elapsedMs} ms")
-        appendLine()
-
-        appendLine("════════════════════")
-        appendLine("Conversion Summary")
-        appendLine("════════════════════")
-        appendLine()
-
-        appendLine("✓ Drawable paths created: ${data.convertedPathCount}")
-        appendLine("✓ Groups created: ${data.generatedGroupCount}")
+        appendLine("${data.convertedPathCount} drawable $drawablePathWord created")
 
         if (data.warningCount == 0)
-            appendLine("✓ Warnings: None")
+            appendLine("No warnings detected")
         else
-            appendLine("⚠ Warnings: ${data.warningCount}")
+            appendLine("${data.warningCount} warning(s) detected")
 
+        appendLine()
+        appendLine("Converted in ${data.elapsedMs} ms")
         appendLine()
 
         appendLine("════════════════════")
@@ -273,11 +255,11 @@ fun buildReport(data: SvgConversionReportData): String {
 
         appendLine("✓ Paths: ${data.convertedOriginalPathCount}")
         appendLine("✓ Basic shapes: ${data.convertedBasicShapeCount}")
+        appendBasicShapeBreakdown(data.basicShapeBreakdown)
+
         appendLine("✓ Expanded <use> references: ${data.resolvedUseExpansions}")
         appendLine("✓ Definition elements: ${data.definitionDrawableElementCount}")
-        appendLine()
-
-        appendBasicShapeBreakdown(data.basicShapeBreakdown)
+        appendLine("✓ Groups created: ${data.generatedGroupCount}")
 
         appendLine()
         appendLine("════════════════════")
@@ -297,7 +279,6 @@ fun buildReport(data: SvgConversionReportData): String {
         }
 
         appendLine()
-
         appendLine("════════════════════")
         appendLine("SVG Analysis")
         appendLine("════════════════════")
@@ -326,7 +307,6 @@ fun buildReport(data: SvgConversionReportData): String {
         appendLine("✓ Presentation attributes: ${data.presentationStyleAttributeCount}")
 
         appendLine()
-
         appendLine("════════════════════")
         appendLine("Output")
         appendLine("════════════════════")
@@ -341,11 +321,17 @@ fun buildReport(data: SvgConversionReportData): String {
                 "✓ Output size: Keep SVG size"
         )
 
+        appendLine()
+        appendLine("════════════════════")
+        appendLine("Conversion Status")
+        appendLine("════════════════════")
+        appendLine()
+
+        appendLine("✓ Android VectorDrawable generated")
         appendLine("✓ XML validation passed")
         appendLine("✓ Output ready to save")
 
         if (data.unsupportedWarnings.isNotEmpty() || data.unsupportedMatrixTransforms > 0) {
-
             appendLine()
             appendLine("════════════════════")
             appendLine("Warnings")
@@ -366,18 +352,14 @@ fun buildReport(data: SvgConversionReportData): String {
     }
 }
 
-    private fun StringBuilder.appendBasicShapeBreakdown(breakdown: BasicShapeBreakdown) {
-        appendLine("    • Rectangles: ${breakdown.rectangles}")
-        appendLine("    • Rounded rectangles: ${breakdown.roundedRectangles}")
-        appendLine("    • Circles: ${breakdown.circles}")
-        appendLine("    • Ellipses: ${breakdown.ellipses}")
-        appendLine("    • Polygons: ${breakdown.polygons}")
-        appendLine("    • Polylines: ${breakdown.polylines}")
-    }
-
-    private fun basicShapeToPathData(element: Element, tagName: String): String? {
-        return SvgShapeConverters.basicShapeToPathData(element, tagName)
-    }
+        private fun StringBuilder.appendBasicShapeBreakdown(breakdown: BasicShapeBreakdown) {
+    appendLine("    • Rectangles: ${breakdown.rectangles}")
+    appendLine("    • Rounded rectangles: ${breakdown.roundedRectangles}")
+    appendLine("    • Circles: ${breakdown.circles}")
+    appendLine("    • Ellipses: ${breakdown.ellipses}")
+    appendLine("    • Polygons: ${breakdown.polygons}")
+    appendLine("    • Polylines: ${breakdown.polylines}")
+        }
 
     private fun floatAttr(element: Element, name: String): Float? {
         return element.getAttribute(name)
