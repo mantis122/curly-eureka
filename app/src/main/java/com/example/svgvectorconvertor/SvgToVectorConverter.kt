@@ -22,15 +22,6 @@ private var activeUnsupportedMatrixTransforms = 0
 private var activeTransformOriginReferenceWidth: Float? = null
 private var activeTransformOriginReferenceHeight: Float? = null
 
-private data class BasicShapeBreakdown(
-    val rectangles: Int = 0,
-    val roundedRectangles: Int = 0,
-    val circles: Int = 0,
-    val ellipses: Int = 0,
-    val polygons: Int = 0,
-    val polylines: Int = 0
-)
-  
 fun convert(
     svg: String,
     outputDpSize: Int,
@@ -186,154 +177,40 @@ val warningCount =
     unsupported.size +
     if (activeUnsupportedMatrixTransforms > 0) 1 else 0
                           
-val summaryTitle =
-    if (warningCount == 0)
-        "🟢 Conversion Successful"
-    else
-        "🟡 Conversion Completed With Warnings"
-
-val summaryLine1 =
-    "$convertedPathCount drawable paths created"
-
-val summaryLine2 =
-    if (warningCount == 0)
-        "No warnings detected"
-    else
-        "$warningCount warning(s) detected"
-
-val report = buildString {
-    appendLine(summaryTitle)
-    appendLine(summaryLine1)
-    appendLine(summaryLine2)
-    appendLine()
-
-appendLine("Converted in ${elapsedMs} ms")
-appendLine()
-
-    appendLine("Conversion Statistics")
-    appendLine()
-    appendLine("✓ Visible SVG paths converted: $convertedOriginalPathCount")
-    if (useCount > 0) {
-        appendLine("✓ Definitions expanded: $useCount")
-    }
-    if (symbolCount > 0) {
-        appendLine("✓ Symbol definitions: $symbolCount")
-    }
-    appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
-    appendBasicShapeBreakdown(basicShapeBreakdown)
-    if (definitionDrawableElementCount > 0) {
-        appendLine("✓ Drawable definitions: $definitionDrawableElementCount")
-    }
-    if (gradientFallbackColors.isNotEmpty()) {
-        appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
-    }
-    if (clipPathData.isNotEmpty()) {
-        appendLine("✓ Clip paths found: ${clipPathData.size}")
-        appendLine("✓ Clip paths applied: $activeAppliedClipPaths")
-    }
-    appendLine("✓ Style attributes parsed: $styleAttributeCount")
-    appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
-    appendLine("✓ Groups generated: $generatedGroupCount")
-    appendLine("✓ Warnings: $warningCount")
-    appendLine()
-
-    appendLine("────────────────────")
-
-    appendLine()
-    appendLine("✓ Profile: $conversionProfile")
-
-    appendLine(
-        if (outputDpSize > 0)
-            "✓ Output size: ${outputDpSize}dp"
-        else
-            "✓ Output size: Keep SVG size"
+val report = SvgConversionReporter.buildReport(
+    SvgConversionReportData(
+        convertedPathCount = convertedPathCount,
+        convertedOriginalPathCount = convertedOriginalPathCount,
+        convertedBasicShapeCount = convertedBasicShapeCount,
+        basicShapeBreakdown = basicShapeBreakdown,
+        definitionDrawableElementCount = definitionDrawableElementCount,
+        drawableValidPathCount = drawableValidPathCount,
+        emptyPathCount = emptyPathCount,
+        generatedGroupCount = generatedGroupCount,
+        useCount = useCount,
+        resolvedUseExpansions = activeResolvedUseExpansions,
+        symbolCount = symbolCount,
+        gradientFallbackColorCount = gradientFallbackColors.size,
+        clipPathCount = clipPathData.size,
+        clipPathReferenceCount = clipPathReferenceCount,
+        appliedClipPaths = activeAppliedClipPaths,
+        styleAttributeCount = styleAttributeCount,
+        presentationStyleAttributeCount = presentationStyleAttributeCount,
+        warningCount = warningCount,
+        unsupportedWarnings = unsupported,
+        unsupportedMatrixTransforms = activeUnsupportedMatrixTransforms,
+        supportedMatrixTransforms = activeSupportedMatrixTransforms,
+        matrixCount = matrixCount,
+        translateCount = translateCount,
+        scaleCount = scaleCount,
+        rotateCount = rotateCount,
+        conversionProfile = conversionProfile,
+        outputDpSize = outputDpSize,
+        viewportWidth = viewportWidth,
+        viewportHeight = viewportHeight,
+        elapsedMs = elapsedMs
     )
-
-    appendLine()
-
-    appendLine("────────────────────")
-    appendLine()
-    appendLine("SVG Analysis")
-    appendLine()
-    appendLine("✓ Viewport: ${viewportWidth} × ${viewportHeight}")
-    appendLine()
-
-    appendLine("✓ Visible SVG paths: $drawableValidPathCount")
-    appendLine("✓ Empty paths skipped: $emptyPathCount")
-    appendLine()
-
-    appendLine("✓ Basic shapes generated: $convertedBasicShapeCount")
-    appendBasicShapeBreakdown(basicShapeBreakdown)
-    if (definitionDrawableElementCount > 0) {
-        appendLine("✓ Drawable definitions: $definitionDrawableElementCount")
-    }
-    if (symbolCount > 0) {
-        appendLine("✓ Symbol definitions: $symbolCount")
-    }
-    if (gradientFallbackColors.isNotEmpty()) {
-        appendLine("✓ Gradient fallback colors: ${gradientFallbackColors.size}")
-    }
-    if (clipPathData.isNotEmpty()) {
-        appendLine("✓ Clip paths found: ${clipPathData.size}")
-        appendLine("✓ Clip path references: $clipPathReferenceCount")
-        appendLine("✓ Clip paths applied: $activeAppliedClipPaths")
-    }
-    appendLine("✓ Style attributes parsed: $styleAttributeCount")
-    appendLine("✓ Presentation attributes parsed: $presentationStyleAttributeCount")
-
-    appendLine("✓ Generated groups: $generatedGroupCount")
-    appendLine()
-
-    appendLine()
-    appendLine("Transforms")
-    appendLine()
-
-    appendLine("✓ Translate transforms: $translateCount")
-    appendLine("✓ Scale transforms: $scaleCount")
-    appendLine("✓ Rotate transforms: $rotateCount")
-
-if (matrixCount > 0) {
-    appendLine("✓ Matrix transforms supported: $activeSupportedMatrixTransforms")
-    appendLine("⚠ Matrix transforms unsupported: $activeUnsupportedMatrixTransforms")
-} else {
-    appendLine("✓ Unsupported matrix transforms: 0")
-}
-
-    appendLine()
-    appendLine("Conversion Status")
-    appendLine()
-
-    appendLine("✓ Android VectorDrawable generated")
-    appendLine("✓ Drawable paths created: $convertedPathCount")
-    appendLine("✓ XML validation passed")
-    appendLine("✓ Output ready to save")
-    appendLine()
-
-
-if (unsupported.isEmpty() && activeUnsupportedMatrixTransforms == 0) {
-    appendLine("✓ No warnings detected")
-} else {
-    appendLine("Warnings")
-    appendLine()
-
-    if (activeUnsupportedMatrixTransforms > 0) {
-        appendLine("⚠ Unsupported matrix transforms: $activeUnsupportedMatrixTransforms")
-    }
-
-    unsupported.forEach {
-        if (it.contains("converted", ignoreCase = true)) {
-            appendLine("⚠ $it")
-        } else {
-            appendLine("⚠ $it detected")
-        }
-    }
-
-    appendLine()
-    appendLine("Some SVG features may not convert correctly.")
-}
-
-}
-
+)
 
 return ConversionResult(finalXml, report)
 
