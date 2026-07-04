@@ -62,11 +62,14 @@ private fun walkVectorNode(canvas: Canvas, node: Node, strokeScale: Float) {
                 val pivotY =
                     element.getAttribute("android:pivotY").toFloatOrNull() ?: 0f
 
-                canvas.translate(translateX, translateY)
-                if (rotation != 0f) {
-                    canvas.rotate(rotation, pivotX, pivotY)
-                }
-                canvas.scale(scaleX, scaleY)
+                val matrix = Matrix().apply {
+    postTranslate(-pivotX, -pivotY)
+    postScale(scaleX, scaleY)
+    postRotate(rotation)
+    postTranslate(translateX + pivotX, translateY + pivotY)
+}
+
+canvas.concat(matrix)
 
                 val children = element.childNodes
                 for (i in 0 until children.length) {
