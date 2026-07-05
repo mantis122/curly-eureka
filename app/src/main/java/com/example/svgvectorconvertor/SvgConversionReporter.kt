@@ -374,5 +374,3 @@ object SvgConversionReporter {
             ?.toFloatOrNull()
     }
 }
- }
-}
