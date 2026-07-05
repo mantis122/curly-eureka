@@ -4,6 +4,22 @@ import org.w3c.dom.Element
 import java.util.Locale
 
 object SvgPathEmitter {
+    private val flattenTransformStack = mutableListOf<AffineTransform>()
+
+    internal fun pushFlattenTransform(matrix: AffineTransform) {
+        flattenTransformStack.add(matrix)
+    }
+
+    internal fun popFlattenTransform() {
+        if (flattenTransformStack.isNotEmpty()) {
+            flattenTransformStack.removeAt(flattenTransformStack.lastIndex)
+        }
+    }
+
+    private fun currentFlattenTransform(): AffineTransform? {
+        return flattenTransformStack.lastOrNull()
+    }
+
     fun appendBasicShapePath(
         output: StringBuilder,
         element: Element,
@@ -162,9 +178,45 @@ object SvgPathEmitter {
                 .ifBlank { SvgPaintResolver.styleValue(style, "transform-origin") ?: "" }
         )
         val transforms = SvgTransformParser.parseTransformList(pathTransform)
-        val combinedTransform = SvgTransformParser.combineTransformList(transforms, transformOrigin)
+        val localMatrix = SvgTransformParser.combineTransformListToMatrix(transforms, transformOrigin)
+        val inheritedMatrix = currentFlattenTransform()
+        val matrixTransform = when {
+            inheritedMatrix != null && localMatrix != null -> inheritedMatrix.multiply(localMatrix)
+            inheritedMatrix != null -> inheritedMatrix
+            else -> localMatrix
+        }
+        val mustFlattenToPath = inheritedMatrix != null
+        val combinedTransform = if (mustFlattenToPath) {
+            null
+        } else {
+            matrixTransform?.toAndroidGroupTransform(
+                preferredPivotX = transformOrigin?.x,
+                preferredPivotY = transformOrigin?.y
+            )
+        }
 
-        val pathNeedsGroup = combinedTransform != null || hasClipPath
+        val hasMatrixLikeTransform = transforms.any {
+            it is ParsedTransform.Matrix || it is ParsedTransform.SkewX || it is ParsedTransform.SkewY
+        } || inheritedMatrix != null
+        val flattenedPathData = if (matrixTransform != null && (mustFlattenToPath || combinedTransform == null)) {
+            SvgPathDataTransformer.applyAffineTransform(d, matrixTransform)
+        } else {
+            null
+        }
+
+        if (matrixTransform != null && (mustFlattenToPath || combinedTransform == null)) {
+            if (flattenedPathData != null) {
+                SvgTransformParser.recordPathAppliedMatrixTransform()
+            } else {
+                SvgTransformParser.recordUnsupportedMatrixTransform()
+            }
+        } else if (hasMatrixLikeTransform && combinedTransform != null) {
+            SvgTransformParser.recordPathAppliedMatrixTransform()
+        }
+
+        val effectivePathData = flattenedPathData ?: d
+        val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
+        val pathNeedsGroup = effectiveTransform != null || hasClipPath
 
         if (pathNeedsGroup) {
             var currentIndent = indent
@@ -177,8 +229,8 @@ object SvgPathEmitter {
                 openedGroupCount++
             }
 
-            if (combinedTransform != null) {
-                SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
+            if (effectiveTransform != null) {
+                SvgTransformParser.appendCombinedTransformGroupStart(output, effectiveTransform, currentIndent)
                 currentIndent += "    "
                 openedGroupCount++
             }
@@ -188,7 +240,7 @@ object SvgPathEmitter {
             }
             appendPath(
                 output = output,
-                d = d,
+                d = effectivePathData,
                 fill = fill,
                 stroke = stroke,
                 strokeWidth = strokeWidth.ifBlank { null },
@@ -213,7 +265,7 @@ object SvgPathEmitter {
             }
             appendPath(
                 output = output,
-                d = d,
+                d = effectivePathData,
                 fill = fill,
                 stroke = stroke,
                 strokeWidth = strokeWidth.ifBlank { null },
@@ -294,7 +346,43 @@ object SvgPathEmitter {
             )
 
             val transforms = SvgTransformParser.parseTransformList(transform)
-            val combinedTransform = SvgTransformParser.combineTransformList(transforms, transformOrigin)
+            val localMatrix = SvgTransformParser.combineTransformListToMatrix(transforms, transformOrigin)
+            val inheritedMatrix = currentFlattenTransform()
+            val matrixTransform = when {
+                inheritedMatrix != null && localMatrix != null -> inheritedMatrix.multiply(localMatrix)
+                inheritedMatrix != null -> inheritedMatrix
+                else -> localMatrix
+            }
+            val mustFlattenToPath = inheritedMatrix != null
+            val combinedTransform = if (mustFlattenToPath) {
+                null
+            } else {
+                matrixTransform?.toAndroidGroupTransform(
+                    preferredPivotX = transformOrigin?.x,
+                    preferredPivotY = transformOrigin?.y
+                )
+            }
+            val hasMatrixLikeTransform = transforms.any {
+                it is ParsedTransform.Matrix || it is ParsedTransform.SkewX || it is ParsedTransform.SkewY
+            } || inheritedMatrix != null
+            val flattenedPathData = if (matrixTransform != null && (mustFlattenToPath || combinedTransform == null)) {
+                SvgPathDataTransformer.applyAffineTransform(d, matrixTransform)
+            } else {
+                null
+            }
+
+            if (matrixTransform != null && (mustFlattenToPath || combinedTransform == null)) {
+                if (flattenedPathData != null) {
+                    SvgTransformParser.recordPathAppliedMatrixTransform()
+                } else {
+                    SvgTransformParser.recordUnsupportedMatrixTransform()
+                }
+            } else if (hasMatrixLikeTransform && combinedTransform != null) {
+                SvgTransformParser.recordPathAppliedMatrixTransform()
+            }
+
+            val effectivePathData = flattenedPathData ?: d
+            val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
 
             val fillGradient = if (tagName == "line") null else SvgPaintResolver.gradientForPaint(rawFill)
             val strokeGradient = SvgPaintResolver.gradientForPaint(rawStroke)
@@ -308,8 +396,8 @@ object SvgPathEmitter {
             var currentIndent = indent
             var openedGroupCount = 0
 
-            if (combinedTransform != null) {
-                SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
+            if (effectiveTransform != null) {
+                SvgTransformParser.appendCombinedTransformGroupStart(output, effectiveTransform, currentIndent)
                 currentIndent += "    "
                 openedGroupCount++
             }
@@ -320,7 +408,7 @@ object SvgPathEmitter {
 
             appendPath(
                 output = output,
-                d = d,
+                d = effectivePathData,
                 fill = fillColor,
                 stroke = SvgPaintResolver.safeStrokeColor(rawStroke),
                 strokeWidth = strokeWidth,

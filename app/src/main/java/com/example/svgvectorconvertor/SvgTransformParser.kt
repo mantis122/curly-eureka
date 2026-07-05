@@ -7,11 +7,14 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.tan
 
 internal sealed class ParsedTransform {
     data class Translate(val x: Float, val y: Float) : ParsedTransform()
     data class Scale(val x: Float, val y: Float) : ParsedTransform()
     data class Rotate(val degrees: Float, val pivotX: Float?, val pivotY: Float?) : ParsedTransform()
+    data class SkewX(val degrees: Float) : ParsedTransform()
+    data class SkewY(val degrees: Float) : ParsedTransform()
     data class Matrix(val value: AffineTransform) : ParsedTransform()
 
     fun hasVisibleEffect(): Boolean {
@@ -19,6 +22,8 @@ internal sealed class ParsedTransform {
             is Translate -> x != 0f || y != 0f
             is Scale -> x != 1f || y != 1f
             is Rotate -> degrees != 0f
+            is SkewX -> degrees != 0f
+            is SkewY -> degrees != 0f
             is Matrix -> value.hasVisibleEffect()
         }
     }
@@ -60,6 +65,13 @@ internal data class AffineTransform(
      *
      * compose into the same matrix as equivalent nested SVG groups in that order.
      */
+    fun mapPoint(x: Float, y: Float): Pair<Float, Float> {
+        return Pair(
+            a * x + c * y + e,
+            b * x + d * y + f
+        )
+    }
+
     fun multiply(other: AffineTransform): AffineTransform {
         return AffineTransform(
             a = a * other.a + c * other.b,
@@ -69,10 +81,6 @@ internal data class AffineTransform(
             e = a * other.e + c * other.f + e,
             f = b * other.e + d * other.f + f
         )
-    }
-
-    fun mapPoint(x: Float, y: Float): Pair<Float, Float> {
-        return Pair(a * x + c * y + e, b * x + d * y + f)
     }
 
     fun toAndroidGroupTransform(preferredPivotX: Float? = null, preferredPivotY: Float? = null): AndroidGroupTransform? {
@@ -154,6 +162,16 @@ internal data class AffineTransform(
                 .multiply(rotation(degrees))
                 .multiply(translation(-pivotX, -pivotY))
         }
+
+        fun skewX(degrees: Float): AffineTransform {
+            val radians = degrees * PI.toFloat() / 180f
+            return AffineTransform(c = tan(radians))
+        }
+
+        fun skewY(degrees: Float): AffineTransform {
+            val radians = degrees * PI.toFloat() / 180f
+            return AffineTransform(b = tan(radians))
+        }
     }
 }
 
@@ -200,6 +218,14 @@ fun setTransformOriginReferenceBox(width: Float, height: Float) {
         unsupportedMatrixTransforms = 0
     }
 
+    fun recordPathAppliedMatrixTransform() {
+        supportedMatrixTransforms++
+    }
+
+    fun recordUnsupportedMatrixTransform() {
+        unsupportedMatrixTransforms++
+    }
+
     fun parseTransformList(transform: String?): List<ParsedTransform> {
         if (transform.isNullOrBlank()) return emptyList()
 
@@ -221,6 +247,12 @@ fun setTransformOriginReferenceBox(width: Float, height: Float) {
                     "rotate" -> {
                         if (nums.isEmpty()) null
                         else ParsedTransform.Rotate(nums[0], nums.getOrNull(1), nums.getOrNull(2))
+                    }
+                    "skewx" -> {
+                        if (nums.isEmpty()) null else ParsedTransform.SkewX(nums[0])
+                    }
+                    "skewy" -> {
+                        if (nums.isEmpty()) null else ParsedTransform.SkewY(nums[0])
                     }
                     "matrix" -> parseMatrixValues(nums)?.let { ParsedTransform.Matrix(it) }
                     else -> null
@@ -278,7 +310,7 @@ fun setTransformOriginReferenceBox(width: Float, height: Float) {
             return null
         }
 
-        if (transforms.any { it is ParsedTransform.Matrix }) {
+        if (transforms.any { it is ParsedTransform.Matrix || it is ParsedTransform.SkewX || it is ParsedTransform.SkewY }) {
             supportedMatrixTransforms++
         }
 
@@ -304,6 +336,8 @@ fun setTransformOriginReferenceBox(width: Float, height: Float) {
                         AffineTransform.rotation(transform.degrees)
                     }
                 }
+                is ParsedTransform.SkewX -> AffineTransform.skewX(transform.degrees)
+                is ParsedTransform.SkewY -> AffineTransform.skewY(transform.degrees)
                 is ParsedTransform.Matrix -> transform.value
             }
 
