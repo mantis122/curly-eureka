@@ -481,19 +481,3 @@ object SvgPaintResolver {
     }
 
 }
-tring?): Float? {
-        val raw = value
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: return null
-
-        val parsed = if (raw.endsWith("%")) {
-            raw.removeSuffix("%").trim().toFloatOrNull()?.div(100f)
-        } else {
-            raw.toFloatOrNull()
-        }
-
-        return parsed?.coerceIn(0f, 1f)
-    }
-
-}
