@@ -6,6 +6,7 @@ import org.xml.sax.InputSource
 import java.io.StringReader
 import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
+import kotlin.math.hypot
 
 data class SvgGradientStop(
     val offset: String,
@@ -23,7 +24,8 @@ data class SvgVectorGradient(
     val centerY: String? = null,
     val gradientRadius: String? = null,
     val stops: List<SvgGradientStop> = emptyList(),
-    val fallbackColor: String
+    val fallbackColor: String,
+    val hadGradientTransform: Boolean = false
 )
 
 object SvgGradientResolver {
@@ -124,6 +126,10 @@ object SvgGradientResolver {
         output.appendLine("${indent}</aapt:attr>")
     }
 
+    fun transformedGradientCount(definitions: Map<String, SvgVectorGradient>): Int {
+        return definitions.values.count { it.hadGradientTransform }
+    }
+
     private fun buildGradient(
         id: String,
         element: Element,
@@ -136,29 +142,86 @@ object SvgGradientResolver {
         if (stops.isEmpty()) return null
 
         val fallback = averageStopColor(stops.map { it.color }) ?: stops.first().color
+        val transformText = inheritedGradientAttribute(element, rawGradients, "gradientTransform")
+        val transform = SvgTransformParser.combineTransformListToMatrix(
+            SvgTransformParser.parseTransformList(transformText),
+            null
+        )
 
         return if (tag == "lineargradient") {
+            val start = point(
+                coordinateFloat(inheritedGradientAttribute(element, rawGradients, "x1"), viewportWidth, 0f),
+                coordinateFloat(inheritedGradientAttribute(element, rawGradients, "y1"), viewportHeight, 0f),
+                transform
+            )
+            val end = point(
+                coordinateFloat(inheritedGradientAttribute(element, rawGradients, "x2"), viewportWidth, viewportWidth),
+                coordinateFloat(inheritedGradientAttribute(element, rawGradients, "y2"), viewportHeight, 0f),
+                transform
+            )
+
             SvgVectorGradient(
                 id = id,
                 type = "linear",
-                startX = coordinate(element.getAttribute("x1"), viewportWidth, 0f),
-                startY = coordinate(element.getAttribute("y1"), viewportHeight, 0f),
-                endX = coordinate(element.getAttribute("x2"), viewportWidth, viewportWidth),
-                endY = coordinate(element.getAttribute("y2"), viewportHeight, 0f),
+                startX = format(start.first),
+                startY = format(start.second),
+                endX = format(end.first),
+                endY = format(end.second),
                 stops = stops,
-                fallbackColor = fallback
+                fallbackColor = fallback,
+                hadGradientTransform = transform != null
             )
         } else {
+            val cx = coordinateFloat(inheritedGradientAttribute(element, rawGradients, "cx"), viewportWidth, viewportWidth / 2f)
+            val cy = coordinateFloat(inheritedGradientAttribute(element, rawGradients, "cy"), viewportHeight, viewportHeight / 2f)
+            val r = coordinateFloat(
+                inheritedGradientAttribute(element, rawGradients, "r"),
+                minOf(viewportWidth, viewportHeight),
+                minOf(viewportWidth, viewportHeight) / 2f
+            )
+            val center = point(cx, cy, transform)
+            val radius = transformedRadius(cx, cy, r, transform)
+
             SvgVectorGradient(
                 id = id,
                 type = "radial",
-                centerX = coordinate(element.getAttribute("cx"), viewportWidth, viewportWidth / 2f),
-                centerY = coordinate(element.getAttribute("cy"), viewportHeight, viewportHeight / 2f),
-                gradientRadius = coordinate(element.getAttribute("r"), minOf(viewportWidth, viewportHeight), minOf(viewportWidth, viewportHeight) / 2f),
+                centerX = format(center.first),
+                centerY = format(center.second),
+                gradientRadius = format(radius),
                 stops = stops,
-                fallbackColor = fallback
+                fallbackColor = fallback,
+                hadGradientTransform = transform != null
             )
         }
+    }
+
+    private fun inheritedGradientAttribute(
+        element: Element,
+        rawGradients: Map<String, Element>,
+        name: String,
+        depth: Int = 0
+    ): String? {
+        if (depth > 10) return null
+        val local = element.getAttribute(name).trim()
+        if (local.isNotBlank()) return local
+
+        val href = gradientHrefId(element) ?: return null
+        val referenced = rawGradients[href] ?: return null
+        return inheritedGradientAttribute(referenced, rawGradients, name, depth + 1)
+    }
+
+    private fun point(x: Float, y: Float, transform: AffineTransform?): Pair<Float, Float> {
+        return transform?.mapPoint(x, y) ?: Pair(x, y)
+    }
+
+    private fun transformedRadius(cx: Float, cy: Float, r: Float, transform: AffineTransform?): Float {
+        if (transform == null) return r
+        val center = transform.mapPoint(cx, cy)
+        val px = transform.mapPoint(cx + r, cy)
+        val py = transform.mapPoint(cx, cy + r)
+        val rx = hypot(px.first - center.first, px.second - center.second)
+        val ry = hypot(py.first - center.first, py.second - center.second)
+        return ((rx + ry) / 2f).coerceAtLeast(0.001f)
     }
 
     private fun stopsForGradient(
@@ -223,14 +286,13 @@ object SvgGradientResolver {
         return format(number.coerceIn(0f, 1f))
     }
 
-    private fun coordinate(value: String?, relativeTo: Float, default: Float): String {
-        val raw = value?.trim()?.takeIf { it.isNotBlank() } ?: return format(default)
-        val parsed = if (raw.endsWith("%")) {
+    private fun coordinateFloat(value: String?, relativeTo: Float, default: Float): Float {
+        val raw = value?.trim()?.takeIf { it.isNotBlank() } ?: return default
+        return if (raw.endsWith("%")) {
             raw.removeSuffix("%").trim().toFloatOrNull()?.div(100f)?.times(relativeTo)
         } else {
             raw.removeSuffix("px").trim().toFloatOrNull()
         } ?: default
-        return format(parsed)
     }
 
     private fun androidColorWithAlpha(value: String, alpha: Float): String? {

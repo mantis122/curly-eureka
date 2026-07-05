@@ -295,7 +295,7 @@ object SvgConversionReporter {
                 appendLine("✓ Symbol definitions: ${data.symbolCount}")
 
             if (data.gradientFallbackColorCount > 0)
-                appendLine("✓ Gradient fallbacks: ${data.gradientFallbackColorCount}")
+                appendLine("✓ Gradients converted: ${data.gradientFallbackColorCount}")
 
             if (data.clipPathCount > 0) {
                 appendLine("✓ Clip paths: ${data.clipPathCount}")
