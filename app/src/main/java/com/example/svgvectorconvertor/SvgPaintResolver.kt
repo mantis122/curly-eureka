@@ -9,9 +9,15 @@ import java.util.Locale
 
 object SvgPaintResolver {
     private var activeGradientFallbackColors: Map<String, String> = emptyMap()
+    private var activeGradientDefinitions: Map<String, SvgVectorGradient> = emptyMap()
 
     fun setGradientFallbackColors(colors: Map<String, String>) {
         activeGradientFallbackColors = colors
+    }
+
+    fun setGradientDefinitions(definitions: Map<String, SvgVectorGradient>) {
+        activeGradientDefinitions = definitions
+        activeGradientFallbackColors = SvgGradientResolver.fallbackColors(definitions)
     }
 
     fun isValidAndroidColor(value: String?): Boolean {
@@ -38,15 +44,13 @@ object SvgPaintResolver {
     }
 
     fun fallbackColorForPaint(value: String?): String? {
-        val v = value?.trim() ?: return null
-        val id = Regex("""url\(\s*#([^)'\"\s]+)\s*\)""")
-            .find(v)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.trim()
-            ?: return null
-
+        val id = SvgGradientResolver.gradientIdFromPaint(value) ?: return null
         return activeGradientFallbackColors[id]
+    }
+
+    fun gradientForPaint(value: String?): SvgVectorGradient? {
+        val id = SvgGradientResolver.gradientIdFromPaint(value) ?: return null
+        return activeGradientDefinitions[id]
     }
 
     fun normalizedAndroidColor(value: String?): String? {
