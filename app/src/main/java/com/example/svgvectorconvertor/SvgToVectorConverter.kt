@@ -19,9 +19,6 @@ object SvgToVectorConverter {
         val svgForTransformStats = stripSvgComments(svg)
         val drawableSvgForStats = stripDefs(svg)
 
-        val gradientFallbackColors = SvgPaintResolver.collectGradientFallbackColors(svg)
-        SvgPaintResolver.setGradientFallbackColors(gradientFallbackColors)
-
         val clipPathData = SvgTreeConverter.collectClipPathData(
             svg = svg,
             basicShapeToPathData = SvgPathEmitter::basicShapeToPathData
@@ -41,11 +38,21 @@ object SvgToVectorConverter {
 
         SvgTransformParser.setTransformOriginReferenceBox(viewportWidth, viewportHeight)
 
+        val gradientDefinitions = SvgGradientResolver.collectGradientDefinitions(svg, viewportWidth, viewportHeight)
+        SvgPaintResolver.setGradientDefinitions(gradientDefinitions)
+        val gradientFallbackColors = SvgGradientResolver.fallbackColors(gradientDefinitions)
+
         val vectorWidthDp = if (outputDpSize > 0) outputDpSize else viewportWidth.toInt()
         val vectorHeightDp = if (outputDpSize > 0) outputDpSize else viewportHeight.toInt()
 
         val output = StringBuilder()
-        output.appendLine("""<vector xmlns:android="http://schemas.android.com/apk/res/android"""")
+        val usesVectorGradients = gradientDefinitions.isNotEmpty()
+        if (usesVectorGradients) {
+            output.appendLine("""<vector xmlns:android="http://schemas.android.com/apk/res/android"""")
+            output.appendLine("""    xmlns:aapt="http://schemas.android.com/aapt"""")
+        } else {
+            output.appendLine("""<vector xmlns:android="http://schemas.android.com/apk/res/android"""")
+        }
         output.appendLine("""    android:width="${vectorWidthDp}dp"""")
         output.appendLine("""    android:height="${vectorHeightDp}dp"""")
         output.appendLine("""    android:viewportWidth="$viewportWidth"""")
@@ -70,7 +77,7 @@ object SvgToVectorConverter {
         val finalXmlForStats = stripSvgComments(finalXml)
 
         val convertedPathCount = Regex("""<path\b""").findAll(finalXmlForStats).count()
-        val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
+        val convertedBasicShapeCount = countConvertedBasicShapes(finalXmlForStats)
         val convertedOriginalPathCount = convertedPathCount - convertedBasicShapeCount
         val generatedGroupCount = Regex("""<group\b""").findAll(finalXmlForStats).count()
 
@@ -95,9 +102,7 @@ object SvgToVectorConverter {
         val emptyPathCount = countAllPaths(svg) - countValidPaths(svg)
 
         val unsupported = buildUnsupportedWarnings(svg, gradientFallbackColors, clipPathData)
-        val matrixCount = Regex("""(?:matrix|skewX|skewY)\(""", RegexOption.IGNORE_CASE)
-            .findAll(svgForTransformStats)
-            .count()
+        val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
         val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
         val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
         val clipPathReferenceCount = Regex("""clip-path\s*[:=]""", RegexOption.IGNORE_CASE)
@@ -158,23 +163,11 @@ object SvgToVectorConverter {
     ): List<String> {
         val unsupported = mutableListOf<String>()
 
-        if (hasTag(svg, "linearGradient")) {
-            unsupported.add(
-                if (gradientFallbackColors.isNotEmpty()) {
-                    "Linear gradients converted to fallback colors"
-                } else {
-                    "Linear gradients"
-                }
-            )
+        if (hasTag(svg, "linearGradient") && gradientFallbackColors.isEmpty()) {
+            unsupported.add("Linear gradients")
         }
-        if (hasTag(svg, "radialGradient")) {
-            unsupported.add(
-                if (gradientFallbackColors.isNotEmpty()) {
-                    "Radial gradients converted to fallback colors"
-                } else {
-                    "Radial gradients"
-                }
-            )
+        if (hasTag(svg, "radialGradient") && gradientFallbackColors.isEmpty()) {
+            unsupported.add("Radial gradients")
         }
         if (hasTag(svg, "mask")) unsupported.add("Masks")
         if (hasTag(svg, "filter")) unsupported.add("Filters")

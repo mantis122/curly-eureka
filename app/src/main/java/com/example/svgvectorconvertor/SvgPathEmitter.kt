@@ -4,22 +4,6 @@ import org.w3c.dom.Element
 import java.util.Locale
 
 object SvgPathEmitter {
-    private val flattenTransformStack = mutableListOf<AffineTransform>()
-
-    internal fun pushFlattenTransform(matrix: AffineTransform) {
-        flattenTransformStack.add(matrix)
-    }
-
-    internal fun popFlattenTransform() {
-        if (flattenTransformStack.isNotEmpty()) {
-            flattenTransformStack.removeAt(flattenTransformStack.lastIndex)
-        }
-    }
-
-    private fun currentFlattenTransform(): AffineTransform? {
-        return flattenTransformStack.lastOrNull()
-    }
-
     fun appendBasicShapePath(
         output: StringBuilder,
         element: Element,
@@ -161,6 +145,9 @@ object SvgPathEmitter {
         val fillAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, fillOpacity)
         val strokeAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, strokeOpacity)
 
+        val fillGradient = if (sourceTag == "line") null else SvgPaintResolver.gradientForPaint(rawFill)
+        val strokeGradient = SvgPaintResolver.gradientForPaint(rawStroke)
+
         val fill = if (sourceTag == "line") {
             "@android:color/transparent"
         } else {
@@ -175,45 +162,9 @@ object SvgPathEmitter {
                 .ifBlank { SvgPaintResolver.styleValue(style, "transform-origin") ?: "" }
         )
         val transforms = SvgTransformParser.parseTransformList(pathTransform)
-        val localMatrix = SvgTransformParser.combineTransformListToMatrix(transforms, transformOrigin)
-        val inheritedMatrix = currentFlattenTransform()
-        val matrixTransform = when {
-            inheritedMatrix != null && localMatrix != null -> inheritedMatrix.multiply(localMatrix)
-            inheritedMatrix != null -> inheritedMatrix
-            else -> localMatrix
-        }
-        val mustFlattenToPath = inheritedMatrix != null
-        val combinedTransform = if (mustFlattenToPath) {
-            null
-        } else {
-            matrixTransform?.toAndroidGroupTransform(
-                preferredPivotX = transformOrigin?.x,
-                preferredPivotY = transformOrigin?.y
-            )
-        }
+        val combinedTransform = SvgTransformParser.combineTransformList(transforms, transformOrigin)
 
-        val hasMatrixLikeTransform = transforms.any {
-            it is ParsedTransform.Matrix || it is ParsedTransform.SkewX || it is ParsedTransform.SkewY
-        } || inheritedMatrix != null
-        val flattenedPathData = if (matrixTransform != null && (mustFlattenToPath || combinedTransform == null)) {
-            SvgPathDataTransformer.applyAffineTransform(d, matrixTransform)
-        } else {
-            null
-        }
-
-        if (matrixTransform != null && (mustFlattenToPath || combinedTransform == null)) {
-            if (flattenedPathData != null) {
-                SvgTransformParser.recordPathAppliedMatrixTransform()
-            } else {
-                SvgTransformParser.recordUnsupportedMatrixTransform()
-            }
-        } else if (hasMatrixLikeTransform && combinedTransform != null) {
-            SvgTransformParser.recordPathAppliedMatrixTransform()
-        }
-
-        val effectivePathData = flattenedPathData ?: d
-        val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
-        val pathNeedsGroup = effectiveTransform != null || hasClipPath
+        val pathNeedsGroup = combinedTransform != null || hasClipPath
 
         if (pathNeedsGroup) {
             var currentIndent = indent
@@ -226,8 +177,8 @@ object SvgPathEmitter {
                 openedGroupCount++
             }
 
-            if (effectiveTransform != null) {
-                SvgTransformParser.appendCombinedTransformGroupStart(output, effectiveTransform, currentIndent)
+            if (combinedTransform != null) {
+                SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
                 currentIndent += "    "
                 openedGroupCount++
             }
@@ -237,7 +188,7 @@ object SvgPathEmitter {
             }
             appendPath(
                 output = output,
-                d = effectivePathData,
+                d = d,
                 fill = fill,
                 stroke = stroke,
                 strokeWidth = strokeWidth.ifBlank { null },
@@ -247,6 +198,8 @@ object SvgPathEmitter {
                 fillRule = fillRule.ifBlank { null },
                 fillAlpha = fillAlpha,
                 strokeAlpha = strokeAlpha,
+                fillGradient = fillGradient,
+                strokeGradient = strokeGradient,
                 indent = currentIndent
             )
 
@@ -260,7 +213,7 @@ object SvgPathEmitter {
             }
             appendPath(
                 output = output,
-                d = effectivePathData,
+                d = d,
                 fill = fill,
                 stroke = stroke,
                 strokeWidth = strokeWidth.ifBlank { null },
@@ -270,6 +223,8 @@ object SvgPathEmitter {
                 fillRule = fillRule.ifBlank { null },
                 fillAlpha = fillAlpha,
                 strokeAlpha = strokeAlpha,
+                fillGradient = fillGradient,
+                strokeGradient = strokeGradient,
                 indent = indent
             )
         }
@@ -338,45 +293,11 @@ object SvgPathEmitter {
                     ?: ""
             )
 
-        val transforms = SvgTransformParser.parseTransformList(transform)
-        val localMatrix = SvgTransformParser.combineTransformListToMatrix(transforms, transformOrigin)
-        val inheritedMatrix = currentFlattenTransform()
-        val matrixTransform = when {
-            inheritedMatrix != null && localMatrix != null -> inheritedMatrix.multiply(localMatrix)
-            inheritedMatrix != null -> inheritedMatrix
-            else -> localMatrix
-        }
-        val mustFlattenToPath = inheritedMatrix != null
-        val combinedTransform = if (mustFlattenToPath) {
-            null
-        } else {
-            matrixTransform?.toAndroidGroupTransform(
-                preferredPivotX = transformOrigin?.x,
-                preferredPivotY = transformOrigin?.y
-            )
-        }
+            val transforms = SvgTransformParser.parseTransformList(transform)
+            val combinedTransform = SvgTransformParser.combineTransformList(transforms, transformOrigin)
 
-        val hasMatrixLikeTransform = transforms.any {
-            it is ParsedTransform.Matrix || it is ParsedTransform.SkewX || it is ParsedTransform.SkewY
-        } || inheritedMatrix != null
-        val flattenedPathData = if (matrixTransform != null && (mustFlattenToPath || combinedTransform == null)) {
-            SvgPathDataTransformer.applyAffineTransform(d, matrixTransform)
-        } else {
-            null
-        }
-
-        if (matrixTransform != null && (mustFlattenToPath || combinedTransform == null)) {
-            if (flattenedPathData != null) {
-                SvgTransformParser.recordPathAppliedMatrixTransform()
-            } else {
-                SvgTransformParser.recordUnsupportedMatrixTransform()
-            }
-        } else if (hasMatrixLikeTransform && combinedTransform != null) {
-            SvgTransformParser.recordPathAppliedMatrixTransform()
-        }
-
-        val effectivePathData = flattenedPathData ?: d
-        val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
+            val fillGradient = if (tagName == "line") null else SvgPaintResolver.gradientForPaint(rawFill)
+            val strokeGradient = SvgPaintResolver.gradientForPaint(rawStroke)
 
             val fillColor = if (tagName == "line") {
                 "@android:color/transparent"
@@ -387,8 +308,8 @@ object SvgPathEmitter {
             var currentIndent = indent
             var openedGroupCount = 0
 
-            if (effectiveTransform != null) {
-                SvgTransformParser.appendCombinedTransformGroupStart(output, effectiveTransform, currentIndent)
+            if (combinedTransform != null) {
+                SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
                 currentIndent += "    "
                 openedGroupCount++
             }
@@ -399,7 +320,7 @@ object SvgPathEmitter {
 
             appendPath(
                 output = output,
-                d = effectivePathData,
+                d = d,
                 fill = fillColor,
                 stroke = SvgPaintResolver.safeStrokeColor(rawStroke),
                 strokeWidth = strokeWidth,
@@ -409,6 +330,8 @@ object SvgPathEmitter {
                 fillRule = fillRule,
                 fillAlpha = SvgPaintResolver.combineAlpha(opacity, fillOpacity),
                 strokeAlpha = SvgPaintResolver.combineAlpha(opacity, strokeOpacity),
+                fillGradient = fillGradient,
+                strokeGradient = strokeGradient,
                 indent = currentIndent
             )
 
@@ -433,26 +356,39 @@ object SvgPathEmitter {
         fillRule: String?,
         fillAlpha: String?,
         strokeAlpha: String?,
+        fillGradient: SvgVectorGradient? = null,
+        strokeGradient: SvgVectorGradient? = null,
         indent: String
     ) {
+        val hasFillGradient = fillGradient != null && fill != "@android:color/transparent"
+        val hasStrokeGradient = strokeGradient != null && stroke != null
+        val needsChildren = hasFillGradient || hasStrokeGradient
+
         output.appendLine("${indent}<path")
         output.appendLine("""${indent}    android:pathData="${escapeXml(d)}"""")
 
-        if (fill != "@android:color/transparent") {
-            output.appendLine("""${indent}    android:fillColor="$fill"""")
-            if (fillAlpha != null) {
-                output.appendLine("""${indent}    android:fillAlpha="$fillAlpha"""")
+        if (!hasFillGradient) {
+            if (fill != "@android:color/transparent") {
+                output.appendLine("""${indent}    android:fillColor="$fill"""")
+                if (fillAlpha != null) {
+                    output.appendLine("""${indent}    android:fillAlpha="$fillAlpha"""")
+                }
+            } else {
+                output.appendLine("""${indent}    android:fillColor="@android:color/transparent"""")
             }
-        } else {
-            output.appendLine("""${indent}    android:fillColor="@android:color/transparent"""")
+        } else if (fillAlpha != null) {
+            output.appendLine("""${indent}    android:fillAlpha="$fillAlpha"""")
         }
 
         normalizeFillRuleToVectorFillType(fillRule)?.let { fillType ->
             output.appendLine("""${indent}    android:fillType="$fillType"""")
         }
 
-        if (stroke != null) {
+        if (!hasStrokeGradient && stroke != null) {
             output.appendLine("""${indent}    android:strokeColor="$stroke"""")
+        }
+
+        if (stroke != null) {
             output.appendLine("""${indent}    android:strokeWidth="${normalizeNumber(strokeWidth) ?: "1"}"""")
             if (strokeAlpha != null) {
                 output.appendLine("""${indent}    android:strokeAlpha="$strokeAlpha"""")
@@ -476,7 +412,29 @@ object SvgPathEmitter {
                 }
         }
 
-        output.appendLine("${indent}/>")
+        if (!needsChildren) {
+            output.appendLine("${indent}/>")
+            return
+        }
+
+        output.appendLine("${indent}>")
+        if (hasFillGradient && fillGradient != null) {
+            SvgGradientResolver.emitGradientAttr(
+                output = output,
+                gradient = fillGradient,
+                attrName = "android:fillColor",
+                indent = indent + "    "
+            )
+        }
+        if (hasStrokeGradient && strokeGradient != null) {
+            SvgGradientResolver.emitGradientAttr(
+                output = output,
+                gradient = strokeGradient,
+                attrName = "android:strokeColor",
+                indent = indent + "    "
+            )
+        }
+        output.appendLine("${indent}</path>")
     }
 
     fun basicShapeToPathData(element: Element, tagName: String): String? {

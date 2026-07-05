@@ -120,8 +120,12 @@ private fun drawPathElement(
 
         path.fillType = parsePathFillType(element.getAttribute("android:fillType"))
 
-        val fillColor = element.getAttribute("android:fillColor")
-        val strokeColor = element.getAttribute("android:strokeColor")
+        val fillColor = element.getAttribute("android:fillColor").ifBlank {
+            previewGradientColor(element, "android:fillColor") ?: ""
+        }
+        val strokeColor = element.getAttribute("android:strokeColor").ifBlank {
+            previewGradientColor(element, "android:strokeColor") ?: ""
+        }
         val strokeWidth = element.getAttribute("android:strokeWidth")
             .toFloatOrNull()
             ?: 1f
@@ -169,6 +173,66 @@ this.strokeWidth = strokeWidth
 
             canvas.drawPath(path, strokePaint)
         }
+    }
+
+
+    private fun previewGradientColor(element: Element, attrName: String): String? {
+        val children = element.childNodes
+        for (i in 0 until children.length) {
+            val child = children.item(i)
+            if (child.nodeType != Node.ELEMENT_NODE) continue
+            val attrElement = child as Element
+            if (attrElement.tagName.substringAfter(":") != "attr") continue
+            if (attrElement.getAttribute("name") != attrName) continue
+
+            val gradient = firstChildElement(attrElement, "gradient") ?: return null
+            val itemColors = mutableListOf<String>()
+            val gradientChildren = gradient.childNodes
+            for (j in 0 until gradientChildren.length) {
+                val itemNode = gradientChildren.item(j)
+                if (itemNode.nodeType != Node.ELEMENT_NODE) continue
+                val item = itemNode as Element
+                if (item.tagName.substringAfter(":") == "item") {
+                    item.getAttribute("android:color")
+                        .takeIf { it.isNotBlank() }
+                        ?.let { itemColors.add(it) }
+                }
+            }
+
+            if (itemColors.isNotEmpty()) return averagePreviewColor(itemColors)
+
+            val start = gradient.getAttribute("android:startColor")
+            val end = gradient.getAttribute("android:endColor")
+            val colors = listOf(start, end).filter { it.isNotBlank() }
+            if (colors.isNotEmpty()) return averagePreviewColor(colors)
+        }
+        return null
+    }
+
+    private fun firstChildElement(element: Element, localName: String): Element? {
+        val children = element.childNodes
+        for (i in 0 until children.length) {
+            val child = children.item(i)
+            if (child.nodeType != Node.ELEMENT_NODE) continue
+            val childElement = child as Element
+            if (childElement.tagName.substringAfter(":") == localName) return childElement
+        }
+        return null
+    }
+
+    private fun averagePreviewColor(colors: List<String>): String? {
+        val parsed = colors.mapNotNull {
+            try {
+                Color.parseColor(it)
+            } catch (_: Exception) {
+                null
+            }
+        }
+        if (parsed.isEmpty()) return null
+        val r = parsed.map { Color.red(it) }.average().toInt().coerceIn(0, 255)
+        val g = parsed.map { Color.green(it) }.average().toInt().coerceIn(0, 255)
+        val b = parsed.map { Color.blue(it) }.average().toInt().coerceIn(0, 255)
+        return "#%02X%02X%02X".format(r, g, b)
     }
 
     private fun parsePreviewAlpha(value: String?): Float {
