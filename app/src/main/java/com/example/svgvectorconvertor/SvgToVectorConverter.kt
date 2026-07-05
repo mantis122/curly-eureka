@@ -70,7 +70,7 @@ object SvgToVectorConverter {
         val finalXmlForStats = stripSvgComments(finalXml)
 
         val convertedPathCount = Regex("""<path\b""").findAll(finalXmlForStats).count()
-        val convertedBasicShapeCount = countConvertedBasicShapes(finalXmlForStats)
+        val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
         val convertedOriginalPathCount = convertedPathCount - convertedBasicShapeCount
         val generatedGroupCount = Regex("""<group\b""").findAll(finalXmlForStats).count()
 
@@ -95,7 +95,9 @@ object SvgToVectorConverter {
         val emptyPathCount = countAllPaths(svg) - countValidPaths(svg)
 
         val unsupported = buildUnsupportedWarnings(svg, gradientFallbackColors, clipPathData)
-        val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
+        val matrixCount = Regex("""(?:matrix|skewX|skewY)\(""", RegexOption.IGNORE_CASE)
+            .findAll(svgForTransformStats)
+            .count()
         val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
         val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
         val clipPathReferenceCount = Regex("""clip-path\s*[:=]""", RegexOption.IGNORE_CASE)

@@ -456,32 +456,49 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                     openedGroupCount++
                 }
 
-                val combinedTransform = SvgTransformParser.combineTransformList(transforms, currentTransformOrigin)
+                val groupMatrix = SvgTransformParser.combineTransformListToMatrix(transforms, currentTransformOrigin)
+                val combinedTransform = groupMatrix?.toAndroidGroupTransform(
+                    preferredPivotX = currentTransformOrigin?.x,
+                    preferredPivotY = currentTransformOrigin?.y
+                )
+                val flattenGroupMatrix = groupMatrix != null && combinedTransform == null
+
                 if (combinedTransform != null) {
                     SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
                     currentIndent += "    "
                     openedGroupCount++
                 }
 
-                appendChildrenWithClipGrouping(
-                    output,
-                    element,
-                    currentIndent,
-                    currentFill,
-                    currentStroke,
-                    currentStrokeWidth,
-                    currentStrokeLineCap,
-                    currentStrokeLineJoin,
-                    currentStrokeMiterLimit,
-                    currentFillRule,
-                    currentOpacity,
-                    currentFillOpacity,
-                    currentStrokeOpacity,
-                    currentClipPath,
-                    definitions,
-                    useDepth,
-                    if (hasClipPath) groupClipPathId else activeClipPathId
-                )
+                if (flattenGroupMatrix && groupMatrix != null) {
+                    output.appendLine("${currentIndent}<!-- group transform flattened into child pathData -->")
+                    SvgPathEmitter.pushFlattenTransform(groupMatrix)
+                }
+
+                try {
+                    appendChildrenWithClipGrouping(
+                        output,
+                        element,
+                        currentIndent,
+                        currentFill,
+                        currentStroke,
+                        currentStrokeWidth,
+                        currentStrokeLineCap,
+                        currentStrokeLineJoin,
+                        currentStrokeMiterLimit,
+                        currentFillRule,
+                        currentOpacity,
+                        currentFillOpacity,
+                        currentStrokeOpacity,
+                        currentClipPath,
+                        definitions,
+                        useDepth,
+                        if (hasClipPath) groupClipPathId else activeClipPathId
+                    )
+                } finally {
+                    if (flattenGroupMatrix) {
+                        SvgPathEmitter.popFlattenTransform()
+                    }
+                }
 
                 repeat(openedGroupCount) {
                     currentIndent = currentIndent.dropLast(4)
