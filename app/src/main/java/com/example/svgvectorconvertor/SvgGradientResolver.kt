@@ -25,10 +25,21 @@ data class SvgVectorGradient(
     val gradientRadius: String? = null,
     val stops: List<SvgGradientStop> = emptyList(),
     val fallbackColor: String,
-    val hadGradientTransform: Boolean = false
+    val hadGradientTransform: Boolean = false,
+    val tileMode: String? = null
 )
 
 object SvgGradientResolver {
+    private const val MAX_INHERITANCE_DEPTH = 24
+
+    private data class ResolvedGradientSpec(
+        val id: String,
+        val sourceType: String,
+        val attributes: Map<String, String>,
+        val stops: List<SvgGradientStop>,
+        val inheritedFrom: String? = null
+    )
+
     fun collectGradientDefinitions(
         svg: String,
         viewportWidth: Float,
@@ -62,9 +73,11 @@ object SvgGradientResolver {
 
             visit(document.documentElement)
 
-            rawGradients.mapNotNull { (id, element) ->
-                buildGradient(id, element, rawGradients, viewportWidth, viewportHeight)
-                    ?.let { id to it }
+            val resolvedCache = mutableMapOf<String, ResolvedGradientSpec?>()
+
+            rawGradients.keys.mapNotNull { id ->
+                resolveGradientSpec(id, rawGradients, resolvedCache, emptySet())
+                    ?.let { spec -> buildGradient(spec, viewportWidth, viewportHeight)?.let { id to it } }
             }.toMap()
         } catch (_: Exception) {
             emptyMap()
@@ -106,6 +119,10 @@ object SvgGradientResolver {
             output.appendLine("${indent}        android:gradientRadius=\"${gradient.gradientRadius ?: "1"}\"")
         }
 
+        gradient.tileMode?.let {
+            output.appendLine("${indent}        android:tileMode=\"$it\"")
+        }
+
         if (gradient.stops.size <= 1) {
             val color = gradient.stops.firstOrNull()?.color ?: gradient.fallbackColor
             output.appendLine("${indent}        android:startColor=\"$color\"")
@@ -130,38 +147,79 @@ object SvgGradientResolver {
         return definitions.values.count { it.hadGradientTransform }
     }
 
-    private fun buildGradient(
+    private fun resolveGradientSpec(
         id: String,
-        element: Element,
         rawGradients: Map<String, Element>,
+        cache: MutableMap<String, ResolvedGradientSpec?>,
+        visiting: Set<String>
+    ): ResolvedGradientSpec? {
+        cache[id]?.let { return it }
+        if (id in visiting || visiting.size > MAX_INHERITANCE_DEPTH) return null
+
+        val element = rawGradients[id] ?: return null
+        val href = gradientHrefId(element)
+        val base = href?.let { resolveGradientSpec(it, rawGradients, cache, visiting + id) }
+
+        val tag = element.tagName.substringAfter(":").lowercase(Locale.US)
+        val localType = when (tag) {
+            "lineargradient" -> "linear"
+            "radialgradient" -> "radial"
+            else -> base?.sourceType ?: "linear"
+        }
+
+        // SVG gradient references inherit all unspecified gradient attributes from the referenced
+        // gradient. Stops are inherited only when the referencing gradient has no local stops.
+        val mergedAttributes = base?.attributes.orEmpty().toMutableMap()
+        gradientAttributeNames.forEach { name ->
+            val value = rawAttribute(element, name)
+            if (!value.isNullOrBlank()) mergedAttributes[name] = value
+        }
+
+        val localStops = localStopsForGradient(element)
+        val mergedStops = if (localStops.isNotEmpty()) localStops else base?.stops.orEmpty()
+
+        val resolved = ResolvedGradientSpec(
+            id = id,
+            sourceType = localType,
+            attributes = mergedAttributes,
+            stops = mergedStops,
+            inheritedFrom = href
+        )
+
+        cache[id] = resolved
+        return resolved
+    }
+
+    private fun buildGradient(
+        spec: ResolvedGradientSpec,
         viewportWidth: Float,
         viewportHeight: Float
     ): SvgVectorGradient? {
-        val tag = element.tagName.substringAfter(":").lowercase(Locale.US)
-        val stops = stopsForGradient(element, rawGradients)
+        val stops = spec.stops
         if (stops.isEmpty()) return null
 
         val fallback = averageStopColor(stops.map { it.color }) ?: stops.first().color
-        val transformText = inheritedGradientAttribute(element, rawGradients, "gradientTransform")
+        val transformText = spec.attributes["gradientTransform"]
         val transform = SvgTransformParser.combineTransformListToMatrix(
             SvgTransformParser.parseTransformList(transformText),
             null
         )
+        val tileMode = androidTileMode(spec.attributes["spreadMethod"])
 
-        return if (tag == "lineargradient") {
+        return if (spec.sourceType == "linear") {
             val start = point(
-                coordinateFloat(inheritedGradientAttribute(element, rawGradients, "x1"), viewportWidth, 0f),
-                coordinateFloat(inheritedGradientAttribute(element, rawGradients, "y1"), viewportHeight, 0f),
+                coordinateFloat(spec.attributes["x1"], viewportWidth, 0f),
+                coordinateFloat(spec.attributes["y1"], viewportHeight, 0f),
                 transform
             )
             val end = point(
-                coordinateFloat(inheritedGradientAttribute(element, rawGradients, "x2"), viewportWidth, viewportWidth),
-                coordinateFloat(inheritedGradientAttribute(element, rawGradients, "y2"), viewportHeight, 0f),
+                coordinateFloat(spec.attributes["x2"], viewportWidth, viewportWidth),
+                coordinateFloat(spec.attributes["y2"], viewportHeight, 0f),
                 transform
             )
 
             SvgVectorGradient(
-                id = id,
+                id = spec.id,
                 type = "linear",
                 startX = format(start.first),
                 startY = format(start.second),
@@ -169,13 +227,14 @@ object SvgGradientResolver {
                 endY = format(end.second),
                 stops = stops,
                 fallbackColor = fallback,
-                hadGradientTransform = transform != null
+                hadGradientTransform = transform != null,
+                tileMode = tileMode
             )
         } else {
-            val cx = coordinateFloat(inheritedGradientAttribute(element, rawGradients, "cx"), viewportWidth, viewportWidth / 2f)
-            val cy = coordinateFloat(inheritedGradientAttribute(element, rawGradients, "cy"), viewportHeight, viewportHeight / 2f)
+            val cx = coordinateFloat(spec.attributes["cx"], viewportWidth, viewportWidth / 2f)
+            val cy = coordinateFloat(spec.attributes["cy"], viewportHeight, viewportHeight / 2f)
             val r = coordinateFloat(
-                inheritedGradientAttribute(element, rawGradients, "r"),
+                spec.attributes["r"],
                 minOf(viewportWidth, viewportHeight),
                 minOf(viewportWidth, viewportHeight) / 2f
             )
@@ -183,31 +242,17 @@ object SvgGradientResolver {
             val radius = transformedRadius(cx, cy, r, transform)
 
             SvgVectorGradient(
-                id = id,
+                id = spec.id,
                 type = "radial",
                 centerX = format(center.first),
                 centerY = format(center.second),
                 gradientRadius = format(radius),
                 stops = stops,
                 fallbackColor = fallback,
-                hadGradientTransform = transform != null
+                hadGradientTransform = transform != null,
+                tileMode = tileMode
             )
         }
-    }
-
-    private fun inheritedGradientAttribute(
-        element: Element,
-        rawGradients: Map<String, Element>,
-        name: String,
-        depth: Int = 0
-    ): String? {
-        if (depth > 10) return null
-        val local = element.getAttribute(name).trim()
-        if (local.isNotBlank()) return local
-
-        val href = gradientHrefId(element) ?: return null
-        val referenced = rawGradients[href] ?: return null
-        return inheritedGradientAttribute(referenced, rawGradients, name, depth + 1)
     }
 
     private fun point(x: Float, y: Float, transform: AffineTransform?): Pair<Float, Float> {
@@ -224,13 +269,7 @@ object SvgGradientResolver {
         return ((rx + ry) / 2f).coerceAtLeast(0.001f)
     }
 
-    private fun stopsForGradient(
-        element: Element,
-        rawGradients: Map<String, Element>,
-        depth: Int = 0
-    ): List<SvgGradientStop> {
-        if (depth > 10) return emptyList()
-
+    private fun localStopsForGradient(element: Element): List<SvgGradientStop> {
         val stops = mutableListOf<SvgGradientStop>()
         val children = element.childNodes
 
@@ -259,21 +298,34 @@ object SvgGradientResolver {
             stops.add(SvgGradientStop(offset = offset, color = color))
         }
 
-        if (stops.isNotEmpty()) return stops.sortedBy { it.offset.toFloatOrNull() ?: 0f }
-
-        val href = gradientHrefId(element) ?: return emptyList()
-        val referenced = rawGradients[href] ?: return emptyList()
-        return stopsForGradient(referenced, rawGradients, depth + 1)
+        return stops.sortedBy { it.offset.toFloatOrNull() ?: 0f }
     }
 
     private fun gradientHrefId(element: Element): String? {
         val href = element.getAttribute("href").ifBlank {
             element.getAttribute("xlink:href").ifBlank {
-                element.getAttributeNS("http://www.w3.org/1999/xlink", "href")
+                try {
+                    element.getAttributeNS("http://www.w3.org/1999/xlink", "href")
+                } catch (_: Exception) {
+                    ""
+                }
             }
         }.trim()
 
         return href.removePrefix("#").takeIf { it.isNotBlank() }
+    }
+
+    private fun rawAttribute(element: Element, name: String): String? {
+        return element.getAttribute(name).trim().takeIf { it.isNotBlank() }
+    }
+
+    private fun androidTileMode(spreadMethod: String?): String? {
+        return when (spreadMethod?.trim()?.lowercase(Locale.US)) {
+            "repeat" -> "repeat"
+            "reflect" -> "mirror"
+            "pad" -> null
+            else -> null
+        }
     }
 
     private fun normalizeOffset(value: String?): String {
@@ -347,4 +399,12 @@ object SvgGradientResolver {
             .trimEnd('.')
             .ifBlank { "0" }
     }
+
+    private val gradientAttributeNames = listOf(
+        "x1", "y1", "x2", "y2",
+        "cx", "cy", "r", "fx", "fy", "fr",
+        "gradientUnits",
+        "gradientTransform",
+        "spreadMethod"
+    )
 }
