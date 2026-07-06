@@ -21,6 +21,7 @@ data class SvgConversionReportData(
     val convertedBasicShapeCount: Int,
     val basicShapeBreakdown: BasicShapeBreakdown,
     val definitionDrawableElementCount: Int,
+    val visibleDrawableElementCount: Int,
     val drawableValidPathCount: Int,
     val emptyPathCount: Int,
     val generatedGroupCount: Int,
@@ -258,12 +259,12 @@ object SvgConversionReporter {
             appendLine("────────────────────")
             appendLine()
 
-            appendLine("✓ Paths: ${data.convertedOriginalPathCount}")
-            appendLine("✓ Basic shapes: ${data.convertedBasicShapeCount}")
+            appendLine("✓ SVG path elements converted: ${data.convertedOriginalPathCount}")
+            appendLine("✓ Basic shapes converted: ${data.convertedBasicShapeCount}")
             appendBasicShapeBreakdown(data.basicShapeBreakdown)
 
             appendLine("✓ Expanded <use> references: ${data.resolvedUseExpansions}")
-            appendLine("✓ Definition elements: ${data.definitionDrawableElementCount}")
+            appendLine("✓ Definition drawable elements: ${data.definitionDrawableElementCount}")
             appendLine("✓ Groups created: ${data.generatedGroupCount}")
 
             appendLine()
@@ -290,8 +291,9 @@ object SvgConversionReporter {
             appendLine()
 
             appendLine("✓ Viewport: ${data.viewportWidth} × ${data.viewportHeight}")
-            appendLine("✓ Visible SVG paths: ${data.drawableValidPathCount}")
-            appendLine("✓ Empty paths skipped: ${data.emptyPathCount}")
+            appendLine("✓ Visible SVG drawable elements: ${data.visibleDrawableElementCount}")
+            appendLine("✓ Visible SVG path elements: ${data.drawableValidPathCount}")
+            appendLine("✓ Empty path elements skipped: ${data.emptyPathCount}")
 
             if (data.useCount > 0)
                 appendLine("✓ <use> references found: ${data.useCount}")
@@ -315,10 +317,10 @@ object SvgConversionReporter {
             }
 
             if (data.filterDefinitionCount > 0) {
-                appendLine("✓ Filter definitions: ${data.filterDefinitionCount}")
+                appendLine("✓ Filter definitions found: ${data.filterDefinitionCount}")
             }
             if (data.filterReferenceCount > 0) {
-                appendLine("⚠ Filter effects ignored: ${data.filterReferenceCount}")
+                appendLine("⚠ Filter references ignored: ${data.filterReferenceCount}")
             }
 
             appendLine("✓ Style attributes: ${data.styleAttributeCount}")
@@ -357,7 +359,7 @@ object SvgConversionReporter {
                 appendLine()
 
                 if (data.unsupportedMatrixTransforms > 0) {
-                    appendLine("⚠ Unsupported matrix transforms: ${data.unsupportedMatrixTransforms}")
+                    appendLine("⚠ Matrix transforms not flattened: ${data.unsupportedMatrixTransforms}")
                 }
 
                 data.unsupportedWarnings.forEach {

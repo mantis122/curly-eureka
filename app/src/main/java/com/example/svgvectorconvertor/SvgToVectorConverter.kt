@@ -101,8 +101,15 @@ object SvgToVectorConverter {
         }
 
         val basicShapeBreakdown = countDrawableBasicShapeBreakdown(drawableSvgForStats)
+        val visibleBasicShapeCount = basicShapeBreakdown.rectangles +
+            basicShapeBreakdown.roundedRectangles +
+            basicShapeBreakdown.circles +
+            basicShapeBreakdown.ellipses +
+            basicShapeBreakdown.polygons +
+            basicShapeBreakdown.polylines
         val definitionDrawableElementCount = countDefinitionDrawableElements(svg)
         val drawableValidPathCount = countDrawableValidPaths(drawableSvgForStats)
+        val visibleDrawableElementCount = drawableValidPathCount + visibleBasicShapeCount
         val emptyPathCount = countAllPaths(svg) - countValidPaths(svg)
 
         val filterDefinitionCount = countFilterDefinitions(svgForTransformStats)
@@ -134,6 +141,7 @@ object SvgToVectorConverter {
                 convertedBasicShapeCount = convertedBasicShapeCount,
                 basicShapeBreakdown = basicShapeBreakdown,
                 definitionDrawableElementCount = definitionDrawableElementCount,
+                visibleDrawableElementCount = visibleDrawableElementCount,
                 drawableValidPathCount = drawableValidPathCount,
                 emptyPathCount = emptyPathCount,
                 generatedGroupCount = generatedGroupCount,
