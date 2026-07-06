@@ -288,11 +288,15 @@ object SvgGradientResolver {
 
             if (colorText.isBlank() || colorText.equals("none", ignoreCase = true)) continue
 
-            val opacityText = stop.getAttribute("stop-opacity").ifBlank {
+            val stopOpacityText = stop.getAttribute("stop-opacity").ifBlank {
                 SvgPaintResolver.styleValue(style, "stop-opacity") ?: "1"
             }
-            val opacity = SvgPaintResolver.parseSvgAlpha(opacityText) ?: 1f
-            val color = androidColorWithAlpha(colorText, opacity) ?: continue
+            val opacityText = stop.getAttribute("opacity").ifBlank {
+                SvgPaintResolver.styleValue(style, "opacity") ?: "1"
+            }
+            val stopOpacity = SvgPaintResolver.parseSvgAlpha(stopOpacityText) ?: 1f
+            val localOpacity = SvgPaintResolver.parseSvgAlpha(opacityText) ?: 1f
+            val color = androidColorWithAlpha(colorText, stopOpacity * localOpacity) ?: continue
             val offset = normalizeOffset(stop.getAttribute("offset"))
 
             stops.add(SvgGradientStop(offset = offset, color = color))
@@ -347,13 +351,14 @@ object SvgGradientResolver {
         } ?: default
     }
 
-    private fun androidColorWithAlpha(value: String, alpha: Float): String? {
-        val rgb = parseRgb(value) ?: return null
-        val a = (alpha.coerceIn(0f, 1f) * 255f).toInt().coerceIn(0, 255)
+    private fun androidColorWithAlpha(value: String, alphaMultiplier: Float): String? {
+        val rgba = parseSourceRgba(value) ?: return null
+        val finalAlpha = (rgba.alpha * alphaMultiplier).coerceIn(0f, 1f)
+        val a = (finalAlpha * 255f).toInt().coerceIn(0, 255)
         return if (a >= 255) {
-            "#%02X%02X%02X".format(rgb.first, rgb.second, rgb.third)
+            "#%02X%02X%02X".format(rgba.red, rgba.green, rgba.blue)
         } else {
-            "#%02X%02X%02X%02X".format(a, rgb.first, rgb.second, rgb.third)
+            "#%02X%02X%02X%02X".format(a, rgba.red, rgba.green, rgba.blue)
         }
     }
 
@@ -367,11 +372,12 @@ object SvgGradientResolver {
     }
 
     private data class Rgb(val first: Int, val second: Int, val third: Int)
+    private data class Rgba(val red: Int, val green: Int, val blue: Int, val alpha: Float = 1f)
 
     private fun parseRgb(value: String?): Rgb? {
         val raw = value?.trim() ?: return null
-        val v = SvgPaintResolver.normalizedAndroidColor(raw) ?: raw
-        val hex = v.removePrefix("#")
+        val normalized = SvgPaintResolver.normalizedAndroidColor(raw) ?: raw
+        val hex = normalized.removePrefix("#")
 
         return when {
             Regex("""^[0-9a-fA-F]{3}$""").matches(hex) -> Rgb(
@@ -379,17 +385,92 @@ object SvgGradientResolver {
                 "${hex[1]}${hex[1]}".toInt(16),
                 "${hex[2]}${hex[2]}".toInt(16)
             )
+            Regex("""^[0-9a-fA-F]{4}$""").matches(hex) -> Rgb(
+                "${hex[1]}${hex[1]}".toInt(16),
+                "${hex[2]}${hex[2]}".toInt(16),
+                "${hex[3]}${hex[3]}".toInt(16)
+            )
             Regex("""^[0-9a-fA-F]{6}$""").matches(hex) -> Rgb(
                 hex.substring(0, 2).toInt(16),
                 hex.substring(2, 4).toInt(16),
                 hex.substring(4, 6).toInt(16)
             )
+            // Generated Android colors are #AARRGGBB.
             Regex("""^[0-9a-fA-F]{8}$""").matches(hex) -> Rgb(
                 hex.substring(2, 4).toInt(16),
                 hex.substring(4, 6).toInt(16),
                 hex.substring(6, 8).toInt(16)
             )
             else -> null
+        }
+    }
+
+    private fun parseSourceRgba(value: String?): Rgba? {
+        val raw = value?.trim() ?: return null
+        val namedOrOriginal = SvgPaintResolver.svgNamedColor(raw) ?: raw
+        val v = namedOrOriginal.trim()
+        val hex = v.removePrefix("#")
+
+        return when {
+            Regex("""^[0-9a-fA-F]{3}$""").matches(hex) -> Rgba(
+                "${hex[0]}${hex[0]}".toInt(16),
+                "${hex[1]}${hex[1]}".toInt(16),
+                "${hex[2]}${hex[2]}".toInt(16),
+                1f
+            )
+            // SVG/CSS #RGBA syntax. Android VectorDrawable expects #AARRGGBB,
+            // so keep RGB and multiply this embedded alpha with stop-opacity.
+            Regex("""^[0-9a-fA-F]{4}$""").matches(hex) -> Rgba(
+                "${hex[0]}${hex[0]}".toInt(16),
+                "${hex[1]}${hex[1]}".toInt(16),
+                "${hex[2]}${hex[2]}".toInt(16),
+                "${hex[3]}${hex[3]}".toInt(16) / 255f
+            )
+            Regex("""^[0-9a-fA-F]{6}$""").matches(hex) -> Rgba(
+                hex.substring(0, 2).toInt(16),
+                hex.substring(2, 4).toInt(16),
+                hex.substring(4, 6).toInt(16),
+                1f
+            )
+            // SVG/CSS 8-digit color syntax is #RRGGBBAA. Convert to Android later.
+            Regex("""^[0-9a-fA-F]{8}$""").matches(hex) -> Rgba(
+                hex.substring(0, 2).toInt(16),
+                hex.substring(2, 4).toInt(16),
+                hex.substring(4, 6).toInt(16),
+                hex.substring(6, 8).toInt(16) / 255f
+            )
+            v.startsWith("rgb(", ignoreCase = true) || v.startsWith("rgba(", ignoreCase = true) -> {
+                val parts = v.substringAfter("(").substringBeforeLast(")")
+                    .split(",")
+                    .map { it.trim() }
+                if (parts.size < 3) return null
+
+                val red = parseColorChannel(parts[0]) ?: return null
+                val green = parseColorChannel(parts[1]) ?: return null
+                val blue = parseColorChannel(parts[2]) ?: return null
+                val alpha = parts.getOrNull(3)?.let { SvgPaintResolver.parseSvgAlpha(it) } ?: 1f
+
+                Rgba(red, green, blue, alpha)
+            }
+            else -> {
+                // Fall back to SvgPaintResolver for named colors and older supported formats.
+                val normalized = SvgPaintResolver.normalizedAndroidColor(v) ?: return null
+                if (normalized == v) return null
+                parseSourceRgba(normalized)
+            }
+        }
+    }
+
+    private fun parseColorChannel(raw: String): Int? {
+        val value = raw.trim()
+        return if (value.endsWith("%")) {
+            value.removeSuffix("%").trim().toFloatOrNull()
+                ?.div(100f)
+                ?.times(255f)
+                ?.toInt()
+                ?.coerceIn(0, 255)
+        } else {
+            value.toFloatOrNull()?.toInt()?.coerceIn(0, 255)
         }
     }
 
