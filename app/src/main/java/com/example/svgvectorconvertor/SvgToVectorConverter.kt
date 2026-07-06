@@ -204,7 +204,24 @@ object SvgToVectorConverter {
         if (filterReferenceCount > 0) unsupported.add("Filter effects ignored: $filterReferenceCount")
         if (hasTag(svg, "text")) unsupported.add("Text elements")
         if (hasTag(svg, "clipPath") && clipPathData.isEmpty()) unsupported.add("Clip paths")
-        if (hasTag(svg, "pattern") && patternFallbackColors.isEmpty()) unsupported.add("Patterns")
+        if (hasTag(svg, "pattern") && patternFallbackColors.isEmpty()) {
+    unsupported.add("Patterns")
+}
+
+val paintUrlRefs = Regex("""\b(?:fill|stroke)\s*=\s*["']url\(#([^)]+)\)["']""", RegexOption.IGNORE_CASE)
+    .findAll(svg)
+    .mapNotNull { it.groupValues.getOrNull(1) }
+    .toSet()
+
+val knownPaintIds =
+    gradientFallbackColors.keys +
+    patternFallbackColors.keys +
+    clipPathData.keys +
+    maskPathData.keys
+
+paintUrlRefs
+    .filter { it !in knownPaintIds }
+    .forEach { unsupported.add("Missing paint reference: #$it") }
         if (hasTag(svg, "image")) unsupported.add("Embedded images")
 
         return unsupported
