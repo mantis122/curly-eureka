@@ -595,13 +595,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun getVersionName(): String {
-        return try {
-            packageManager
-                .getPackageInfo(packageName, 0)
-                .versionName ?: "1.0"
-        } catch (e: Exception) {
-            "1.0"
-        }
+        return BuildConfig.VERSION_NAME.takeIf { it.isNotBlank() }
+            ?: try {
+                packageManager
+                    .getPackageInfo(packageName, 0)
+                    .versionName ?: "1.0"
+            } catch (e: Exception) {
+                "1.0"
+            }
     }
 
     private fun toast(msg: String) {
