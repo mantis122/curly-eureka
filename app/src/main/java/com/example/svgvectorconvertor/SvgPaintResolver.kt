@@ -53,6 +53,10 @@ object SvgPaintResolver {
         return activeGradientDefinitions[id]
     }
 
+    fun gradientForPaint(value: String?, bounds: SvgObjectBounds?): SvgVectorGradient? {
+        return SvgGradientResolver.adaptGradientToObjectBounds(gradientForPaint(value), bounds)
+    }
+
     fun normalizedAndroidColor(value: String?): String? {
         val v = value?.trim() ?: return null
 

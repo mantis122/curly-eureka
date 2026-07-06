@@ -161,9 +161,6 @@ object SvgPathEmitter {
         val fillAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, fillOpacity)
         val strokeAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, strokeOpacity)
 
-        val fillGradient = if (sourceTag == "line") null else SvgPaintResolver.gradientForPaint(rawFill)
-        val strokeGradient = SvgPaintResolver.gradientForPaint(rawStroke)
-
         val fill = if (sourceTag == "line") {
             "@android:color/transparent"
         } else {
@@ -216,6 +213,9 @@ object SvgPathEmitter {
 
         val effectivePathData = flattenedPathData ?: d
         val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
+        val objectBounds = approximatePathBounds(effectivePathData)
+        val fillGradient = if (sourceTag == "line") null else SvgPaintResolver.gradientForPaint(rawFill, objectBounds)
+        val strokeGradient = SvgPaintResolver.gradientForPaint(rawStroke, objectBounds)
         val pathNeedsGroup = effectiveTransform != null || hasClipPath
 
         if (pathNeedsGroup) {
@@ -384,8 +384,9 @@ object SvgPathEmitter {
             val effectivePathData = flattenedPathData ?: d
             val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
 
-            val fillGradient = if (tagName == "line") null else SvgPaintResolver.gradientForPaint(rawFill)
-            val strokeGradient = SvgPaintResolver.gradientForPaint(rawStroke)
+            val objectBounds = approximatePathBounds(effectivePathData)
+            val fillGradient = if (tagName == "line") null else SvgPaintResolver.gradientForPaint(rawFill, objectBounds)
+            val strokeGradient = SvgPaintResolver.gradientForPaint(rawStroke, objectBounds)
 
             val fillColor = if (tagName == "line") {
                 "@android:color/transparent"
@@ -561,6 +562,35 @@ object SvgPathEmitter {
             "nonzero" -> "nonZero"
             else -> null
         }
+    }
+
+    private fun approximatePathBounds(pathData: String): SvgObjectBounds? {
+        val numberRegex = Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""")
+        val nums = numberRegex.findAll(pathData).mapNotNull { it.value.toFloatOrNull() }.toList()
+        if (nums.size < 2) return null
+
+        val xs = mutableListOf<Float>()
+        val ys = mutableListOf<Float>()
+
+        // This intentionally approximates the bounds. For generated shape paths and most
+        // converted pathData, coordinate values appear as x,y pairs. Arc flags/radii may add
+        // extra numbers, but objectBoundingBox gradients are still substantially closer than
+        // viewport-relative output when based on this local drawable extent.
+        var i = 0
+        while (i + 1 < nums.size) {
+            xs.add(nums[i])
+            ys.add(nums[i + 1])
+            i += 2
+        }
+
+        if (xs.isEmpty() || ys.isEmpty()) return null
+        val minX = xs.minOrNull() ?: return null
+        val maxX = xs.maxOrNull() ?: return null
+        val minY = ys.minOrNull() ?: return null
+        val maxY = ys.maxOrNull() ?: return null
+        val width = (maxX - minX).coerceAtLeast(0.001f)
+        val height = (maxY - minY).coerceAtLeast(0.001f)
+        return SvgObjectBounds(minX, minY, width, height)
     }
 
     private fun attr(tag: String, name: String): String? {

@@ -26,7 +26,15 @@ data class SvgVectorGradient(
     val stops: List<SvgGradientStop> = emptyList(),
     val fallbackColor: String,
     val hadGradientTransform: Boolean = false,
-    val tileMode: String? = null
+    val tileMode: String? = null,
+    val objectBoundingBoxUnits: Boolean = false
+)
+
+data class SvgObjectBounds(
+    val minX: Float,
+    val minY: Float,
+    val width: Float,
+    val height: Float
 )
 
 object SvgGradientResolver {
@@ -96,6 +104,38 @@ object SvgGradientResolver {
 
     fun fallbackColors(definitions: Map<String, SvgVectorGradient>): Map<String, String> {
         return definitions.mapValues { it.value.fallbackColor }
+    }
+
+    fun adaptGradientToObjectBounds(
+        gradient: SvgVectorGradient?,
+        bounds: SvgObjectBounds?
+    ): SvgVectorGradient? {
+        if (gradient == null || bounds == null || !gradient.objectBoundingBoxUnits) return gradient
+        val safeWidth = bounds.width.coerceAtLeast(0.001f)
+        val safeHeight = bounds.height.coerceAtLeast(0.001f)
+
+        fun mapX(value: String?): String? = value?.toFloatOrNull()?.let { format(bounds.minX + it * safeWidth) }
+        fun mapY(value: String?): String? = value?.toFloatOrNull()?.let { format(bounds.minY + it * safeHeight) }
+        fun mapRadius(value: String?): String? = value?.toFloatOrNull()?.let {
+            format((it * ((safeWidth + safeHeight) / 2f)).coerceAtLeast(0.001f))
+        }
+
+        return if (gradient.type == "linear") {
+            gradient.copy(
+                startX = mapX(gradient.startX),
+                startY = mapY(gradient.startY),
+                endX = mapX(gradient.endX),
+                endY = mapY(gradient.endY),
+                objectBoundingBoxUnits = false
+            )
+        } else {
+            gradient.copy(
+                centerX = mapX(gradient.centerX),
+                centerY = mapY(gradient.centerY),
+                gradientRadius = mapRadius(gradient.gradientRadius),
+                objectBoundingBoxUnits = false
+            )
+        }
     }
 
     fun emitGradientAttr(
@@ -205,16 +245,20 @@ object SvgGradientResolver {
             null
         )
         val tileMode = androidTileMode(spec.attributes["spreadMethod"])
+        val objectBoundingBoxUnits = !spec.attributes["gradientUnits"].equals("userSpaceOnUse", ignoreCase = true)
+        val xRelativeTo = if (objectBoundingBoxUnits) 1f else viewportWidth
+        val yRelativeTo = if (objectBoundingBoxUnits) 1f else viewportHeight
+        val radiusRelativeTo = if (objectBoundingBoxUnits) 1f else minOf(viewportWidth, viewportHeight)
 
         return if (spec.sourceType == "linear") {
             val start = point(
-                coordinateFloat(spec.attributes["x1"], viewportWidth, 0f),
-                coordinateFloat(spec.attributes["y1"], viewportHeight, 0f),
+                coordinateFloat(spec.attributes["x1"], xRelativeTo, 0f),
+                coordinateFloat(spec.attributes["y1"], yRelativeTo, 0f),
                 transform
             )
             val end = point(
-                coordinateFloat(spec.attributes["x2"], viewportWidth, viewportWidth),
-                coordinateFloat(spec.attributes["y2"], viewportHeight, 0f),
+                coordinateFloat(spec.attributes["x2"], xRelativeTo, if (objectBoundingBoxUnits) 1f else viewportWidth),
+                coordinateFloat(spec.attributes["y2"], yRelativeTo, 0f),
                 transform
             )
 
@@ -228,15 +272,16 @@ object SvgGradientResolver {
                 stops = stops,
                 fallbackColor = fallback,
                 hadGradientTransform = transform != null,
-                tileMode = tileMode
+                tileMode = tileMode,
+                objectBoundingBoxUnits = objectBoundingBoxUnits
             )
         } else {
-            val cx = coordinateFloat(spec.attributes["cx"], viewportWidth, viewportWidth / 2f)
-            val cy = coordinateFloat(spec.attributes["cy"], viewportHeight, viewportHeight / 2f)
+            val cx = coordinateFloat(spec.attributes["cx"], xRelativeTo, if (objectBoundingBoxUnits) 0.5f else viewportWidth / 2f)
+            val cy = coordinateFloat(spec.attributes["cy"], yRelativeTo, if (objectBoundingBoxUnits) 0.5f else viewportHeight / 2f)
             val r = coordinateFloat(
                 spec.attributes["r"],
-                minOf(viewportWidth, viewportHeight),
-                minOf(viewportWidth, viewportHeight) / 2f
+                radiusRelativeTo,
+                if (objectBoundingBoxUnits) 0.5f else minOf(viewportWidth, viewportHeight) / 2f
             )
             val center = point(cx, cy, transform)
             val radius = transformedRadius(cx, cy, r, transform)
@@ -250,7 +295,8 @@ object SvgGradientResolver {
                 stops = stops,
                 fallbackColor = fallback,
                 hadGradientTransform = transform != null,
-                tileMode = tileMode
+                tileMode = tileMode,
+                objectBoundingBoxUnits = objectBoundingBoxUnits
             )
         }
     }
