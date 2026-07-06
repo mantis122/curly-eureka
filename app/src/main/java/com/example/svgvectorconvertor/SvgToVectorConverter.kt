@@ -105,7 +105,9 @@ object SvgToVectorConverter {
         val drawableValidPathCount = countDrawableValidPaths(drawableSvgForStats)
         val emptyPathCount = countAllPaths(svg) - countValidPaths(svg)
 
-        val unsupported = buildUnsupportedWarnings(svg, gradientFallbackColors, clipPathData, maskPathData)
+        val filterDefinitionCount = countFilterDefinitions(svgForTransformStats)
+        val filterReferenceCount = countFilterReferences(svgForTransformStats)
+        val unsupported = buildUnsupportedWarnings(svg, gradientFallbackColors, clipPathData, maskPathData, filterReferenceCount)
         val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
         val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
         val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
@@ -145,6 +147,8 @@ object SvgToVectorConverter {
                 maskPathCount = maskPathData.size,
                 maskReferenceCount = maskReferenceCount,
                 appliedMasks = SvgTreeConverter.appliedMasks,
+                filterDefinitionCount = filterDefinitionCount,
+                filterReferenceCount = filterReferenceCount,
                 styleAttributeCount = styleAttributeCount,
                 presentationStyleAttributeCount = presentationStyleAttributeCount,
                 warningCount = warningCount,
@@ -170,7 +174,8 @@ object SvgToVectorConverter {
         svg: String,
         gradientFallbackColors: Map<String, String>,
         clipPathData: Map<String, String>,
-        maskPathData: Map<String, String>
+        maskPathData: Map<String, String>,
+        filterReferenceCount: Int
     ): List<String> {
         val unsupported = mutableListOf<String>()
 
@@ -181,13 +186,29 @@ object SvgToVectorConverter {
             unsupported.add("Radial gradients")
         }
         if (hasTag(svg, "mask") && maskPathData.isEmpty()) unsupported.add("Masks")
-        if (hasTag(svg, "filter")) unsupported.add("Filters")
+        if (filterReferenceCount > 0) unsupported.add("Filter effects ignored: $filterReferenceCount")
         if (hasTag(svg, "text")) unsupported.add("Text elements")
         if (hasTag(svg, "clipPath") && clipPathData.isEmpty()) unsupported.add("Clip paths")
         if (hasTag(svg, "pattern")) unsupported.add("Patterns")
         if (hasTag(svg, "image")) unsupported.add("Embedded images")
 
         return unsupported
+    }
+
+    private fun countFilterDefinitions(svg: String): Int {
+        return Regex("""<\s*filter\b""", RegexOption.IGNORE_CASE)
+            .findAll(svg)
+            .count()
+    }
+
+    private fun countFilterReferences(svg: String): Int {
+        val attrRefs = Regex("""\bfilter\s*=\s*["'][^"']+["']""", RegexOption.IGNORE_CASE)
+            .findAll(svg)
+            .count()
+        val styleRefs = Regex("""filter\s*:\s*url\(""", RegexOption.IGNORE_CASE)
+            .findAll(svg)
+            .count()
+        return attrRefs + styleRefs
     }
 
     private fun countPresentationStyleAttributes(svg: String): Int {

@@ -225,6 +225,9 @@ object SvgPathEmitter {
         val strokeGradient = SvgPaintResolver.gradientForPaint(rawStroke, objectBounds)
         val pathNeedsGroup = effectiveTransform != null || hasClipPath
 
+        val directFilterValue = SvgPaintResolver.styleValue(style, "filter")
+            ?: element.getAttribute("filter").ifBlank { "" }
+
         if (pathNeedsGroup) {
             var currentIndent = indent
             var openedGroupCount = 0
@@ -242,6 +245,9 @@ object SvgPathEmitter {
                 openedGroupCount++
             }
 
+            if (directFilterValue.isNotBlank()) {
+                output.appendLine("${currentIndent}<!-- filter ignored: ${escapeXml(directFilterValue)} -->")
+            }
             if (sourceTag != null) {
                 output.appendLine("${currentIndent}<!-- converted from <$sourceTag> -->")
             }
@@ -267,6 +273,9 @@ object SvgPathEmitter {
                 output.appendLine("${currentIndent}</group>")
             }
         } else {
+            if (directFilterValue.isNotBlank()) {
+                output.appendLine("${indent}<!-- filter ignored: ${escapeXml(directFilterValue)} -->")
+            }
             if (sourceTag != null) {
                 output.appendLine("${indent}<!-- converted from <$sourceTag> -->")
             }
@@ -341,6 +350,10 @@ object SvgPathEmitter {
 
             val fillRule = SvgPaintResolver.styleValue(style, "fill-rule")
                 ?: attr(tag, "fill-rule")
+
+            val filterValue = SvgPaintResolver.styleValue(style, "filter")
+                ?: attr(tag, "filter")
+                ?: ""
 
             val directClipPathValue = SvgPaintResolver.styleValue(style, "clip-path")
                 ?: attr(tag, "clip-path")
@@ -431,6 +444,9 @@ object SvgPathEmitter {
                 openedGroupCount++
             }
 
+            if (filterValue.isNotBlank()) {
+                output.appendLine("${currentIndent}<!-- filter ignored: ${escapeXml(filterValue)} -->")
+            }
             if (tagName != "path") {
                 output.appendLine("${currentIndent}<!-- converted from <$tagName> -->")
             }

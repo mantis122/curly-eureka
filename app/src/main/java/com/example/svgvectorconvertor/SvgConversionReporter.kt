@@ -34,6 +34,8 @@ data class SvgConversionReportData(
     val maskPathCount: Int,
     val maskReferenceCount: Int,
     val appliedMasks: Int,
+    val filterDefinitionCount: Int,
+    val filterReferenceCount: Int,
     val styleAttributeCount: Int,
     val presentationStyleAttributeCount: Int,
     val warningCount: Int,
@@ -312,6 +314,13 @@ object SvgConversionReporter {
                 appendLine("✓ Masks applied as clip paths: ${data.appliedMasks}")
             }
 
+            if (data.filterDefinitionCount > 0) {
+                appendLine("✓ Filter definitions: ${data.filterDefinitionCount}")
+            }
+            if (data.filterReferenceCount > 0) {
+                appendLine("⚠ Filter effects ignored: ${data.filterReferenceCount}")
+            }
+
             appendLine("✓ Style attributes: ${data.styleAttributeCount}")
             appendLine("✓ Presentation attributes: ${data.presentationStyleAttributeCount}")
 
@@ -352,7 +361,9 @@ object SvgConversionReporter {
                 }
 
                 data.unsupportedWarnings.forEach {
-                    if (it.contains("converted", ignoreCase = true))
+                    if (it.contains("converted", ignoreCase = true) ||
+                        it.contains("ignored", ignoreCase = true)
+                    )
                         appendLine("⚠ $it")
                     else
                         appendLine("⚠ $it detected")
