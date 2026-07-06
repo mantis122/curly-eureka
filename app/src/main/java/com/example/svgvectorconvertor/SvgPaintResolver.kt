@@ -455,6 +455,37 @@ object SvgPaintResolver {
         return combineAlpha(opacity, channelOpacity)
     }
 
+    /**
+     * SVG group/object opacity is composited with ancestor opacity. Android VectorDrawable
+     * has no group-alpha, so the converter pushes the product down to each emitted path.
+     */
+    fun inheritedOpacity(parentOpacity: String?, localOpacity: String?): String? {
+        return combineAlpha(parentOpacity, localOpacity)
+    }
+
+    /**
+     * fill-opacity and stroke-opacity are inherited paint properties. A local value
+     * replaces the inherited value; it does not multiply it. The resulting value is
+     * later multiplied by inherited object/group opacity when path alpha is emitted.
+     */
+    fun inheritedPaintOpacity(parentPaintOpacity: String?, localPaintOpacity: String?): String? {
+        val local = normalizeAlpha(localPaintOpacity)
+        if (local != null) return local
+        return normalizeAlpha(parentPaintOpacity)
+    }
+
+    fun normalizeAlpha(value: String?): String? {
+        val alpha = parseSvgAlpha(value)?.coerceIn(0f, 1f) ?: return null
+        if (alpha >= 0.999f) return null
+        return formatAlpha(alpha)
+    }
+
+    fun formatAlpha(alpha: Float): String {
+        return java.lang.String.format(java.util.Locale.US, "%.3f", alpha.coerceIn(0f, 1f))
+            .trimEnd('0')
+            .trimEnd('.')
+    }
+
     fun combineAlpha(baseAlpha: String?, localAlpha: String?): String? {
         val base = parseSvgAlpha(baseAlpha)
         val local = parseSvgAlpha(localAlpha)
@@ -468,9 +499,7 @@ object SvgPaintResolver {
 
         if (combined >= 0.999f) return null
 
-        return java.lang.String.format(java.util.Locale.US, "%.3f", combined)
-            .trimEnd('0')
-            .trimEnd('.')
+        return formatAlpha(combined)
     }
 
     fun parseSvgAlpha(value: String?): Float? {

@@ -491,17 +491,23 @@ val currentStrokeMiterLimit = SvgPaintResolver.styleValue(style, "stroke-miterli
 val currentFillRule = SvgPaintResolver.styleValue(style, "fill-rule")
     ?: element.getAttribute("fill-rule").ifBlank { inheritedFillRule ?: "" }
 
-val currentOpacity = SvgPaintResolver.combineAlpha(
+val currentOpacity = SvgPaintResolver.inheritedOpacity(
     inheritedOpacity,
     SvgPaintResolver.styleValue(style, "opacity")
         ?: element.getAttribute("opacity").ifBlank { "" }
 )
 
-val currentFillOpacity = SvgPaintResolver.styleValue(style, "fill-opacity")
-    ?: element.getAttribute("fill-opacity").ifBlank { inheritedFillOpacity ?: "" }
+val currentFillOpacity = SvgPaintResolver.inheritedPaintOpacity(
+    inheritedFillOpacity,
+    SvgPaintResolver.styleValue(style, "fill-opacity")
+        ?: element.getAttribute("fill-opacity").ifBlank { "" }
+)
 
-val currentStrokeOpacity = SvgPaintResolver.styleValue(style, "stroke-opacity")
-    ?: element.getAttribute("stroke-opacity").ifBlank { inheritedStrokeOpacity ?: "" }
+val currentStrokeOpacity = SvgPaintResolver.inheritedPaintOpacity(
+    inheritedStrokeOpacity,
+    SvgPaintResolver.styleValue(style, "stroke-opacity")
+        ?: element.getAttribute("stroke-opacity").ifBlank { "" }
+)
 
 val currentClipPath = effectiveClipOrMaskValue(element, style, inheritedClipPath)
 
@@ -827,17 +833,23 @@ private fun appendUseElement(
     val useFillRule = SvgPaintResolver.styleValue(style, "fill-rule")
         ?: element.getAttribute("fill-rule").ifBlank { inheritedFillRule ?: "" }
 
-    val useOpacity = SvgPaintResolver.combineAlpha(
+    val useOpacity = SvgPaintResolver.inheritedOpacity(
         inheritedOpacity,
         SvgPaintResolver.styleValue(style, "opacity")
             ?: element.getAttribute("opacity").ifBlank { "" }
     )
 
-    val useFillOpacity = SvgPaintResolver.styleValue(style, "fill-opacity")
-        ?: element.getAttribute("fill-opacity").ifBlank { inheritedFillOpacity ?: "" }
+    val useFillOpacity = SvgPaintResolver.inheritedPaintOpacity(
+        inheritedFillOpacity,
+        SvgPaintResolver.styleValue(style, "fill-opacity")
+            ?: element.getAttribute("fill-opacity").ifBlank { "" }
+    )
 
-    val useStrokeOpacity = SvgPaintResolver.styleValue(style, "stroke-opacity")
-        ?: element.getAttribute("stroke-opacity").ifBlank { inheritedStrokeOpacity ?: "" }
+    val useStrokeOpacity = SvgPaintResolver.inheritedPaintOpacity(
+        inheritedStrokeOpacity,
+        SvgPaintResolver.styleValue(style, "stroke-opacity")
+            ?: element.getAttribute("stroke-opacity").ifBlank { "" }
+    )
 
     val useClipPath = effectiveClipOrMaskValue(element, style, inheritedClipPath)
 

@@ -144,11 +144,17 @@ object SvgPathEmitter {
         val fillRule = SvgPaintResolver.styleValue(style, "fill-rule")
             ?: element.getAttribute("fill-rule").ifBlank { inheritedFillRule ?: "" }
 
-        val fillOpacity = SvgPaintResolver.styleValue(style, "fill-opacity")
-            ?: element.getAttribute("fill-opacity").ifBlank { inheritedFillOpacity ?: "" }
+        val fillOpacity = SvgPaintResolver.inheritedPaintOpacity(
+            inheritedFillOpacity,
+            SvgPaintResolver.styleValue(style, "fill-opacity")
+                ?: element.getAttribute("fill-opacity").ifBlank { "" }
+        )
 
-        val strokeOpacity = SvgPaintResolver.styleValue(style, "stroke-opacity")
-            ?: element.getAttribute("stroke-opacity").ifBlank { inheritedStrokeOpacity ?: "" }
+        val strokeOpacity = SvgPaintResolver.inheritedPaintOpacity(
+            inheritedStrokeOpacity,
+            SvgPaintResolver.styleValue(style, "stroke-opacity")
+                ?: element.getAttribute("stroke-opacity").ifBlank { "" }
+        )
 
         val directClipPathValue = SvgPaintResolver.styleValue(style, "clip-path")
             ?: element.getAttribute("clip-path").ifBlank { "" }
