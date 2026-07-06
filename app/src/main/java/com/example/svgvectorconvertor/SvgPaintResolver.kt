@@ -10,6 +10,7 @@ import java.util.Locale
 object SvgPaintResolver {
     private var activeGradientFallbackColors: Map<String, String> = emptyMap()
     private var activeGradientDefinitions: Map<String, SvgVectorGradient> = emptyMap()
+    private var activePatternFallbackColors: Map<String, String> = emptyMap()
 
     fun setGradientFallbackColors(colors: Map<String, String>) {
         activeGradientFallbackColors = colors
@@ -18,6 +19,10 @@ object SvgPaintResolver {
     fun setGradientDefinitions(definitions: Map<String, SvgVectorGradient>) {
         activeGradientDefinitions = definitions
         activeGradientFallbackColors = SvgGradientResolver.fallbackColors(definitions)
+    }
+
+    fun setPatternFallbackColors(colors: Map<String, String>) {
+        activePatternFallbackColors = colors
     }
 
     fun isValidAndroidColor(value: String?): Boolean {
@@ -45,7 +50,7 @@ object SvgPaintResolver {
 
     fun fallbackColorForPaint(value: String?): String? {
         val id = SvgGradientResolver.gradientIdFromPaint(value) ?: return null
-        return activeGradientFallbackColors[id]
+        return activeGradientFallbackColors[id] ?: activePatternFallbackColors[id]
     }
 
     fun gradientForPaint(value: String?): SvgVectorGradient? {
@@ -253,6 +258,79 @@ object SvgPaintResolver {
             normalizedAndroidColor(v) != null -> normalizedAndroidColor(v)
             else -> null
         }
+    }
+
+
+    fun collectPatternFallbackColors(svg: String): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+
+        try {
+            val factory = DocumentBuilderFactory.newInstance().apply {
+                isNamespaceAware = false
+                isIgnoringComments = true
+            }
+
+            val document = factory
+                .newDocumentBuilder()
+                .parse(InputSource(StringReader(svg)))
+
+            fun elementColor(element: Element): String? {
+                val style = element.getAttribute("style").ifBlank { null }
+
+                val fill = styleValue(style, "fill")
+                    ?: element.getAttribute("fill").ifBlank { null }
+                normalizedAndroidColor(fill)?.let { return it }
+                fallbackColorForPaint(fill)?.let { return it }
+
+                val stroke = styleValue(style, "stroke")
+                    ?: element.getAttribute("stroke").ifBlank { null }
+                normalizedAndroidColor(stroke)?.let { return it }
+                fallbackColorForPaint(stroke)?.let { return it }
+
+                return null
+            }
+
+            fun firstDrawableColor(node: Node): String? {
+                if (node.nodeType != Node.ELEMENT_NODE) return null
+
+                val element = node as Element
+                val tag = element.tagName.substringAfter(":").lowercase()
+
+                if (tag != "pattern" && tag != "defs" && tag != "g") {
+                    elementColor(element)?.let { return it }
+                }
+
+                val children = element.childNodes
+                for (i in 0 until children.length) {
+                    firstDrawableColor(children.item(i))?.let { return it }
+                }
+
+                return null
+            }
+
+            fun visit(node: Node) {
+                if (node.nodeType != Node.ELEMENT_NODE) return
+
+                val element = node as Element
+                val tag = element.tagName.substringAfter(":").lowercase()
+                val id = element.getAttribute("id").trim()
+
+                if (tag == "pattern" && id.isNotBlank()) {
+                    firstDrawableColor(element)?.let { result[id] = it }
+                }
+
+                val children = element.childNodes
+                for (i in 0 until children.length) {
+                    visit(children.item(i))
+                }
+            }
+
+            visit(document.documentElement)
+        } catch (_: Exception) {
+            return emptyMap()
+        }
+
+        return result
     }
 
     fun collectGradientFallbackColors(svg: String): Map<String, String> {
