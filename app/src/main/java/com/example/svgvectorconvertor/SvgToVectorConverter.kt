@@ -23,7 +23,11 @@ object SvgToVectorConverter {
             svg = svg,
             basicShapeToPathData = SvgPathEmitter::basicShapeToPathData
         )
-        SvgTreeConverter.resetStats(clipPathData)
+        val maskPathData = SvgTreeConverter.collectMaskPathData(
+            svg = svg,
+            basicShapeToPathData = SvgPathEmitter::basicShapeToPathData
+        )
+        SvgTreeConverter.resetStats(clipPathData, maskPathData)
 
         val viewBoxValues = getViewBox(svg)
         val widthFromSvg = getNumberAttr(svg, "width")
@@ -101,11 +105,14 @@ object SvgToVectorConverter {
         val drawableValidPathCount = countDrawableValidPaths(drawableSvgForStats)
         val emptyPathCount = countAllPaths(svg) - countValidPaths(svg)
 
-        val unsupported = buildUnsupportedWarnings(svg, gradientFallbackColors, clipPathData)
+        val unsupported = buildUnsupportedWarnings(svg, gradientFallbackColors, clipPathData, maskPathData)
         val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
         val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
         val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
         val clipPathReferenceCount = Regex("""clip-path\s*[:=]""", RegexOption.IGNORE_CASE)
+            .findAll(svgForTransformStats)
+            .count()
+        val maskReferenceCount = Regex("""\bmask\s*[:=]""", RegexOption.IGNORE_CASE)
             .findAll(svgForTransformStats)
             .count()
         val styleAttributeCount = Regex("""\bstyle\s*=""", RegexOption.IGNORE_CASE)
@@ -135,6 +142,9 @@ object SvgToVectorConverter {
                 clipPathCount = clipPathData.size,
                 clipPathReferenceCount = clipPathReferenceCount,
                 appliedClipPaths = SvgTreeConverter.appliedClipPaths,
+                maskPathCount = maskPathData.size,
+                maskReferenceCount = maskReferenceCount,
+                appliedMasks = SvgTreeConverter.appliedMasks,
                 styleAttributeCount = styleAttributeCount,
                 presentationStyleAttributeCount = presentationStyleAttributeCount,
                 warningCount = warningCount,
@@ -159,7 +169,8 @@ object SvgToVectorConverter {
     private fun buildUnsupportedWarnings(
         svg: String,
         gradientFallbackColors: Map<String, String>,
-        clipPathData: Map<String, String>
+        clipPathData: Map<String, String>,
+        maskPathData: Map<String, String>
     ): List<String> {
         val unsupported = mutableListOf<String>()
 
@@ -169,7 +180,7 @@ object SvgToVectorConverter {
         if (hasTag(svg, "radialGradient") && gradientFallbackColors.isEmpty()) {
             unsupported.add("Radial gradients")
         }
-        if (hasTag(svg, "mask")) unsupported.add("Masks")
+        if (hasTag(svg, "mask") && maskPathData.isEmpty()) unsupported.add("Masks")
         if (hasTag(svg, "filter")) unsupported.add("Filters")
         if (hasTag(svg, "text")) unsupported.add("Text elements")
         if (hasTag(svg, "clipPath") && clipPathData.isEmpty()) unsupported.add("Clip paths")

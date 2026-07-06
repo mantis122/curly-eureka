@@ -8,11 +8,15 @@ import java.io.StringReader
 
 object SvgTreeConverter {
 private var activeClipPathData: Map<String, String> = emptyMap()
+private var activeMaskPathData: Map<String, String> = emptyMap()
 private var activeAppliedClipPaths = 0
+private var activeAppliedMasks = 0
 private var activeResolvedUseExpansions = 0
 private var activeUnresolvedUseReferences = 0
 
 val appliedClipPaths: Int get() = activeAppliedClipPaths
+val appliedMasks: Int get() = activeAppliedMasks
+val maskPathCount: Int get() = activeMaskPathData.size
 val resolvedUseExpansions: Int get() = activeResolvedUseExpansions
 val unresolvedUseReferences: Int get() = activeUnresolvedUseReferences
 
@@ -33,9 +37,11 @@ private lateinit var basicShapeToPathDataCallback: (Element, String) -> String?
 private lateinit var floatAttrCallback: (Element, String) -> Float?
 private lateinit var escapeXmlCallback: (String) -> String
 
-fun resetStats(clipPathData: Map<String, String>) {
+fun resetStats(clipPathData: Map<String, String>, maskPathData: Map<String, String> = emptyMap()) {
     activeClipPathData = clipPathData
+    activeMaskPathData = maskPathData
     activeAppliedClipPaths = 0
+    activeAppliedMasks = 0
     activeResolvedUseExpansions = 0
     activeUnresolvedUseReferences = 0
 }
@@ -121,6 +127,109 @@ fun collectClipPathData(
     return result
 }
 
+
+fun collectMaskPathData(
+    svg: String,
+    basicShapeToPathData: (Element, String) -> String?
+): Map<String, String> {
+    basicShapeToPathDataCallback = basicShapeToPathData
+    val result = mutableMapOf<String, String>()
+
+    try {
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            isIgnoringComments = true
+        }
+
+        val document = factory
+            .newDocumentBuilder()
+            .parse(InputSource(StringReader(svg)))
+
+        val root = document.documentElement
+        val definitions = collectSvgDefinitions(root)
+
+        fun maskElementLooksVisible(element: Element): Boolean {
+            val style = element.getAttribute("style").ifBlank { null }
+            val fill = SvgPaintResolver.styleValue(style, "fill")
+                ?: element.getAttribute("fill").ifBlank { "white" }
+            val stroke = SvgPaintResolver.styleValue(style, "stroke")
+                ?: element.getAttribute("stroke").ifBlank { "" }
+            val opacity = SvgPaintResolver.styleValue(style, "opacity")
+                ?: element.getAttribute("opacity").ifBlank { "1" }
+            val fillOpacity = SvgPaintResolver.styleValue(style, "fill-opacity")
+                ?: element.getAttribute("fill-opacity").ifBlank { "1" }
+
+            val alpha = SvgPaintResolver.combineAlpha(opacity, fillOpacity)?.toFloatOrNull() ?: 1f
+            if (alpha <= 0.01f) return false
+
+            val normalizedFill = fill.trim().lowercase()
+            val normalizedStroke = stroke.trim().lowercase()
+            if (normalizedFill == "none" && normalizedStroke.isBlank()) return false
+            if (normalizedFill == "black" || normalizedFill == "#000" || normalizedFill == "#000000") return false
+            return true
+        }
+
+        fun elementToPathData(element: Element, depth: Int = 0): String {
+            if (depth > 20) return ""
+
+            val tag = element.tagName.substringAfter(":").lowercase()
+
+            return when (tag) {
+                "path" -> if (maskElementLooksVisible(element)) element.getAttribute("d").trim() else ""
+                "rect", "circle", "ellipse", "line", "polyline", "polygon" ->
+                    if (maskElementLooksVisible(element)) basicShapeToPathDataCallback(element, tag).orEmpty() else ""
+                "use" -> {
+                    val href = element.getAttribute("href").ifBlank {
+                        element.getAttribute("xlink:href").ifBlank {
+                            element.getAttributeNS("http://www.w3.org/1999/xlink", "href")
+                        }
+                    }.trim()
+                    val id = href.removePrefix("#").trim()
+                    val referenced = definitions[id] ?: return ""
+                    elementToPathData(referenced, depth + 1)
+                }
+                else -> {
+                    val parts = mutableListOf<String>()
+                    val children = element.childNodes
+                    for (i in 0 until children.length) {
+                        val child = children.item(i)
+                        if (child.nodeType != Node.ELEMENT_NODE) continue
+                        val childPath = elementToPathData(child as Element, depth + 1)
+                        if (childPath.isNotBlank()) parts.add(childPath)
+                    }
+                    parts.joinToString(" ")
+                }
+            }
+        }
+
+        fun visit(node: Node) {
+            if (node.nodeType != Node.ELEMENT_NODE) return
+
+            val element = node as Element
+            val tag = element.tagName.substringAfter(":").lowercase()
+
+            if (tag == "mask") {
+                val id = element.getAttribute("id").trim()
+                val pathData = elementToPathData(element)
+                if (id.isNotBlank() && pathData.isNotBlank()) {
+                    result[id] = pathData
+                }
+            }
+
+            val children = element.childNodes
+            for (i in 0 until children.length) {
+                visit(children.item(i))
+            }
+        }
+
+        visit(root)
+    } catch (_: Exception) {
+        return emptyMap()
+    }
+
+    return result
+}
+
 fun clipPathIdFromValue(value: String?): String? {
     val v = value?.trim() ?: return null
     return Regex("""url\(\s*#([^)'"\s]+)\s*\)""")
@@ -131,15 +240,36 @@ fun clipPathIdFromValue(value: String?): String? {
         ?.takeIf { it.isNotBlank() }
 }
 
+fun maskIdFromValue(value: String?): String? = clipPathIdFromValue(value)
+
+private fun effectiveClipOrMaskValue(element: Element, style: String?, inheritedClipPath: String?): String {
+    val clipPathValue = SvgPaintResolver.styleValue(style, "clip-path")
+        ?: element.getAttribute("clip-path").ifBlank { "" }
+    if (clipPathValue.isNotBlank()) return clipPathValue
+
+    val maskValue = SvgPaintResolver.styleValue(style, "mask")
+        ?: element.getAttribute("mask").ifBlank { "" }
+    if (maskValue.isNotBlank()) return maskValue
+
+    return inheritedClipPath ?: ""
+}
+
 fun hasClipPathData(clipPathId: String?): Boolean {
-    return clipPathId != null && activeClipPathData.containsKey(clipPathId)
+    return clipPathId != null && (activeClipPathData.containsKey(clipPathId) || activeMaskPathData.containsKey(clipPathId))
 }
 
 fun appendClipPath(output: StringBuilder, clipPathId: String?, indent: String): Boolean {
     val id = clipPathId ?: return false
-    val pathData = activeClipPathData[id] ?: return false
+    val clipData = activeClipPathData[id]
+    val maskData = activeMaskPathData[id]
+    val pathData = clipData ?: maskData ?: return false
 
-    activeAppliedClipPaths++
+    if (clipData != null) {
+        activeAppliedClipPaths++
+    } else {
+        activeAppliedMasks++
+        output.appendLine("${indent}<!-- approximated <mask> as <clip-path> -->")
+    }
 
     output.appendLine("""${indent}<clip-path""")
     output.appendLine("""${indent}    android:pathData="${escapeXmlCallback(pathData)}"""")
@@ -224,11 +354,10 @@ private fun childClipPathId(node: Node, inheritedClipPath: String?): String? {
 
     val element = node as Element
     val style = element.getAttribute("style").ifBlank { null }
-    val clipPathValue = SvgPaintResolver.styleValue(style, "clip-path")
-        ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
+    val clipPathValue = effectiveClipOrMaskValue(element, style, inheritedClipPath)
 
     val clipId = clipPathIdFromValue(clipPathValue)
-    return clipId?.takeIf { activeClipPathData.containsKey(it) }
+    return clipId?.takeIf { activeClipPathData.containsKey(it) || activeMaskPathData.containsKey(it) }
 }
 
 private fun appendChildrenWithClipGrouping(
@@ -374,8 +503,7 @@ val currentFillOpacity = SvgPaintResolver.styleValue(style, "fill-opacity")
 val currentStrokeOpacity = SvgPaintResolver.styleValue(style, "stroke-opacity")
     ?: element.getAttribute("stroke-opacity").ifBlank { inheritedStrokeOpacity ?: "" }
 
-val currentClipPath = SvgPaintResolver.styleValue(style, "clip-path")
-    ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
+val currentClipPath = effectiveClipOrMaskValue(element, style, inheritedClipPath)
 
 val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
     SvgPaintResolver.styleValue(style, "transform-origin")
@@ -711,8 +839,7 @@ private fun appendUseElement(
     val useStrokeOpacity = SvgPaintResolver.styleValue(style, "stroke-opacity")
         ?: element.getAttribute("stroke-opacity").ifBlank { inheritedStrokeOpacity ?: "" }
 
-    val useClipPath = SvgPaintResolver.styleValue(style, "clip-path")
-        ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
+    val useClipPath = effectiveClipOrMaskValue(element, style, inheritedClipPath)
 
     val transform = element.getAttribute("transform")
         .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }

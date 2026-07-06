@@ -31,6 +31,9 @@ data class SvgConversionReportData(
     val clipPathCount: Int,
     val clipPathReferenceCount: Int,
     val appliedClipPaths: Int,
+    val maskPathCount: Int,
+    val maskReferenceCount: Int,
+    val appliedMasks: Int,
     val styleAttributeCount: Int,
     val presentationStyleAttributeCount: Int,
     val warningCount: Int,
@@ -301,6 +304,12 @@ object SvgConversionReporter {
                 appendLine("✓ Clip paths: ${data.clipPathCount}")
                 appendLine("✓ Clip path references: ${data.clipPathReferenceCount}")
                 appendLine("✓ Clip paths applied: ${data.appliedClipPaths}")
+            }
+
+            if (data.maskPathCount > 0 || data.maskReferenceCount > 0) {
+                appendLine("✓ Masks approximated: ${data.maskPathCount}")
+                appendLine("✓ Mask references: ${data.maskReferenceCount}")
+                appendLine("✓ Masks applied as clip paths: ${data.appliedMasks}")
             }
 
             appendLine("✓ Style attributes: ${data.styleAttributeCount}")

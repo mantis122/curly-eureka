@@ -150,8 +150,15 @@ object SvgPathEmitter {
         val strokeOpacity = SvgPaintResolver.styleValue(style, "stroke-opacity")
             ?: element.getAttribute("stroke-opacity").ifBlank { inheritedStrokeOpacity ?: "" }
 
-        val clipPathValue = SvgPaintResolver.styleValue(style, "clip-path")
-            ?: element.getAttribute("clip-path").ifBlank { inheritedClipPath ?: "" }
+        val directClipPathValue = SvgPaintResolver.styleValue(style, "clip-path")
+            ?: element.getAttribute("clip-path").ifBlank { "" }
+        val directMaskValue = SvgPaintResolver.styleValue(style, "mask")
+            ?: element.getAttribute("mask").ifBlank { "" }
+        val clipPathValue = when {
+            directClipPathValue.isNotBlank() -> directClipPathValue
+            directMaskValue.isNotBlank() -> directMaskValue
+            else -> inheritedClipPath ?: ""
+        }
 
         val clipPathId = SvgTreeConverter.clipPathIdFromValue(clipPathValue)
         val hasClipPath = clipPathId != null &&
@@ -335,6 +342,20 @@ object SvgPathEmitter {
             val fillRule = SvgPaintResolver.styleValue(style, "fill-rule")
                 ?: attr(tag, "fill-rule")
 
+            val directClipPathValue = SvgPaintResolver.styleValue(style, "clip-path")
+                ?: attr(tag, "clip-path")
+                ?: ""
+            val directMaskValue = SvgPaintResolver.styleValue(style, "mask")
+                ?: attr(tag, "mask")
+                ?: ""
+            val clipPathValue = when {
+                directClipPathValue.isNotBlank() -> directClipPathValue
+                directMaskValue.isNotBlank() -> directMaskValue
+                else -> ""
+            }
+            val clipPathId = SvgTreeConverter.clipPathIdFromValue(clipPathValue)
+            val hasClipPath = clipPathId != null && SvgTreeConverter.hasClipPathData(clipPathId)
+
             val transform = attr(tag, "transform")
                 ?: SvgPaintResolver.styleValue(style, "transform")
                 ?: ""
@@ -396,6 +417,13 @@ object SvgPathEmitter {
 
             var currentIndent = indent
             var openedGroupCount = 0
+
+            if (hasClipPath) {
+                output.appendLine("${currentIndent}<group>")
+                SvgTreeConverter.appendClipPath(output, clipPathId, currentIndent + "    ")
+                currentIndent += "    "
+                openedGroupCount++
+            }
 
             if (effectiveTransform != null) {
                 SvgTransformParser.appendCombinedTransformGroupStart(output, effectiveTransform, currentIndent)
