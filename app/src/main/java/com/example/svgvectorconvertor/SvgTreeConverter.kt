@@ -833,23 +833,12 @@ private fun appendUseElement(
     val useFillRule = SvgPaintResolver.styleValue(style, "fill-rule")
         ?: element.getAttribute("fill-rule").ifBlank { inheritedFillRule ?: "" }
 
-    val useOpacity = SvgPaintResolver.inheritedOpacity(
-        inheritedOpacity,
-        SvgPaintResolver.styleValue(style, "opacity")
-            ?: element.getAttribute("opacity").ifBlank { "" }
-    )
-
-    val useFillOpacity = SvgPaintResolver.inheritedPaintOpacity(
-        inheritedFillOpacity,
-        SvgPaintResolver.styleValue(style, "fill-opacity")
-            ?: element.getAttribute("fill-opacity").ifBlank { "" }
-    )
-
-    val useStrokeOpacity = SvgPaintResolver.inheritedPaintOpacity(
-        inheritedStrokeOpacity,
-        SvgPaintResolver.styleValue(style, "stroke-opacity")
-            ?: element.getAttribute("stroke-opacity").ifBlank { "" }
-    )
+    // The <use> element has already had its own opacity/fill-opacity/stroke-opacity
+    // folded into these inherited values by walkSvgNode(). Do not read the same
+    // attributes again here, or element-level <use opacity="..."> gets multiplied twice.
+    val useOpacity = inheritedOpacity ?: ""
+    val useFillOpacity = inheritedFillOpacity ?: ""
+    val useStrokeOpacity = inheritedStrokeOpacity ?: ""
 
     val useClipPath = effectiveClipOrMaskValue(element, style, inheritedClipPath)
 
