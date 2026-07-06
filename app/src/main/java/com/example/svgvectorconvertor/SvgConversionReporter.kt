@@ -27,6 +27,7 @@ data class SvgConversionReportData(
     val generatedGroupCount: Int,
     val useCount: Int,
     val resolvedUseExpansions: Int,
+    val unresolvedUseReferences: Int,
     val symbolCount: Int,
     val gradientFallbackColorCount: Int,
     val clipPathCount: Int,
@@ -264,6 +265,8 @@ object SvgConversionReporter {
             appendBasicShapeBreakdown(data.basicShapeBreakdown)
 
             appendLine("✓ Expanded <use> references: ${data.resolvedUseExpansions}")
+            if (data.unresolvedUseReferences > 0)
+                appendLine("⚠ Unresolved <use> references: ${data.unresolvedUseReferences}")
             appendLine("✓ Definition drawable elements: ${data.definitionDrawableElementCount}")
             appendLine("✓ Groups created: ${data.generatedGroupCount}")
 
@@ -351,7 +354,7 @@ object SvgConversionReporter {
             appendLine("✓ XML validated")
             appendLine("✓ Ready to save")
 
-            if (data.unsupportedWarnings.isNotEmpty() || data.unsupportedMatrixTransforms > 0) {
+            if (data.unsupportedWarnings.isNotEmpty() || data.unsupportedMatrixTransforms > 0 || data.unresolvedUseReferences > 0) {
                 appendLine()
                 appendLine("────────────────────")
                 appendLine("Warnings")
@@ -360,6 +363,10 @@ object SvgConversionReporter {
 
                 if (data.unsupportedMatrixTransforms > 0) {
                     appendLine("⚠ Matrix transforms not flattened: ${data.unsupportedMatrixTransforms}")
+                }
+
+                if (data.unresolvedUseReferences > 0) {
+                    appendLine("⚠ Unresolved <use> references: ${data.unresolvedUseReferences}")
                 }
 
                 data.unsupportedWarnings.forEach {

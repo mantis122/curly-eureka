@@ -115,6 +115,7 @@ object SvgToVectorConverter {
         val filterDefinitionCount = countFilterDefinitions(svgForTransformStats)
         val filterReferenceCount = countFilterReferences(svgForTransformStats)
         val unsupported = buildUnsupportedWarnings(svg, gradientFallbackColors, clipPathData, maskPathData, filterReferenceCount)
+        val unresolvedUseReferences = SvgTreeConverter.unresolvedUseReferences
         val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
         val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
         val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
@@ -130,7 +131,8 @@ object SvgToVectorConverter {
         val presentationStyleAttributeCount = countPresentationStyleAttributes(svgForTransformStats)
 
         val warningCount = unsupported.size +
-            if (SvgTransformParser.unsupportedMatrixTransforms > 0) 1 else 0
+            (if (SvgTransformParser.unsupportedMatrixTransforms > 0) 1 else 0) +
+            (if (unresolvedUseReferences > 0) 1 else 0)
 
         val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
 
@@ -147,6 +149,7 @@ object SvgToVectorConverter {
                 generatedGroupCount = generatedGroupCount,
                 useCount = useCount,
                 resolvedUseExpansions = SvgTreeConverter.resolvedUseExpansions,
+                unresolvedUseReferences = unresolvedUseReferences,
                 symbolCount = symbolCount,
                 gradientFallbackColorCount = gradientFallbackColors.size,
                 clipPathCount = clipPathData.size,
