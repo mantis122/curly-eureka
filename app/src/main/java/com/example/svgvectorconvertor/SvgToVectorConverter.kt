@@ -46,6 +46,9 @@ object SvgToVectorConverter {
         SvgPaintResolver.setGradientDefinitions(gradientDefinitions)
         val gradientFallbackColors = SvgGradientResolver.fallbackColors(gradientDefinitions)
 
+        val patternFallbackColors = SvgPaintResolver.collectPatternFallbackColors(svg)
+        SvgPaintResolver.setPatternFallbackColors(patternFallbackColors)
+
         val vectorWidthDp = if (outputDpSize > 0) outputDpSize else viewportWidth.toInt()
         val vectorHeightDp = if (outputDpSize > 0) outputDpSize else viewportHeight.toInt()
 
@@ -114,7 +117,7 @@ object SvgToVectorConverter {
 
         val filterDefinitionCount = countFilterDefinitions(svgForTransformStats)
         val filterReferenceCount = countFilterReferences(svgForTransformStats)
-        val unsupported = buildUnsupportedWarnings(svg, gradientFallbackColors, clipPathData, maskPathData, filterReferenceCount)
+        val unsupported = buildUnsupportedWarnings(svg, gradientFallbackColors, patternFallbackColors, clipPathData, maskPathData, filterReferenceCount)
         val unresolvedUseReferences = SvgTreeConverter.unresolvedUseReferences
         val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
         val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
@@ -184,6 +187,7 @@ object SvgToVectorConverter {
     private fun buildUnsupportedWarnings(
         svg: String,
         gradientFallbackColors: Map<String, String>,
+        patternFallbackColors: Map<String, String>,
         clipPathData: Map<String, String>,
         maskPathData: Map<String, String>,
         filterReferenceCount: Int
@@ -200,7 +204,7 @@ object SvgToVectorConverter {
         if (filterReferenceCount > 0) unsupported.add("Filter effects ignored: $filterReferenceCount")
         if (hasTag(svg, "text")) unsupported.add("Text elements")
         if (hasTag(svg, "clipPath") && clipPathData.isEmpty()) unsupported.add("Clip paths")
-        if (hasTag(svg, "pattern")) unsupported.add("Patterns")
+        if (hasTag(svg, "pattern") && patternFallbackColors.isEmpty()) unsupported.add("Patterns")
         if (hasTag(svg, "image")) unsupported.add("Embedded images")
 
         return unsupported
