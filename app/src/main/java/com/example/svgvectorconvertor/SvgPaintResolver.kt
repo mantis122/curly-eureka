@@ -261,34 +261,64 @@ object SvgPaintResolver {
     }
 
 
-    fun collectPatternFallbackColors(svg: String): Map<String, String> {
-        val result = mutableMapOf<String, String>()
+fun collectPatternFallbackColors(svg: String): Map<String, String> {
+    val result = mutableMapOf<String, String>()
 
-        try {
-            val factory = DocumentBuilderFactory.newInstance().apply {
-                isNamespaceAware = false
-                isIgnoringComments = true
-            }
+    val patternRegex = Regex(
+        """<\s*pattern\b([^>]*)>([\s\S]*?)<\s*/\s*pattern\s*>""",
+        RegexOption.IGNORE_CASE
+    )
 
-            val document = factory
-                .newDocumentBuilder()
-                .parse(InputSource(StringReader(svg)))
+    val idRegex = Regex("""\bid\s*=\s*(['"])(.*?)\1""", RegexOption.IGNORE_CASE)
+    val fillRegex = Regex("""\bfill\s*=\s*(['"])(.*?)\1""", RegexOption.IGNORE_CASE)
+    val strokeRegex = Regex("""\bstroke\s*=\s*(['"])(.*?)\1""", RegexOption.IGNORE_CASE)
+    val styleFillRegex = Regex("""fill\s*:\s*([^;"]+)""", RegexOption.IGNORE_CASE)
+    val styleStrokeRegex = Regex("""stroke\s*:\s*([^;"]+)""", RegexOption.IGNORE_CASE)
 
-            fun elementColor(element: Element): String? {
-                val style = element.getAttribute("style").ifBlank { null }
+    fun usableColor(value: String?): String? {
+        val v = value?.trim() ?: return null
+        if (v.isBlank()) return null
+        if (v.equals("none", ignoreCase = true)) return null
+        if (v.startsWith("url(", ignoreCase = true)) return null
+        return normalizedAndroidColor(v)
+    }
 
-                val fill = styleValue(style, "fill")
-                    ?: element.getAttribute("fill").ifBlank { null }
-                normalizedAndroidColor(fill)?.let { return it }
-                fallbackColorForPaint(fill)?.let { return it }
+    for (match in patternRegex.findAll(svg)) {
+        val attrs = match.groupValues[1]
+        val body = match.groupValues[2]
 
-                val stroke = styleValue(style, "stroke")
-                    ?: element.getAttribute("stroke").ifBlank { null }
-                normalizedAndroidColor(stroke)?.let { return it }
-                fallbackColorForPaint(stroke)?.let { return it }
+        val id = idRegex.find(attrs)
+            ?.groupValues
+            ?.getOrNull(2)
+            ?.trim()
+            .orEmpty()
 
-                return null
-            }
+        if (id.isBlank()) continue
+
+        val candidates = mutableListOf<String>()
+
+        fillRegex.findAll(body).forEach {
+            candidates.add(it.groupValues[2])
+        }
+        styleFillRegex.findAll(body).forEach {
+            candidates.add(it.groupValues[1])
+        }
+        strokeRegex.findAll(body).forEach {
+            candidates.add(it.groupValues[2])
+        }
+        styleStrokeRegex.findAll(body).forEach {
+            candidates.add(it.groupValues[1])
+        }
+
+        val fallback = candidates.firstNotNullOfOrNull { usableColor(it) }
+
+        if (fallback != null) {
+            result[id] = fallback
+        }
+    }
+
+    return result
+}
 
             fun firstDrawableColor(node: Node): String? {
                 if (node.nodeType != Node.ELEMENT_NODE) return null
