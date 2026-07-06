@@ -301,6 +301,26 @@ object SvgGradientResolver {
         }
     }
 
+private fun styleValue(style: String?, name: String): String? {
+    if (style == null) return null
+
+    return style
+        .split(";")
+        .asSequence()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .mapNotNull { declaration ->
+            val parts = declaration.split(":", limit = 2)
+            if (parts.size == 2) {
+                parts[0].trim() to parts[1].trim()
+            } else {
+                null
+            }
+        }
+        .firstOrNull { it.first.equals(name, ignoreCase = true) }
+        ?.second
+}
+    
     private fun point(x: Float, y: Float, transform: AffineTransform?): Pair<Float, Float> {
         return transform?.mapPoint(x, y) ?: Pair(x, y)
     }
@@ -329,16 +349,16 @@ object SvgGradientResolver {
 
             val style = stop.getAttribute("style").ifBlank { null }
             val colorText = stop.getAttribute("stop-color").ifBlank {
-                SvgPaintResolver.styleValue(style, "stop-color") ?: ""
+                styleValue(style, "stop-color") ?: ""
             }.trim()
 
             if (colorText.isBlank() || colorText.equals("none", ignoreCase = true)) continue
 
             val stopOpacityText = stop.getAttribute("stop-opacity").ifBlank {
-                SvgPaintResolver.styleValue(style, "stop-opacity") ?: "1"
+                styleValue(style, "stop-opacity") ?: "1"
             }
             val opacityText = stop.getAttribute("opacity").ifBlank {
-                SvgPaintResolver.styleValue(style, "opacity") ?: "1"
+                styleValue(style, "opacity") ?: "1"
             }
             val stopOpacity = SvgPaintResolver.parseSvgAlpha(stopOpacityText) ?: 1f
             val localOpacity = SvgPaintResolver.parseSvgAlpha(opacityText) ?: 1f
