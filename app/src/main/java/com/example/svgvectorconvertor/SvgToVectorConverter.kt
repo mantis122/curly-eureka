@@ -468,7 +468,10 @@ paintUrlRefs
             if (classStyle.isBlank()) return@replace tagText
 
             val existingStyle = attr(tagText, "style")?.trim().orEmpty()
-            val mergedStyle = listOf(classStyle, existingStyle)
+            // SvgPaintResolver.styleValue(...) returns the first matching declaration,
+            // so inline style declarations must be placed before stylesheet class
+            // declarations to preserve SVG/CSS precedence.
+            val mergedStyle = listOf(existingStyle, classStyle)
                 .filter { it.isNotBlank() }
                 .joinToString("; ")
                 .trim()
