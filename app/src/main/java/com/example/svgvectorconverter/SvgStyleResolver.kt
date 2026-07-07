@@ -13,18 +13,23 @@ object SvgStyleResolver {
 
             val tagText = match.value
             val elementStyle = stylesheet.elementStyles[tagName].orEmpty()
+            val idStyle = attr(tagText, "id")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { stylesheet.idStyles[it] }
+                .orEmpty()
             val classStyle = classNames(tagText)
                 .mapNotNull { stylesheet.classStyles[it] }
                 .joinToString("; ")
                 .trim()
 
-            if (elementStyle.isBlank() && classStyle.isBlank()) return@replace tagText
+            if (elementStyle.isBlank() && idStyle.isBlank() && classStyle.isBlank()) return@replace tagText
 
             val existingStyle = attr(tagText, "style")?.trim().orEmpty()
             // SvgPaintResolver.styleValue(...) returns the first matching declaration.
             // Keep higher-precedence declarations first:
-            // inline style > class selector > element selector.
-            val mergedStyle = listOf(existingStyle, classStyle, elementStyle)
+            // inline style > id selector > class selector > element selector.
+            val mergedStyle = listOf(existingStyle, idStyle, classStyle, elementStyle)
                 .filter { it.isNotBlank() }
                 .joinToString("; ")
                 .trim()
@@ -35,13 +40,15 @@ object SvgStyleResolver {
     }
 
     private data class StylesheetRules(
+        val idStyles: Map<String, String>,
         val classStyles: Map<String, String>,
         val elementStyles: Map<String, String>
     ) {
-        fun isEmpty(): Boolean = classStyles.isEmpty() && elementStyles.isEmpty()
+        fun isEmpty(): Boolean = idStyles.isEmpty() && classStyles.isEmpty() && elementStyles.isEmpty()
     }
 
     private fun collectStylesheetRules(svg: String): StylesheetRules {
+        val idStyles = linkedMapOf<String, String>()
         val classStyles = linkedMapOf<String, String>()
         val elementStyles = linkedMapOf<String, String>()
         val styleBlocks = Regex(
@@ -50,6 +57,7 @@ object SvgStyleResolver {
         ).findAll(svg)
 
         val rulePattern = Regex("""([^{}]+)\{([^{}]+)\}""", RegexOption.DOT_MATCHES_ALL)
+        val idSelectorPattern = Regex("""^#([A-Za-z_][\w:.-]*)$""")
         val classSelectorPattern = Regex("""^\.([A-Za-z_][\w-]*)$""")
         val elementSelectorPattern = Regex("""^[A-Za-z][\w:.-]*$""")
 
@@ -65,6 +73,14 @@ object SvgStyleResolver {
                     .split(',')
                     .map { it.trim() }
                     .forEach { selector ->
+                        val idName = idSelectorPattern.matchEntire(selector)
+                            ?.groupValues
+                            ?.getOrNull(1)
+                        if (!idName.isNullOrBlank()) {
+                            idStyles[idName] = mergeDeclarations(idStyles[idName], declarations)
+                            return@forEach
+                        }
+
                         val className = classSelectorPattern.matchEntire(selector)
                             ?.groupValues
                             ?.getOrNull(1)
@@ -81,7 +97,7 @@ object SvgStyleResolver {
             }
         }
 
-        return StylesheetRules(classStyles, elementStyles)
+        return StylesheetRules(idStyles, classStyles, elementStyles)
     }
 
     private fun mergeDeclarations(existing: String?, declarations: String): String {
