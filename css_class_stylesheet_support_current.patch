@@ -1,0 +1,186 @@
+--- a/app/src/main/java/com/example/svgvectorconvertor/SvgToVectorConverter.kt
++++ b/app/src/main/java/com/example/svgvectorconvertor/SvgToVectorConverter.kt
+@@ -16,22 +16,24 @@
+ 
+         SvgTransformParser.resetMatrixStats()
+ 
+-        val svgForTransformStats = stripSvgComments(svg)
+-        val drawableSvgForStats = stripDefs(svg)
++        val svgWithCssClassStyles = applyCssClassStyles(svg)
++
++        val svgForTransformStats = stripSvgComments(svgWithCssClassStyles)
++        val drawableSvgForStats = stripDefs(svgWithCssClassStyles)
+ 
+         val clipPathData = SvgTreeConverter.collectClipPathData(
+-            svg = svg,
++            svg = svgWithCssClassStyles,
+             basicShapeToPathData = SvgPathEmitter::basicShapeToPathData
+         )
+         val maskPathData = SvgTreeConverter.collectMaskPathData(
+-            svg = svg,
++            svg = svgWithCssClassStyles,
+             basicShapeToPathData = SvgPathEmitter::basicShapeToPathData
+         )
+         SvgTreeConverter.resetStats(clipPathData, maskPathData)
+ 
+-        val viewBoxValues = getViewBox(svg)
+-        val widthFromSvg = getNumberAttr(svg, "width")
+-        val heightFromSvg = getNumberAttr(svg, "height")
++        val viewBoxValues = getViewBox(svgWithCssClassStyles)
++        val widthFromSvg = getNumberAttr(svgWithCssClassStyles, "width")
++        val heightFromSvg = getNumberAttr(svgWithCssClassStyles, "height")
+ 
+         val viewportWidth = viewBoxValues?.getOrNull(2)
+             ?: widthFromSvg
+@@ -42,11 +44,11 @@
+ 
+         SvgTransformParser.setTransformOriginReferenceBox(viewportWidth, viewportHeight)
+ 
+-        val gradientDefinitions = SvgGradientResolver.collectGradientDefinitions(svg, viewportWidth, viewportHeight)
++        val gradientDefinitions = SvgGradientResolver.collectGradientDefinitions(svgWithCssClassStyles, viewportWidth, viewportHeight)
+         SvgPaintResolver.setGradientDefinitions(gradientDefinitions)
+         val gradientFallbackColors = SvgGradientResolver.fallbackColors(gradientDefinitions)
+ 
+-        val patternFallbackColors = SvgPaintResolver.collectPatternFallbackColors(svg)
++        val patternFallbackColors = SvgPaintResolver.collectPatternFallbackColors(svgWithCssClassStyles)
+         SvgPaintResolver.setPatternFallbackColors(patternFallbackColors)
+ 
+         val vectorWidthDp = if (outputDpSize > 0) outputDpSize else viewportWidth.toInt()
+@@ -68,7 +70,7 @@
+ 
+         SvgTreeConverter.appendConvertedSvgTree(
+             output = output,
+-            svg = svg,
++            svg = svgWithCssClassStyles,
+             appendElementPath = SvgPathEmitter::appendElementPath,
+             appendBasicShapePath = SvgPathEmitter::appendBasicShapePath,
+             appendFlatPathsFallback = SvgPathEmitter::appendFlatPathsFallback,
+@@ -110,7 +112,7 @@
+             basicShapeBreakdown.ellipses +
+             basicShapeBreakdown.polygons +
+             basicShapeBreakdown.polylines
+-        val definitionDrawableElementCount = countDefinitionDrawableElements(svg)
++        val definitionDrawableElementCount = countDefinitionDrawableElements(svgWithCssClassStyles)
+         val drawableValidPathCount = countDrawableValidPaths(drawableSvgForStats)
+         val unresolvedUseReferences = SvgTreeConverter.unresolvedUseReferences
+         val visibleUseReferenceCount = countVisibleUseReferences(drawableSvgForStats)
+@@ -120,14 +122,14 @@
+         )
+         val visibleDrawableElementCount =
+             drawableValidPathCount + visibleBasicShapeCount + resolvedVisibleUseReferenceCount
+-        val emptyPathCount = countAllPaths(svg) - countValidPaths(svg)
++        val emptyPathCount = countAllPaths(svgWithCssClassStyles) - countValidPaths(svgWithCssClassStyles)
+ 
+         val filterDefinitionCount = countFilterDefinitions(svgForTransformStats)
+         val filterReferenceCount = countFilterReferences(svgForTransformStats)
+-        val unsupported = buildUnsupportedWarnings(svg, gradientFallbackColors, patternFallbackColors, clipPathData, maskPathData, filterReferenceCount)
++        val unsupported = buildUnsupportedWarnings(svgWithCssClassStyles, gradientFallbackColors, patternFallbackColors, clipPathData, maskPathData, filterReferenceCount)
+         val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
+-        val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
+-        val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
++        val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svgWithCssClassStyles).count()
++        val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svgWithCssClassStyles).count()
+         val clipPathReferenceCount = Regex("""clip-path\s*[:=]""", RegexOption.IGNORE_CASE)
+             .findAll(svgForTransformStats)
+             .count()
+@@ -440,6 +442,100 @@
+         }
+     }
+ 
++
++    private fun applyCssClassStyles(svg: String): String {
++        val classStyles = collectCssClassStyles(svg)
++        if (classStyles.isEmpty()) return svg
++
++        val tagPattern = Regex("""<\s*([A-Za-z][\w:.-]*)([^<>]*?)>""", RegexOption.IGNORE_CASE)
++
++        return tagPattern.replace(svg) { match ->
++            val tagName = match.groupValues.getOrNull(1).orEmpty().substringAfter(":").lowercase()
++            if (tagName == "style") return@replace match.value
++
++            val tagText = match.value
++            val classAttr = attr(tagText, "class") ?: return@replace tagText
++            val classNames = classAttr
++                .split(Regex("""\s+"""))
++                .map { it.trim() }
++                .filter { it.isNotBlank() }
++
++            val classStyle = classNames
++                .mapNotNull { classStyles[it] }
++                .joinToString("; ")
++                .trim()
++
++            if (classStyle.isBlank()) return@replace tagText
++
++            val existingStyle = attr(tagText, "style")?.trim().orEmpty()
++            val mergedStyle = listOf(classStyle, existingStyle)
++                .filter { it.isNotBlank() }
++                .joinToString("; ")
++                .trim()
++                .trimEnd(';')
++
++            val styleAttrPattern = Regex("""\sstyle\s*=\s*(['\"])(.*?)\1""", RegexOption.IGNORE_CASE)
++            if (styleAttrPattern.containsMatchIn(tagText)) {
++                styleAttrPattern.replace(tagText, " style=\"${SvgPathEmitter.escapeXml(mergedStyle)}\"")
++            } else {
++                val insertAt = tagText.lastIndexOf('>')
++                if (insertAt <= 0) tagText else {
++                    val beforeEnd = tagText.substring(0, insertAt).trimEnd()
++                    val close = tagText.substring(insertAt)
++                    val slash = if (beforeEnd.endsWith("/")) "/" else ""
++                    val tagWithoutSlash = if (slash.isNotEmpty()) beforeEnd.dropLast(1).trimEnd() else beforeEnd
++                    "$tagWithoutSlash style=\"${SvgPathEmitter.escapeXml(mergedStyle)}\"$slash$close"
++                }
++            }
++        }
++    }
++
++    private fun collectCssClassStyles(svg: String): Map<String, String> {
++        val result = linkedMapOf<String, String>()
++        val styleBlocks = Regex(
++            """<\s*style\b[^>]*>(.*?)</\s*style\s*>""",
++            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
++        ).findAll(svg)
++
++        val rulePattern = Regex("""([^{}]+)\{([^{}]+)\}""", RegexOption.DOT_MATCHES_ALL)
++        val classSelectorPattern = Regex("""^\.([A-Za-z_][\w-]*)$""")
++
++        styleBlocks.forEach { block ->
++            val css = Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL)
++                .replace(block.groupValues.getOrNull(1).orEmpty(), "")
++
++            rulePattern.findAll(css).forEach { rule ->
++                val declarations = normalizeCssDeclarations(rule.groupValues.getOrNull(2).orEmpty())
++                if (declarations.isBlank()) return@forEach
++
++                rule.groupValues.getOrNull(1).orEmpty()
++                    .split(',')
++                    .map { it.trim() }
++                    .forEach { selector ->
++                        val className = classSelectorPattern.matchEntire(selector)
++                            ?.groupValues
++                            ?.getOrNull(1)
++                            ?: return@forEach
++
++                        result[className] = listOfNotNull(
++                            result[className]?.takeIf { it.isNotBlank() },
++                            declarations
++                        ).joinToString("; ")
++                    }
++            }
++        }
++
++        return result
++    }
++
++    private fun normalizeCssDeclarations(css: String): String {
++        return css
++            .split(';')
++            .map { it.trim() }
++            .filter { it.isNotBlank() && it.contains(':') }
++            .joinToString("; ")
++    }
++
+     private fun newDocument(svg: String) = DocumentBuilderFactory.newInstance().apply {
+         isNamespaceAware = false
+         isIgnoringComments = true
