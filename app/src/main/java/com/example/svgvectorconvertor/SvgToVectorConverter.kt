@@ -112,13 +112,19 @@ object SvgToVectorConverter {
             basicShapeBreakdown.polylines
         val definitionDrawableElementCount = countDefinitionDrawableElements(svg)
         val drawableValidPathCount = countDrawableValidPaths(drawableSvgForStats)
-        val visibleDrawableElementCount = drawableValidPathCount + visibleBasicShapeCount
+        val unresolvedUseReferences = SvgTreeConverter.unresolvedUseReferences
+        val visibleUseReferenceCount = countVisibleUseReferences(drawableSvgForStats)
+        val resolvedVisibleUseReferenceCount = maxOf(
+            0,
+            visibleUseReferenceCount - unresolvedUseReferences
+        )
+        val visibleDrawableElementCount =
+            drawableValidPathCount + visibleBasicShapeCount + resolvedVisibleUseReferenceCount
         val emptyPathCount = countAllPaths(svg) - countValidPaths(svg)
 
         val filterDefinitionCount = countFilterDefinitions(svgForTransformStats)
         val filterReferenceCount = countFilterReferences(svgForTransformStats)
         val unsupported = buildUnsupportedWarnings(svg, gradientFallbackColors, patternFallbackColors, clipPathData, maskPathData, filterReferenceCount)
-        val unresolvedUseReferences = SvgTreeConverter.unresolvedUseReferences
         val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
         val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
         val symbolCount = Regex("""<\s*symbol\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
@@ -392,6 +398,12 @@ paintUrlRefs
         return Regex("""<path\b[^>]*>""")
             .findAll(svg)
             .count { match -> attr(match.value, "d")?.trim().isNullOrBlank().not() }
+    }
+
+    private fun countVisibleUseReferences(svg: String): Int {
+        return Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE)
+            .findAll(svg)
+            .count()
     }
 
     private fun optimizeDuplicateClipPathGroups(xml: String): String {
