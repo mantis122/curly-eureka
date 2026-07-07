@@ -16,7 +16,7 @@ object SvgToVectorConverter {
 
         SvgTransformParser.resetMatrixStats()
 
-        val svgWithCssClassStyles = applyCssClassStyles(svg)
+        val svgWithCssClassStyles = SvgStyleResolver.applyStylesheets(svg)
 
         val svgForTransformStats = stripSvgComments(svgWithCssClassStyles)
         val drawableSvgForStats = stripDefs(svgWithCssClassStyles)
@@ -442,102 +442,6 @@ paintUrlRefs
         }
     }
 
-
-    private fun applyCssClassStyles(svg: String): String {
-        val classStyles = collectCssClassStyles(svg)
-        if (classStyles.isEmpty()) return svg
-
-        val tagPattern = Regex("""<\s*([A-Za-z][\w:.-]*)([^<>]*?)>""", RegexOption.IGNORE_CASE)
-
-        return tagPattern.replace(svg) { match ->
-            val tagName = match.groupValues.getOrNull(1).orEmpty().substringAfter(":").lowercase()
-            if (tagName == "style") return@replace match.value
-
-            val tagText = match.value
-            val classAttr = attr(tagText, "class") ?: return@replace tagText
-            val classNames = classAttr
-                .split(Regex("""\s+"""))
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-
-            val classStyle = classNames
-                .mapNotNull { classStyles[it] }
-                .joinToString("; ")
-                .trim()
-
-            if (classStyle.isBlank()) return@replace tagText
-
-            val existingStyle = attr(tagText, "style")?.trim().orEmpty()
-            // SvgPaintResolver.styleValue(...) returns the first matching declaration,
-            // so inline style declarations must be placed before stylesheet class
-            // declarations to preserve SVG/CSS precedence.
-            val mergedStyle = listOf(existingStyle, classStyle)
-                .filter { it.isNotBlank() }
-                .joinToString("; ")
-                .trim()
-                .trimEnd(';')
-
-            val styleAttrPattern = Regex("""\sstyle\s*=\s*(['\"])(.*?)\1""", RegexOption.IGNORE_CASE)
-            if (styleAttrPattern.containsMatchIn(tagText)) {
-                styleAttrPattern.replace(tagText, " style=\"${SvgPathEmitter.escapeXml(mergedStyle)}\"")
-            } else {
-                val insertAt = tagText.lastIndexOf('>')
-                if (insertAt <= 0) tagText else {
-                    val beforeEnd = tagText.substring(0, insertAt).trimEnd()
-                    val close = tagText.substring(insertAt)
-                    val slash = if (beforeEnd.endsWith("/")) "/" else ""
-                    val tagWithoutSlash = if (slash.isNotEmpty()) beforeEnd.dropLast(1).trimEnd() else beforeEnd
-                    "$tagWithoutSlash style=\"${SvgPathEmitter.escapeXml(mergedStyle)}\"$slash$close"
-                }
-            }
-        }
-    }
-
-    private fun collectCssClassStyles(svg: String): Map<String, String> {
-        val result = linkedMapOf<String, String>()
-        val styleBlocks = Regex(
-            """<\s*style\b[^>]*>(.*?)</\s*style\s*>""",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-        ).findAll(svg)
-
-        val rulePattern = Regex("""([^{}]+)\{([^{}]+)\}""", RegexOption.DOT_MATCHES_ALL)
-        val classSelectorPattern = Regex("""^\.([A-Za-z_][\w-]*)$""")
-
-        styleBlocks.forEach { block ->
-            val css = Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL)
-                .replace(block.groupValues.getOrNull(1).orEmpty(), "")
-
-            rulePattern.findAll(css).forEach { rule ->
-                val declarations = normalizeCssDeclarations(rule.groupValues.getOrNull(2).orEmpty())
-                if (declarations.isBlank()) return@forEach
-
-                rule.groupValues.getOrNull(1).orEmpty()
-                    .split(',')
-                    .map { it.trim() }
-                    .forEach { selector ->
-                        val className = classSelectorPattern.matchEntire(selector)
-                            ?.groupValues
-                            ?.getOrNull(1)
-                            ?: return@forEach
-
-                        result[className] = listOfNotNull(
-                            result[className]?.takeIf { it.isNotBlank() },
-                            declarations
-                        ).joinToString("; ")
-                    }
-            }
-        }
-
-        return result
-    }
-
-    private fun normalizeCssDeclarations(css: String): String {
-        return css
-            .split(';')
-            .map { it.trim() }
-            .filter { it.isNotBlank() && it.contains(':') }
-            .joinToString("; ")
-    }
 
     private fun newDocument(svg: String) = DocumentBuilderFactory.newInstance().apply {
         isNamespaceAware = false
