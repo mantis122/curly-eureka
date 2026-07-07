@@ -370,12 +370,7 @@ object SvgConversionReporter {
                 }
 
                 data.unsupportedWarnings.forEach {
-                    if (it.contains("converted", ignoreCase = true) ||
-                        it.contains("ignored", ignoreCase = true)
-                    )
-                        appendLine("⚠ $it")
-                    else
-                        appendLine("⚠ $it detected")
+                    appendLine("⚠ $it")
                 }
             }
         }

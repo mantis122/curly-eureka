@@ -1,0 +1,73 @@
+--- a/SvgPaintResolver.kt
++++ b/SvgPaintResolver.kt
+@@ -326,6 +326,54 @@
+             }
+ 
+             visit(document.documentElement)
++
++            val patterns = mutableMapOf<String, Element>()
++
++            fun collectPatterns(node: Node) {
++                if (node.nodeType != Node.ELEMENT_NODE) return
++
++                val element = node as Element
++                val tag = element.tagName.substringAfter(":").lowercase()
++                val id = element.getAttribute("id").trim()
++
++                if (tag == "pattern" && id.isNotBlank()) {
++                    patterns[id] = element
++                }
++
++                val children = element.childNodes
++                for (i in 0 until children.length) {
++                    collectPatterns(children.item(i))
++                }
++            }
++
++            fun patternHrefId(element: Element): String? {
++                val href = element.getAttribute("href").ifBlank {
++                    element.getAttribute("xlink:href").ifBlank {
++                        element.getAttributeNS("http://www.w3.org/1999/xlink", "href")
++                    }
++                }.trim()
++
++                return href.removePrefix("#").takeIf { it.isNotBlank() }
++            }
++
++            collectPatterns(document.documentElement)
++
++            var changed: Boolean
++            do {
++                changed = false
++
++                patterns.forEach { (id, pattern) ->
++                    if (result[id] == null) {
++                        val parentId = patternHrefId(pattern)
++                        val parentColor = parentId?.let { result[it] }
++
++                        if (parentColor != null) {
++                            result[id] = parentColor
++                            changed = true
++                        }
++                    }
++                }
++            } while (changed)
+         } catch (_: Exception) {
+             return emptyMap()
+         }
+--- a/SvgConversionReporter.kt
++++ b/SvgConversionReporter.kt
+@@ -370,12 +370,7 @@
+                 }
+ 
+                 data.unsupportedWarnings.forEach {
+-                    if (it.contains("converted", ignoreCase = true) ||
+-                        it.contains("ignored", ignoreCase = true)
+-                    )
+-                        appendLine("⚠ $it")
+-                    else
+-                        appendLine("⚠ $it detected")
++                    appendLine("⚠ $it")
+                 }
+             }
+         }
