@@ -294,7 +294,8 @@ object SvgStyleResolver {
 
     private fun parseCssSelector(selector: String): CssSelector? {
         if (selector.isBlank() || selector.contains(':')) return null
-        if (selector.contains('+')) return null
+        if (containsOutsideAttributeSelector(selector, '+')) return null
+        if (containsOutsideAttributeSelector(selector, '~')) return null
 
         val tokens = tokenizeCssSelector(selector)
 
@@ -327,8 +328,10 @@ object SvgStyleResolver {
 
     private fun parseSimpleSelector(selector: String): SimpleSelector? {
         if (selector.isBlank() || selector.contains(':')) return null
-        if (selector.contains('>') || selector.contains('+') || selector.contains('~')) return null
-        if (selector.contains('*')) return null
+        if (containsOutsideAttributeSelector(selector, '>')) return null
+        if (containsOutsideAttributeSelector(selector, '+')) return null
+        if (containsOutsideAttributeSelector(selector, '~')) return null
+        if (containsOutsideAttributeSelector(selector, '*')) return null
 
         var remaining = selector.trim()
         var tagName: String? = null
@@ -377,6 +380,26 @@ object SvgStyleResolver {
             classNames = classNames.distinct(),
             attributeSelectors = attributeSelectors
         ).takeIf { it.tagName != null || it.id != null || it.classNames.isNotEmpty() || it.attributeSelectors.isNotEmpty() }
+    }
+
+
+    private fun containsOutsideAttributeSelector(selector: String, target: Char): Boolean {
+        var bracketDepth = 0
+        var quote: Char? = null
+
+        selector.forEach { char ->
+            when {
+                quote != null -> {
+                    if (char == quote) quote = null
+                }
+                char == '\'' || char == '"' -> quote = char
+                char == '[' -> bracketDepth++
+                char == ']' -> bracketDepth = (bracketDepth - 1).coerceAtLeast(0)
+                char == target && bracketDepth == 0 -> return true
+            }
+        }
+
+        return false
     }
 
     private fun tokenizeCssSelector(selector: String): List<String> {
