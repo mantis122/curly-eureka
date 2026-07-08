@@ -42,36 +42,29 @@ object SvgStyleResolver {
                 id = attr(tagText, "id")?.trim().orEmpty(),
                 classNames = classNames(tagText)
             )
-            val elementStyle = stylesheet.elementStyles[tagName].orEmpty()
-            val idStyle = snapshot.id
-                .takeIf { it.isNotBlank() }
-                ?.let { stylesheet.idStyles[it] }
-                .orEmpty()
-            val classStyle = snapshot.classNames
-                .mapNotNull { stylesheet.classStyles[it] }
-                .joinToString("; ")
-                .trim()
-            val compoundStyle = stylesheet.compoundStyles
-                .filter { it.matches(snapshot) }
-                .fold("") { existing, rule -> mergeDeclarations(existing, rule.declarations) }
-                .trim()
-            val childStyle = stylesheet.childStyles
-                .filter { it.matches(ancestors, snapshot) }
-                .fold("") { existing, rule -> mergeDeclarations(existing, rule.declarations) }
-                .trim()
-            val descendantStyle = stylesheet.descendantStyles
-                .filter { it.matches(ancestors, snapshot) }
-                .fold("") { existing, rule -> mergeDeclarations(existing, rule.declarations) }
-                .trim()
 
-            val rewrittenTag = if (elementStyle.isBlank() && idStyle.isBlank() && classStyle.isBlank() && compoundStyle.isBlank() && childStyle.isBlank() && descendantStyle.isBlank()) {
+            val matchedStyles = stylesheet.rules
+                .asSequence()
+                .filter { it.matches(ancestors, snapshot) }
+                .sortedWith(
+                    compareByDescending<StyleRule> { it.specificity.idCount }
+                        .thenByDescending { it.specificity.classCount }
+                        .thenByDescending { it.specificity.elementCount }
+                        .thenByDescending { it.sourceOrder }
+                )
+                .map { it.declarations }
+                .filter { it.isNotBlank() }
+                .toList()
+
+            val rewrittenTag = if (matchedStyles.isEmpty()) {
                 tagText
             } else {
                 val existingStyle = attr(tagText, "style")?.trim().orEmpty()
                 // SvgPaintResolver.styleValue(...) returns the first matching declaration.
                 // Keep higher-precedence declarations first:
-                // inline style > id selector > compound selector > child selector > descendant selector > class selector > element selector.
-                val mergedStyle = listOf(existingStyle, idStyle, compoundStyle, childStyle, descendantStyle, classStyle, elementStyle)
+                // inline style > CSS specificity > CSS source order.
+                val mergedStyle = listOf(existingStyle)
+                    .plus(matchedStyles)
                     .filter { it.isNotBlank() }
                     .joinToString("; ")
                     .trim()
@@ -89,20 +82,9 @@ object SvgStyleResolver {
     }
 
     private data class StylesheetRules(
-        val idStyles: Map<String, String>,
-        val classStyles: Map<String, String>,
-        val elementStyles: Map<String, String>,
-        val compoundStyles: List<CompoundStyleRule>,
-        val childStyles: List<ChildStyleRule>,
-        val descendantStyles: List<DescendantStyleRule>
+        val rules: List<StyleRule>
     ) {
-        fun isEmpty(): Boolean =
-            idStyles.isEmpty() &&
-                classStyles.isEmpty() &&
-                elementStyles.isEmpty() &&
-                compoundStyles.isEmpty() &&
-                childStyles.isEmpty() &&
-                descendantStyles.isEmpty()
+        fun isEmpty(): Boolean = rules.isEmpty()
     }
 
     private data class ElementSnapshot(
@@ -111,55 +93,69 @@ object SvgStyleResolver {
         val classNames: List<String>
     )
 
-    private data class CompoundStyleRule(
-        val selector: SimpleSelector,
-        val declarations: String
+    private data class StyleRule(
+        val selector: CssSelector,
+        val declarations: String,
+        val specificity: Specificity,
+        val sourceOrder: Int
     ) {
-        fun matches(element: ElementSnapshot): Boolean = selector.matches(element)
+        fun matches(ancestors: List<ElementSnapshot>, element: ElementSnapshot): Boolean =
+            selector.matches(ancestors, element)
     }
 
-    private data class ChildStyleRule(
+    private data class CssSelector(
         val selectors: List<SimpleSelector>,
-        val declarations: String
+        val combinators: List<Char>
     ) {
         fun matches(ancestors: List<ElementSnapshot>, element: ElementSnapshot): Boolean {
             if (selectors.isEmpty()) return false
             if (!selectors.last().matches(element)) return false
-            if (ancestors.size < selectors.size - 1) return false
+            if (selectors.size == 1) return true
 
             var ancestorIndex = ancestors.lastIndex
             for (selectorIndex in selectors.size - 2 downTo 0) {
-                if (!selectors[selectorIndex].matches(ancestors[ancestorIndex])) return false
-                ancestorIndex--
-            }
-            return true
-        }
-    }
-
-    private data class DescendantStyleRule(
-        val selectors: List<SimpleSelector>,
-        val declarations: String
-    ) {
-        fun matches(ancestors: List<ElementSnapshot>, element: ElementSnapshot): Boolean {
-            if (selectors.isEmpty()) return false
-            if (!selectors.last().matches(element)) return false
-
-            var ancestorIndex = ancestors.lastIndex
-            for (selectorIndex in selectors.size - 2 downTo 0) {
+                val combinator = combinators.getOrNull(selectorIndex) ?: ' '
                 val selector = selectors[selectorIndex]
-                var found = false
-                while (ancestorIndex >= 0) {
-                    if (selector.matches(ancestors[ancestorIndex])) {
-                        found = true
+
+                when (combinator) {
+                    '>' -> {
+                        if (ancestorIndex < 0) return false
+                        if (!selector.matches(ancestors[ancestorIndex])) return false
                         ancestorIndex--
-                        break
                     }
-                    ancestorIndex--
+                    ' ' -> {
+                        var foundIndex = -1
+                        while (ancestorIndex >= 0) {
+                            if (selector.matches(ancestors[ancestorIndex])) {
+                                foundIndex = ancestorIndex
+                                break
+                            }
+                            ancestorIndex--
+                        }
+                        if (foundIndex < 0) return false
+                        ancestorIndex = foundIndex - 1
+                    }
+                    else -> return false
                 }
-                if (!found) return false
             }
+
             return true
         }
+
+        val specificity: Specificity
+            get() = selectors.fold(Specificity()) { total, selector -> total + selector.specificity }
+    }
+
+    private data class Specificity(
+        val idCount: Int = 0,
+        val classCount: Int = 0,
+        val elementCount: Int = 0
+    ) {
+        operator fun plus(other: Specificity): Specificity = Specificity(
+            idCount = idCount + other.idCount,
+            classCount = classCount + other.classCount,
+            elementCount = elementCount + other.elementCount
+        )
     }
 
     private data class SimpleSelector(
@@ -180,18 +176,17 @@ object SvgStyleResolver {
             return tagName != null || id != null || classNames.isNotEmpty()
         }
 
-        fun isElementOnly(): Boolean = tagName != null && id == null && classNames.isEmpty()
-        fun isIdOnly(): Boolean = tagName == null && id != null && classNames.isEmpty()
-        fun isClassOnly(): Boolean = tagName == null && id == null && classNames.size == 1
+        val specificity: Specificity
+            get() = Specificity(
+                idCount = if (id != null) 1 else 0,
+                classCount = classNames.size,
+                elementCount = if (tagName != null) 1 else 0
+            )
     }
 
     private fun collectStylesheetRules(svg: String): StylesheetRules {
-        val idStyles = linkedMapOf<String, String>()
-        val classStyles = linkedMapOf<String, String>()
-        val elementStyles = linkedMapOf<String, String>()
-        val compoundStyles = mutableListOf<CompoundStyleRule>()
-        val childStyles = mutableListOf<ChildStyleRule>()
-        val descendantStyles = mutableListOf<DescendantStyleRule>()
+        val rules = mutableListOf<StyleRule>()
+        var sourceOrder = 0
         val styleBlocks = Regex(
             """<\s*style\b[^>]*>(.*?)</\s*style\s*>""",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
@@ -207,40 +202,21 @@ object SvgStyleResolver {
                 if (declarations.isBlank()) return@ruleLoop
 
                 splitSelectorList(rule.groupValues.getOrNull(1).orEmpty())
-                    .forEach selectorLoop@{ selector ->
-                        parseChildSelector(selector)?.let { selectors ->
-                            childStyles.add(ChildStyleRule(selectors, declarations))
-                            return@selectorLoop
-                        }
-
-                        parseDescendantSelector(selector)?.let { selectors ->
-                            descendantStyles.add(DescendantStyleRule(selectors, declarations))
-                            return@selectorLoop
-                        }
-
-                        val simpleSelector = parseSimpleSelector(selector) ?: return@selectorLoop
-                        when {
-                            simpleSelector.isIdOnly() -> {
-                                val idName = simpleSelector.id.orEmpty()
-                                idStyles[idName] = mergeDeclarations(idStyles[idName], declarations)
-                            }
-                            simpleSelector.isClassOnly() -> {
-                                val className = simpleSelector.classNames.first()
-                                classStyles[className] = mergeDeclarations(classStyles[className], declarations)
-                            }
-                            simpleSelector.isElementOnly() -> {
-                                val elementName = simpleSelector.tagName.orEmpty()
-                                elementStyles[elementName] = mergeDeclarations(elementStyles[elementName], declarations)
-                            }
-                            else -> {
-                                compoundStyles.add(CompoundStyleRule(simpleSelector, declarations))
-                            }
-                        }
+                    .forEach selectorLoop@{ selectorText ->
+                        val selector = parseCssSelector(selectorText) ?: return@selectorLoop
+                        rules.add(
+                            StyleRule(
+                                selector = selector,
+                                declarations = declarations,
+                                specificity = selector.specificity,
+                                sourceOrder = sourceOrder++
+                            )
+                        )
                     }
             }
         }
 
-        return StylesheetRules(idStyles, classStyles, elementStyles, compoundStyles, childStyles, descendantStyles)
+        return StylesheetRules(rules)
     }
 
     private fun splitSelectorList(selectorList: String): List<String> {
@@ -288,29 +264,42 @@ object SvgStyleResolver {
         return selectors
     }
 
-    private fun parseChildSelector(selector: String): List<SimpleSelector>? {
-        if (!selector.contains('>')) return null
+    private fun parseCssSelector(selector: String): CssSelector? {
+        if (selector.isBlank() || selector.contains(':')) return null
         if (selector.contains('+') || selector.contains('~')) return null
+        if (selector.contains('[') || selector.contains(']') || selector.contains('*')) return null
 
-        val selectors = selector
-            .split('>')
-            .map { it.trim() }
-            .takeIf { parts -> parts.size >= 2 && parts.none { it.isBlank() } }
-            ?.map { part -> parseSimpleSelector(part) ?: return null }
-            ?: return null
-
-        return selectors
-    }
-
-    private fun parseDescendantSelector(selector: String): List<SimpleSelector>? {
-        if (!selector.contains(Regex("""\s+"""))) return null
-        if (selector.contains('>') || selector.contains('+') || selector.contains('~')) return null
-
-        val selectors = selector
+        val tokens = selector
+            .trim()
+            .replace(Regex("""\s*>\s*"""), " > ")
             .split(Regex("""\s+"""))
-            .map { parseSimpleSelector(it.trim()) ?: return null }
+            .filter { it.isNotBlank() }
 
-        return selectors.takeIf { it.size >= 2 }
+        if (tokens.isEmpty()) return null
+
+        val selectors = mutableListOf<SimpleSelector>()
+        val combinators = mutableListOf<Char>()
+        var pendingCombinator: Char? = null
+
+        tokens.forEach { token ->
+            if (token == ">") {
+                if (selectors.isEmpty() || pendingCombinator != null) return null
+                pendingCombinator = '>'
+                return@forEach
+            }
+
+            val simpleSelector = parseSimpleSelector(token) ?: return null
+            if (selectors.isNotEmpty()) {
+                combinators.add(pendingCombinator ?: ' ')
+            }
+            selectors.add(simpleSelector)
+            pendingCombinator = null
+        }
+
+        if (pendingCombinator != null) return null
+        if (combinators.size != selectors.size - 1) return null
+
+        return CssSelector(selectors, combinators)
     }
 
     private fun parseSimpleSelector(selector: String): SimpleSelector? {
@@ -356,13 +345,6 @@ object SvgStyleResolver {
             id = id,
             classNames = classNames.distinct()
         ).takeIf { it.tagName != null || it.id != null || it.classNames.isNotEmpty() }
-    }
-
-    private fun mergeDeclarations(existing: String?, declarations: String): String {
-        return listOfNotNull(
-            existing?.takeIf { it.isNotBlank() },
-            declarations
-        ).joinToString("; ")
     }
 
     private fun normalizeCssDeclarations(css: String): String {
