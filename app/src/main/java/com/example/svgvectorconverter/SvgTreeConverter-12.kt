@@ -5,7 +5,6 @@ import org.w3c.dom.Node
 import javax.xml.parsers.DocumentBuilderFactory
 import org.xml.sax.InputSource
 import java.io.StringReader
-import kotlin.math.abs
 
 object SvgTreeConverter {
 private var activeClipPathData: Map<String, String> = emptyMap()
@@ -118,42 +117,6 @@ fun recordNonScalingStroke(didCompensate: Boolean, isUncertain: Boolean = false)
     if (isUncertain) {
         activeNonScalingStrokesUncertain++
     }
-}
-
-
-private fun effectiveVectorEffect(element: Element, style: String?, inheritedVectorEffect: String?): String {
-    return SvgPaintResolver.styleValue(style, "vector-effect")
-        ?: element.getAttribute("vector-effect").ifBlank { inheritedVectorEffect ?: "" }
-}
-
-private fun compensateNonScalingStrokeWidth(
-    strokeWidth: String?,
-    scaleX: Float,
-    scaleY: Float
-): Pair<String?, Boolean> {
-    val raw = strokeWidth.orEmpty().trim()
-    val numeric = raw.toFloatOrNull() ?: return Pair(strokeWidth, false)
-    if (numeric <= 0f) return Pair(strokeWidth, false)
-
-    val averageScale = ((abs(scaleX) + abs(scaleY)) / 2f).takeIf { it > 0.0001f } ?: return Pair(strokeWidth, false)
-    if (nearEqual(averageScale, 1f)) return Pair(strokeWidth, true)
-
-    return Pair(formatNumber(numeric / averageScale), true)
-}
-
-private fun isNonUniformScale(scaleX: Float, scaleY: Float): Boolean {
-    return !nearEqual(abs(scaleX), abs(scaleY))
-}
-
-private fun nearEqual(a: Float, b: Float, epsilon: Float = 0.0001f): Boolean {
-    return abs(a - b) <= epsilon
-}
-
-private fun formatNumber(value: Float): String {
-    if (nearEqual(value, value.toInt().toFloat())) return value.toInt().toString()
-    return String.format(java.util.Locale.US, "%.4f", value)
-        .trimEnd('0')
-        .trimEnd('.')
 }
 
 fun collectClipPathData(
@@ -610,10 +573,7 @@ private fun appendChildrenWithClipGrouping(
     inheritedClipPath: String?,
     definitions: Map<String, Element>,
     useDepth: Int,
-    activeClipPathId: String?,
-    inheritedScaleX: Float = 1f,
-    inheritedScaleY: Float = 1f,
-    inheritedVectorEffect: String? = null
+    activeClipPathId: String?
 ) {
     val children = parent.childNodes
     var i = 0
@@ -649,10 +609,7 @@ private fun appendChildrenWithClipGrouping(
                     inheritedClipPath,
                     definitions,
                     useDepth,
-                    clipId,
-                    inheritedScaleX,
-                    inheritedScaleY,
-                    inheritedVectorEffect
+                    clipId
                 )
 
                 i++
@@ -678,10 +635,7 @@ private fun appendChildrenWithClipGrouping(
                 inheritedClipPath,
                 definitions,
                 useDepth,
-                activeClipPathId,
-                inheritedScaleX,
-                inheritedScaleY,
-                inheritedVectorEffect
+                activeClipPathId
             )
             i++
         }
@@ -705,10 +659,7 @@ private fun walkSvgNode(
     inheritedClipPath: String? = null,
     definitions: Map<String, Element> = emptyMap(),
     useDepth: Int = 0,
-    activeClipPathId: String? = null,
-    inheritedScaleX: Float = 1f,
-    inheritedScaleY: Float = 1f,
-    inheritedVectorEffect: String? = null
+    activeClipPathId: String? = null
 ) {
     if (node.nodeType != Node.ELEMENT_NODE) return
 
@@ -723,8 +674,6 @@ val currentStroke = SvgPaintResolver.styleValue(style, "stroke")
 
 val currentStrokeWidth = SvgPaintResolver.styleValue(style, "stroke-width")
     ?: element.getAttribute("stroke-width").ifBlank { inheritedStrokeWidth ?: "" }
-
-val currentVectorEffect = effectiveVectorEffect(element, style, inheritedVectorEffect)
 
 val currentStrokeLineCap = SvgPaintResolver.styleValue(style, "stroke-linecap")
     ?: element.getAttribute("stroke-linecap").ifBlank { inheritedStrokeLineCap ?: "" }
@@ -765,24 +714,6 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
 
    val tagName = element.tagName.substringAfter(":").lowercase()
 
-    val isDrawableElement = tagName == "path" || tagName == "rect" || tagName == "circle" ||
-        tagName == "ellipse" || tagName == "line" || tagName == "polyline" || tagName == "polygon"
-    val hasNonScalingStroke = currentVectorEffect.trim().equals("non-scaling-stroke", ignoreCase = true)
-    val strokeWidthForEmission = if (isDrawableElement && hasNonScalingStroke) {
-        val (compensatedStrokeWidth, didCompensate) = compensateNonScalingStrokeWidth(
-            currentStrokeWidth,
-            inheritedScaleX,
-            inheritedScaleY
-        )
-        recordNonScalingStroke(
-            didCompensate = didCompensate,
-            isUncertain = didCompensate && isNonUniformScale(inheritedScaleX, inheritedScaleY)
-        )
-        compensatedStrokeWidth
-    } else {
-        currentStrokeWidth
-    }
-
     when (tagName) {
         "defs" -> {
             // Definitions are not drawn directly. They are expanded when a <use> references them.
@@ -809,10 +740,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 currentClipPath,
                 definitions,
                 useDepth,
-                activeClipPathId,
-                inheritedScaleX,
-                inheritedScaleY,
-                inheritedVectorEffect
+                activeClipPathId
             )
         }
 
@@ -834,10 +762,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 currentClipPath,
                 definitions,
                 useDepth,
-                activeClipPathId,
-                inheritedScaleX,
-                inheritedScaleY,
-                inheritedVectorEffect
+                activeClipPathId
             )
         }
 
@@ -867,8 +792,6 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                     preferredPivotY = currentTransformOrigin?.y
                 )
                 val flattenGroupMatrix = groupMatrix != null && combinedTransform == null
-                val childScaleX = inheritedScaleX * (combinedTransform?.scaleX ?: 1f)
-                val childScaleY = inheritedScaleY * (combinedTransform?.scaleY ?: 1f)
 
                 if (combinedTransform != null) {
                     SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
@@ -899,10 +822,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                         currentClipPath,
                         definitions,
                         useDepth,
-                        if (hasClipPath) groupClipPathId else activeClipPathId,
-                        childScaleX,
-                        childScaleY,
-                        currentVectorEffect
+                        if (hasClipPath) groupClipPathId else activeClipPathId
                     )
                 } finally {
                     if (flattenGroupMatrix) {
@@ -933,10 +853,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                     currentClipPath,
                     definitions,
                     useDepth,
-                    activeClipPathId,
-                    inheritedScaleX,
-                    inheritedScaleY,
-                    currentVectorEffect
+                    activeClipPathId
                 )
             }
         }
@@ -948,7 +865,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 indent,
                 currentFill,
                 currentStroke,
-                strokeWidthForEmission,
+                currentStrokeWidth,
                 currentStrokeLineCap,
                 currentStrokeLineJoin,
                 currentStrokeMiterLimit,
@@ -969,7 +886,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 indent,
                 currentFill,
                 currentStroke,
-                strokeWidthForEmission,
+                currentStrokeWidth,
                 currentStrokeLineCap,
                 currentStrokeLineJoin,
                 currentStrokeMiterLimit,
@@ -1000,10 +917,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 currentClipPath,
                 definitions,
                 useDepth,
-                activeClipPathId,
-                inheritedScaleX,
-                inheritedScaleY,
-                currentVectorEffect
+                activeClipPathId
             )
         }
     }
@@ -1090,10 +1004,7 @@ private fun appendUseElement(
     inheritedClipPath: String?,
     definitions: Map<String, Element>,
     useDepth: Int,
-    activeClipPathId: String? = null,
-    inheritedScaleX: Float = 1f,
-    inheritedScaleY: Float = 1f,
-    inheritedVectorEffect: String? = null
+    activeClipPathId: String? = null
 ) {
     if (useDepth >= 20) {
         activeUnresolvedUseReferences++
@@ -1133,7 +1044,6 @@ private fun appendUseElement(
     activeResolvedUseExpansions++
 
     val style = element.getAttribute("style").ifBlank { null }
-    val useVectorEffect = effectiveVectorEffect(element, style, inheritedVectorEffect)
 
     val useFill = SvgPaintResolver.styleValue(style, "fill")
         ?: element.getAttribute("fill").ifBlank { inheritedFill ?: "" }
@@ -1252,10 +1162,7 @@ private fun appendUseElement(
         useClipPath,
         definitions,
         useDepth + 1,
-        activeClipPathId,
-        inheritedScaleX,
-        inheritedScaleY,
-        useVectorEffect
+        activeClipPathId
     )
 
     SvgTransformParser.closeGroups(output, childIndent, groupCount)

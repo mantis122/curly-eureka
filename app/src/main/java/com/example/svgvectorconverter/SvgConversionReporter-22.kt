@@ -38,9 +38,6 @@ data class SvgConversionReportData(
     val appliedMasks: Int,
     val dashedStrokesDetected: Int,
     val dashedStrokesApproximated: Int,
-    val nonScalingStrokesDetected: Int,
-    val nonScalingStrokesCompensated: Int,
-    val nonScalingStrokesUncertain: Int,
     val filterDefinitionCount: Int,
     val filterReferenceCount: Int,
     val styleAttributeCount: Int,
@@ -327,14 +324,6 @@ object SvgConversionReporter {
             if (data.dashedStrokesDetected > 0) {
                 appendLine("✓ Dashed strokes detected: ${data.dashedStrokesDetected}")
                 appendLine("✓ Dashed strokes approximated: ${data.dashedStrokesApproximated}")
-            }
-
-            if (data.nonScalingStrokesDetected > 0) {
-                appendLine("✓ Non-scaling strokes detected: ${data.nonScalingStrokesDetected}")
-                appendLine("✓ Non-scaling strokes compensated: ${data.nonScalingStrokesCompensated}")
-                if (data.nonScalingStrokesUncertain > 0) {
-                    appendLine("✓ Non-uniform scale compensations approximated: ${data.nonScalingStrokesUncertain}")
-                }
             }
 
             if (data.filterDefinitionCount > 0) {
