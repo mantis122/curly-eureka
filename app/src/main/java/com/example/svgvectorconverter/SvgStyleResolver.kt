@@ -40,7 +40,8 @@ object SvgStyleResolver {
             val snapshot = ElementSnapshot(
                 tagName = tagName,
                 id = attr(tagText, "id")?.trim().orEmpty(),
-                classNames = classNames(tagText)
+                classNames = classNames(tagText),
+                attributes = attributes(tagText)
             )
 
             val matchedStyles = stylesheet.rules
@@ -90,7 +91,8 @@ object SvgStyleResolver {
     private data class ElementSnapshot(
         val tagName: String,
         val id: String,
-        val classNames: List<String>
+        val classNames: List<String>,
+        val attributes: Map<String, String>
     )
 
     private data class StyleRule(
@@ -161,7 +163,8 @@ object SvgStyleResolver {
     private data class SimpleSelector(
         val tagName: String? = null,
         val id: String? = null,
-        val classNames: List<String> = emptyList()
+        val classNames: List<String> = emptyList(),
+        val attributeSelectors: List<AttributeSelector> = emptyList()
     ) {
         fun matches(element: ElementSnapshot): Boolean {
             tagName?.let {
@@ -173,15 +176,40 @@ object SvgStyleResolver {
             classNames.forEach { className ->
                 if (className !in element.classNames) return false
             }
-            return tagName != null || id != null || classNames.isNotEmpty()
+            attributeSelectors.forEach { attributeSelector ->
+                if (!attributeSelector.matches(element)) return false
+            }
+            return tagName != null || id != null || classNames.isNotEmpty() || attributeSelectors.isNotEmpty()
         }
 
         val specificity: Specificity
             get() = Specificity(
                 idCount = if (id != null) 1 else 0,
-                classCount = classNames.size,
+                classCount = classNames.size + attributeSelectors.size,
                 elementCount = if (tagName != null) 1 else 0
             )
+    }
+
+    private data class AttributeSelector(
+        val name: String,
+        val operator: String? = null,
+        val value: String? = null
+    ) {
+        fun matches(element: ElementSnapshot): Boolean {
+            val actualValue = element.attributes[name] ?: return false
+            val expectedValue = value ?: return operator == null
+
+            return when (operator) {
+                null -> true
+                "=" -> actualValue == expectedValue
+                "~=" -> actualValue.split(Regex("""\s+""")).any { it == expectedValue }
+                "|=" -> actualValue == expectedValue || actualValue.startsWith("$expectedValue-")
+                "^=" -> actualValue.startsWith(expectedValue)
+                "$=" -> actualValue.endsWith(expectedValue)
+                "*=" -> actualValue.contains(expectedValue)
+                else -> false
+            }
+        }
     }
 
     private fun collectStylesheetRules(svg: String): StylesheetRules {
@@ -266,14 +294,9 @@ object SvgStyleResolver {
 
     private fun parseCssSelector(selector: String): CssSelector? {
         if (selector.isBlank() || selector.contains(':')) return null
-        if (selector.contains('+') || selector.contains('~')) return null
-        if (selector.contains('[') || selector.contains(']') || selector.contains('*')) return null
+        if (selector.contains('+')) return null
 
-        val tokens = selector
-            .trim()
-            .replace(Regex("""\s*>\s*"""), " > ")
-            .split(Regex("""\s+"""))
-            .filter { it.isNotBlank() }
+        val tokens = tokenizeCssSelector(selector)
 
         if (tokens.isEmpty()) return null
 
@@ -305,12 +328,13 @@ object SvgStyleResolver {
     private fun parseSimpleSelector(selector: String): SimpleSelector? {
         if (selector.isBlank() || selector.contains(':')) return null
         if (selector.contains('>') || selector.contains('+') || selector.contains('~')) return null
-        if (selector.contains('[') || selector.contains(']') || selector.contains('*')) return null
+        if (selector.contains('*')) return null
 
         var remaining = selector.trim()
         var tagName: String? = null
         var id: String? = null
         val classNames = mutableListOf<String>()
+        val attributeSelectors = mutableListOf<AttributeSelector>()
 
         // CSS uses `.` to introduce class selectors, so keep dots out of the
         // optional tag-name prefix. This lets selectors such as `circle.dot`
@@ -336,6 +360,13 @@ object SvgStyleResolver {
                     classNames.add(match.groupValues.getOrNull(1).orEmpty())
                     remaining = remaining.substring(match.range.last + 1)
                 }
+                remaining.startsWith("[") -> {
+                    val endIndex = findAttributeSelectorEnd(remaining)
+                    if (endIndex <= 0) return null
+                    val attributeSelector = parseAttributeSelector(remaining.substring(1, endIndex)) ?: return null
+                    attributeSelectors.add(attributeSelector)
+                    remaining = remaining.substring(endIndex + 1)
+                }
                 else -> return null
             }
         }
@@ -343,8 +374,100 @@ object SvgStyleResolver {
         return SimpleSelector(
             tagName = tagName,
             id = id,
-            classNames = classNames.distinct()
-        ).takeIf { it.tagName != null || it.id != null || it.classNames.isNotEmpty() }
+            classNames = classNames.distinct(),
+            attributeSelectors = attributeSelectors
+        ).takeIf { it.tagName != null || it.id != null || it.classNames.isNotEmpty() || it.attributeSelectors.isNotEmpty() }
+    }
+
+    private fun tokenizeCssSelector(selector: String): List<String> {
+        val tokens = mutableListOf<String>()
+        val current = StringBuilder()
+        var bracketDepth = 0
+        var quote: Char? = null
+
+        fun flushCurrent() {
+            current.toString().trim().takeIf { it.isNotBlank() }?.let { tokens.add(it) }
+            current.clear()
+        }
+
+        selector.trim().forEach { char ->
+            when {
+                quote != null -> {
+                    current.append(char)
+                    if (char == quote) quote = null
+                }
+                char == '\'' || char == '"' -> {
+                    quote = char
+                    current.append(char)
+                }
+                char == '[' -> {
+                    bracketDepth++
+                    current.append(char)
+                }
+                char == ']' -> {
+                    bracketDepth = (bracketDepth - 1).coerceAtLeast(0)
+                    current.append(char)
+                }
+                char == '>' && bracketDepth == 0 -> {
+                    flushCurrent()
+                    tokens.add(">")
+                }
+                char.isWhitespace() && bracketDepth == 0 -> flushCurrent()
+                else -> current.append(char)
+            }
+        }
+
+        flushCurrent()
+        return tokens
+    }
+
+    private fun findAttributeSelectorEnd(selector: String): Int {
+        var quote: Char? = null
+        selector.forEachIndexed { index, char ->
+            when {
+                quote != null -> {
+                    if (char == quote) quote = null
+                }
+                char == '\'' || char == '"' -> quote = char
+                char == ']' -> return index
+            }
+        }
+        return -1
+    }
+
+    private fun parseAttributeSelector(selectorBody: String): AttributeSelector? {
+        val trimmed = selectorBody.trim()
+        if (trimmed.isBlank()) return null
+
+        val match = Regex(
+            """^([A-Za-z_][\w:.-]*)(?:\s*([~|^$*]?=)\s*(.+))?$"""
+        ).find(trimmed) ?: return null
+
+        val rawName = match.groupValues.getOrNull(1).orEmpty()
+        if (rawName.contains(':')) return null
+        val operator = match.groupValues.getOrNull(2).orEmpty().takeIf { it.isNotBlank() }
+        val rawValue = match.groupValues.getOrNull(3).orEmpty().trim().takeIf { it.isNotBlank() }
+
+        val value = rawValue?.let { stripCssQuotes(it) }
+        if (operator != null && value == null) return null
+
+        return AttributeSelector(
+            name = rawName.lowercase(),
+            operator = operator,
+            value = value
+        )
+    }
+
+    private fun stripCssQuotes(value: String): String {
+        val trimmed = value.trim()
+        if (trimmed.length >= 2) {
+            val first = trimmed.first()
+            val last = trimmed.last()
+            if ((first == '\'' && last == '\'') || (first == '"' && last == '"')) {
+                return trimmed.substring(1, trimmed.length - 1)
+            }
+        }
+        return trimmed
     }
 
     private fun normalizeCssDeclarations(css: String): String {
@@ -361,6 +484,19 @@ object SvgStyleResolver {
             ?.map { it.trim() }
             ?.filter { it.isNotBlank() }
             .orEmpty()
+    }
+
+    private fun attributes(tagText: String): Map<String, String> {
+        val result = linkedMapOf<String, String>()
+        Regex("""\b([A-Za-z_][\w:.-]*)\s*=\s*(['\"])(.*?)\2""", RegexOption.IGNORE_CASE)
+            .findAll(tagText)
+            .forEach { match ->
+                val rawName = match.groupValues.getOrNull(1).orEmpty()
+                if (!rawName.contains(':')) {
+                    result[rawName.lowercase()] = match.groupValues.getOrNull(3).orEmpty()
+                }
+            }
+        return result
     }
 
     private fun writeStyleAttribute(tagText: String, mergedStyle: String): String {
