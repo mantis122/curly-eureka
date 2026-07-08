@@ -173,6 +173,8 @@ object SvgToVectorConverter {
                 maskPathCount = maskPathData.size,
                 maskReferenceCount = maskReferenceCount,
                 appliedMasks = SvgTreeConverter.appliedMasks,
+                dashedStrokesDetected = SvgTreeConverter.dashedStrokesDetected,
+                dashedStrokesApproximated = SvgTreeConverter.dashedStrokesApproximated,
                 filterDefinitionCount = filterDefinitionCount,
                 filterReferenceCount = filterReferenceCount,
                 styleAttributeCount = styleAttributeCount,

@@ -36,6 +36,8 @@ data class SvgConversionReportData(
     val maskPathCount: Int,
     val maskReferenceCount: Int,
     val appliedMasks: Int,
+    val dashedStrokesDetected: Int,
+    val dashedStrokesApproximated: Int,
     val filterDefinitionCount: Int,
     val filterReferenceCount: Int,
     val styleAttributeCount: Int,
@@ -317,6 +319,11 @@ object SvgConversionReporter {
                 appendLine("✓ Masks approximated: ${data.maskPathCount}")
                 appendLine("✓ Mask references: ${data.maskReferenceCount}")
                 appendLine("✓ Masks applied as clip paths: ${data.appliedMasks}")
+            }
+
+            if (data.dashedStrokesDetected > 0) {
+                appendLine("✓ Dashed strokes detected: ${data.dashedStrokesDetected}")
+                appendLine("✓ Dashed strokes approximated: ${data.dashedStrokesApproximated}")
             }
 
             if (data.filterDefinitionCount > 0) {

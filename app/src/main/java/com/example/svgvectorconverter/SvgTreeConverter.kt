@@ -15,6 +15,8 @@ private var activeResolvedUseExpansions = 0
 private var activeUnresolvedUseReferences = 0
 private var activeMarkerDefinitions: Map<String, MarkerDefinition> = emptyMap()
 private var activeAppliedMarkers = 0
+private var activeDashedStrokesDetected = 0
+private var activeDashedStrokesApproximated = 0
 
 val appliedClipPaths: Int get() = activeAppliedClipPaths
 val appliedMasks: Int get() = activeAppliedMasks
@@ -22,6 +24,8 @@ val maskPathCount: Int get() = activeMaskPathData.size
 val resolvedUseExpansions: Int get() = activeResolvedUseExpansions
 val unresolvedUseReferences: Int get() = activeUnresolvedUseReferences
 val appliedMarkers: Int get() = activeAppliedMarkers
+val dashedStrokesDetected: Int get() = activeDashedStrokesDetected
+val dashedStrokesApproximated: Int get() = activeDashedStrokesApproximated
 
 private lateinit var appendElementPathCallback: (
     StringBuilder, Element, String,
@@ -77,6 +81,8 @@ fun resetStats(
     activeResolvedUseExpansions = 0
     activeUnresolvedUseReferences = 0
     activeAppliedMarkers = 0
+    activeDashedStrokesDetected = 0
+    activeDashedStrokesApproximated = 0
 }
 
 fun markerDefinition(id: String?): MarkerDefinition? {
@@ -85,6 +91,13 @@ fun markerDefinition(id: String?): MarkerDefinition? {
 
 fun recordAppliedMarker() {
     activeAppliedMarkers++
+}
+
+fun recordDashedStroke(didApproximate: Boolean) {
+    activeDashedStrokesDetected++
+    if (didApproximate) {
+        activeDashedStrokesApproximated++
+    }
 }
 
 fun collectClipPathData(

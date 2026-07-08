@@ -224,7 +224,16 @@ object SvgPathEmitter {
             SvgTransformParser.recordPathAppliedMatrixTransform()
         }
 
-        val effectivePathData = flattenedPathData ?: d
+        val transformedPathData = flattenedPathData ?: d
+        val dashedPathData = dashedStrokePathData(
+            element = element,
+            style = style,
+            sourceTag = sourceTag,
+            pathData = transformedPathData,
+            stroke = stroke
+        )
+        val effectivePathData = dashedPathData ?: transformedPathData
+        val markerPathData = transformedPathData
         val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
         val objectBounds = approximatePathBounds(effectivePathData)
         val fillGradient = if (sourceTag == "line") null else SvgPaintResolver.gradientForPaint(rawFill, objectBounds)
@@ -277,7 +286,7 @@ object SvgPathEmitter {
                 output = output,
                 element = element,
                 style = style,
-                pathData = effectivePathData,
+                pathData = markerPathData,
                 inheritedStroke = stroke,
                 inheritedStrokeWidth = strokeWidth,
                 inheritedFillAlpha = fillAlpha,
@@ -316,7 +325,7 @@ object SvgPathEmitter {
                 output = output,
                 element = element,
                 style = style,
-                pathData = effectivePathData,
+                pathData = markerPathData,
                 inheritedStroke = stroke,
                 inheritedStrokeWidth = strokeWidth,
                 inheritedFillAlpha = fillAlpha,
@@ -618,6 +627,142 @@ object SvgPathEmitter {
             .replace("\"", "&quot;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
+    }
+
+
+    private data class DashPoint(val x: Float, val y: Float)
+
+    private fun dashedStrokePathData(
+        element: Element,
+        style: String?,
+        sourceTag: String?,
+        pathData: String,
+        stroke: String?
+    ): String? {
+        if (sourceTag != "line" && sourceTag != "polyline") return null
+        if (stroke.isNullOrBlank()) return null
+
+        val dashArrayValue = SvgPaintResolver.styleValue(style, "stroke-dasharray")
+            ?: element.getAttribute("stroke-dasharray").ifBlank { null }
+            ?: return null
+
+        val dashPattern = parseDashArray(dashArrayValue) ?: return null
+        val dashOffset = parseLengthList(
+            SvgPaintResolver.styleValue(style, "stroke-dashoffset")
+                ?: element.getAttribute("stroke-dashoffset").ifBlank { null }
+                ?: "0"
+        ).firstOrNull() ?: 0f
+
+        SvgTreeConverter.recordDashedStroke(didApproximate = true)
+
+        val points = extractLinePoints(pathData)
+        if (points.size < 2) return null
+
+        val dashed = buildDashedPath(points, dashPattern, dashOffset)
+        return dashed.takeIf { it.isNotBlank() }
+    }
+
+    private fun parseDashArray(value: String?): List<Float>? {
+        val raw = value?.trim().orEmpty()
+        if (raw.isBlank() || raw.equals("none", ignoreCase = true)) return null
+
+        val values = parseLengthList(raw)
+            .filter { it > 0f }
+
+        if (values.isEmpty()) return null
+
+        return if (values.size % 2 == 0) values else values + values
+    }
+
+    private fun parseLengthList(value: String?): List<Float> {
+        val raw = value?.trim().orEmpty()
+        if (raw.isBlank()) return emptyList()
+
+        return raw
+            .replace(",", " ")
+            .split(Regex("\\s+"))
+            .mapNotNull { token ->
+                token
+                    .trim()
+                    .removeSuffix("px")
+                    .removeSuffix("dp")
+                    .toFloatOrNull()
+            }
+    }
+
+    private fun extractLinePoints(pathData: String): List<DashPoint> {
+        val points = mutableListOf<DashPoint>()
+        val commandRegex = Regex("""([MmLl])\s*([-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?)[,\s]+([-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?)""")
+        commandRegex.findAll(pathData).forEach { match ->
+            val x = match.groupValues.getOrNull(2)?.toFloatOrNull()
+            val y = match.groupValues.getOrNull(3)?.toFloatOrNull()
+            if (x != null && y != null) points.add(DashPoint(x, y))
+        }
+        return points
+    }
+
+    private fun buildDashedPath(points: List<DashPoint>, pattern: List<Float>, dashOffset: Float): String {
+        if (points.size < 2 || pattern.isEmpty()) return ""
+
+        val totalPatternLength = pattern.sum()
+        if (totalPatternLength <= 0f) return ""
+
+        var patternIndex = 0
+        var distanceIntoPattern = positiveModulo(dashOffset, totalPatternLength)
+
+        while (distanceIntoPattern >= pattern[patternIndex]) {
+            distanceIntoPattern -= pattern[patternIndex]
+            patternIndex = (patternIndex + 1) % pattern.size
+        }
+
+        var drawDash = patternIndex % 2 == 0
+        var remainingInPattern = pattern[patternIndex] - distanceIntoPattern
+        val segments = mutableListOf<String>()
+
+        for (i in 0 until points.lastIndex) {
+            val from = points[i]
+            val to = points[i + 1]
+            val dx = to.x - from.x
+            val dy = to.y - from.y
+            val length = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+            if (length <= 0.0001f) continue
+
+            var walked = 0f
+            while (walked < length - 0.0001f) {
+                val step = minOf(remainingInPattern, length - walked)
+                if (drawDash && step > 0.0001f) {
+                    val startRatio = walked / length
+                    val endRatio = (walked + step) / length
+                    val x1 = from.x + dx * startRatio
+                    val y1 = from.y + dy * startRatio
+                    val x2 = from.x + dx * endRatio
+                    val y2 = from.y + dy * endRatio
+                    segments.add("M ${formatDashNumber(x1)},${formatDashNumber(y1)} L ${formatDashNumber(x2)},${formatDashNumber(y2)}")
+                }
+
+                walked += step
+                remainingInPattern -= step
+                if (remainingInPattern <= 0.0001f) {
+                    patternIndex = (patternIndex + 1) % pattern.size
+                    drawDash = patternIndex % 2 == 0
+                    remainingInPattern = pattern[patternIndex]
+                }
+            }
+        }
+
+        return segments.joinToString(" ")
+    }
+
+    private fun positiveModulo(value: Float, modulo: Float): Float {
+        if (modulo <= 0f) return 0f
+        val result = value % modulo
+        return if (result < 0f) result + modulo else result
+    }
+
+    private fun formatDashNumber(value: Float): String {
+        return java.lang.String.format(Locale.US, "%.3f", value)
+            .trimEnd('0')
+            .trimEnd('.')
     }
 
 
