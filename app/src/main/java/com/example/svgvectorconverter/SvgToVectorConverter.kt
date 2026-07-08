@@ -29,7 +29,11 @@ object SvgToVectorConverter {
             svg = svgWithCssClassStyles,
             basicShapeToPathData = SvgPathEmitter::basicShapeToPathData
         )
-        SvgTreeConverter.resetStats(clipPathData, maskPathData)
+        val markerDefinitions = SvgTreeConverter.collectMarkerDefinitions(
+            svg = svgWithCssClassStyles,
+            basicShapeToPathData = SvgPathEmitter::basicShapeToPathData
+        )
+        SvgTreeConverter.resetStats(clipPathData, maskPathData, markerDefinitions)
 
         val viewBoxValues = getViewBox(svgWithCssClassStyles)
         val widthFromSvg = getNumberAttr(svgWithCssClassStyles, "width")

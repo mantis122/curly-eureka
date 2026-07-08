@@ -273,6 +273,17 @@ object SvgPathEmitter {
                 strokeGradient = strokeGradient,
                 indent = currentIndent
             )
+            appendMarkersForPath(
+                output = output,
+                element = element,
+                style = style,
+                pathData = effectivePathData,
+                inheritedStroke = stroke,
+                inheritedStrokeWidth = strokeWidth,
+                inheritedFillAlpha = fillAlpha,
+                inheritedStrokeAlpha = strokeAlpha,
+                indent = currentIndent
+            )
 
             repeat(openedGroupCount) {
                 currentIndent = currentIndent.dropLast(4)
@@ -299,6 +310,17 @@ object SvgPathEmitter {
                 strokeAlpha = strokeAlpha,
                 fillGradient = fillGradient,
                 strokeGradient = strokeGradient,
+                indent = indent
+            )
+            appendMarkersForPath(
+                output = output,
+                element = element,
+                style = style,
+                pathData = effectivePathData,
+                inheritedStroke = stroke,
+                inheritedStrokeWidth = strokeWidth,
+                inheritedFillAlpha = fillAlpha,
+                inheritedStrokeAlpha = strokeAlpha,
                 indent = indent
             )
         }
@@ -595,6 +617,225 @@ object SvgPathEmitter {
             .replace("\"", "&quot;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
+    }
+
+
+    private data class MarkerPlacement(
+        val x: Float,
+        val y: Float,
+        val angle: Float
+    )
+
+    private fun appendMarkersForPath(
+        output: StringBuilder,
+        element: Element,
+        style: String?,
+        pathData: String,
+        inheritedStroke: String?,
+        inheritedStrokeWidth: String?,
+        inheritedFillAlpha: String?,
+        inheritedStrokeAlpha: String?,
+        indent: String
+    ) {
+        val markerAll = markerIdFromValue(
+            SvgPaintResolver.styleValue(style, "marker")
+                ?: element.getAttribute("marker").ifBlank { "" }
+        )
+        val markerStart = markerIdFromValue(
+            SvgPaintResolver.styleValue(style, "marker-start")
+                ?: element.getAttribute("marker-start").ifBlank { "" }
+        ) ?: markerAll
+        val markerMid = markerIdFromValue(
+            SvgPaintResolver.styleValue(style, "marker-mid")
+                ?: element.getAttribute("marker-mid").ifBlank { "" }
+        ) ?: markerAll
+        val markerEnd = markerIdFromValue(
+            SvgPaintResolver.styleValue(style, "marker-end")
+                ?: element.getAttribute("marker-end").ifBlank { "" }
+        ) ?: markerAll
+
+        if (markerStart == null && markerMid == null && markerEnd == null) return
+
+        val points = extractMarkerPoints(pathData)
+        if (points.size < 2) return
+
+        markerStart?.let { id ->
+            appendMarkerDefinitionAt(
+                output = output,
+                markerId = id,
+                placement = MarkerPlacement(
+                    x = points.first().first,
+                    y = points.first().second,
+                    angle = angleBetween(points[1], points[0])
+                ),
+                inheritedStroke = inheritedStroke,
+                inheritedStrokeWidth = inheritedStrokeWidth,
+                inheritedFillAlpha = inheritedFillAlpha,
+                inheritedStrokeAlpha = inheritedStrokeAlpha,
+                indent = indent
+            )
+        }
+
+        if (markerMid != null && points.size > 2) {
+            for (i in 1 until points.lastIndex) {
+                val previousAngle = angleBetween(points[i - 1], points[i])
+                val nextAngle = angleBetween(points[i], points[i + 1])
+                appendMarkerDefinitionAt(
+                    output = output,
+                    markerId = markerMid,
+                    placement = MarkerPlacement(
+                        x = points[i].first,
+                        y = points[i].second,
+                        angle = averageAngle(previousAngle, nextAngle)
+                    ),
+                    inheritedStroke = inheritedStroke,
+                    inheritedStrokeWidth = inheritedStrokeWidth,
+                    inheritedFillAlpha = inheritedFillAlpha,
+                    inheritedStrokeAlpha = inheritedStrokeAlpha,
+                    indent = indent
+                )
+            }
+        }
+
+        markerEnd?.let { id ->
+            appendMarkerDefinitionAt(
+                output = output,
+                markerId = id,
+                placement = MarkerPlacement(
+                    x = points.last().first,
+                    y = points.last().second,
+                    angle = angleBetween(points[points.lastIndex - 1], points.last())
+                ),
+                inheritedStroke = inheritedStroke,
+                inheritedStrokeWidth = inheritedStrokeWidth,
+                inheritedFillAlpha = inheritedFillAlpha,
+                inheritedStrokeAlpha = inheritedStrokeAlpha,
+                indent = indent
+            )
+        }
+    }
+
+    private fun appendMarkerDefinitionAt(
+        output: StringBuilder,
+        markerId: String,
+        placement: MarkerPlacement,
+        inheritedStroke: String?,
+        inheritedStrokeWidth: String?,
+        inheritedFillAlpha: String?,
+        inheritedStrokeAlpha: String?,
+        indent: String
+    ) {
+        val marker = SvgTreeConverter.markerDefinition(markerId) ?: return
+        val strokeScale = if (marker.markerUnits.equals("strokeWidth", ignoreCase = true)) {
+            inheritedStrokeWidth?.toFloatOrNull() ?: 1f
+        } else {
+            1f
+        }
+        val scaleX = marker.markerWidth / marker.viewBoxWidth.coerceAtLeast(0.001f) * strokeScale
+        val scaleY = marker.markerHeight / marker.viewBoxHeight.coerceAtLeast(0.001f) * strokeScale
+        val rotation = marker.orient.trim().let { orient ->
+            if (orient.equals("auto", ignoreCase = true) || orient.equals("auto-start-reverse", ignoreCase = true)) {
+                placement.angle
+            } else {
+                orient.removeSuffix("deg").trim().toFloatOrNull() ?: 0f
+            }
+        }
+        val transform = markerTransform(
+            placement.x,
+            placement.y,
+            rotation,
+            scaleX,
+            scaleY,
+            marker.refX,
+            marker.refY
+        )
+
+        output.appendLine("${indent}<!-- approximated marker #${escapeXml(marker.id)} -->")
+        marker.paths.forEach { markerPath ->
+            val transformedPathData = SvgPathDataTransformer.applyAffineTransform(markerPath.pathData, transform)
+                ?: markerPath.pathData
+            appendPath(
+                output = output,
+                d = transformedPathData,
+                fill = markerPaintColor(markerPath.fill, inheritedStroke, "#000000"),
+                stroke = markerPaintColor(markerPath.stroke, inheritedStroke, ""),
+                strokeWidth = markerPath.strokeWidth,
+                strokeLineCap = null,
+                strokeLineJoin = null,
+                strokeMiterLimit = null,
+                fillRule = null,
+                fillAlpha = SvgPaintResolver.combineAlpha(inheritedFillAlpha, markerPath.fillOpacity),
+                strokeAlpha = SvgPaintResolver.combineAlpha(inheritedStrokeAlpha, markerPath.strokeOpacity),
+                fillGradient = null,
+                strokeGradient = null,
+                indent = indent
+            )
+            SvgTreeConverter.recordAppliedMarker()
+        }
+    }
+
+    private fun markerPaintColor(value: String?, inheritedStroke: String?, fallback: String): String {
+        val raw = value?.trim().orEmpty()
+        val resolved = when {
+            raw.equals("context-stroke", ignoreCase = true) -> inheritedStroke.orEmpty()
+            raw.equals("context-fill", ignoreCase = true) -> fallback
+            raw.isNotBlank() -> raw
+            else -> fallback
+        }
+        return if (fallback.isBlank()) SvgPaintResolver.safeStrokeColor(resolved).orEmpty() else SvgPaintResolver.safeFillColor(resolved)
+    }
+
+    private fun markerTransform(
+        x: Float,
+        y: Float,
+        rotationDegrees: Float,
+        scaleX: Float,
+        scaleY: Float,
+        refX: Float,
+        refY: Float
+    ): AffineTransform {
+        val radians = Math.toRadians(rotationDegrees.toDouble())
+        val cosValue = kotlin.math.cos(radians).toFloat()
+        val sinValue = kotlin.math.sin(radians).toFloat()
+        val translateToPoint = AffineTransform(e = x, f = y)
+        val rotate = AffineTransform(a = cosValue, b = sinValue, c = -sinValue, d = cosValue)
+        val scale = AffineTransform(a = scaleX, d = scaleY)
+        val translateRef = AffineTransform(e = -refX, f = -refY)
+        return translateToPoint.multiply(rotate).multiply(scale).multiply(translateRef)
+    }
+
+    private fun markerIdFromValue(value: String?): String? {
+        val v = value?.trim().orEmpty()
+        if (v.isBlank() || v.equals("none", ignoreCase = true)) return null
+        return Regex("""url\(\s*#([^)'"\s]+)\s*\)""")
+            .find(v)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    private fun extractMarkerPoints(pathData: String): List<Pair<Float, Float>> {
+        val points = mutableListOf<Pair<Float, Float>>()
+        val commandRegex = Regex("""([MmLl])\s*([-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?)[,\s]+([-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?)""")
+        commandRegex.findAll(pathData).forEach { match ->
+            val x = match.groupValues.getOrNull(2)?.toFloatOrNull()
+            val y = match.groupValues.getOrNull(3)?.toFloatOrNull()
+            if (x != null && y != null) points.add(Pair(x, y))
+        }
+        return points
+    }
+
+    private fun angleBetween(from: Pair<Float, Float>, to: Pair<Float, Float>): Float {
+        return Math.toDegrees(kotlin.math.atan2((to.second - from.second).toDouble(), (to.first - from.first).toDouble())).toFloat()
+    }
+
+    private fun averageAngle(a: Float, b: Float): Float {
+        val ar = Math.toRadians(a.toDouble())
+        val br = Math.toRadians(b.toDouble())
+        val x = kotlin.math.cos(ar) + kotlin.math.cos(br)
+        val y = kotlin.math.sin(ar) + kotlin.math.sin(br)
+        return Math.toDegrees(kotlin.math.atan2(y, x)).toFloat()
     }
 
     private fun normalizeNumber(value: String?): String? {

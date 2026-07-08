@@ -13,12 +13,15 @@ private var activeAppliedClipPaths = 0
 private var activeAppliedMasks = 0
 private var activeResolvedUseExpansions = 0
 private var activeUnresolvedUseReferences = 0
+private var activeMarkerDefinitions: Map<String, MarkerDefinition> = emptyMap()
+private var activeAppliedMarkers = 0
 
 val appliedClipPaths: Int get() = activeAppliedClipPaths
 val appliedMasks: Int get() = activeAppliedMasks
 val maskPathCount: Int get() = activeMaskPathData.size
 val resolvedUseExpansions: Int get() = activeResolvedUseExpansions
 val unresolvedUseReferences: Int get() = activeUnresolvedUseReferences
+val appliedMarkers: Int get() = activeAppliedMarkers
 
 private lateinit var appendElementPathCallback: (
     StringBuilder, Element, String,
@@ -37,13 +40,51 @@ private lateinit var basicShapeToPathDataCallback: (Element, String) -> String?
 private lateinit var floatAttrCallback: (Element, String) -> Float?
 private lateinit var escapeXmlCallback: (String) -> String
 
-fun resetStats(clipPathData: Map<String, String>, maskPathData: Map<String, String> = emptyMap()) {
+data class MarkerPath(
+    val pathData: String,
+    val fill: String?,
+    val stroke: String?,
+    val strokeWidth: String?,
+    val fillOpacity: String?,
+    val strokeOpacity: String?
+)
+
+data class MarkerDefinition(
+    val id: String,
+    val refX: Float,
+    val refY: Float,
+    val markerWidth: Float,
+    val markerHeight: Float,
+    val viewBoxMinX: Float,
+    val viewBoxMinY: Float,
+    val viewBoxWidth: Float,
+    val viewBoxHeight: Float,
+    val orient: String,
+    val markerUnits: String,
+    val paths: List<MarkerPath>
+)
+
+fun resetStats(
+    clipPathData: Map<String, String>,
+    maskPathData: Map<String, String> = emptyMap(),
+    markerDefinitions: Map<String, MarkerDefinition> = emptyMap()
+) {
     activeClipPathData = clipPathData
     activeMaskPathData = maskPathData
+    activeMarkerDefinitions = markerDefinitions
     activeAppliedClipPaths = 0
     activeAppliedMasks = 0
     activeResolvedUseExpansions = 0
     activeUnresolvedUseReferences = 0
+    activeAppliedMarkers = 0
+}
+
+fun markerDefinition(id: String?): MarkerDefinition? {
+    return id?.let { activeMarkerDefinitions[it] }
+}
+
+fun recordAppliedMarker() {
+    activeAppliedMarkers++
 }
 
 fun collectClipPathData(
@@ -127,6 +168,129 @@ fun collectClipPathData(
     return result
 }
 
+
+
+fun collectMarkerDefinitions(
+    svg: String,
+    basicShapeToPathData: (Element, String) -> String?
+): Map<String, MarkerDefinition> {
+    basicShapeToPathDataCallback = basicShapeToPathData
+    val result = linkedMapOf<String, MarkerDefinition>()
+
+    fun floatAttr(element: Element, name: String, fallback: Float): Float {
+        return element.getAttribute(name)
+            .replace("px", "")
+            .trim()
+            .takeIf { it.isNotBlank() }
+            ?.toFloatOrNull()
+            ?: fallback
+    }
+
+    fun markerViewBox(element: Element, markerWidth: Float, markerHeight: Float): SvgViewBox {
+        val parts = element.getAttribute("viewBox")
+            .trim()
+            .split(Regex("[,\\s]+"))
+            .mapNotNull { it.toFloatOrNull() }
+
+        return if (parts.size >= 4 && parts[2] != 0f && parts[3] != 0f) {
+            SvgViewBox(parts[0], parts[1], parts[2], parts[3])
+        } else {
+            SvgViewBox(0f, 0f, markerWidth.coerceAtLeast(0.001f), markerHeight.coerceAtLeast(0.001f))
+        }
+    }
+
+    fun markerPaintPath(element: Element, tagName: String): MarkerPath? {
+        val pathData = when (tagName) {
+            "path" -> element.getAttribute("d").trim()
+            "rect", "circle", "ellipse", "line", "polyline", "polygon" ->
+                basicShapeToPathDataCallback(element, tagName).orEmpty()
+            else -> ""
+        }
+        if (pathData.isBlank()) return null
+
+        val style = element.getAttribute("style").ifBlank { null }
+        return MarkerPath(
+            pathData = pathData,
+            fill = SvgPaintResolver.styleValue(style, "fill") ?: element.getAttribute("fill").ifBlank { null },
+            stroke = SvgPaintResolver.styleValue(style, "stroke") ?: element.getAttribute("stroke").ifBlank { null },
+            strokeWidth = SvgPaintResolver.styleValue(style, "stroke-width") ?: element.getAttribute("stroke-width").ifBlank { null },
+            fillOpacity = SvgPaintResolver.styleValue(style, "fill-opacity") ?: element.getAttribute("fill-opacity").ifBlank { null },
+            strokeOpacity = SvgPaintResolver.styleValue(style, "stroke-opacity") ?: element.getAttribute("stroke-opacity").ifBlank { null }
+        )
+    }
+
+    fun collectMarkerPaths(element: Element, depth: Int = 0): List<MarkerPath> {
+        if (depth > 20) return emptyList()
+
+        val paths = mutableListOf<MarkerPath>()
+        val children = element.childNodes
+        for (i in 0 until children.length) {
+            val child = children.item(i)
+            if (child.nodeType != Node.ELEMENT_NODE) continue
+            val childElement = child as Element
+            val tag = childElement.tagName.substringAfter(":").lowercase()
+            when (tag) {
+                "path", "rect", "circle", "ellipse", "line", "polyline", "polygon" ->
+                    markerPaintPath(childElement, tag)?.let { paths.add(it) }
+                "g", "defs", "symbol" -> paths.addAll(collectMarkerPaths(childElement, depth + 1))
+            }
+        }
+        return paths
+    }
+
+    try {
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            isIgnoringComments = true
+        }
+
+        val document = factory
+            .newDocumentBuilder()
+            .parse(InputSource(StringReader(svg)))
+
+        fun visit(node: Node) {
+            if (node.nodeType != Node.ELEMENT_NODE) return
+            val element = node as Element
+            val tag = element.tagName.substringAfter(":").lowercase()
+
+            if (tag == "marker") {
+                val id = element.getAttribute("id").trim()
+                val markerWidth = floatAttr(element, "markerWidth", 3f)
+                val markerHeight = floatAttr(element, "markerHeight", 3f)
+                val viewBox = markerViewBox(element, markerWidth, markerHeight)
+                val paths = collectMarkerPaths(element)
+
+                if (id.isNotBlank() && paths.isNotEmpty()) {
+                    result[id] = MarkerDefinition(
+                        id = id,
+                        refX = floatAttr(element, "refX", 0f),
+                        refY = floatAttr(element, "refY", 0f),
+                        markerWidth = markerWidth,
+                        markerHeight = markerHeight,
+                        viewBoxMinX = viewBox.minX,
+                        viewBoxMinY = viewBox.minY,
+                        viewBoxWidth = viewBox.width,
+                        viewBoxHeight = viewBox.height,
+                        orient = element.getAttribute("orient").ifBlank { "0" },
+                        markerUnits = element.getAttribute("markerUnits").ifBlank { "strokeWidth" },
+                        paths = paths
+                    )
+                }
+            }
+
+            val children = element.childNodes
+            for (i in 0 until children.length) {
+                visit(children.item(i))
+            }
+        }
+
+        visit(document.documentElement)
+    } catch (_: Exception) {
+        return emptyMap()
+    }
+
+    return result
+}
 
 fun collectMaskPathData(
     svg: String,
