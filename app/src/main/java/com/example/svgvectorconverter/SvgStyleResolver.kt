@@ -10,6 +10,7 @@ object SvgStyleResolver {
             RegexOption.IGNORE_CASE
         )
         val ancestors = mutableListOf<ElementSnapshot>()
+        val siblingStack = mutableListOf<MutableList<ElementSnapshot>>(mutableListOf())
         val output = StringBuilder()
         var lastIndex = 0
 
@@ -25,7 +26,10 @@ object SvgStyleResolver {
             if (isClosing) {
                 val lastMatchingIndex = ancestors.indexOfLast { it.tagName == tagName }
                 if (lastMatchingIndex >= 0) {
+                    val closedElement = ancestors[lastMatchingIndex]
                     while (ancestors.size > lastMatchingIndex) ancestors.removeAt(ancestors.lastIndex)
+                    while (siblingStack.size > ancestors.size + 1) siblingStack.removeAt(siblingStack.lastIndex)
+                    siblingStack.lastOrNull()?.add(closedElement)
                 }
                 output.append(tagText)
                 return@forEach
@@ -41,7 +45,9 @@ object SvgStyleResolver {
                 tagName = tagName,
                 id = attr(tagText, "id")?.trim().orEmpty(),
                 classNames = classNames(tagText),
-                attributes = attributes(tagText)
+                attributes = attributes(tagText),
+                parent = ancestors.lastOrNull(),
+                previousElementSiblings = siblingStack.lastOrNull()?.toList().orEmpty()
             )
 
             val matchedStyles = stylesheet.rules
@@ -75,7 +81,12 @@ object SvgStyleResolver {
             }
 
             output.append(rewrittenTag)
-            if (!selfClosing) ancestors.add(snapshot)
+            if (selfClosing) {
+                siblingStack.lastOrNull()?.add(snapshot)
+            } else {
+                ancestors.add(snapshot)
+                siblingStack.add(mutableListOf())
+            }
         }
 
         output.append(svg.substring(lastIndex))
@@ -92,7 +103,9 @@ object SvgStyleResolver {
         val tagName: String,
         val id: String,
         val classNames: List<String>,
-        val attributes: Map<String, String>
+        val attributes: Map<String, String>,
+        val parent: ElementSnapshot? = null,
+        val previousElementSiblings: List<ElementSnapshot> = emptyList()
     )
 
     private data class StyleRule(
@@ -114,34 +127,44 @@ object SvgStyleResolver {
             if (!selectors.last().matches(element)) return false
             if (selectors.size == 1) return true
 
-            var ancestorIndex = ancestors.lastIndex
+            var currentElement = element
             for (selectorIndex in selectors.size - 2 downTo 0) {
                 val combinator = combinators.getOrNull(selectorIndex) ?: ' '
                 val selector = selectors[selectorIndex]
 
-                when (combinator) {
-                    '>' -> {
-                        if (ancestorIndex < 0) return false
-                        if (!selector.matches(ancestors[ancestorIndex])) return false
-                        ancestorIndex--
-                    }
-                    ' ' -> {
-                        var foundIndex = -1
-                        while (ancestorIndex >= 0) {
-                            if (selector.matches(ancestors[ancestorIndex])) {
-                                foundIndex = ancestorIndex
-                                break
-                            }
-                            ancestorIndex--
-                        }
-                        if (foundIndex < 0) return false
-                        ancestorIndex = foundIndex - 1
-                    }
+                currentElement = when (combinator) {
+                    '>' -> currentElement.parent
+                        ?.takeIf { selector.matches(it) }
+                        ?: return false
+
+                    ' ' -> findMatchingAncestor(currentElement, selector)
+                        ?: return false
+
+                    '+' -> currentElement.previousElementSiblings.lastOrNull()
+                        ?.takeIf { selector.matches(it) }
+                        ?: return false
+
+                    '~' -> currentElement.previousElementSiblings.asReversed()
+                        .firstOrNull { selector.matches(it) }
+                        ?: return false
+
                     else -> return false
                 }
             }
 
             return true
+        }
+
+        private fun findMatchingAncestor(
+            element: ElementSnapshot,
+            selector: SimpleSelector
+        ): ElementSnapshot? {
+            var ancestor = element.parent
+            while (ancestor != null) {
+                if (selector.matches(ancestor)) return ancestor
+                ancestor = ancestor.parent
+            }
+            return null
         }
 
         val specificity: Specificity
@@ -295,9 +318,6 @@ object SvgStyleResolver {
     private fun parseCssSelector(selector: String): CssSelector? {
         if (selector.isBlank()) return null
         if (containsUnsupportedPseudoSelector(selector)) return null
-        if (containsOutsideAttributeSelector(selector, '+')) return null
-        if (containsOutsideAttributeSelector(selector, '~')) return null
-
         val tokens = tokenizeCssSelector(selector)
 
         if (tokens.isEmpty()) return null
@@ -307,9 +327,9 @@ object SvgStyleResolver {
         var pendingCombinator: Char? = null
 
         tokens.forEach { token ->
-            if (token == ">") {
+            if (token == ">" || token == "+" || token == "~") {
                 if (selectors.isEmpty() || pendingCombinator != null) return null
-                pendingCombinator = '>'
+                pendingCombinator = token.first()
                 return@forEach
             }
 
@@ -453,9 +473,9 @@ object SvgStyleResolver {
                     bracketDepth = (bracketDepth - 1).coerceAtLeast(0)
                     current.append(char)
                 }
-                char == '>' && bracketDepth == 0 -> {
+                (char == '>' || char == '+' || char == '~') && bracketDepth == 0 -> {
                     flushCurrent()
-                    tokens.add(">")
+                    tokens.add(char.toString())
                 }
                 char.isWhitespace() && bracketDepth == 0 -> flushCurrent()
                 else -> current.append(char)
