@@ -639,7 +639,7 @@ object SvgPathEmitter {
         pathData: String,
         stroke: String?
     ): String? {
-        if (sourceTag != "line" && sourceTag != "polyline" && sourceTag != "polygon") return null
+        if (sourceTag !in setOf("line", "polyline", "polygon", "rect", "circle", "ellipse")) return null
         if (stroke.isNullOrBlank()) return null
 
         val dashArrayValue = SvgPaintResolver.styleValue(style, "stroke-dasharray")
@@ -653,13 +653,10 @@ object SvgPathEmitter {
                 ?: "0"
         ).firstOrNull() ?: 0f
 
-        SvgTreeConverter.recordDashedStroke(didApproximate = true)
-
-        val points = extractLinePoints(pathData)
-        if (points.size < 2) return null
-
-        val dashPoints = if (sourceTag == "polygon") closeDashPolygon(points) else points
+        val dashPoints = dashApproximationPoints(element, sourceTag, pathData)
         if (dashPoints.size < 2) return null
+
+        SvgTreeConverter.recordDashedStroke(didApproximate = true)
 
         val dashed = buildDashedPath(dashPoints, dashPattern, dashOffset)
         return dashed.takeIf { it.isNotBlank() }
@@ -691,6 +688,118 @@ object SvgPathEmitter {
                     .removeSuffix("dp")
                     .toFloatOrNull()
             }
+    }
+
+    private fun dashApproximationPoints(element: Element, sourceTag: String?, pathData: String): List<DashPoint> {
+        return when (sourceTag) {
+            "line", "polyline" -> extractLinePoints(pathData)
+            "polygon" -> closeDashPolygon(extractLinePoints(pathData))
+            "rect" -> rectDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
+            "circle" -> circleDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
+            "ellipse" -> ellipseDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
+            else -> emptyList()
+        }
+    }
+
+    private fun rectDashPoints(element: Element): List<DashPoint>? {
+        val x = floatAttr(element, "x") ?: 0f
+        val y = floatAttr(element, "y") ?: 0f
+        val width = floatAttr(element, "width") ?: return null
+        val height = floatAttr(element, "height") ?: return null
+        if (width <= 0f || height <= 0f) return null
+
+        val rawRx = floatAttr(element, "rx")
+        val rawRy = floatAttr(element, "ry")
+        val rx = when {
+            rawRx != null -> rawRx
+            rawRy != null -> rawRy
+            else -> 0f
+        }.coerceAtLeast(0f).coerceAtMost(width / 2f)
+        val ry = when {
+            rawRy != null -> rawRy
+            rawRx != null -> rawRx
+            else -> 0f
+        }.coerceAtLeast(0f).coerceAtMost(height / 2f)
+
+        if (rx <= 0.0001f || ry <= 0.0001f) {
+            return listOf(
+                DashPoint(x, y),
+                DashPoint(x + width, y),
+                DashPoint(x + width, y + height),
+                DashPoint(x, y + height),
+                DashPoint(x, y)
+            )
+        }
+
+        val points = mutableListOf<DashPoint>()
+        points.add(DashPoint(x + rx, y))
+        points.add(DashPoint(x + width - rx, y))
+        appendArcPoints(points, x + width - rx, y + ry, rx, ry, -90f, 0f, includeFirst = false)
+        points.add(DashPoint(x + width, y + height - ry))
+        appendArcPoints(points, x + width - rx, y + height - ry, rx, ry, 0f, 90f, includeFirst = false)
+        points.add(DashPoint(x + rx, y + height))
+        appendArcPoints(points, x + rx, y + height - ry, rx, ry, 90f, 180f, includeFirst = false)
+        points.add(DashPoint(x, y + ry))
+        appendArcPoints(points, x + rx, y + ry, rx, ry, 180f, 270f, includeFirst = false)
+        points.add(points.first())
+        return points
+    }
+
+    private fun circleDashPoints(element: Element): List<DashPoint>? {
+        val cx = floatAttr(element, "cx") ?: 0f
+        val cy = floatAttr(element, "cy") ?: 0f
+        val r = floatAttr(element, "r") ?: return null
+        if (r <= 0f) return null
+        return ellipsePerimeterPoints(cx, cy, r, r)
+    }
+
+    private fun ellipseDashPoints(element: Element): List<DashPoint>? {
+        val cx = floatAttr(element, "cx") ?: 0f
+        val cy = floatAttr(element, "cy") ?: 0f
+        val rx = floatAttr(element, "rx") ?: return null
+        val ry = floatAttr(element, "ry") ?: return null
+        if (rx <= 0f || ry <= 0f) return null
+        return ellipsePerimeterPoints(cx, cy, rx, ry)
+    }
+
+    private fun ellipsePerimeterPoints(cx: Float, cy: Float, rx: Float, ry: Float): List<DashPoint> {
+        val points = mutableListOf<DashPoint>()
+        val steps = 96
+        for (i in 0..steps) {
+            val angle = (Math.PI * 2.0 * i.toDouble()) / steps.toDouble()
+            points.add(
+                DashPoint(
+                    x = cx + (kotlin.math.cos(angle) * rx).toFloat(),
+                    y = cy + (kotlin.math.sin(angle) * ry).toFloat()
+                )
+            )
+        }
+        return points
+    }
+
+    private fun appendArcPoints(
+        points: MutableList<DashPoint>,
+        cx: Float,
+        cy: Float,
+        rx: Float,
+        ry: Float,
+        startDegrees: Float,
+        endDegrees: Float,
+        includeFirst: Boolean
+    ) {
+        val steps = 12
+        val startIndex = if (includeFirst) 0 else 1
+        for (i in startIndex..steps) {
+            val t = i.toFloat() / steps.toFloat()
+            val degrees = startDegrees + (endDegrees - startDegrees) * t
+            val radians = Math.toRadians(degrees.toDouble())
+            points.add(
+                DashPoint(
+                    x = cx + (kotlin.math.cos(radians) * rx).toFloat(),
+                    y = cy + (kotlin.math.sin(radians) * ry).toFloat()
+                )
+            )
+        }
     }
 
     private fun extractLinePoints(pathData: String): List<DashPoint> {
