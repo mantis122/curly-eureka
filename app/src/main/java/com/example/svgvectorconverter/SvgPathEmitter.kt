@@ -639,7 +639,7 @@ object SvgPathEmitter {
         pathData: String,
         stroke: String?
     ): String? {
-        if (sourceTag != "line" && sourceTag != "polyline") return null
+        if (sourceTag != "line" && sourceTag != "polyline" && sourceTag != "polygon") return null
         if (stroke.isNullOrBlank()) return null
 
         val dashArrayValue = SvgPaintResolver.styleValue(style, "stroke-dasharray")
@@ -658,7 +658,10 @@ object SvgPathEmitter {
         val points = extractLinePoints(pathData)
         if (points.size < 2) return null
 
-        val dashed = buildDashedPath(points, dashPattern, dashOffset)
+        val dashPoints = if (sourceTag == "polygon") closeDashPolygon(points) else points
+        if (dashPoints.size < 2) return null
+
+        val dashed = buildDashedPath(dashPoints, dashPattern, dashOffset)
         return dashed.takeIf { it.isNotBlank() }
     }
 
@@ -699,6 +702,15 @@ object SvgPathEmitter {
             if (x != null && y != null) points.add(DashPoint(x, y))
         }
         return points
+    }
+
+    private fun closeDashPolygon(points: List<DashPoint>): List<DashPoint> {
+        if (points.size < 2) return points
+        val first = points.first()
+        val last = points.last()
+        val alreadyClosed = kotlin.math.abs(first.x - last.x) < 0.0001f &&
+            kotlin.math.abs(first.y - last.y) < 0.0001f
+        return if (alreadyClosed) points else points + first
     }
 
     private fun buildDashedPath(points: List<DashPoint>, pattern: List<Float>, dashOffset: Float): String {
