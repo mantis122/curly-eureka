@@ -1,0 +1,38 @@
+diff -ruN a/app/src/main/java/com/example/svgvectorconverter/SvgPathEmitter.kt b/app/src/main/java/com/example/svgvectorconverter/SvgPathEmitter.kt
+--- a/app/src/main/java/com/example/svgvectorconverter/SvgPathEmitter.kt	2026-07-08 18:14:23.857249140 +0000
++++ b/app/src/main/java/com/example/svgvectorconverter/SvgPathEmitter.kt	2026-07-08 18:14:25.146409878 +0000
+@@ -521,8 +521,9 @@
+         strokeGradient: SvgVectorGradient? = null,
+         indent: String
+     ) {
++        val normalizedStroke = stroke?.trim()?.takeIf { it.isNotBlank() }
+         val hasFillGradient = fillGradient != null && fill != "@android:color/transparent"
+-        val hasStrokeGradient = strokeGradient != null && stroke != null
++        val hasStrokeGradient = strokeGradient != null && normalizedStroke != null
+         val needsChildren = hasFillGradient || hasStrokeGradient
+ 
+         output.appendLine("${indent}<path")
+@@ -545,11 +546,11 @@
+             output.appendLine("""${indent}    android:fillType="$fillType"""")
+         }
+ 
+-        if (!hasStrokeGradient && stroke != null) {
+-            output.appendLine("""${indent}    android:strokeColor="$stroke"""")
++        if (!hasStrokeGradient && normalizedStroke != null) {
++            output.appendLine("""${indent}    android:strokeColor="$normalizedStroke"""")
+         }
+ 
+-        if (stroke != null) {
++        if (normalizedStroke != null) {
+             output.appendLine("""${indent}    android:strokeWidth="${normalizeNumber(strokeWidth) ?: "1"}"""")
+             if (strokeAlpha != null) {
+                 output.appendLine("""${indent}    android:strokeAlpha="$strokeAlpha"""")
+@@ -758,7 +759,7 @@
+                 output = output,
+                 d = transformedPathData,
+                 fill = markerPaintColor(markerPath.fill, inheritedStroke, "#000000"),
+-                stroke = markerPaintColor(markerPath.stroke, inheritedStroke, ""),
++                stroke = markerPaintColor(markerPath.stroke, inheritedStroke, "").takeIf { it.isNotBlank() },
+                 strokeWidth = markerPath.strokeWidth,
+                 strokeLineCap = null,
+                 strokeLineJoin = null,
