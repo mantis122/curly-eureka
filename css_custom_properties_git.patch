@@ -1,0 +1,400 @@
+--- a/app/src/main/java/com/example/svgvectorconverter/SvgStyleResolver.kt
++++ b/app/src/main/java/com/example/svgvectorconverter/SvgStyleResolver.kt
+@@ -11,6 +11,7 @@
+         )
+         val ancestors = mutableListOf<ElementSnapshot>()
+         val siblingStack = mutableListOf<MutableList<ElementSnapshot>>(mutableListOf())
++        val customPropertyStack = mutableListOf<Map<String, String>>(emptyMap())
+         val output = StringBuilder()
+         var lastIndex = 0
+ 
+@@ -29,6 +30,7 @@
+                     val closedElement = ancestors[lastMatchingIndex]
+                     while (ancestors.size > lastMatchingIndex) ancestors.removeAt(ancestors.lastIndex)
+                     while (siblingStack.size > ancestors.size + 1) siblingStack.removeAt(siblingStack.lastIndex)
++                    while (customPropertyStack.size > ancestors.size + 1) customPropertyStack.removeAt(customPropertyStack.lastIndex)
+                     siblingStack.lastOrNull()?.add(closedElement)
+                 }
+                 output.append(tagText)
+@@ -63,20 +65,24 @@
+                 .filter { it.isNotBlank() }
+                 .toList()
+ 
+-            val rewrittenTag = if (matchedStyles.isEmpty()) {
++            val existingStyle = attr(tagText, "style")?.trim().orEmpty()
++            // SvgPaintResolver.styleValue(...) returns the first matching declaration.
++            // Keep higher-precedence declarations first:
++            // inline style > CSS specificity > CSS source order.
++            val cascadingStyles = listOf(existingStyle)
++                .plus(matchedStyles)
++                .filter { it.isNotBlank() }
++
++            val inheritedCustomProperties = customPropertyStack.lastOrNull().orEmpty()
++            val elementCustomProperties = mergeCustomProperties(
++                inheritedCustomProperties,
++                cascadingStyles
++            )
++            val mergedStyle = resolveMergedStyle(cascadingStyles, elementCustomProperties)
++
++            val rewrittenTag = if (mergedStyle.isBlank()) {
+                 tagText
+             } else {
+-                val existingStyle = attr(tagText, "style")?.trim().orEmpty()
+-                // SvgPaintResolver.styleValue(...) returns the first matching declaration.
+-                // Keep higher-precedence declarations first:
+-                // inline style > CSS specificity > CSS source order.
+-                val mergedStyle = listOf(existingStyle)
+-                    .plus(matchedStyles)
+-                    .filter { it.isNotBlank() }
+-                    .joinToString("; ")
+-                    .trim()
+-                    .trimEnd(';')
+-
+                 writeStyleAttribute(tagText, mergedStyle)
+             }
+ 
+@@ -86,6 +92,7 @@
+             } else {
+                 ancestors.add(snapshot)
+                 siblingStack.add(mutableListOf())
++                customPropertyStack.add(elementCustomProperties)
+             }
+         }
+ 
+@@ -187,6 +194,7 @@
+         val tagName: String? = null,
+         val id: String? = null,
+         val classNames: List<String> = emptyList(),
++        val rootPseudo: Boolean = false,
+         val attributeSelectors: List<AttributeSelector> = emptyList()
+     ) {
+         fun matches(element: ElementSnapshot): Boolean {
+@@ -199,16 +207,17 @@
+             classNames.forEach { className ->
+                 if (className !in element.classNames) return false
+             }
++            if (rootPseudo && element.parent != null) return false
+             attributeSelectors.forEach { attributeSelector ->
+                 if (!attributeSelector.matches(element)) return false
+             }
+-            return tagName != null || id != null || classNames.isNotEmpty() || attributeSelectors.isNotEmpty()
++            return tagName != null || id != null || classNames.isNotEmpty() || rootPseudo || attributeSelectors.isNotEmpty()
+         }
+ 
+         val specificity: Specificity
+             get() = Specificity(
+                 idCount = if (id != null) 1 else 0,
+-                classCount = classNames.size + attributeSelectors.size,
++                classCount = classNames.size + attributeSelectors.size + if (rootPseudo) 1 else 0,
+                 elementCount = if (tagName != null) 1 else 0
+             )
+     }
+@@ -456,6 +465,7 @@
+         var remaining = selector.trim()
+         var tagName: String? = null
+         var id: String? = null
++        var rootPseudo = false
+         val classNames = mutableListOf<String>()
+         val attributeSelectors = mutableListOf<AttributeSelector>()
+ 
+@@ -483,6 +493,13 @@
+                     classNames.add(match.groupValues.getOrNull(1).orEmpty())
+                     remaining = remaining.substring(match.range.last + 1)
+                 }
++                remaining.startsWith(":root") -> {
++                    if (rootPseudo) return null
++                    val afterRoot = remaining.getOrNull(5)
++                    if (afterRoot != null && isCssIdentifierChar(afterRoot)) return null
++                    rootPseudo = true
++                    remaining = remaining.substring(5)
++                }
+                 remaining.startsWith("[") -> {
+                     val endIndex = findAttributeSelectorEnd(remaining)
+                     if (endIndex <= 0) return null
+@@ -498,17 +515,20 @@
+             tagName = tagName,
+             id = id,
+             classNames = classNames.distinct(),
++            rootPseudo = rootPseudo,
+             attributeSelectors = attributeSelectors
+-        ).takeIf { it.tagName != null || it.id != null || it.classNames.isNotEmpty() || it.attributeSelectors.isNotEmpty() }
++        ).takeIf { it.tagName != null || it.id != null || it.classNames.isNotEmpty() || it.rootPseudo || it.attributeSelectors.isNotEmpty() }
+     }
+ 
+ 
+ 
+     private fun containsUnsupportedPseudoSelector(selector: String): Boolean {
++        var index = 0
+         var bracketDepth = 0
+         var quote: Char? = null
+ 
+-        selector.forEach { char ->
++        while (index < selector.length) {
++            val char = selector[index]
+             when {
+                 quote != null -> {
+                     if (char == quote) quote = null
+@@ -516,8 +536,17 @@
+                 char == '\'' || char == '"' -> quote = char
+                 char == '[' -> bracketDepth++
+                 char == ']' -> bracketDepth = (bracketDepth - 1).coerceAtLeast(0)
+-                char == ':' && bracketDepth == 0 -> return true
++                char == ':' && bracketDepth == 0 -> {
++                    val isRootPseudo = selector.regionMatches(index, ":root", 0, 5, ignoreCase = true) &&
++                        selector.getOrNull(index + 5)?.let { !isCssIdentifierChar(it) } != false
++                    if (isRootPseudo) {
++                        index += 5
++                        continue
++                    }
++                    return true
++                }
+             }
++            index++
+         }
+ 
+         return false
+@@ -633,12 +662,239 @@
+         return trimmed
+     }
+ 
+-    private fun normalizeCssDeclarations(css: String): String {
+-        return css
+-            .split(';')
+-            .map { it.trim() }
+-            .filter { it.isNotBlank() && it.contains(':') }
++    private data class CssDeclaration(
++        val name: String,
++        val value: String
++    )
++
++    private fun mergeCustomProperties(
++        inheritedCustomProperties: Map<String, String>,
++        cascadingStyles: List<String>
++    ): Map<String, String> {
++        if (inheritedCustomProperties.isEmpty() && cascadingStyles.isEmpty()) return emptyMap()
++
++        val merged = inheritedCustomProperties.toMutableMap()
++        val localRawValues = linkedMapOf<String, String>()
++
++        cascadingStyles.forEach { style ->
++            parseCssDeclarations(style).forEach { declaration ->
++                if (declaration.name.startsWith("--") && !localRawValues.containsKey(declaration.name)) {
++                    localRawValues[declaration.name] = declaration.value
++                }
++            }
++        }
++
++        localRawValues.forEach { (name, rawValue) ->
++            merged[name] = rawValue
++        }
++
++        localRawValues.keys.forEach { name ->
++            merged[name] = resolveCssVariables(merged[name].orEmpty(), merged)
++        }
++
++        return merged
++    }
++
++    private fun resolveMergedStyle(
++        cascadingStyles: List<String>,
++        customProperties: Map<String, String>
++    ): String {
++        return cascadingStyles
++            .flatMap { parseCssDeclarations(it) }
++            .filter { !it.name.startsWith("--") }
++            .map { declaration ->
++                val resolvedValue = resolveCssVariables(declaration.value, customProperties)
++                "${declaration.name}: $resolvedValue"
++            }
++            .filter { it.substringAfter(':').trim().isNotBlank() }
+             .joinToString("; ")
++            .trim()
++            .trimEnd(';')
++    }
++
++    private fun resolveCssVariables(
++        value: String,
++        customProperties: Map<String, String>,
++        depth: Int = 0
++    ): String {
++        if (depth > 20 || !value.contains("var(", ignoreCase = true)) return value.trim()
++
++        val output = StringBuilder()
++        var index = 0
++        var quote: Char? = null
++
++        while (index < value.length) {
++            val char = value[index]
++            if (quote != null) {
++                output.append(char)
++                if (char == quote) quote = null
++                index++
++                continue
++            }
++
++            if (char == '\'' || char == '"') {
++                quote = char
++                output.append(char)
++                index++
++                continue
++            }
++
++            if (value.regionMatches(index, "var(", 0, 4, ignoreCase = true)) {
++                val closeIndex = findMatchingParen(value, index + 3)
++                if (closeIndex > index) {
++                    val body = value.substring(index + 4, closeIndex)
++                    val replacement = resolveSingleVar(body, customProperties, depth)
++                    output.append(replacement)
++                    index = closeIndex + 1
++                    continue
++                }
++            }
++
++            output.append(char)
++            index++
++        }
++
++        return output.toString().trim()
++    }
++
++    private fun resolveSingleVar(
++        body: String,
++        customProperties: Map<String, String>,
++        depth: Int
++    ): String {
++        val commaIndex = findTopLevelComma(body)
++        val name = if (commaIndex >= 0) body.substring(0, commaIndex).trim() else body.trim()
++        val fallback = if (commaIndex >= 0) body.substring(commaIndex + 1).trim() else null
++
++        if (!name.startsWith("--")) {
++            return fallback?.let { resolveCssVariables(it, customProperties, depth + 1) }.orEmpty()
++        }
++
++        val rawValue = customProperties[name]
++        return when {
++            rawValue != null -> resolveCssVariables(rawValue, customProperties, depth + 1)
++            fallback != null -> resolveCssVariables(fallback, customProperties, depth + 1)
++            else -> ""
++        }
++    }
++
++    private fun findMatchingParen(value: String, openParenIndex: Int): Int {
++        var index = openParenIndex + 1
++        var depth = 1
++        var quote: Char? = null
++
++        while (index < value.length) {
++            val char = value[index]
++            when {
++                quote != null -> {
++                    if (char == quote) quote = null
++                }
++                char == '\'' || char == '"' -> quote = char
++                char == '(' -> depth++
++                char == ')' -> {
++                    depth--
++                    if (depth == 0) return index
++                }
++            }
++            index++
++        }
++        return -1
++    }
++
++    private fun findTopLevelComma(value: String): Int {
++        var parenDepth = 0
++        var quote: Char? = null
++
++        value.forEachIndexed { index, char ->
++            when {
++                quote != null -> {
++                    if (char == quote) quote = null
++                }
++                char == '\'' || char == '"' -> quote = char
++                char == '(' -> parenDepth++
++                char == ')' -> parenDepth = (parenDepth - 1).coerceAtLeast(0)
++                char == ',' && parenDepth == 0 -> return index
++            }
++        }
++
++        return -1
++    }
++
++    private fun parseCssDeclarations(css: String): List<CssDeclaration> {
++        return splitCssDeclarations(css)
++            .mapNotNull { declaration ->
++                val colonIndex = findTopLevelColon(declaration)
++                if (colonIndex <= 0) return@mapNotNull null
++
++                val name = declaration.substring(0, colonIndex).trim()
++                val value = declaration.substring(colonIndex + 1).trim()
++                if (name.isBlank() || value.isBlank()) return@mapNotNull null
++
++                CssDeclaration(name = name, value = value)
++            }
++    }
++
++    private fun splitCssDeclarations(css: String): List<String> {
++        val declarations = mutableListOf<String>()
++        val current = StringBuilder()
++        var parenDepth = 0
++        var quote: Char? = null
++
++        css.forEach { char ->
++            when {
++                quote != null -> {
++                    current.append(char)
++                    if (char == quote) quote = null
++                }
++                char == '\'' || char == '"' -> {
++                    quote = char
++                    current.append(char)
++                }
++                char == '(' -> {
++                    parenDepth++
++                    current.append(char)
++                }
++                char == ')' -> {
++                    parenDepth = (parenDepth - 1).coerceAtLeast(0)
++                    current.append(char)
++                }
++                char == ';' && parenDepth == 0 -> {
++                    current.toString().trim().takeIf { it.isNotBlank() }?.let { declarations.add(it) }
++                    current.clear()
++                }
++                else -> current.append(char)
++            }
++        }
++
++        current.toString().trim().takeIf { it.isNotBlank() }?.let { declarations.add(it) }
++        return declarations
++    }
++
++    private fun findTopLevelColon(value: String): Int {
++        var parenDepth = 0
++        var bracketDepth = 0
++        var quote: Char? = null
++
++        value.forEachIndexed { index, char ->
++            when {
++                quote != null -> {
++                    if (char == quote) quote = null
++                }
++                char == '\'' || char == '"' -> quote = char
++                char == '(' -> parenDepth++
++                char == ')' -> parenDepth = (parenDepth - 1).coerceAtLeast(0)
++                char == '[' -> bracketDepth++
++                char == ']' -> bracketDepth = (bracketDepth - 1).coerceAtLeast(0)
++                char == ':' && parenDepth == 0 && bracketDepth == 0 -> return index
++            }
++        }
++
++        return -1
++    }
++
++    private fun normalizeCssDeclarations(css: String): String {
++        return parseCssDeclarations(css)
++            .joinToString("; ") { "${it.name}: ${it.value}" }
+     }
+ 
+     private fun classNames(tagText: String): List<String> {
