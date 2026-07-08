@@ -900,7 +900,7 @@ object SvgStyleResolver {
                 quote != null -> {
                     if (char == quote) quote = null
                 }
-                char == ''' || char == '"' -> quote = char
+                char == '\'' || char == '"' -> quote = char
                 char == '(' -> parenDepth++
                 char == ')' -> parenDepth = (parenDepth - 1).coerceAtLeast(0)
             }
