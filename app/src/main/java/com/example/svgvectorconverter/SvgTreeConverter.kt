@@ -17,6 +17,9 @@ private var activeMarkerDefinitions: Map<String, MarkerDefinition> = emptyMap()
 private var activeAppliedMarkers = 0
 private var activeDashedStrokesDetected = 0
 private var activeDashedStrokesApproximated = 0
+private var activeNonScalingStrokesDetected = 0
+private var activeNonScalingStrokesCompensated = 0
+private var activeNonScalingStrokesUncertain = 0
 
 val appliedClipPaths: Int get() = activeAppliedClipPaths
 val appliedMasks: Int get() = activeAppliedMasks
@@ -26,6 +29,9 @@ val unresolvedUseReferences: Int get() = activeUnresolvedUseReferences
 val appliedMarkers: Int get() = activeAppliedMarkers
 val dashedStrokesDetected: Int get() = activeDashedStrokesDetected
 val dashedStrokesApproximated: Int get() = activeDashedStrokesApproximated
+val nonScalingStrokesDetected: Int get() = activeNonScalingStrokesDetected
+val nonScalingStrokesCompensated: Int get() = activeNonScalingStrokesCompensated
+val nonScalingStrokesUncertain: Int get() = activeNonScalingStrokesUncertain
 
 private lateinit var appendElementPathCallback: (
     StringBuilder, Element, String,
@@ -83,6 +89,9 @@ fun resetStats(
     activeAppliedMarkers = 0
     activeDashedStrokesDetected = 0
     activeDashedStrokesApproximated = 0
+    activeNonScalingStrokesDetected = 0
+    activeNonScalingStrokesCompensated = 0
+    activeNonScalingStrokesUncertain = 0
 }
 
 fun markerDefinition(id: String?): MarkerDefinition? {
@@ -97,6 +106,16 @@ fun recordDashedStroke(didApproximate: Boolean) {
     activeDashedStrokesDetected++
     if (didApproximate) {
         activeDashedStrokesApproximated++
+    }
+}
+
+fun recordNonScalingStroke(didCompensate: Boolean, isUncertain: Boolean = false) {
+    activeNonScalingStrokesDetected++
+    if (didCompensate) {
+        activeNonScalingStrokesCompensated++
+    }
+    if (isUncertain) {
+        activeNonScalingStrokesUncertain++
     }
 }
 
