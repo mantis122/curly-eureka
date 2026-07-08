@@ -630,7 +630,7 @@ object SvgPathEmitter {
     }
 
 
-    private data class DashPoint(val x: Float, val y: Float)
+    private data class DashPoint(val x: Float, val y: Float, val startsNewSubpath: Boolean = false)
 
     private fun dashedStrokePathData(
         element: Element,
@@ -639,7 +639,7 @@ object SvgPathEmitter {
         pathData: String,
         stroke: String?
     ): String? {
-        if (sourceTag !in setOf("line", "polyline", "polygon", "rect", "circle", "ellipse")) return null
+        if (sourceTag !in setOf("line", "polyline", "polygon", "rect", "circle", "ellipse", "path")) return null
         if (stroke.isNullOrBlank()) return null
 
         val dashArrayValue = SvgPaintResolver.styleValue(style, "stroke-dasharray")
@@ -697,6 +697,7 @@ object SvgPathEmitter {
             "rect" -> rectDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
             "circle" -> circleDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
             "ellipse" -> ellipseDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
+            "path" -> straightPathDashPoints(pathData) ?: emptyList()
             else -> emptyList()
         }
     }
@@ -822,6 +823,97 @@ object SvgPathEmitter {
         return if (alreadyClosed) points else points + first
     }
 
+    private fun straightPathDashPoints(pathData: String): List<DashPoint>? {
+        val tokens = tokenizePathData(pathData)
+        if (tokens.isEmpty()) return null
+
+        val points = mutableListOf<DashPoint>()
+        var i = 0
+        var command: Char? = null
+        var currentX = 0f
+        var currentY = 0f
+        var subpathStartX = 0f
+        var subpathStartY = 0f
+        var hasCurrentPoint = false
+
+        fun isCommandToken(index: Int): Boolean = index < tokens.size && tokens[index].length == 1 && tokens[index][0].isLetter()
+        fun readFloat(): Float? = tokens.getOrNull(i)?.toFloatOrNull()?.also { i++ }
+        fun addPoint(x: Float, y: Float, startsNewSubpath: Boolean = false) {
+            points.add(DashPoint(x, y, startsNewSubpath))
+            currentX = x
+            currentY = y
+            hasCurrentPoint = true
+        }
+
+        while (i < tokens.size) {
+            if (isCommandToken(i)) {
+                command = tokens[i][0]
+                i++
+            } else if (command == null) {
+                return null
+            }
+
+            when (command) {
+                'M', 'm' -> {
+                    val relative = command == 'm'
+                    val x = readFloat() ?: return null
+                    val y = readFloat() ?: return null
+                    val moveX = if (relative) currentX + x else x
+                    val moveY = if (relative) currentY + y else y
+                    addPoint(moveX, moveY, startsNewSubpath = points.isNotEmpty())
+                    subpathStartX = moveX
+                    subpathStartY = moveY
+
+                    // Additional coordinate pairs after M/m are implicit L/l commands.
+                    command = if (relative) 'l' else 'L'
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        val lx = readFloat() ?: return null
+                        val ly = readFloat() ?: return null
+                        addPoint(if (relative) currentX + lx else lx, if (relative) currentY + ly else ly)
+                    }
+                }
+                'L', 'l' -> {
+                    if (!hasCurrentPoint) return null
+                    val relative = command == 'l'
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        val x = readFloat() ?: return null
+                        val y = readFloat() ?: return null
+                        addPoint(if (relative) currentX + x else x, if (relative) currentY + y else y)
+                    }
+                }
+                'H', 'h' -> {
+                    if (!hasCurrentPoint) return null
+                    val relative = command == 'h'
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        val x = readFloat() ?: return null
+                        addPoint(if (relative) currentX + x else x, currentY)
+                    }
+                }
+                'V', 'v' -> {
+                    if (!hasCurrentPoint) return null
+                    val relative = command == 'v'
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        val y = readFloat() ?: return null
+                        addPoint(currentX, if (relative) currentY + y else y)
+                    }
+                }
+                'Z', 'z' -> {
+                    if (!hasCurrentPoint) return null
+                    addPoint(subpathStartX, subpathStartY)
+                    command = null
+                }
+                else -> return null
+            }
+        }
+
+        return points.takeIf { it.size >= 2 }
+    }
+
+    private fun tokenizePathData(pathData: String): List<String> {
+        val tokenRegex = Regex("""[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""")
+        return tokenRegex.findAll(pathData).map { it.value }.toList()
+    }
+
     private fun buildDashedPath(points: List<DashPoint>, pattern: List<Float>, dashOffset: Float): String {
         if (points.size < 2 || pattern.isEmpty()) return ""
 
@@ -843,6 +935,7 @@ object SvgPathEmitter {
         for (i in 0 until points.lastIndex) {
             val from = points[i]
             val to = points[i + 1]
+            if (to.startsNewSubpath) continue
             val dx = to.x - from.x
             val dy = to.y - from.y
             val length = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
