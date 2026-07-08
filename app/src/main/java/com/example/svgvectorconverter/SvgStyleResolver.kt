@@ -664,7 +664,8 @@ object SvgStyleResolver {
 
     private data class CssDeclaration(
         val name: String,
-        val value: String
+        val value: String,
+        val important: Boolean = false
     )
 
     private fun mergeCustomProperties(
@@ -676,13 +677,11 @@ object SvgStyleResolver {
         val merged = inheritedCustomProperties.toMutableMap()
         val localRawValues = linkedMapOf<String, String>()
 
-        cascadingStyles.forEach { style ->
-            parseCssDeclarations(style).forEach { declaration ->
-                if (declaration.name.startsWith("--") && !localRawValues.containsKey(declaration.name)) {
-                    localRawValues[declaration.name] = declaration.value
-                }
+        chooseCascadedDeclarations(cascadingStyles)
+            .filter { it.name.startsWith("--") }
+            .forEach { declaration ->
+                localRawValues[declaration.name] = declaration.value
             }
-        }
 
         localRawValues.forEach { (name, rawValue) ->
             merged[name] = rawValue
@@ -699,8 +698,7 @@ object SvgStyleResolver {
         cascadingStyles: List<String>,
         customProperties: Map<String, String>
     ): String {
-        return cascadingStyles
-            .flatMap { parseCssDeclarations(it) }
+        return chooseCascadedDeclarations(cascadingStyles)
             .filter { !it.name.startsWith("--") }
             .map { declaration ->
                 val resolvedValue = resolveCssVariables(declaration.value, customProperties)
@@ -710,6 +708,33 @@ object SvgStyleResolver {
             .joinToString("; ")
             .trim()
             .trimEnd(';')
+    }
+
+    private fun chooseCascadedDeclarations(cascadingStyles: List<String>): List<CssDeclaration> {
+        if (cascadingStyles.isEmpty()) return emptyList()
+
+        val importantWinners = linkedMapOf<String, CssDeclaration>()
+        val normalWinners = linkedMapOf<String, CssDeclaration>()
+
+        cascadingStyles.forEach { style ->
+            // Declarations later in the same block have higher precedence.
+            parseCssDeclarations(style).asReversed().forEach { declaration ->
+                val target = if (declaration.important) importantWinners else normalWinners
+                if (!target.containsKey(declaration.name)) {
+                    target[declaration.name] = declaration.copy(important = false)
+                }
+            }
+        }
+
+        val result = linkedMapOf<String, CssDeclaration>()
+        normalWinners.forEach { (name, declaration) ->
+            if (!importantWinners.containsKey(name)) result[name] = declaration
+        }
+        importantWinners.forEach { (name, declaration) ->
+            result[name] = declaration
+        }
+
+        return result.values.toList()
     }
 
     private fun resolveCssVariables(
@@ -827,11 +852,61 @@ object SvgStyleResolver {
                 if (colonIndex <= 0) return@mapNotNull null
 
                 val name = declaration.substring(0, colonIndex).trim()
-                val value = declaration.substring(colonIndex + 1).trim()
-                if (name.isBlank() || value.isBlank()) return@mapNotNull null
+                val rawValue = declaration.substring(colonIndex + 1).trim()
+                if (name.isBlank() || rawValue.isBlank()) return@mapNotNull null
 
-                CssDeclaration(name = name, value = value)
+                val important = hasTrailingImportant(rawValue)
+                val value = if (important) stripTrailingImportant(rawValue).trim() else rawValue
+                if (value.isBlank()) return@mapNotNull null
+
+                CssDeclaration(name = name, value = value, important = important)
             }
+    }
+
+    private fun hasTrailingImportant(value: String): Boolean {
+        val markerStart = findTrailingImportantStart(value)
+        return markerStart >= 0 && value.substring(markerStart).trim().equals("!important", ignoreCase = true)
+    }
+
+    private fun stripTrailingImportant(value: String): String {
+        val markerStart = findTrailingImportantStart(value)
+        return if (markerStart >= 0) value.substring(0, markerStart) else value
+    }
+
+    private fun findTrailingImportantStart(value: String): Int {
+        var index = value.length - 1
+        while (index >= 0 && value[index].isWhitespace()) index--
+
+        val important = "important"
+        val importantStart = index - important.length + 1
+        if (importantStart < 1) return -1
+        if (!value.regionMatches(importantStart, important, 0, important.length, ignoreCase = true)) return -1
+
+        var bangIndex = importantStart - 1
+        while (bangIndex >= 0 && value[bangIndex].isWhitespace()) bangIndex--
+        if (bangIndex < 0 || value[bangIndex] != '!') return -1
+
+        if (isInsideCssStringOrFunction(value, bangIndex)) return -1
+        return bangIndex
+    }
+
+    private fun isInsideCssStringOrFunction(value: String, targetIndex: Int): Boolean {
+        var parenDepth = 0
+        var quote: Char? = null
+
+        value.forEachIndexed { index, char ->
+            if (index >= targetIndex) return parenDepth > 0 || quote != null
+            when {
+                quote != null -> {
+                    if (char == quote) quote = null
+                }
+                char == ''' || char == '"' -> quote = char
+                char == '(' -> parenDepth++
+                char == ')' -> parenDepth = (parenDepth - 1).coerceAtLeast(0)
+            }
+        }
+
+        return false
     }
 
     private fun splitCssDeclarations(css: String): List<String> {
@@ -894,7 +969,10 @@ object SvgStyleResolver {
 
     private fun normalizeCssDeclarations(css: String): String {
         return parseCssDeclarations(css)
-            .joinToString("; ") { "${it.name}: ${it.value}" }
+            .joinToString("; ") { declaration ->
+                val importantSuffix = if (declaration.important) " !important" else ""
+                "${declaration.name}: ${declaration.value}$importantSuffix"
+            }
     }
 
     private fun classNames(tagText: String): List<String> {
