@@ -1,0 +1,49 @@
+--- a/app/src/main/java/com/example/svgvectorconverter/SvgStyleResolver.kt
++++ b/app/src/main/java/com/example/svgvectorconverter/SvgStyleResolver.kt
+@@ -293,7 +293,8 @@
+     }
+ 
+     private fun parseCssSelector(selector: String): CssSelector? {
+-        if (selector.isBlank() || selector.contains(':')) return null
++        if (selector.isBlank()) return null
++        if (containsUnsupportedPseudoSelector(selector)) return null
+         if (containsOutsideAttributeSelector(selector, '+')) return null
+         if (containsOutsideAttributeSelector(selector, '~')) return null
+ 
+@@ -327,7 +328,8 @@
+     }
+ 
+     private fun parseSimpleSelector(selector: String): SimpleSelector? {
+-        if (selector.isBlank() || selector.contains(':')) return null
++        if (selector.isBlank()) return null
++        if (containsUnsupportedPseudoSelector(selector)) return null
+         if (containsOutsideAttributeSelector(selector, '>')) return null
+         if (containsOutsideAttributeSelector(selector, '+')) return null
+         if (containsOutsideAttributeSelector(selector, '~')) return null
+@@ -383,6 +385,26 @@
+     }
+ 
+ 
++
++    private fun containsUnsupportedPseudoSelector(selector: String): Boolean {
++        var bracketDepth = 0
++        var quote: Char? = null
++
++        selector.forEach { char ->
++            when {
++                quote != null -> {
++                    if (char == quote) quote = null
++                }
++                char == '\'' || char == '"' -> quote = char
++                char == '[' -> bracketDepth++
++                char == ']' -> bracketDepth = (bracketDepth - 1).coerceAtLeast(0)
++                char == ':' && bracketDepth == 0 -> return true
++            }
++        }
++
++        return false
++    }
++
+     private fun containsOutsideAttributeSelector(selector: String, target: Char): Boolean {
+         var bracketDepth = 0
+         var quote: Char? = null
