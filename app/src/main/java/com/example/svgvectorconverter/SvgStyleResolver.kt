@@ -55,19 +55,23 @@ object SvgStyleResolver {
                 .filter { it.matches(snapshot) }
                 .fold("") { existing, rule -> mergeDeclarations(existing, rule.declarations) }
                 .trim()
+            val childStyle = stylesheet.childStyles
+                .filter { it.matches(ancestors, snapshot) }
+                .fold("") { existing, rule -> mergeDeclarations(existing, rule.declarations) }
+                .trim()
             val descendantStyle = stylesheet.descendantStyles
                 .filter { it.matches(ancestors, snapshot) }
                 .fold("") { existing, rule -> mergeDeclarations(existing, rule.declarations) }
                 .trim()
 
-            val rewrittenTag = if (elementStyle.isBlank() && idStyle.isBlank() && classStyle.isBlank() && compoundStyle.isBlank() && descendantStyle.isBlank()) {
+            val rewrittenTag = if (elementStyle.isBlank() && idStyle.isBlank() && classStyle.isBlank() && compoundStyle.isBlank() && childStyle.isBlank() && descendantStyle.isBlank()) {
                 tagText
             } else {
                 val existingStyle = attr(tagText, "style")?.trim().orEmpty()
                 // SvgPaintResolver.styleValue(...) returns the first matching declaration.
                 // Keep higher-precedence declarations first:
-                // inline style > id selector > descendant selector > class selector > element selector.
-                val mergedStyle = listOf(existingStyle, idStyle, compoundStyle, descendantStyle, classStyle, elementStyle)
+                // inline style > id selector > compound selector > child selector > descendant selector > class selector > element selector.
+                val mergedStyle = listOf(existingStyle, idStyle, compoundStyle, childStyle, descendantStyle, classStyle, elementStyle)
                     .filter { it.isNotBlank() }
                     .joinToString("; ")
                     .trim()
@@ -89,6 +93,7 @@ object SvgStyleResolver {
         val classStyles: Map<String, String>,
         val elementStyles: Map<String, String>,
         val compoundStyles: List<CompoundStyleRule>,
+        val childStyles: List<ChildStyleRule>,
         val descendantStyles: List<DescendantStyleRule>
     ) {
         fun isEmpty(): Boolean =
@@ -96,6 +101,7 @@ object SvgStyleResolver {
                 classStyles.isEmpty() &&
                 elementStyles.isEmpty() &&
                 compoundStyles.isEmpty() &&
+                childStyles.isEmpty() &&
                 descendantStyles.isEmpty()
     }
 
@@ -110,6 +116,24 @@ object SvgStyleResolver {
         val declarations: String
     ) {
         fun matches(element: ElementSnapshot): Boolean = selector.matches(element)
+    }
+
+    private data class ChildStyleRule(
+        val selectors: List<SimpleSelector>,
+        val declarations: String
+    ) {
+        fun matches(ancestors: List<ElementSnapshot>, element: ElementSnapshot): Boolean {
+            if (selectors.isEmpty()) return false
+            if (!selectors.last().matches(element)) return false
+            if (ancestors.size < selectors.size - 1) return false
+
+            var ancestorIndex = ancestors.lastIndex
+            for (selectorIndex in selectors.size - 2 downTo 0) {
+                if (!selectors[selectorIndex].matches(ancestors[ancestorIndex])) return false
+                ancestorIndex--
+            }
+            return true
+        }
     }
 
     private data class DescendantStyleRule(
@@ -166,6 +190,7 @@ object SvgStyleResolver {
         val classStyles = linkedMapOf<String, String>()
         val elementStyles = linkedMapOf<String, String>()
         val compoundStyles = mutableListOf<CompoundStyleRule>()
+        val childStyles = mutableListOf<ChildStyleRule>()
         val descendantStyles = mutableListOf<DescendantStyleRule>()
         val styleBlocks = Regex(
             """<\s*style\b[^>]*>(.*?)</\s*style\s*>""",
@@ -183,6 +208,11 @@ object SvgStyleResolver {
 
                 splitSelectorList(rule.groupValues.getOrNull(1).orEmpty())
                     .forEach selectorLoop@{ selector ->
+                        parseChildSelector(selector)?.let { selectors ->
+                            childStyles.add(ChildStyleRule(selectors, declarations))
+                            return@selectorLoop
+                        }
+
                         parseDescendantSelector(selector)?.let { selectors ->
                             descendantStyles.add(DescendantStyleRule(selectors, declarations))
                             return@selectorLoop
@@ -210,7 +240,7 @@ object SvgStyleResolver {
             }
         }
 
-        return StylesheetRules(idStyles, classStyles, elementStyles, compoundStyles, descendantStyles)
+        return StylesheetRules(idStyles, classStyles, elementStyles, compoundStyles, childStyles, descendantStyles)
     }
 
     private fun splitSelectorList(selectorList: String): List<String> {
@@ -255,6 +285,20 @@ object SvgStyleResolver {
         }
 
         current.toString().trim().takeIf { it.isNotBlank() }?.let { selectors.add(it) }
+        return selectors
+    }
+
+    private fun parseChildSelector(selector: String): List<SimpleSelector>? {
+        if (!selector.contains('>')) return null
+        if (selector.contains('+') || selector.contains('~')) return null
+
+        val selectors = selector
+            .split('>')
+            .map { it.trim() }
+            .takeIf { parts -> parts.size >= 2 && parts.none { it.isBlank() } }
+            ?.map { part -> parseSimpleSelector(part) ?: return null }
+            ?: return null
+
         return selectors
     }
 
