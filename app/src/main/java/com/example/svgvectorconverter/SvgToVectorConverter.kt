@@ -145,9 +145,15 @@ object SvgToVectorConverter {
             .count()
         val presentationStyleAttributeCount = countPresentationStyleAttributes(svgForTransformStats)
 
+        val unapproximatedDashedStrokes = maxOf(
+            0,
+            SvgTreeConverter.dashedStrokesDetected - SvgTreeConverter.dashedStrokesApproximated
+        )
+
         val warningCount = unsupported.size +
             (if (SvgTransformParser.unsupportedMatrixTransforms > 0) 1 else 0) +
-            (if (unresolvedUseReferences > 0) 1 else 0)
+            (if (unresolvedUseReferences > 0) 1 else 0) +
+            (if (unapproximatedDashedStrokes > 0) 1 else 0)
 
         val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
 

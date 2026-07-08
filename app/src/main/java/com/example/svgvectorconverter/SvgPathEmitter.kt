@@ -646,7 +646,14 @@ object SvgPathEmitter {
             ?: element.getAttribute("stroke-dasharray").ifBlank { null }
             ?: return null
 
-        val dashPattern = parseDashArray(dashArrayValue) ?: return null
+        if (!isActiveDashArray(dashArrayValue)) return null
+
+        val dashPattern = parseDashArray(dashArrayValue)
+        if (dashPattern == null) {
+            SvgTreeConverter.recordDashedStroke(didApproximate = false)
+            return null
+        }
+
         val dashOffset = parseLengthList(
             SvgPaintResolver.styleValue(style, "stroke-dashoffset")
                 ?: element.getAttribute("stroke-dashoffset").ifBlank { null }
@@ -654,12 +661,24 @@ object SvgPathEmitter {
         ).firstOrNull() ?: 0f
 
         val dashPoints = dashApproximationPoints(element, sourceTag, pathData)
-        if (dashPoints.size < 2) return null
-
-        SvgTreeConverter.recordDashedStroke(didApproximate = true)
+        if (dashPoints.size < 2) {
+            SvgTreeConverter.recordDashedStroke(didApproximate = false)
+            return null
+        }
 
         val dashed = buildDashedPath(dashPoints, dashPattern, dashOffset)
-        return dashed.takeIf { it.isNotBlank() }
+        if (dashed.isBlank()) {
+            SvgTreeConverter.recordDashedStroke(didApproximate = false)
+            return null
+        }
+
+        SvgTreeConverter.recordDashedStroke(didApproximate = true)
+        return dashed
+    }
+
+    private fun isActiveDashArray(value: String?): Boolean {
+        val raw = value?.trim().orEmpty()
+        return raw.isNotBlank() && !raw.equals("none", ignoreCase = true)
     }
 
     private fun parseDashArray(value: String?): List<Float>? {

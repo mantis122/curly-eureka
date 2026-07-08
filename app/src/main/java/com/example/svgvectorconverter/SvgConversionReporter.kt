@@ -361,7 +361,14 @@ object SvgConversionReporter {
             appendLine("✓ XML validated")
             appendLine("✓ Ready to save")
 
-            if (data.unsupportedWarnings.isNotEmpty() || data.unsupportedMatrixTransforms > 0 || data.unresolvedUseReferences > 0) {
+            val unapproximatedDashedStrokes = maxOf(0, data.dashedStrokesDetected - data.dashedStrokesApproximated)
+
+            if (
+                data.unsupportedWarnings.isNotEmpty() ||
+                data.unsupportedMatrixTransforms > 0 ||
+                data.unresolvedUseReferences > 0 ||
+                unapproximatedDashedStrokes > 0
+            ) {
                 appendLine()
                 appendLine("────────────────────")
                 appendLine("Warnings")
@@ -374,6 +381,10 @@ object SvgConversionReporter {
 
                 if (data.unresolvedUseReferences > 0) {
                     appendLine("⚠ Unresolved <use> references: ${data.unresolvedUseReferences}")
+                }
+
+                if (unapproximatedDashedStrokes > 0) {
+                    appendLine("⚠ Dashed strokes could not be approximated: $unapproximatedDashedStrokes")
                 }
 
                 data.unsupportedWarnings.forEach {
