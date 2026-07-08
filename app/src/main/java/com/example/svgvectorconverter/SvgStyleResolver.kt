@@ -245,8 +245,9 @@ object SvgStyleResolver {
 
         val rulePattern = Regex("""([^{}]+)\{([^{}]+)\}""", RegexOption.DOT_MATCHES_ALL)
         styleBlocks.forEach { block ->
-            val css = Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL)
+            val cssWithoutComments = Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL)
                 .replace(block.groupValues.getOrNull(1).orEmpty(), "")
+            val css = removeUnsupportedAtRuleBlocks(cssWithoutComments)
 
             rulePattern.findAll(css).forEach ruleLoop@{ rule ->
                 val declarations = normalizeCssDeclarations(rule.groupValues.getOrNull(2).orEmpty())
@@ -268,6 +269,103 @@ object SvgStyleResolver {
         }
 
         return StylesheetRules(rules)
+    }
+
+    private fun removeUnsupportedAtRuleBlocks(css: String): String {
+        val output = StringBuilder()
+        var index = 0
+        var quote: Char? = null
+
+        while (index < css.length) {
+            val char = css[index]
+
+            if (quote != null) {
+                output.append(char)
+                if (char == quote) quote = null
+                index++
+                continue
+            }
+
+            if (char == '\'' || char == '"') {
+                quote = char
+                output.append(char)
+                index++
+                continue
+            }
+
+            if (char == '@' && unsupportedAtRuleKeywordAt(css, index) != null) {
+                index = skipCssAtRule(css, index)
+                if (output.isNotEmpty() && !output.last().isWhitespace()) output.append('\n')
+                continue
+            }
+
+            output.append(char)
+            index++
+        }
+
+        return output.toString()
+    }
+
+    private fun unsupportedAtRuleKeywordAt(css: String, index: Int): String? {
+        val unsupportedAtRules = listOf(
+            "@media",
+            "@supports",
+            "@keyframes",
+            "@-webkit-keyframes"
+        )
+
+        return unsupportedAtRules.firstOrNull { keyword ->
+            css.regionMatches(index, keyword, 0, keyword.length, ignoreCase = true) &&
+                css.getOrNull(index + keyword.length)?.let { !isCssIdentifierChar(it) } != false
+        }
+    }
+
+    private fun skipCssAtRule(css: String, startIndex: Int): Int {
+        var index = startIndex
+        var quote: Char? = null
+
+        while (index < css.length) {
+            val char = css[index]
+            when {
+                quote != null -> {
+                    if (char == quote) quote = null
+                }
+                char == '\'' || char == '"' -> quote = char
+                char == ';' -> return index + 1
+                char == '{' -> return skipCssBlock(css, index)
+            }
+            index++
+        }
+
+        return css.length
+    }
+
+    private fun skipCssBlock(css: String, openBraceIndex: Int): Int {
+        var index = openBraceIndex + 1
+        var depth = 1
+        var quote: Char? = null
+
+        while (index < css.length) {
+            val char = css[index]
+            when {
+                quote != null -> {
+                    if (char == quote) quote = null
+                }
+                char == '\'' || char == '"' -> quote = char
+                char == '{' -> depth++
+                char == '}' -> {
+                    depth--
+                    if (depth == 0) return index + 1
+                }
+            }
+            index++
+        }
+
+        return css.length
+    }
+
+    private fun isCssIdentifierChar(char: Char): Boolean {
+        return char.isLetterOrDigit() || char == '-' || char == '_'
     }
 
     private fun splitSelectorList(selectorList: String): List<String> {
