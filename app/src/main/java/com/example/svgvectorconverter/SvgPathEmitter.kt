@@ -1052,7 +1052,8 @@ object SvgPathEmitter {
     private data class MarkerPlacement(
         val x: Float,
         val y: Float,
-        val angle: Float
+        val angle: Float,
+        val isStartMarker: Boolean = false
     )
 
     private fun appendMarkersForPath(
@@ -1095,7 +1096,8 @@ object SvgPathEmitter {
                 placement = MarkerPlacement(
                     x = points.first().first,
                     y = points.first().second,
-                    angle = angleBetween(points[1], points[0])
+                    angle = angleBetween(points[0], points[1]),
+                    isStartMarker = true
                 ),
                 inheritedStroke = inheritedStroke,
                 inheritedStrokeWidth = inheritedStrokeWidth,
@@ -1163,10 +1165,12 @@ object SvgPathEmitter {
         val scaleX = marker.markerWidth / marker.viewBoxWidth.coerceAtLeast(0.001f) * strokeScale
         val scaleY = marker.markerHeight / marker.viewBoxHeight.coerceAtLeast(0.001f) * strokeScale
         val rotation = marker.orient.trim().let { orient ->
-            if (orient.equals("auto", ignoreCase = true) || orient.equals("auto-start-reverse", ignoreCase = true)) {
-                placement.angle
-            } else {
-                orient.removeSuffix("deg").trim().toFloatOrNull() ?: 0f
+            when {
+                orient.equals("auto-start-reverse", ignoreCase = true) -> {
+                    if (placement.isStartMarker) placement.angle + 180f else placement.angle
+                }
+                orient.equals("auto", ignoreCase = true) -> placement.angle
+                else -> orient.removeSuffix("deg").trim().toFloatOrNull() ?: 0f
             }
         }
         val transform = markerTransform(
@@ -1245,13 +1249,129 @@ object SvgPathEmitter {
     }
 
     private fun extractMarkerPoints(pathData: String): List<Pair<Float, Float>> {
+        val tokens = tokenizePathData(pathData)
+        if (tokens.isEmpty()) return emptyList()
+
         val points = mutableListOf<Pair<Float, Float>>()
-        val commandRegex = Regex("""([MmLl])\s*([-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?)[,\s]+([-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?)""")
-        commandRegex.findAll(pathData).forEach { match ->
-            val x = match.groupValues.getOrNull(2)?.toFloatOrNull()
-            val y = match.groupValues.getOrNull(3)?.toFloatOrNull()
-            if (x != null && y != null) points.add(Pair(x, y))
+        var i = 0
+        var command: Char? = null
+        var currentX = 0f
+        var currentY = 0f
+        var subpathStartX = 0f
+        var subpathStartY = 0f
+        var hasCurrentPoint = false
+
+        fun isCommandToken(index: Int): Boolean =
+            index < tokens.size && tokens[index].length == 1 && tokens[index][0].isLetter()
+
+        fun readFloat(): Float? = tokens.getOrNull(i)?.toFloatOrNull()?.also { i++ }
+
+        fun addPoint(x: Float, y: Float) {
+            points.add(Pair(x, y))
+            currentX = x
+            currentY = y
+            hasCurrentPoint = true
         }
+
+        while (i < tokens.size) {
+            if (isCommandToken(i)) {
+                command = tokens[i][0]
+                i++
+            } else if (command == null) {
+                return points
+            }
+
+            when (command) {
+                'M', 'm' -> {
+                    val relative = command == 'm'
+                    val x = readFloat() ?: return points
+                    val y = readFloat() ?: return points
+                    val moveX = if (relative) currentX + x else x
+                    val moveY = if (relative) currentY + y else y
+                    addPoint(moveX, moveY)
+                    subpathStartX = moveX
+                    subpathStartY = moveY
+                    command = if (relative) 'l' else 'L'
+
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        val lx = readFloat() ?: return points
+                        val ly = readFloat() ?: return points
+                        addPoint(if (relative) currentX + lx else lx, if (relative) currentY + ly else ly)
+                    }
+                }
+                'L', 'l' -> {
+                    if (!hasCurrentPoint) return points
+                    val relative = command == 'l'
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        val x = readFloat() ?: return points
+                        val y = readFloat() ?: return points
+                        addPoint(if (relative) currentX + x else x, if (relative) currentY + y else y)
+                    }
+                }
+                'H', 'h' -> {
+                    if (!hasCurrentPoint) return points
+                    val relative = command == 'h'
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        val x = readFloat() ?: return points
+                        addPoint(if (relative) currentX + x else x, currentY)
+                    }
+                }
+                'V', 'v' -> {
+                    if (!hasCurrentPoint) return points
+                    val relative = command == 'v'
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        val y = readFloat() ?: return points
+                        addPoint(currentX, if (relative) currentY + y else y)
+                    }
+                }
+                'C', 'c' -> {
+                    if (!hasCurrentPoint) return points
+                    val relative = command == 'c'
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        repeat(4) { readFloat() ?: return points }
+                        val x = readFloat() ?: return points
+                        val y = readFloat() ?: return points
+                        addPoint(if (relative) currentX + x else x, if (relative) currentY + y else y)
+                    }
+                }
+                'S', 's', 'Q', 'q' -> {
+                    if (!hasCurrentPoint) return points
+                    val relative = command == 's' || command == 'q'
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        repeat(2) { readFloat() ?: return points }
+                        val x = readFloat() ?: return points
+                        val y = readFloat() ?: return points
+                        addPoint(if (relative) currentX + x else x, if (relative) currentY + y else y)
+                    }
+                }
+                'T', 't' -> {
+                    if (!hasCurrentPoint) return points
+                    val relative = command == 't'
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        val x = readFloat() ?: return points
+                        val y = readFloat() ?: return points
+                        addPoint(if (relative) currentX + x else x, if (relative) currentY + y else y)
+                    }
+                }
+                'A', 'a' -> {
+                    if (!hasCurrentPoint) return points
+                    val relative = command == 'a'
+                    while (i < tokens.size && !isCommandToken(i)) {
+                        repeat(5) { readFloat() ?: return points }
+                        val x = readFloat() ?: return points
+                        val y = readFloat() ?: return points
+                        addPoint(if (relative) currentX + x else x, if (relative) currentY + y else y)
+                    }
+                }
+                'Z', 'z' -> {
+                    if (!hasCurrentPoint) return points
+                    addPoint(subpathStartX, subpathStartY)
+                    command = null
+                }
+                else -> return points
+            }
+        }
+
         return points
     }
 

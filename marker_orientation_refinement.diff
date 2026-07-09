@@ -1,0 +1,195 @@
+--- app/src/main/java/com/example/svgvectorconverter/SvgPathEmitter.kt	2026-07-09 20:27:32.279144101 +0000
++++ app/src/main/java/com/example/svgvectorconverter/SvgPathEmitter.kt	2026-07-09 20:27:33.337329876 +0000
+@@ -1049,10 +1049,13 @@
+     }
+ 
+ 
++    private enum class MarkerPosition { START, MID, END }
++
+     private data class MarkerPlacement(
+         val x: Float,
+         val y: Float,
+-        val angle: Float
++        val angle: Float,
++        val position: MarkerPosition
+     )
+ 
+     private fun appendMarkersForPath(
+@@ -1095,7 +1098,8 @@
+                 placement = MarkerPlacement(
+                     x = points.first().first,
+                     y = points.first().second,
+-                    angle = angleBetween(points[1], points[0])
++                    angle = angleBetween(points.first(), points[1]),
++                    position = MarkerPosition.START
+                 ),
+                 inheritedStroke = inheritedStroke,
+                 inheritedStrokeWidth = inheritedStrokeWidth,
+@@ -1115,7 +1119,8 @@
+                     placement = MarkerPlacement(
+                         x = points[i].first,
+                         y = points[i].second,
+-                        angle = averageAngle(previousAngle, nextAngle)
++                        angle = averageAngle(previousAngle, nextAngle),
++                        position = MarkerPosition.MID
+                     ),
+                     inheritedStroke = inheritedStroke,
+                     inheritedStrokeWidth = inheritedStrokeWidth,
+@@ -1133,7 +1138,8 @@
+                 placement = MarkerPlacement(
+                     x = points.last().first,
+                     y = points.last().second,
+-                    angle = angleBetween(points[points.lastIndex - 1], points.last())
++                    angle = angleBetween(points[points.lastIndex - 1], points.last()),
++                    position = MarkerPosition.END
+                 ),
+                 inheritedStroke = inheritedStroke,
+                 inheritedStrokeWidth = inheritedStrokeWidth,
+@@ -1162,13 +1168,7 @@
+         }
+         val scaleX = marker.markerWidth / marker.viewBoxWidth.coerceAtLeast(0.001f) * strokeScale
+         val scaleY = marker.markerHeight / marker.viewBoxHeight.coerceAtLeast(0.001f) * strokeScale
+-        val rotation = marker.orient.trim().let { orient ->
+-            if (orient.equals("auto", ignoreCase = true) || orient.equals("auto-start-reverse", ignoreCase = true)) {
+-                placement.angle
+-            } else {
+-                orient.removeSuffix("deg").trim().toFloatOrNull() ?: 0f
+-            }
+-        }
++        val rotation = markerRotation(marker.orient, placement)
+         val transform = markerTransform(
+             placement.x,
+             placement.y,
+@@ -1203,6 +1203,17 @@
+         }
+     }
+ 
++    private fun markerRotation(orient: String, placement: MarkerPlacement): Float {
++        val raw = orient.trim()
++        return when {
++            raw.equals("auto", ignoreCase = true) -> placement.angle
++            raw.equals("auto-start-reverse", ignoreCase = true) -> {
++                if (placement.position == MarkerPosition.START) normalizeDegrees(placement.angle + 180f) else placement.angle
++            }
++            else -> raw.removeSuffix("deg").trim().toFloatOrNull() ?: 0f
++        }
++    }
++
+     private fun markerPaintColor(value: String?, inheritedStroke: String?, fallback: String): String {
+         val raw = value?.trim().orEmpty()
+         val resolved = when {
+@@ -1246,11 +1257,96 @@
+ 
+     private fun extractMarkerPoints(pathData: String): List<Pair<Float, Float>> {
+         val points = mutableListOf<Pair<Float, Float>>()
+-        val commandRegex = Regex("""([MmLl])\s*([-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?)[,\s]+([-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?)""")
+-        commandRegex.findAll(pathData).forEach { match ->
+-            val x = match.groupValues.getOrNull(2)?.toFloatOrNull()
+-            val y = match.groupValues.getOrNull(3)?.toFloatOrNull()
+-            if (x != null && y != null) points.add(Pair(x, y))
++        val tokens = tokenizePathData(pathData)
++        var i = 0
++        var command = ""
++        var currentX = 0f
++        var currentY = 0f
++        var startX = 0f
++        var startY = 0f
++
++        fun number(index: Int): Float? = tokens.getOrNull(index)?.toFloatOrNull()
++
++        while (i < tokens.size) {
++            val token = tokens[i]
++            if (token.length == 1 && token[0].isLetter()) {
++                command = token
++                i++
++            }
++
++            val relative = command.firstOrNull()?.isLowerCase() == true
++            when (command.uppercase(Locale.US)) {
++                "M" -> {
++                    val x = number(i) ?: break
++                    val y = number(i + 1) ?: break
++                    currentX = if (relative) currentX + x else x
++                    currentY = if (relative) currentY + y else y
++                    startX = currentX
++                    startY = currentY
++                    points.add(Pair(currentX, currentY))
++                    i += 2
++                    command = if (relative) "l" else "L"
++                }
++                "L" -> {
++                    val x = number(i) ?: break
++                    val y = number(i + 1) ?: break
++                    currentX = if (relative) currentX + x else x
++                    currentY = if (relative) currentY + y else y
++                    points.add(Pair(currentX, currentY))
++                    i += 2
++                }
++                "H" -> {
++                    val x = number(i) ?: break
++                    currentX = if (relative) currentX + x else x
++                    points.add(Pair(currentX, currentY))
++                    i += 1
++                }
++                "V" -> {
++                    val y = number(i) ?: break
++                    currentY = if (relative) currentY + y else y
++                    points.add(Pair(currentX, currentY))
++                    i += 1
++                }
++                "C" -> {
++                    val x = number(i + 4) ?: break
++                    val y = number(i + 5) ?: break
++                    currentX = if (relative) currentX + x else x
++                    currentY = if (relative) currentY + y else y
++                    points.add(Pair(currentX, currentY))
++                    i += 6
++                }
++                "S", "Q" -> {
++                    val x = number(i + 2) ?: break
++                    val y = number(i + 3) ?: break
++                    currentX = if (relative) currentX + x else x
++                    currentY = if (relative) currentY + y else y
++                    points.add(Pair(currentX, currentY))
++                    i += 4
++                }
++                "T" -> {
++                    val x = number(i) ?: break
++                    val y = number(i + 1) ?: break
++                    currentX = if (relative) currentX + x else x
++                    currentY = if (relative) currentY + y else y
++                    points.add(Pair(currentX, currentY))
++                    i += 2
++                }
++                "A" -> {
++                    val x = number(i + 5) ?: break
++                    val y = number(i + 6) ?: break
++                    currentX = if (relative) currentX + x else x
++                    currentY = if (relative) currentY + y else y
++                    points.add(Pair(currentX, currentY))
++                    i += 7
++                }
++                "Z" -> {
++                    currentX = startX
++                    currentY = startY
++                    points.add(Pair(currentX, currentY))
++                    command = ""
++                }
++                else -> i++
++            }
+         }
+         return points
+     }
+@@ -1267,6 +1363,12 @@
+         return Math.toDegrees(kotlin.math.atan2(y, x)).toFloat()
+     }
+ 
++    private fun normalizeDegrees(value: Float): Float {
++        var result = value % 360f
++        if (result < 0f) result += 360f
++        return result
++    }
++
+     private fun normalizeNumber(value: String?): String? {
+         val raw = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
+         val cleaned = raw.removeSuffix("px").trim()
