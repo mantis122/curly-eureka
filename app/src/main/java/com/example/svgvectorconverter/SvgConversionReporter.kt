@@ -523,19 +523,19 @@ object SvgConversionReporter {
         if (summary.approximated.isNotEmpty()) {
             appendLine()
             appendLine("Approximated")
-            summary.approximated.forEach { appendLine("• $it") }
+            summary.approximated.forEach { appendLine("✓ $it") }
         }
 
         if (summary.ignored.isNotEmpty()) {
             appendLine()
             appendLine("Ignored")
-            summary.ignored.forEach { appendLine("• $it") }
+            summary.ignored.forEach { appendLine("⚠ $it") }
         }
 
         if (summary.unsupported.isNotEmpty()) {
             appendLine()
             appendLine("Unsupported")
-            summary.unsupported.forEach { appendLine("• $it") }
+            summary.unsupported.forEach { appendLine("⚠ $it") }
         }
 
         appendLine()
@@ -585,11 +585,25 @@ object SvgConversionReporter {
             }
         }
 
+        val unsupportedCount = unsupported.size
+        val approximationCount = approximated.size
+        val ignoredCount = ignored.size
+        val noConvertedVisibleVectorContent =
+            data.convertedPathCount == 0 &&
+                (data.visibleDrawableElementCount > 0 || data.imageStats.imageElementCount > 0 || data.textElementCount > 0)
+
         val fidelity = when {
-            unsupported.size >= 4 || data.convertedPathCount == 0 && (data.visibleDrawableElementCount > 0 || data.imageStats.imageElementCount > 0 || data.textElementCount > 0) -> 25
-            unsupported.size >= 2 || (unsupported.isNotEmpty() && approximated.size >= 2) -> 55
-            unsupported.isNotEmpty() -> 80
-            approximated.isNotEmpty() || ignored.isNotEmpty() -> 95
+            noConvertedVisibleVectorContent -> 25
+            unsupportedCount >= 4 -> 25
+            unsupportedCount >= 2 -> 55
+            unsupportedCount == 1 -> when {
+                approximationCount >= 3 || ignoredCount >= 2 -> 75
+                else -> 80
+            }
+            approximationCount > 0 || ignoredCount > 0 -> when {
+                approximationCount + ignoredCount >= 4 -> 90
+                else -> 95
+            }
             else -> 100
         }
 
