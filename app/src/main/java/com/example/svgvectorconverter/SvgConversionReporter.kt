@@ -518,7 +518,7 @@ object SvgConversionReporter {
         val summary = compatibilitySummary(data)
 
         appendLine("${summary.stars} ${summary.label}")
-        appendLine("Estimated fidelity: ~${summary.fidelityPercent}%")
+        appendLine("Estimated visual fidelity: ~${summary.fidelityPercent}%")
 
         if (summary.approximated.isNotEmpty()) {
             appendLine()
@@ -550,11 +550,18 @@ object SvgConversionReporter {
         if (data.maskPathCount > 0 || data.appliedMasks > 0) approximated.add("Masks as clip paths")
         if (data.appliedMarkers > 0) approximated.add("Markers")
         if (data.contextPaintApproximationCount > 0) approximated.add("context-fill/context-stroke")
-        if (data.dashedStrokesApproximated > 0) approximated.add("Dashed strokes")
-        if (data.nonScalingStrokesUncertain > 0) approximated.add("Non-scaling strokes under non-uniform transforms")
 
         val unapproximatedDashedStrokes = maxOf(0, data.dashedStrokesDetected - data.dashedStrokesApproximated)
-        if (unapproximatedDashedStrokes > 0) unsupported.add("Dashed strokes")
+        when {
+            data.dashedStrokesApproximated > 0 && unapproximatedDashedStrokes > 0 -> {
+                approximated.add("Dashed strokes (${data.dashedStrokesApproximated} approximated)")
+                unsupported.add("Some dashed strokes ($unapproximatedDashedStrokes not approximated)")
+            }
+            data.dashedStrokesApproximated > 0 -> approximated.add("Dashed strokes")
+            unapproximatedDashedStrokes > 0 -> unsupported.add("Dashed strokes")
+        }
+
+        if (data.nonScalingStrokesUncertain > 0) approximated.add("Non-scaling strokes under non-uniform transforms")
 
         if (data.cssExternalImportCount > 0) ignored.add("External CSS @import")
         if (data.filterReferenceCount > 0) ignored.add("Filter effects")
