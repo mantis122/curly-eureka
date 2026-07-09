@@ -245,7 +245,7 @@ object SvgGradientResolver {
             null
         )
         val tileMode = androidTileMode(spec.attributes["spreadMethod"])
-        val objectBoundingBoxUnits = !spec.attributes["gradientUnits"].equals("userSpaceOnUse", ignoreCase = true)
+        val objectBoundingBoxUnits = shouldUseObjectBoundingBoxUnits(spec)
         val xRelativeTo = if (objectBoundingBoxUnits) 1f else viewportWidth
         val yRelativeTo = if (objectBoundingBoxUnits) 1f else viewportHeight
         val radiusRelativeTo = if (objectBoundingBoxUnits) 1f else minOf(viewportWidth, viewportHeight)
@@ -298,6 +298,36 @@ object SvgGradientResolver {
                 tileMode = tileMode,
                 objectBoundingBoxUnits = objectBoundingBoxUnits
             )
+        }
+    }
+
+
+    private fun shouldUseObjectBoundingBoxUnits(spec: ResolvedGradientSpec): Boolean {
+        val explicitUnits = spec.attributes["gradientUnits"]?.trim()
+        if (!explicitUnits.isNullOrBlank()) {
+            return !explicitUnits.equals("userSpaceOnUse", ignoreCase = true)
+        }
+
+        // SVG defaults gradientUnits to objectBoundingBox, where bare numeric coordinates are
+        // normally fractions such as 0, 0.5, or 1. In real exported SVGs it is common to omit
+        // gradientUnits while still using absolute user-space coordinates like x1="20" x2="240".
+        // Treat those obvious absolute coordinates as userSpaceOnUse so VectorDrawable output does
+        // not multiply them by the drawable bounds a second time.
+        return !hasObviousUserSpaceGradientCoordinates(spec)
+    }
+
+    private fun hasObviousUserSpaceGradientCoordinates(spec: ResolvedGradientSpec): Boolean {
+        val coordinateNames = if (spec.sourceType == "linear") {
+            listOf("x1", "y1", "x2", "y2")
+        } else {
+            listOf("cx", "cy", "r", "fx", "fy", "fr")
+        }
+
+        return coordinateNames.any { name ->
+            val raw = spec.attributes[name]?.trim()?.takeIf { it.isNotBlank() } ?: return@any false
+            if (raw.endsWith("%")) return@any false
+            val number = raw.removeSuffix("px").trim().toFloatOrNull() ?: return@any false
+            kotlin.math.abs(number) > 1f
         }
     }
 
