@@ -48,6 +48,9 @@ data class SvgConversionReportData(
     val textPathElementCount: Int,
     val svgFontGlyphCount: Int,
     val contextPaintApproximationCount: Int,
+    val cssImportRuleCount: Int,
+    val cssImportedInlineRuleCount: Int,
+    val cssExternalImportCount: Int,
     val styleAttributeCount: Int,
     val presentationStyleAttributeCount: Int,
     val warningCount: Int,
@@ -366,6 +369,14 @@ object SvgConversionReporter {
                 appendLine("ℹ context-fill/context-stroke approximated using inherited paint.")
             }
 
+            if (data.cssImportRuleCount > 0) {
+                appendLine("✓ CSS @import rules found: ${data.cssImportRuleCount}")
+                appendLine("✓ Inline CSS imports applied: ${data.cssImportedInlineRuleCount}")
+                if (data.cssExternalImportCount > 0) {
+                    appendLine("⚠ External CSS imports ignored: ${data.cssExternalImportCount}")
+                }
+            }
+
             appendLine("✓ Style attributes: ${data.styleAttributeCount}")
             appendLine("✓ Presentation attributes: ${data.presentationStyleAttributeCount}")
 
@@ -402,6 +413,7 @@ object SvgConversionReporter {
                 data.unresolvedUseReferences > 0 ||
                 unapproximatedDashedStrokes > 0 ||
                 data.nonScalingStrokesUncertain > 0 ||
+                data.cssExternalImportCount > 0 ||
                 data.textElementCount > 0 ||
                 data.tspanElementCount > 0 ||
                 data.textPathElementCount > 0
@@ -426,6 +438,10 @@ object SvgConversionReporter {
 
                 if (data.nonScalingStrokesUncertain > 0) {
                     appendLine("⚠ Non-scaling stroke compensation used average scale for non-uniform transforms: ${data.nonScalingStrokesUncertain}")
+                }
+
+                if (data.cssExternalImportCount > 0) {
+                    appendLine("⚠ External CSS @import ignored: ${data.cssExternalImportCount}. Inline data:text/css imports are supported, but external stylesheets cannot be fetched from a standalone SVG file.")
                 }
 
                 if (data.textElementCount > 0 || data.tspanElementCount > 0 || data.textPathElementCount > 0) {

@@ -1,7 +1,15 @@
 package com.example.svgvectorconverter
 
 object SvgStyleResolver {
+    var cssImportRuleCount: Int = 0
+        private set
+    var cssImportedInlineRuleCount: Int = 0
+        private set
+    var cssExternalImportCount: Int = 0
+        private set
+
     fun applyStylesheets(svg: String): String {
+        resetImportStats()
         val stylesheet = collectStylesheetRules(svg)
 
         val tagPattern = Regex(
@@ -251,6 +259,18 @@ object SvgStyleResolver {
         }
     }
 
+    private fun resetImportStats() {
+        cssImportRuleCount = 0
+        cssImportedInlineRuleCount = 0
+        cssExternalImportCount = 0
+    }
+
+    private data class CssWithImports(
+        val css: String,
+        val importedInlineCount: Int,
+        val externalImportCount: Int
+    )
+
     private fun collectStylesheetRules(svg: String): StylesheetRules {
         val rules = mutableListOf<StyleRule>()
         var sourceOrder = 0
@@ -263,7 +283,10 @@ object SvgStyleResolver {
         styleBlocks.forEach { block ->
             val cssWithoutComments = Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL)
                 .replace(block.groupValues.getOrNull(1).orEmpty(), "")
-            val css = removeUnsupportedAtRuleBlocks(cssWithoutComments)
+            val cssWithImports = expandCssImports(cssWithoutComments)
+            cssImportedInlineRuleCount += cssWithImports.importedInlineCount
+            cssExternalImportCount += cssWithImports.externalImportCount
+            val css = removeUnsupportedAtRuleBlocks(cssWithImports.css)
 
             rulePattern.findAll(css).forEach ruleLoop@{ rule ->
                 val declarations = normalizeCssDeclarations(rule.groupValues.getOrNull(2).orEmpty())
@@ -285,6 +308,118 @@ object SvgStyleResolver {
         }
 
         return StylesheetRules(rules)
+    }
+
+
+    private fun expandCssImports(css: String): CssWithImports {
+        val output = StringBuilder()
+        var index = 0
+        var importedInlineCount = 0
+        var externalImportCount = 0
+
+        while (index < css.length) {
+            val importStart = findTopLevelImport(css, index)
+            if (importStart < 0) {
+                output.append(css.substring(index))
+                break
+            }
+
+            output.append(css.substring(index, importStart))
+            val importEnd = skipCssAtRule(css, importStart)
+            val importRule = css.substring(importStart, importEnd.coerceAtMost(css.length))
+            cssImportRuleCount++
+
+            val importedCss = decodeInlineCssImport(importRule)
+            if (importedCss != null) {
+                importedInlineCount++
+                output.append('\n')
+                output.append(importedCss)
+                output.append('\n')
+            } else {
+                externalImportCount++
+                if (output.isNotEmpty() && !output.last().isWhitespace()) output.append('\n')
+            }
+
+            index = importEnd
+        }
+
+        return CssWithImports(
+            css = output.toString(),
+            importedInlineCount = importedInlineCount,
+            externalImportCount = externalImportCount
+        )
+    }
+
+    private fun findTopLevelImport(css: String, startIndex: Int): Int {
+        var index = startIndex
+        var quote: Char? = null
+        var braceDepth = 0
+        var parenDepth = 0
+        var bracketDepth = 0
+
+        while (index < css.length) {
+            val char = css[index]
+            when {
+                quote != null -> {
+                    if (char == quote) quote = null
+                }
+                char == '\'' || char == '"' -> quote = char
+                char == '{' -> braceDepth++
+                char == '}' -> braceDepth = (braceDepth - 1).coerceAtLeast(0)
+                char == '(' -> parenDepth++
+                char == ')' -> parenDepth = (parenDepth - 1).coerceAtLeast(0)
+                char == '[' -> bracketDepth++
+                char == ']' -> bracketDepth = (bracketDepth - 1).coerceAtLeast(0)
+                char == '@' && braceDepth == 0 && parenDepth == 0 && bracketDepth == 0 &&
+                    css.regionMatches(index, "@import", 0, "@import".length, ignoreCase = true) &&
+                    css.getOrNull(index + "@import".length)?.let { !isCssIdentifierChar(it) } != false -> return index
+            }
+            index++
+        }
+
+        return -1
+    }
+
+    private fun decodeInlineCssImport(importRule: String): String? {
+        val rawReference = extractCssImportReference(importRule) ?: return null
+        if (!rawReference.startsWith("data:text/css", ignoreCase = true)) return null
+
+        val commaIndex = rawReference.indexOf(',')
+        if (commaIndex < 0 || commaIndex == rawReference.lastIndex) return ""
+
+        val metadata = rawReference.substring(0, commaIndex).lowercase()
+        val payload = rawReference.substring(commaIndex + 1)
+
+        return try {
+            if (metadata.contains(";base64")) {
+                val decoderClass = Class.forName("java.util.Base64")
+                val getDecoder = decoderClass.getMethod("getDecoder")
+                val decoder = getDecoder.invoke(null)
+                val decode = decoder.javaClass.getMethod("decode", String::class.java)
+                val bytes = decode.invoke(decoder, payload) as ByteArray
+                String(bytes, Charsets.UTF_8)
+            } else {
+                java.net.URLDecoder.decode(payload, "UTF-8")
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun extractCssImportReference(importRule: String): String? {
+        var text = importRule.trim()
+        if (!text.startsWith("@import", ignoreCase = true)) return null
+        text = text.substring("@import".length).trim().trimEnd(';').trim()
+
+        if (text.startsWith("url(", ignoreCase = true)) {
+            val closeIndex = text.lastIndexOf(')')
+            if (closeIndex < 0) return null
+            text = text.substring(4, closeIndex).trim()
+        } else {
+            text = text.substringBefore(" screen").substringBefore(" print").substringBefore(" all").trim()
+        }
+
+        return text.trim('\'', '"').takeIf { it.isNotBlank() }
     }
 
     private fun removeUnsupportedAtRuleBlocks(css: String): String {

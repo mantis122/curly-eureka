@@ -135,6 +135,9 @@ object SvgToVectorConverter {
         val textPathElementCount = countTags(svgForTransformStats, "textPath")
         val svgFontGlyphCount = countSvgFontGlyphs(svgForTransformStats)
         val contextPaintApproximationCount = countContextPaintReferences(svgForTransformStats)
+        val cssImportRuleCount = SvgStyleResolver.cssImportRuleCount
+        val cssImportedInlineRuleCount = SvgStyleResolver.cssImportedInlineRuleCount
+        val cssExternalImportCount = SvgStyleResolver.cssExternalImportCount
         val unsupported = buildUnsupportedWarnings(svgWithCssClassStyles, gradientFallbackColors, patternFallbackColors, clipPathData, maskPathData, filterReferenceCount)
         val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
         val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svgWithCssClassStyles).count()
@@ -160,7 +163,8 @@ object SvgToVectorConverter {
             (if (SvgTransformParser.unsupportedMatrixTransforms > 0) 1 else 0) +
             (if (unresolvedUseReferences > 0) 1 else 0) +
             (if (unapproximatedDashedStrokes > 0) 1 else 0) +
-            (if (SvgTreeConverter.nonScalingStrokesUncertain > 0) 1 else 0)
+            (if (SvgTreeConverter.nonScalingStrokesUncertain > 0) 1 else 0) +
+            (if (cssExternalImportCount > 0) 1 else 0)
 
         val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
 
@@ -198,6 +202,9 @@ object SvgToVectorConverter {
                 textPathElementCount = textPathElementCount,
                 svgFontGlyphCount = svgFontGlyphCount,
                 contextPaintApproximationCount = contextPaintApproximationCount,
+                cssImportRuleCount = cssImportRuleCount,
+                cssImportedInlineRuleCount = cssImportedInlineRuleCount,
+                cssExternalImportCount = cssExternalImportCount,
                 styleAttributeCount = styleAttributeCount,
                 presentationStyleAttributeCount = presentationStyleAttributeCount,
                 warningCount = warningCount,
