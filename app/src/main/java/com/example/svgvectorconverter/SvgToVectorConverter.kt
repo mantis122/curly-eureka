@@ -53,6 +53,7 @@ object SvgToVectorConverter {
         val gradientFallbackColors = SvgGradientResolver.fallbackColors(gradientDefinitions)
 
         val patternFallbackColors = SvgPaintResolver.collectPatternFallbackColors(svgWithCssClassStyles)
+        val patternApproximationStats = SvgPaintResolver.collectPatternApproximationStats(svgWithCssClassStyles, patternFallbackColors)
         SvgPaintResolver.setPatternFallbackColors(patternFallbackColors)
 
         val vectorWidthDp = if (outputDpSize > 0) outputDpSize else viewportWidth.toInt()
@@ -187,6 +188,7 @@ object SvgToVectorConverter {
                 symbolCount = symbolCount,
                 gradientFallbackColorCount = gradientFallbackColors.size,
                 patternApproximationCount = patternFallbackColors.size,
+                patternApproximationStats = patternApproximationStats,
                 markerDefinitionCount = markerDefinitions.size,
                 appliedMarkers = SvgTreeConverter.appliedMarkers,
                 clipPathCount = clipPathData.size,

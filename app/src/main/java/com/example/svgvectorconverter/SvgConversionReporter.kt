@@ -24,6 +24,13 @@ data class SvgImageStats(
     val imageElementsWithSize: Int = 0
 )
 
+data class SvgPatternApproximationStats(
+    val patternDefinitionCount: Int = 0,
+    val approximatedPatternCount: Int = 0,
+    val complexPatternApproximationCount: Int = 0,
+    val sparsePatternApproximationCount: Int = 0
+)
+
 data class SvgConversionReportData(
     val convertedPathCount: Int,
     val convertedOriginalPathCount: Int,
@@ -40,6 +47,7 @@ data class SvgConversionReportData(
     val symbolCount: Int,
     val gradientFallbackColorCount: Int,
     val patternApproximationCount: Int,
+    val patternApproximationStats: SvgPatternApproximationStats,
     val markerDefinitionCount: Int,
     val appliedMarkers: Int,
     val clipPathCount: Int,
@@ -341,6 +349,10 @@ object SvgConversionReporter {
 
             if (data.patternApproximationCount > 0)
                 appendLine("✓ Patterns approximated: ${data.patternApproximationCount}")
+            if (data.patternApproximationStats.complexPatternApproximationCount > 0)
+                appendLine("ℹ Complex pattern fallback fills: ${data.patternApproximationStats.complexPatternApproximationCount}")
+            if (data.patternApproximationStats.sparsePatternApproximationCount > 0)
+                appendLine("ℹ Sparse/transparent pattern fallback fills: ${data.patternApproximationStats.sparsePatternApproximationCount}")
 
             if (data.markerDefinitionCount > 0 || data.appliedMarkers > 0) {
                 appendLine("✓ Marker definitions: ${data.markerDefinitionCount}")
@@ -546,7 +558,14 @@ object SvgConversionReporter {
         val ignored = linkedSetOf<String>()
         val unsupported = linkedSetOf<String>()
 
-        if (data.patternApproximationCount > 0) approximated.add("Pattern fills")
+        if (data.patternApproximationCount > 0) {
+            val patternLabel = when {
+                data.patternApproximationStats.sparsePatternApproximationCount > 0 -> "Pattern fills (sparse/transparent fallback)"
+                data.patternApproximationStats.complexPatternApproximationCount > 0 -> "Pattern fills (complex fallback)"
+                else -> "Pattern fills"
+            }
+            approximated.add(patternLabel)
+        }
         if (data.maskPathCount > 0 || data.appliedMasks > 0) approximated.add("Masks as clip paths")
         if (data.appliedMarkers > 0) approximated.add("Markers")
         if (data.contextPaintApproximationCount > 0) approximated.add("context-fill/context-stroke")
@@ -608,6 +627,8 @@ object SvgConversionReporter {
                 else -> 80
             }
             approximationCount > 0 || ignoredCount > 0 -> when {
+                data.patternApproximationStats.sparsePatternApproximationCount > 0 -> 80
+                data.patternApproximationStats.complexPatternApproximationCount > 0 -> 85
                 approximationCount + ignoredCount >= 4 -> 90
                 else -> 95
             }

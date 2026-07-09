@@ -436,6 +436,176 @@ object SvgPaintResolver {
         return result
     }
 
+
+    fun collectPatternApproximationStats(
+        svg: String,
+        fallbackColors: Map<String, String>
+    ): SvgPatternApproximationStats {
+        try {
+            val factory = DocumentBuilderFactory.newInstance().apply {
+                isNamespaceAware = false
+                isIgnoringComments = true
+            }
+
+            val document = factory
+                .newDocumentBuilder()
+                .parse(InputSource(StringReader(svg)))
+
+            val patterns = mutableListOf<Element>()
+
+            fun visit(node: Node) {
+                if (node.nodeType != Node.ELEMENT_NODE) return
+
+                val element = node as Element
+                val tag = element.tagName.substringAfter(":").lowercase()
+                if (tag == "pattern") patterns.add(element)
+
+                val children = element.childNodes
+                for (i in 0 until children.length) {
+                    visit(children.item(i))
+                }
+            }
+
+            visit(document.documentElement)
+
+            var complex = 0
+            var sparse = 0
+
+            patterns.forEach { pattern ->
+                val id = pattern.getAttribute("id").trim()
+                if (id.isBlank() || fallbackColors[id] == null) return@forEach
+
+                val analysis = analyzePatternApproximation(pattern)
+                if (analysis.isComplex) complex++
+                if (analysis.isSparse) sparse++
+            }
+
+            return SvgPatternApproximationStats(
+                patternDefinitionCount = patterns.size,
+                approximatedPatternCount = fallbackColors.size,
+                complexPatternApproximationCount = complex,
+                sparsePatternApproximationCount = sparse
+            )
+        } catch (_: Exception) {
+            return SvgPatternApproximationStats(
+                approximatedPatternCount = fallbackColors.size
+            )
+        }
+    }
+
+    private data class PatternApproximationAnalysis(
+        val isComplex: Boolean,
+        val isSparse: Boolean
+    )
+
+    private fun analyzePatternApproximation(pattern: Element): PatternApproximationAnalysis {
+        val drawableChildren = mutableListOf<Element>()
+        val colors = linkedSetOf<String>()
+        var estimatedPaintedArea = 0.0
+        var hasEstimableArea = false
+
+        fun collectDrawable(node: Node) {
+            if (node.nodeType != Node.ELEMENT_NODE) return
+            val element = node as Element
+            val tag = element.tagName.substringAfter(":").lowercase()
+
+            if (tag in setOf("path", "rect", "circle", "ellipse", "line", "polyline", "polygon")) {
+                drawableChildren.add(element)
+                val style = element.getAttribute("style").ifBlank { null }
+                val fill = styleValue(style, "fill") ?: element.getAttribute("fill").ifBlank { null }
+                val stroke = styleValue(style, "stroke") ?: element.getAttribute("stroke").ifBlank { null }
+                normalizedAndroidColor(fill)?.let { colors.add(it) }
+                normalizedAndroidColor(stroke)?.let { colors.add(it) }
+                estimatedArea(element)?.let {
+                    estimatedPaintedArea += it
+                    hasEstimableArea = true
+                }
+            }
+
+            val children = element.childNodes
+            for (i in 0 until children.length) {
+                collectDrawable(children.item(i))
+            }
+        }
+
+        collectDrawable(pattern)
+
+        val tileWidth = numberAttr(pattern, "width")
+        val tileHeight = numberAttr(pattern, "height")
+        val tileArea = if (tileWidth != null && tileHeight != null && tileWidth > 0.0 && tileHeight > 0.0) {
+            tileWidth * tileHeight
+        } else {
+            null
+        }
+
+        val coverage = if (tileArea != null && hasEstimableArea) {
+            (estimatedPaintedArea / tileArea).coerceIn(0.0, 1.0)
+        } else {
+            null
+        }
+
+        val sparse = coverage != null && coverage < 0.9
+        val complex = drawableChildren.size > 1 || colors.size > 1 || sparse || coverage == null
+
+        return PatternApproximationAnalysis(
+            isComplex = complex,
+            isSparse = sparse
+        )
+    }
+
+    private fun estimatedArea(element: Element): Double? {
+        val tag = element.tagName.substringAfter(":").lowercase()
+        return when (tag) {
+            "rect" -> {
+                val width = numberAttr(element, "width") ?: return null
+                val height = numberAttr(element, "height") ?: return null
+                width * height
+            }
+            "circle" -> {
+                val r = numberAttr(element, "r") ?: return null
+                Math.PI * r * r
+            }
+            "ellipse" -> {
+                val rx = numberAttr(element, "rx") ?: return null
+                val ry = numberAttr(element, "ry") ?: return null
+                Math.PI * rx * ry
+            }
+            "path" -> estimatedRectPathArea(element.getAttribute("d"))
+            else -> null
+        }
+    }
+
+    private fun estimatedRectPathArea(d: String): Double? {
+        val nums = Regex("""-?\d*\.?\d+(?:[eE][+-]?\d+)?""")
+            .findAll(d)
+            .mapNotNull { it.value.toDoubleOrNull() }
+            .toList()
+
+        if (nums.size < 4) return null
+
+        val hasRectCommands = d.contains('H', ignoreCase = true) &&
+            d.contains('V', ignoreCase = true) &&
+            d.contains('Z', ignoreCase = true)
+        if (!hasRectCommands) return null
+
+        val xs = nums.filterIndexed { index, _ -> index % 2 == 0 }
+        val ys = nums.filterIndexed { index, _ -> index % 2 == 1 }
+        if (xs.isEmpty() || ys.isEmpty()) return null
+
+        val width = (xs.maxOrNull() ?: return null) - (xs.minOrNull() ?: return null)
+        val height = (ys.maxOrNull() ?: return null) - (ys.minOrNull() ?: return null)
+        return if (width > 0.0 && height > 0.0) width * height else null
+    }
+
+    private fun numberAttr(element: Element, name: String): Double? {
+        val raw = element.getAttribute(name).trim()
+        if (raw.isBlank()) return null
+        return Regex("""-?\d*\.?\d+(?:[eE][+-]?\d+)?""")
+            .find(raw)
+            ?.value
+            ?.toDoubleOrNull()
+    }
+
     fun collectGradientFallbackColors(svg: String): Map<String, String> {
         val result = mutableMapOf<String, String>()
 
