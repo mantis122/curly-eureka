@@ -167,9 +167,9 @@ object SvgGradientResolver {
             val color = gradient.stops.firstOrNull()?.color ?: gradient.fallbackColor
             output.appendLine("${indent}        android:startColor=\"$color\"")
             output.appendLine("${indent}        android:endColor=\"$color\" />")
-        } else if (gradient.stops.size == 2) {
-            output.appendLine("${indent}        android:startColor=\"${gradient.stops[0].color}\"")
-            output.appendLine("${indent}        android:endColor=\"${gradient.stops[1].color}\" />")
+        } else if (canUseSimpleGradientColors(gradient.stops)) {
+            output.appendLine("${indent}        android:startColor=\"${gradient.stops.first().color}\"")
+            output.appendLine("${indent}        android:endColor=\"${gradient.stops.last().color}\" />")
         } else {
             output.appendLine("${indent}        >")
             gradient.stops.forEach { stop ->
@@ -181,6 +181,13 @@ object SvgGradientResolver {
         }
 
         output.appendLine("${indent}</aapt:attr>")
+    }
+
+    private fun canUseSimpleGradientColors(stops: List<SvgGradientStop>): Boolean {
+        if (stops.size != 2) return false
+        val first = stops.first().offset.toFloatOrNull() ?: return false
+        val last = stops.last().offset.toFloatOrNull() ?: return false
+        return kotlin.math.abs(first) < 0.0001f && kotlin.math.abs(last - 1f) < 0.0001f
     }
 
     fun transformedGradientCount(definitions: Map<String, SvgVectorGradient>): Int {
@@ -345,8 +352,13 @@ object SvgGradientResolver {
         return ((rx + ry) / 2f).coerceAtLeast(0.001f)
     }
 
+    private data class ParsedGradientStop(
+        val offset: Float?,
+        val color: String
+    )
+
     private fun localStopsForGradient(element: Element): List<SvgGradientStop> {
-        val stops = mutableListOf<SvgGradientStop>()
+        val parsedStops = mutableListOf<ParsedGradientStop>()
         val children = element.childNodes
 
         for (i in 0 until children.length) {
@@ -373,12 +385,62 @@ object SvgGradientResolver {
             val stopOpacity = SvgPaintResolver.parseSvgAlpha(stopOpacityText) ?: 1f
             val localOpacity = SvgPaintResolver.parseSvgAlpha(opacityText) ?: 1f
             val color = androidColorWithAlpha(colorText, stopOpacity * localOpacity) ?: continue
-            val offset = normalizeOffset(stop.getAttribute("offset"))
+            val offsetText = stop.getAttribute("offset").ifBlank {
+                SvgPaintResolver.styleValue(style, "offset") ?: ""
+            }
 
-            stops.add(SvgGradientStop(offset = offset, color = color))
+            parsedStops.add(
+                ParsedGradientStop(
+                    offset = parseOffsetOrNull(offsetText),
+                    color = color
+                )
+            )
         }
 
-        return stops.sortedBy { it.offset.toFloatOrNull() ?: 0f }
+        return normalizeGradientStops(parsedStops)
+    }
+
+    private fun normalizeGradientStops(stops: List<ParsedGradientStop>): List<SvgGradientStop> {
+        if (stops.isEmpty()) return emptyList()
+        if (stops.size == 1) {
+            return listOf(SvgGradientStop(offset = format(stops.first().offset ?: 0f), color = stops.first().color))
+        }
+
+        val offsets = MutableList<Float?>(stops.size) { index -> stops[index].offset?.coerceIn(0f, 1f) }
+        val explicitIndexes = offsets.indices.filter { offsets[it] != null }
+
+        if (explicitIndexes.isEmpty()) {
+            for (i in offsets.indices) {
+                offsets[i] = i.toFloat() / offsets.lastIndex.toFloat()
+            }
+        } else {
+            // Interpolate omitted middle offsets. This avoids duplicate 0-offset output for common
+            // hand-written SVGs while preserving document order for explicit stops.
+            val firstExplicit = explicitIndexes.first()
+            for (i in 0 until firstExplicit) offsets[i] = 0f
+
+            for (pairIndex in 0 until explicitIndexes.lastIndex) {
+                val leftIndex = explicitIndexes[pairIndex]
+                val rightIndex = explicitIndexes[pairIndex + 1]
+                val left = offsets[leftIndex] ?: 0f
+                val right = offsets[rightIndex] ?: left
+                val gap = rightIndex - leftIndex
+                for (i in leftIndex + 1 until rightIndex) {
+                    val t = (i - leftIndex).toFloat() / gap.toFloat()
+                    offsets[i] = left + (right - left) * t
+                }
+            }
+
+            val lastExplicit = explicitIndexes.last()
+            for (i in lastExplicit + 1 until offsets.size) offsets[i] = 1f
+        }
+
+        var previous = 0f
+        return stops.mapIndexed { index, stop ->
+            val adjustedOffset = (offsets[index] ?: 0f).coerceIn(0f, 1f).coerceAtLeast(previous)
+            previous = adjustedOffset
+            SvgGradientStop(offset = format(adjustedOffset), color = stop.color)
+        }
     }
 
     private fun gradientHrefId(element: Element): String? {
@@ -406,6 +468,16 @@ object SvgGradientResolver {
             "pad" -> null
             else -> null
         }
+    }
+
+    private fun parseOffsetOrNull(value: String?): Float? {
+        val raw = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val number = if (raw.endsWith("%")) {
+            raw.removeSuffix("%").trim().toFloatOrNull()?.div(100f)
+        } else {
+            raw.toFloatOrNull()
+        }
+        return number?.coerceIn(0f, 1f)
     }
 
     private fun normalizeOffset(value: String?): String {
