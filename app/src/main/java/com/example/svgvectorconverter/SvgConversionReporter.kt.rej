@@ -1,0 +1,50 @@
+diff a/app/src/main/java/com/example/svgvectorconverter/SvgConversionReporter.kt b/app/src/main/java/com/example/svgvectorconverter/SvgConversionReporter.kt	(rejected hunks)
+@@ -48,6 +48,8 @@
+     val maskPathCount: Int,
+     val maskReferenceCount: Int,
+     val appliedMasks: Int,
++    val dashedStrokesDetected: Int,
++    val dashedStrokesApproximated: Int,
+     val nonScalingStrokesDetected: Int,
+     val nonScalingStrokesCompensated: Int,
+     val nonScalingStrokesUncertain: Int,
+@@ -357,6 +359,11 @@
+                 appendLine("✓ Masks applied as clip paths: ${data.appliedMasks}")
+             }
+ 
++            if (data.dashedStrokesDetected > 0) {
++                appendLine("✓ Dashed strokes detected: ${data.dashedStrokesDetected}")
++                appendLine("✓ Dashed strokes approximated: ${data.dashedStrokesApproximated}")
++            }
++
+             if (data.nonScalingStrokesDetected > 0) {
+                 appendLine("✓ Non-scaling strokes detected: ${data.nonScalingStrokesDetected}")
+                 appendLine("✓ Non-scaling strokes compensated: ${data.nonScalingStrokesCompensated}")
+@@ -442,10 +449,13 @@
+             appendLine("✓ XML validated")
+             appendLine("✓ Ready to save")
+ 
++            val unapproximatedDashedStrokes = maxOf(0, data.dashedStrokesDetected - data.dashedStrokesApproximated)
++
+             if (
+                 data.unsupportedWarnings.isNotEmpty() ||
+                 data.unsupportedMatrixTransforms > 0 ||
+                 data.unresolvedUseReferences > 0 ||
++                unapproximatedDashedStrokes > 0 ||
+                 data.nonScalingStrokesUncertain > 0 ||
+                 data.cssExternalImportCount > 0 ||
+                 data.imageStats.imageElementCount > 0 ||
+@@ -539,7 +549,12 @@
+         if (data.patternApproximationCount > 0) approximated.add("Pattern fills")
+         if (data.maskPathCount > 0 || data.appliedMasks > 0) approximated.add("Masks as clip paths")
+         if (data.appliedMarkers > 0) approximated.add("Markers")
+-        if (data.contextPaintApproximationCount > 0) approximated.add("context-fill/context-stroke")
+        if (data.nonScalingStrokesUncertain > 0) approximated.add("Non-scaling strokes under non-uniform transforms")
++        if (data.contextPaintApproximationCount > 0) approximated.add("context-fill/context-stroke")
++        if (data.dashedStrokesApproximated > 0) approximated.add("Dashed strokes")
++        if (data.nonScalingStrokesUncertain > 0) approximated.add("Non-scaling strokes under non-uniform transforms")
++
++        val unapproximatedDashedStrokes = maxOf(0, data.dashedStrokesDetected - data.dashedStrokesApproximated)
++        if (unapproximatedDashedStrokes > 0) unsupported.add("Dashed strokes")
+ 
+         if (data.cssExternalImportCount > 0) ignored.add("External CSS @import")

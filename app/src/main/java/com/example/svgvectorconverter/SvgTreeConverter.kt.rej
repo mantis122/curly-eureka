@@ -1,0 +1,19 @@
+diff a/app/src/main/java/com/example/svgvectorconverter/SvgTreeConverter.kt b/app/src/main/java/com/example/svgvectorconverter/SvgTreeConverter.kt	(rejected hunks)
+@@ -16,6 +16,8 @@
+ private var activeUnresolvedUseReferences = 0
+ private var activeMarkerDefinitions: Map<String, MarkerDefinition> = emptyMap()
+ private var activeAppliedMarkers = 0
++private var activeDashedStrokesDetected = 0
++private var activeDashedStrokesApproximated = 0
+ private var activeNonScalingStrokesDetected = 0
+ private var activeNonScalingStrokesCompensated = 0
+ private var activeNonScalingStrokesUncertain = 0
+@@ -26,6 +28,8 @@
+ val resolvedUseExpansions: Int get() = activeResolvedUseExpansions
+ val unresolvedUseReferences: Int get() = activeUnresolvedUseReferences
+ val appliedMarkers: Int get() = activeAppliedMarkers
++val dashedStrokesDetected: Int get() = activeDashedStrokesDetected
++val dashedStrokesApproximated: Int get() = activeDashedStrokesApproximated
+ val nonScalingStrokesDetected: Int get() = activeNonScalingStrokesDetected
+ val nonScalingStrokesCompensated: Int get() = activeNonScalingStrokesCompensated
+ val nonScalingStrokesUncertain: Int get() = activeNonScalingStrokesUncertain
