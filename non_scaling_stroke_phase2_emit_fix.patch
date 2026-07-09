@@ -1,0 +1,151 @@
+diff -ruN a/app/src/main/java/com/example/svgvectorconverter/SvgPathEmitter.kt b/app/src/main/java/com/example/svgvectorconverter/SvgPathEmitter.kt
+--- a/app/src/main/java/com/example/svgvectorconverter/SvgPathEmitter.kt	2026-07-09 00:09:36.689037995 +0000
++++ b/app/src/main/java/com/example/svgvectorconverter/SvgPathEmitter.kt	2026-07-09 00:09:37.780320629 +0000
+@@ -5,6 +5,7 @@
+ 
+ object SvgPathEmitter {
+     private val flattenTransformStack = mutableListOf<AffineTransform>()
++    private val forcedStrokeWidthStack = mutableListOf<String?>()
+ 
+     internal fun pushFlattenTransform(matrix: AffineTransform) {
+         flattenTransformStack.add(matrix)
+@@ -20,6 +21,20 @@
+         return flattenTransformStack.lastOrNull()
+     }
+ 
++    internal fun pushForcedStrokeWidth(strokeWidth: String?) {
++        forcedStrokeWidthStack.add(strokeWidth)
++    }
++
++    internal fun popForcedStrokeWidth() {
++        if (forcedStrokeWidthStack.isNotEmpty()) {
++            forcedStrokeWidthStack.removeAt(forcedStrokeWidthStack.lastIndex)
++        }
++    }
++
++    private fun currentForcedStrokeWidth(): String? {
++        return forcedStrokeWidthStack.lastOrNull()?.takeIf { it.isNotBlank() }
++    }
++
+     fun appendBasicShapePath(
+         output: StringBuilder,
+         element: Element,
+@@ -129,7 +144,8 @@
+         val rawStroke = SvgPaintResolver.styleValue(style, "stroke")
+             ?: element.getAttribute("stroke").ifBlank { inheritedStroke ?: "" }
+ 
+-        val strokeWidth = SvgPaintResolver.styleValue(style, "stroke-width")
++        val strokeWidth = currentForcedStrokeWidth()
++            ?: SvgPaintResolver.styleValue(style, "stroke-width")
+             ?: element.getAttribute("stroke-width").ifBlank { inheritedStrokeWidth ?: "" }
+ 
+         val strokeLineCap = SvgPaintResolver.styleValue(style, "stroke-linecap")
+diff -ruN a/app/src/main/java/com/example/svgvectorconverter/SvgTreeConverter.kt b/app/src/main/java/com/example/svgvectorconverter/SvgTreeConverter.kt
+--- a/app/src/main/java/com/example/svgvectorconverter/SvgTreeConverter.kt	2026-07-09 00:09:36.680252130 +0000
++++ b/app/src/main/java/com/example/svgvectorconverter/SvgTreeConverter.kt	2026-07-09 00:09:37.780984751 +0000
+@@ -156,6 +156,21 @@
+         .trimEnd('.')
+ }
+ 
++private fun emitWithForcedStrokeWidth(strokeWidth: String?, block: () -> Unit) {
++    val forcedStrokeWidth = strokeWidth?.trim()?.takeIf { it.isNotBlank() }
++    if (forcedStrokeWidth == null) {
++        block()
++        return
++    }
++
++    SvgPathEmitter.pushForcedStrokeWidth(forcedStrokeWidth)
++    try {
++        block()
++    } finally {
++        SvgPathEmitter.popForcedStrokeWidth()
++    }
++}
++
+ fun collectClipPathData(
+     svg: String,
+     basicShapeToPathData: (Element, String) -> String?
+@@ -942,44 +957,48 @@
+         }
+ 
+         "path" -> {
+-            appendElementPathCallback(
+-                output,
+-                element,
+-                indent,
+-                currentFill,
+-                currentStroke,
+-                strokeWidthForEmission,
+-                currentStrokeLineCap,
+-                currentStrokeLineJoin,
+-                currentStrokeMiterLimit,
+-                currentFillRule,
+-                currentOpacity,
+-                currentFillOpacity,
+-                currentStrokeOpacity,
+-                currentClipPath,
+-                activeClipPathId
+-            )
++            emitWithForcedStrokeWidth(strokeWidthForEmission) {
++                appendElementPathCallback(
++                    output,
++                    element,
++                    indent,
++                    currentFill,
++                    currentStroke,
++                    strokeWidthForEmission,
++                    currentStrokeLineCap,
++                    currentStrokeLineJoin,
++                    currentStrokeMiterLimit,
++                    currentFillRule,
++                    currentOpacity,
++                    currentFillOpacity,
++                    currentStrokeOpacity,
++                    currentClipPath,
++                    activeClipPathId
++                )
++            }
+         }
+ 
+         "rect", "circle", "ellipse", "line", "polyline", "polygon" -> {
+-            appendBasicShapePathCallback(
+-                output,
+-                element,
+-                tagName,
+-                indent,
+-                currentFill,
+-                currentStroke,
+-                strokeWidthForEmission,
+-                currentStrokeLineCap,
+-                currentStrokeLineJoin,
+-                currentStrokeMiterLimit,
+-                currentFillRule,
+-                currentOpacity,
+-                currentFillOpacity,
+-                currentStrokeOpacity,
+-                currentClipPath,
+-                activeClipPathId
+-            )
++            emitWithForcedStrokeWidth(strokeWidthForEmission) {
++                appendBasicShapePathCallback(
++                    output,
++                    element,
++                    tagName,
++                    indent,
++                    currentFill,
++                    currentStroke,
++                    strokeWidthForEmission,
++                    currentStrokeLineCap,
++                    currentStrokeLineJoin,
++                    currentStrokeMiterLimit,
++                    currentFillRule,
++                    currentOpacity,
++                    currentFillOpacity,
++                    currentStrokeOpacity,
++                    currentClipPath,
++                    activeClipPathId
++                )
++            }
+         }
+ 
+         else -> {

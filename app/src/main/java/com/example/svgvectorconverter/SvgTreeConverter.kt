@@ -156,6 +156,21 @@ private fun formatNumber(value: Float): String {
         .trimEnd('.')
 }
 
+private fun emitWithForcedStrokeWidth(strokeWidth: String?, block: () -> Unit) {
+    val forcedStrokeWidth = strokeWidth?.trim()?.takeIf { it.isNotBlank() }
+    if (forcedStrokeWidth == null) {
+        block()
+        return
+    }
+
+    SvgPathEmitter.pushForcedStrokeWidth(forcedStrokeWidth)
+    try {
+        block()
+    } finally {
+        SvgPathEmitter.popForcedStrokeWidth()
+    }
+}
+
 fun collectClipPathData(
     svg: String,
     basicShapeToPathData: (Element, String) -> String?
@@ -942,44 +957,48 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
         }
 
         "path" -> {
-            appendElementPathCallback(
-                output,
-                element,
-                indent,
-                currentFill,
-                currentStroke,
-                strokeWidthForEmission,
-                currentStrokeLineCap,
-                currentStrokeLineJoin,
-                currentStrokeMiterLimit,
-                currentFillRule,
-                currentOpacity,
-                currentFillOpacity,
-                currentStrokeOpacity,
-                currentClipPath,
-                activeClipPathId
-            )
+            emitWithForcedStrokeWidth(strokeWidthForEmission) {
+                appendElementPathCallback(
+                    output,
+                    element,
+                    indent,
+                    currentFill,
+                    currentStroke,
+                    strokeWidthForEmission,
+                    currentStrokeLineCap,
+                    currentStrokeLineJoin,
+                    currentStrokeMiterLimit,
+                    currentFillRule,
+                    currentOpacity,
+                    currentFillOpacity,
+                    currentStrokeOpacity,
+                    currentClipPath,
+                    activeClipPathId
+                )
+            }
         }
 
         "rect", "circle", "ellipse", "line", "polyline", "polygon" -> {
-            appendBasicShapePathCallback(
-                output,
-                element,
-                tagName,
-                indent,
-                currentFill,
-                currentStroke,
-                strokeWidthForEmission,
-                currentStrokeLineCap,
-                currentStrokeLineJoin,
-                currentStrokeMiterLimit,
-                currentFillRule,
-                currentOpacity,
-                currentFillOpacity,
-                currentStrokeOpacity,
-                currentClipPath,
-                activeClipPathId
-            )
+            emitWithForcedStrokeWidth(strokeWidthForEmission) {
+                appendBasicShapePathCallback(
+                    output,
+                    element,
+                    tagName,
+                    indent,
+                    currentFill,
+                    currentStroke,
+                    strokeWidthForEmission,
+                    currentStrokeLineCap,
+                    currentStrokeLineJoin,
+                    currentStrokeMiterLimit,
+                    currentFillRule,
+                    currentOpacity,
+                    currentFillOpacity,
+                    currentStrokeOpacity,
+                    currentClipPath,
+                    activeClipPathId
+                )
+            }
         }
 
         else -> {

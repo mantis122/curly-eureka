@@ -5,6 +5,7 @@ import java.util.Locale
 
 object SvgPathEmitter {
     private val flattenTransformStack = mutableListOf<AffineTransform>()
+    private val forcedStrokeWidthStack = mutableListOf<String?>()
 
     internal fun pushFlattenTransform(matrix: AffineTransform) {
         flattenTransformStack.add(matrix)
@@ -18,6 +19,20 @@ object SvgPathEmitter {
 
     private fun currentFlattenTransform(): AffineTransform? {
         return flattenTransformStack.lastOrNull()
+    }
+
+    internal fun pushForcedStrokeWidth(strokeWidth: String?) {
+        forcedStrokeWidthStack.add(strokeWidth)
+    }
+
+    internal fun popForcedStrokeWidth() {
+        if (forcedStrokeWidthStack.isNotEmpty()) {
+            forcedStrokeWidthStack.removeAt(forcedStrokeWidthStack.lastIndex)
+        }
+    }
+
+    private fun currentForcedStrokeWidth(): String? {
+        return forcedStrokeWidthStack.lastOrNull()?.takeIf { it.isNotBlank() }
     }
 
     fun appendBasicShapePath(
@@ -129,7 +144,8 @@ object SvgPathEmitter {
         val rawStroke = SvgPaintResolver.styleValue(style, "stroke")
             ?: element.getAttribute("stroke").ifBlank { inheritedStroke ?: "" }
 
-        val strokeWidth = SvgPaintResolver.styleValue(style, "stroke-width")
+        val strokeWidth = currentForcedStrokeWidth()
+            ?: SvgPaintResolver.styleValue(style, "stroke-width")
             ?: element.getAttribute("stroke-width").ifBlank { inheritedStrokeWidth ?: "" }
 
         val strokeLineCap = SvgPaintResolver.styleValue(style, "stroke-linecap")
