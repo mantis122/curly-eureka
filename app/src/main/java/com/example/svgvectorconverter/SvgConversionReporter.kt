@@ -333,7 +333,7 @@ object SvgConversionReporter {
                 appendLine("✓ Non-scaling strokes detected: ${data.nonScalingStrokesDetected}")
                 appendLine("✓ Non-scaling strokes compensated: ${data.nonScalingStrokesCompensated}")
                 if (data.nonScalingStrokesUncertain > 0) {
-                    appendLine("✓ Non-uniform scale compensations approximated: ${data.nonScalingStrokesUncertain}")
+                    appendLine("⚠ Non-uniform scale compensations approximated: ${data.nonScalingStrokesUncertain}")
                 }
             }
 
@@ -378,7 +378,8 @@ object SvgConversionReporter {
                 data.unsupportedWarnings.isNotEmpty() ||
                 data.unsupportedMatrixTransforms > 0 ||
                 data.unresolvedUseReferences > 0 ||
-                unapproximatedDashedStrokes > 0
+                unapproximatedDashedStrokes > 0 ||
+                data.nonScalingStrokesUncertain > 0
             ) {
                 appendLine()
                 appendLine("────────────────────")
@@ -396,6 +397,10 @@ object SvgConversionReporter {
 
                 if (unapproximatedDashedStrokes > 0) {
                     appendLine("⚠ Dashed strokes could not be approximated: $unapproximatedDashedStrokes")
+                }
+
+                if (data.nonScalingStrokesUncertain > 0) {
+                    appendLine("⚠ Non-scaling stroke compensation used average scale for non-uniform transforms: ${data.nonScalingStrokesUncertain}")
                 }
 
                 data.unsupportedWarnings.forEach {
