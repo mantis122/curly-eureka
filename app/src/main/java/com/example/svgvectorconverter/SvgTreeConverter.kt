@@ -156,6 +156,35 @@ private fun formatNumber(value: Float): String {
         .trimEnd('.')
 }
 
+
+private data class ScaleEstimate(
+    val scaleX: Float = 1f,
+    val scaleY: Float = 1f
+)
+
+private fun scaleEstimateFromTransformMatrix(matrix: AffineTransform?): ScaleEstimate {
+    if (matrix == null) return ScaleEstimate()
+
+    // Estimate geometric scale from the matrix columns. This keeps non-scaling
+    // stroke compensation working through nested transforms, <use> placement,
+    // rotation+scale, and transforms that are flattened into child pathData.
+    val xScale = kotlin.math.sqrt(matrix.a * matrix.a + matrix.b * matrix.b)
+        .takeIf { it > 0.0001f } ?: 1f
+    val yScale = kotlin.math.sqrt(matrix.c * matrix.c + matrix.d * matrix.d)
+        .takeIf { it > 0.0001f } ?: 1f
+
+    return ScaleEstimate(xScale, yScale)
+}
+
+private fun scaleEstimateFromTransformList(
+    transforms: List<ParsedTransform>,
+    transformOrigin: TransformOrigin? = null
+): ScaleEstimate {
+    return scaleEstimateFromTransformMatrix(
+        SvgTransformParser.combineTransformListToMatrix(transforms, transformOrigin)
+    )
+}
+
 private fun emitWithForcedStrokeWidth(strokeWidth: String?, block: () -> Unit) {
     val forcedStrokeWidth = strokeWidth?.trim()?.takeIf { it.isNotBlank() }
     if (forcedStrokeWidth == null) {
@@ -882,8 +911,9 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                     preferredPivotY = currentTransformOrigin?.y
                 )
                 val flattenGroupMatrix = groupMatrix != null && combinedTransform == null
-                val childScaleX = inheritedScaleX * (combinedTransform?.scaleX ?: 1f)
-                val childScaleY = inheritedScaleY * (combinedTransform?.scaleY ?: 1f)
+                val groupScaleEstimate = scaleEstimateFromTransformMatrix(groupMatrix)
+                val childScaleX = inheritedScaleX * groupScaleEstimate.scaleX
+                val childScaleY = inheritedScaleY * groupScaleEstimate.scaleY
 
                 if (combinedTransform != null) {
                     SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
@@ -1238,6 +1268,8 @@ private fun appendUseElement(
         placementTransforms.add(ParsedTransform.Scale(symbolScaleX, symbolScaleY))
     }
 
+    val placementScaleEstimate = scaleEstimateFromTransformList(placementTransforms, transformOrigin)
+
     val opened = SvgTransformParser.appendTransformGroupsStart(
         output,
         placementTransforms,
@@ -1247,6 +1279,9 @@ private fun appendUseElement(
 
     val childIndent = opened.first
     val groupCount = opened.second
+
+    val childScaleX = if (groupCount > 0) inheritedScaleX * placementScaleEstimate.scaleX else inheritedScaleX
+    val childScaleY = if (groupCount > 0) inheritedScaleY * placementScaleEstimate.scaleY else inheritedScaleY
 
     if (placementTransforms.any { it.hasVisibleEffect() } && groupCount == 0) {
         output.appendLine("${indent}<!-- expanded from <use href=\"#$id\">; transform could not be represented -->")
@@ -1272,8 +1307,8 @@ private fun appendUseElement(
         definitions,
         useDepth + 1,
         activeClipPathId,
-        inheritedScaleX,
-        inheritedScaleY,
+        childScaleX,
+        childScaleY,
         useVectorEffect
     )
 
