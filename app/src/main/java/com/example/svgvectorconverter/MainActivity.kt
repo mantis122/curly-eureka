@@ -522,26 +522,35 @@ class MainActivity : ComponentActivity() {
 
         val features = makeText(
             """
-            Features
+            Core Features
 
             ✓ SVG → VectorDrawable conversion
-            ✓ Batch ZIP export
-            ✓ Preview rendering
-            ✓ Size presets
-            ✓ Conversion profiles
+            ✓ Batch SVG conversion with ZIP export
+            ✓ Live preview and XML output
+            ✓ Size presets and conversion profiles
+            ✓ Compatibility summary with estimated visual fidelity
+
+            Supported SVG Features
+
+            ✓ Paths, rectangles, rounded rectangles, circles, ellipses, lines, polygons, and polylines
+            ✓ Fill and stroke colors, opacity, line caps, joins, miter limits, fill rules, and dashed strokes
+            ✓ CSS style attributes, presentation attributes, selectors, variables, currentColor, and inline CSS imports
+            ✓ Linear and radial gradients, gradient inheritance, gradient transforms, and stop opacity
+            ✓ Patterns, clip paths, masks, markers, defs, symbols, and use references
+            ✓ Translate, scale, rotate, skew, matrix transforms, transform-origin, and nested transforms
             """.trimIndent(),
-            16f,
+            15f,
             Color.DKGRAY,
-            Gravity.CENTER,
+            Gravity.START,
             paddingBottom = 28
         )
 
         val note = makeText(
             """
-            Unsupported SVG features are reported
-            when detected.
+            Unsupported or approximated SVG features are reported when detected.
+            Some SVG features are approximated because Android VectorDrawable cannot represent the full SVG behavior exactly.
             """.trimIndent(),
-            16f,
+            15f,
             Color.DKGRAY,
             Gravity.CENTER,
             paddingBottom = 28
