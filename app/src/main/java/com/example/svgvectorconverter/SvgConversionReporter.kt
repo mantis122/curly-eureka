@@ -43,6 +43,11 @@ data class SvgConversionReportData(
     val nonScalingStrokesUncertain: Int,
     val filterDefinitionCount: Int,
     val filterReferenceCount: Int,
+    val textElementCount: Int,
+    val tspanElementCount: Int,
+    val textPathElementCount: Int,
+    val svgFontGlyphCount: Int,
+    val contextPaintApproximationCount: Int,
     val styleAttributeCount: Int,
     val presentationStyleAttributeCount: Int,
     val warningCount: Int,
@@ -344,6 +349,23 @@ object SvgConversionReporter {
                 appendLine("⚠ Filter references ignored: ${data.filterReferenceCount}")
             }
 
+            if (data.textElementCount > 0 || data.tspanElementCount > 0 || data.textPathElementCount > 0 || data.svgFontGlyphCount > 0) {
+                appendLine("⚠ Text elements found: ${data.textElementCount}")
+                if (data.tspanElementCount > 0) {
+                    appendLine("⚠ Text spans found: ${data.tspanElementCount}")
+                }
+                if (data.textPathElementCount > 0) {
+                    appendLine("⚠ Text-on-path elements found: ${data.textPathElementCount}")
+                }
+                if (data.svgFontGlyphCount > 0) {
+                    appendLine("ℹ Embedded SVG font glyph outlines found: ${data.svgFontGlyphCount}")
+                }
+            }
+
+            if (data.contextPaintApproximationCount > 0) {
+                appendLine("ℹ context-fill/context-stroke approximated using inherited paint.")
+            }
+
             appendLine("✓ Style attributes: ${data.styleAttributeCount}")
             appendLine("✓ Presentation attributes: ${data.presentationStyleAttributeCount}")
 
@@ -379,7 +401,10 @@ object SvgConversionReporter {
                 data.unsupportedMatrixTransforms > 0 ||
                 data.unresolvedUseReferences > 0 ||
                 unapproximatedDashedStrokes > 0 ||
-                data.nonScalingStrokesUncertain > 0
+                data.nonScalingStrokesUncertain > 0 ||
+                data.textElementCount > 0 ||
+                data.tspanElementCount > 0 ||
+                data.textPathElementCount > 0
             ) {
                 appendLine()
                 appendLine("────────────────────")
@@ -403,10 +428,22 @@ object SvgConversionReporter {
                     appendLine("⚠ Non-scaling stroke compensation used average scale for non-uniform transforms: ${data.nonScalingStrokesUncertain}")
                 }
 
+                if (data.textElementCount > 0 || data.tspanElementCount > 0 || data.textPathElementCount > 0) {
+                    appendLine(textConversionWarning(data))
+                }
+
                 data.unsupportedWarnings.forEach {
                     appendLine("⚠ $it")
                 }
             }
+        }
+    }
+
+    private fun textConversionWarning(data: SvgConversionReportData): String {
+        return if (data.svgFontGlyphCount > 0) {
+            "⚠ Text requires outline conversion before VectorDrawable export. Embedded SVG font glyphs were found, so conversion is theoretically possible, but font layout/text-to-path conversion is not implemented."
+        } else {
+            "⚠ Text requires external font rendering. Convert text to paths/outlines before importing for accurate VectorDrawable output."
         }
     }
 

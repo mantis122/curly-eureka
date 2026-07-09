@@ -130,6 +130,11 @@ object SvgToVectorConverter {
 
         val filterDefinitionCount = countFilterDefinitions(svgForTransformStats)
         val filterReferenceCount = countFilterReferences(svgForTransformStats)
+        val textElementCount = countTags(svgForTransformStats, "text")
+        val tspanElementCount = countTags(svgForTransformStats, "tspan")
+        val textPathElementCount = countTags(svgForTransformStats, "textPath")
+        val svgFontGlyphCount = countSvgFontGlyphs(svgForTransformStats)
+        val contextPaintApproximationCount = countContextPaintReferences(svgForTransformStats)
         val unsupported = buildUnsupportedWarnings(svgWithCssClassStyles, gradientFallbackColors, patternFallbackColors, clipPathData, maskPathData, filterReferenceCount)
         val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
         val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svgWithCssClassStyles).count()
@@ -151,6 +156,7 @@ object SvgToVectorConverter {
         )
 
         val warningCount = unsupported.size +
+            (if (textElementCount > 0 || tspanElementCount > 0 || textPathElementCount > 0) 1 else 0) +
             (if (SvgTransformParser.unsupportedMatrixTransforms > 0) 1 else 0) +
             (if (unresolvedUseReferences > 0) 1 else 0) +
             (if (unapproximatedDashedStrokes > 0) 1 else 0) +
@@ -187,6 +193,11 @@ object SvgToVectorConverter {
                 nonScalingStrokesUncertain = SvgTreeConverter.nonScalingStrokesUncertain,
                 filterDefinitionCount = filterDefinitionCount,
                 filterReferenceCount = filterReferenceCount,
+                textElementCount = textElementCount,
+                tspanElementCount = tspanElementCount,
+                textPathElementCount = textPathElementCount,
+                svgFontGlyphCount = svgFontGlyphCount,
+                contextPaintApproximationCount = contextPaintApproximationCount,
                 styleAttributeCount = styleAttributeCount,
                 presentationStyleAttributeCount = presentationStyleAttributeCount,
                 warningCount = warningCount,
@@ -226,7 +237,6 @@ object SvgToVectorConverter {
         }
         if (hasTag(svg, "mask") && maskPathData.isEmpty()) unsupported.add("Masks")
         if (filterReferenceCount > 0) unsupported.add("Filter effects ignored: $filterReferenceCount")
-        if (hasTag(svg, "text")) unsupported.add("Text elements")
         if (hasTag(svg, "clipPath") && clipPathData.isEmpty()) unsupported.add("Clip paths")
         if (hasTag(svg, "pattern") && patternFallbackColors.isEmpty()) {
     unsupported.add("Patterns")
@@ -249,6 +259,24 @@ paintUrlRefs
         if (hasTag(svg, "image")) unsupported.add("Embedded images")
 
         return unsupported
+    }
+
+    private fun countTags(svg: String, tagName: String): Int {
+        return Regex("""<\s*$tagName\b""", RegexOption.IGNORE_CASE)
+            .findAll(svg)
+            .count()
+    }
+
+    private fun countSvgFontGlyphs(svg: String): Int {
+        return Regex("""<\s*(?:glyph|missing-glyph)\b[^>]*\bd\s*=""", RegexOption.IGNORE_CASE)
+            .findAll(svg)
+            .count()
+    }
+
+    private fun countContextPaintReferences(svg: String): Int {
+        return Regex("""\b(?:fill|stroke)\s*=\s*["']context-(?:fill|stroke)["']|(?:fill|stroke)\s*:\s*context-(?:fill|stroke)\b""", RegexOption.IGNORE_CASE)
+            .findAll(svg)
+            .count()
     }
 
     private fun countFilterDefinitions(svg: String): Int {
