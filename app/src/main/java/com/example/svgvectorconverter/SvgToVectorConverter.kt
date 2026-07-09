@@ -138,6 +138,7 @@ object SvgToVectorConverter {
         val cssImportRuleCount = SvgStyleResolver.cssImportRuleCount
         val cssImportedInlineRuleCount = SvgStyleResolver.cssImportedInlineRuleCount
         val cssExternalImportCount = SvgStyleResolver.cssExternalImportCount
+        val imageStats = countImageStats(svgForTransformStats)
         val unsupported = buildUnsupportedWarnings(svgWithCssClassStyles, gradientFallbackColors, patternFallbackColors, clipPathData, maskPathData, filterReferenceCount)
         val matrixCount = Regex("""matrix\(""").findAll(svgForTransformStats).count()
         val useCount = Regex("""<\s*use\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svgWithCssClassStyles).count()
@@ -164,7 +165,8 @@ object SvgToVectorConverter {
             (if (unresolvedUseReferences > 0) 1 else 0) +
             (if (unapproximatedDashedStrokes > 0) 1 else 0) +
             (if (SvgTreeConverter.nonScalingStrokesUncertain > 0) 1 else 0) +
-            (if (cssExternalImportCount > 0) 1 else 0)
+            (if (cssExternalImportCount > 0) 1 else 0) +
+            (if (imageStats.imageElementCount > 0) 1 else 0)
 
         val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
 
@@ -205,6 +207,7 @@ object SvgToVectorConverter {
                 cssImportRuleCount = cssImportRuleCount,
                 cssImportedInlineRuleCount = cssImportedInlineRuleCount,
                 cssExternalImportCount = cssExternalImportCount,
+                imageStats = imageStats,
                 styleAttributeCount = styleAttributeCount,
                 presentationStyleAttributeCount = presentationStyleAttributeCount,
                 warningCount = warningCount,
@@ -263,8 +266,6 @@ val knownPaintIds =
 paintUrlRefs
     .filter { it !in knownPaintIds }
     .forEach { unsupported.add("Missing paint reference: #$it") }
-        if (hasTag(svg, "image")) unsupported.add("Embedded images")
-
         return unsupported
     }
 
@@ -284,6 +285,47 @@ paintUrlRefs
         return Regex("""\b(?:fill|stroke)\s*=\s*["']context-(?:fill|stroke)["']|(?:fill|stroke)\s*:\s*context-(?:fill|stroke)\b""", RegexOption.IGNORE_CASE)
             .findAll(svg)
             .count()
+    }
+
+    private fun countImageStats(svg: String): SvgImageStats {
+        val imageTags = Regex("""<\s*image\b[^>]*(?:/>|>)""", RegexOption.IGNORE_CASE)
+            .findAll(svg)
+            .map { it.value }
+            .toList()
+
+        var embeddedRaster = 0
+        var embeddedSvg = 0
+        var external = 0
+        var missingHref = 0
+        var withSize = 0
+
+        imageTags.forEach { tag ->
+            val href = attrExact(tag, "href")
+                ?: attrExact(tag, "xlink:href")
+                ?: attrExact(tag, "src")
+
+            if ((attrExact(tag, "width")?.trim().orEmpty()).isNotBlank() &&
+                (attrExact(tag, "height")?.trim().orEmpty()).isNotBlank()
+            ) {
+                withSize++
+            }
+
+            when {
+                href.isNullOrBlank() -> missingHref++
+                href.trim().startsWith("data:image/svg+xml", ignoreCase = true) -> embeddedSvg++
+                href.trim().startsWith("data:image/", ignoreCase = true) -> embeddedRaster++
+                else -> external++
+            }
+        }
+
+        return SvgImageStats(
+            imageElementCount = imageTags.size,
+            embeddedRasterImageCount = embeddedRaster,
+            embeddedSvgImageCount = embeddedSvg,
+            externalImageCount = external,
+            missingHrefImageCount = missingHref,
+            imageElementsWithSize = withSize
+        )
     }
 
     private fun countFilterDefinitions(svg: String): Int {
@@ -531,6 +573,11 @@ paintUrlRefs
             ?.replace("dp", "")
             ?.trim()
             ?.toFloatOrNull()
+    }
+
+    private fun attrExact(tag: String, name: String): String? {
+        val pattern = Regex("""(?:^|\s)$name\s*=\s*(['"])(.*?)\1""", RegexOption.IGNORE_CASE)
+        return pattern.find(tag)?.groupValues?.getOrNull(2)
     }
 
     private fun attr(tag: String, name: String): String? {

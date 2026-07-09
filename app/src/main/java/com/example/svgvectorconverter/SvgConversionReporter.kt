@@ -15,6 +15,15 @@ data class BasicShapeBreakdown(
     val polylines: Int = 0
 )
 
+data class SvgImageStats(
+    val imageElementCount: Int = 0,
+    val embeddedRasterImageCount: Int = 0,
+    val embeddedSvgImageCount: Int = 0,
+    val externalImageCount: Int = 0,
+    val missingHrefImageCount: Int = 0,
+    val imageElementsWithSize: Int = 0
+)
+
 data class SvgConversionReportData(
     val convertedPathCount: Int,
     val convertedOriginalPathCount: Int,
@@ -51,6 +60,7 @@ data class SvgConversionReportData(
     val cssImportRuleCount: Int,
     val cssImportedInlineRuleCount: Int,
     val cssExternalImportCount: Int,
+    val imageStats: SvgImageStats,
     val styleAttributeCount: Int,
     val presentationStyleAttributeCount: Int,
     val warningCount: Int,
@@ -377,6 +387,23 @@ object SvgConversionReporter {
                 }
             }
 
+            if (data.imageStats.imageElementCount > 0) {
+                appendLine("⚠ Image elements found: ${data.imageStats.imageElementCount}")
+                if (data.imageStats.embeddedRasterImageCount > 0) {
+                    appendLine("ℹ Embedded raster images: ${data.imageStats.embeddedRasterImageCount}")
+                }
+                if (data.imageStats.embeddedSvgImageCount > 0) {
+                    appendLine("ℹ Embedded SVG image references: ${data.imageStats.embeddedSvgImageCount}")
+                }
+                if (data.imageStats.externalImageCount > 0) {
+                    appendLine("⚠ External image references: ${data.imageStats.externalImageCount}")
+                }
+                if (data.imageStats.missingHrefImageCount > 0) {
+                    appendLine("⚠ Image elements without href: ${data.imageStats.missingHrefImageCount}")
+                }
+                appendLine("ℹ Images with explicit width/height: ${data.imageStats.imageElementsWithSize}")
+            }
+
             appendLine("✓ Style attributes: ${data.styleAttributeCount}")
             appendLine("✓ Presentation attributes: ${data.presentationStyleAttributeCount}")
 
@@ -414,6 +441,7 @@ object SvgConversionReporter {
                 unapproximatedDashedStrokes > 0 ||
                 data.nonScalingStrokesUncertain > 0 ||
                 data.cssExternalImportCount > 0 ||
+                data.imageStats.imageElementCount > 0 ||
                 data.textElementCount > 0 ||
                 data.tspanElementCount > 0 ||
                 data.textPathElementCount > 0
@@ -444,6 +472,10 @@ object SvgConversionReporter {
                     appendLine("⚠ External CSS @import ignored: ${data.cssExternalImportCount}. Inline data:text/css imports are supported, but external stylesheets cannot be fetched from a standalone SVG file.")
                 }
 
+                if (data.imageStats.imageElementCount > 0) {
+                    appendLine(imageConversionWarning(data.imageStats))
+                }
+
                 if (data.textElementCount > 0 || data.tspanElementCount > 0 || data.textPathElementCount > 0) {
                     appendLine(textConversionWarning(data))
                 }
@@ -453,6 +485,31 @@ object SvgConversionReporter {
                 }
             }
         }
+    }
+
+    private fun imageConversionWarning(stats: SvgImageStats): String {
+        val parts = mutableListOf<String>()
+
+        if (stats.embeddedRasterImageCount > 0) {
+            parts.add("embedded raster images were found")
+        }
+        if (stats.embeddedSvgImageCount > 0) {
+            parts.add("embedded SVG image references were found")
+        }
+        if (stats.externalImageCount > 0) {
+            parts.add("external image references were found")
+        }
+        if (stats.missingHrefImageCount > 0) {
+            parts.add("some image elements have no href")
+        }
+
+        val detail = if (parts.isEmpty()) {
+            "image elements were found"
+        } else {
+            parts.joinToString("; ")
+        }
+
+        return "⚠ <image> elements are raster or external resources and cannot be represented in VectorDrawable path XML. $detail. Convert images to vector paths/outlines, or keep the source as a raster asset if pixel accuracy is required."
     }
 
     private fun textConversionWarning(data: SvgConversionReportData): String {
