@@ -144,6 +144,23 @@ object SvgPathEmitter {
         val rawStroke = SvgPaintResolver.styleValue(style, "stroke")
             ?: element.getAttribute("stroke").ifBlank { inheritedStroke ?: "" }
 
+        val currentColor = SvgPaintResolver.resolvedCurrentColor(
+            SvgPaintResolver.styleValue(style, "color")
+                ?: element.getAttribute("color").ifBlank { null }
+        )
+        val resolvedRawFill = SvgPaintResolver.resolveSpecialPaint(
+            rawFill,
+            currentColor,
+            inheritedFill,
+            inheritedStroke
+        )
+        val resolvedRawStroke = SvgPaintResolver.resolveSpecialPaint(
+            rawStroke,
+            currentColor,
+            inheritedFill,
+            inheritedStroke
+        )
+
         val strokeWidth = currentForcedStrokeWidth()
             ?: SvgPaintResolver.styleValue(style, "stroke-width")
             ?: element.getAttribute("stroke-width").ifBlank { inheritedStrokeWidth ?: "" }
@@ -193,9 +210,9 @@ object SvgPathEmitter {
         val fill = if (sourceTag == "line") {
             "@android:color/transparent"
         } else {
-            SvgPaintResolver.safeFillColor(rawFill)
+            SvgPaintResolver.safeFillColor(resolvedRawFill)
         }
-        val stroke = SvgPaintResolver.safeStrokeColor(rawStroke)
+        val stroke = SvgPaintResolver.safeStrokeColor(resolvedRawStroke)
 
         val pathTransform = element.getAttribute("transform")
             .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
@@ -252,8 +269,8 @@ object SvgPathEmitter {
         val markerPathData = transformedPathData
         val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
         val objectBounds = approximatePathBounds(effectivePathData)
-        val fillGradient = if (sourceTag == "line") null else SvgPaintResolver.gradientForPaint(rawFill, objectBounds)
-        val strokeGradient = SvgPaintResolver.gradientForPaint(rawStroke, objectBounds)
+        val fillGradient = if (sourceTag == "line") null else SvgPaintResolver.gradientForPaint(resolvedRawFill, objectBounds)
+        val strokeGradient = SvgPaintResolver.gradientForPaint(resolvedRawStroke, objectBounds)
         val pathNeedsGroup = effectiveTransform != null || hasClipPath
 
         val directFilterValue = SvgPaintResolver.styleValue(style, "filter")
@@ -380,6 +397,23 @@ object SvgPathEmitter {
             val rawStroke = SvgPaintResolver.styleValue(style, "stroke")
                 ?: attr(tag, "stroke")
 
+            val currentColor = SvgPaintResolver.resolvedCurrentColor(
+                SvgPaintResolver.styleValue(style, "color")
+                    ?: attr(tag, "color")
+            )
+            val resolvedRawFill = SvgPaintResolver.resolveSpecialPaint(
+                rawFill,
+                currentColor,
+                null,
+                null
+            )
+            val resolvedRawStroke = SvgPaintResolver.resolveSpecialPaint(
+                rawStroke,
+                currentColor,
+                null,
+                null
+            )
+
             val strokeWidth = SvgPaintResolver.styleValue(style, "stroke-width")
                 ?: attr(tag, "stroke-width")
 
@@ -472,13 +506,13 @@ object SvgPathEmitter {
             val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
 
             val objectBounds = approximatePathBounds(effectivePathData)
-            val fillGradient = if (tagName == "line") null else SvgPaintResolver.gradientForPaint(rawFill, objectBounds)
-            val strokeGradient = SvgPaintResolver.gradientForPaint(rawStroke, objectBounds)
+            val fillGradient = if (tagName == "line") null else SvgPaintResolver.gradientForPaint(resolvedRawFill, objectBounds)
+            val strokeGradient = SvgPaintResolver.gradientForPaint(resolvedRawStroke, objectBounds)
 
             val fillColor = if (tagName == "line") {
                 "@android:color/transparent"
             } else {
-                SvgPaintResolver.safeFillColor(rawFill)
+                SvgPaintResolver.safeFillColor(resolvedRawFill)
             }
 
             var currentIndent = indent
@@ -508,7 +542,7 @@ object SvgPathEmitter {
                 output = output,
                 d = effectivePathData,
                 fill = fillColor,
-                stroke = SvgPaintResolver.safeStrokeColor(rawStroke),
+                stroke = SvgPaintResolver.safeStrokeColor(resolvedRawStroke),
                 strokeWidth = strokeWidth,
                 strokeLineCap = strokeLineCap,
                 strokeLineJoin = strokeLineJoin,

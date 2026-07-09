@@ -3,7 +3,6 @@ package com.example.svgvectorconverter
 object SvgStyleResolver {
     fun applyStylesheets(svg: String): String {
         val stylesheet = collectStylesheetRules(svg)
-        if (stylesheet.isEmpty()) return svg
 
         val tagPattern = Regex(
             """<\s*(/?)\s*([A-Za-z][\w:.-]*)([^<>]*?)(/?)>""",
@@ -12,6 +11,7 @@ object SvgStyleResolver {
         val ancestors = mutableListOf<ElementSnapshot>()
         val siblingStack = mutableListOf<MutableList<ElementSnapshot>>(mutableListOf())
         val customPropertyStack = mutableListOf<Map<String, String>>(emptyMap())
+        val colorStack = mutableListOf<String?>(null)
         val output = StringBuilder()
         var lastIndex = 0
 
@@ -31,6 +31,7 @@ object SvgStyleResolver {
                     while (ancestors.size > lastMatchingIndex) ancestors.removeAt(ancestors.lastIndex)
                     while (siblingStack.size > ancestors.size + 1) siblingStack.removeAt(siblingStack.lastIndex)
                     while (customPropertyStack.size > ancestors.size + 1) customPropertyStack.removeAt(customPropertyStack.lastIndex)
+                    while (colorStack.size > ancestors.size + 1) colorStack.removeAt(colorStack.lastIndex)
                     siblingStack.lastOrNull()?.add(closedElement)
                 }
                 output.append(tagText)
@@ -79,11 +80,16 @@ object SvgStyleResolver {
                 cascadingStyles
             )
             val mergedStyle = resolveMergedStyle(cascadingStyles, elementCustomProperties)
+            val elementColor = resolvedInheritedColor(
+                explicitColor = styleDeclarationValue(mergedStyle, "color") ?: attr(tagText, "color"),
+                inheritedColor = colorStack.lastOrNull()
+            )
+            val styleWithInheritedColor = ensureInheritedColorStyle(mergedStyle, elementColor)
 
-            val rewrittenTag = if (mergedStyle.isBlank()) {
+            val rewrittenTag = if (styleWithInheritedColor.isBlank()) {
                 tagText
             } else {
-                writeStyleAttribute(tagText, mergedStyle)
+                writeStyleAttribute(tagText, styleWithInheritedColor)
             }
 
             output.append(rewrittenTag)
@@ -93,6 +99,7 @@ object SvgStyleResolver {
                 ancestors.add(snapshot)
                 siblingStack.add(mutableListOf())
                 customPropertyStack.add(elementCustomProperties)
+                colorStack.add(elementColor)
             }
         }
 
@@ -994,6 +1001,47 @@ object SvgStyleResolver {
                 }
             }
         return result
+    }
+
+
+    private fun resolvedInheritedColor(explicitColor: String?, inheritedColor: String?): String? {
+        val raw = explicitColor?.trim().orEmpty()
+        return when {
+            raw.isBlank() -> inheritedColor
+            raw.equals("inherit", ignoreCase = true) -> inheritedColor
+            raw.equals("currentColor", ignoreCase = true) -> inheritedColor ?: "#000000"
+            else -> SvgPaintResolver.normalizedAndroidColor(raw) ?: raw
+        }
+    }
+
+    private fun ensureInheritedColorStyle(style: String, color: String?): String {
+        val resolvedColor = color?.trim().orEmpty()
+        if (resolvedColor.isBlank()) return style
+        if (styleDeclarationValue(style, "color") != null) return style
+        return listOf(style, "color: $resolvedColor")
+            .filter { it.isNotBlank() }
+            .joinToString("; ")
+    }
+
+    private fun styleDeclarationValue(style: String?, name: String): String? {
+        if (style.isNullOrBlank()) return null
+        return style
+            .split(";")
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .mapNotNull { declaration ->
+                val parts = declaration.split(":", limit = 2)
+                if (parts.size != 2) return@mapNotNull null
+                val propertyName = parts[0].trim()
+                val propertyValue = parts[1].trim()
+                if (propertyName.equals(name, ignoreCase = true) && propertyValue.isNotBlank()) {
+                    propertyValue
+                } else {
+                    null
+                }
+            }
+            .firstOrNull()
     }
 
     private fun writeStyleAttribute(tagText: String, mergedStyle: String): String {

@@ -30,8 +30,10 @@ object SvgPaintResolver {
 
         val v = value.trim()
 
-        if (v == "none") return true
-        if (v == "currentColor") return true
+        if (v.equals("none", ignoreCase = true)) return true
+        if (v.equals("currentColor", ignoreCase = true)) return true
+        if (v.equals("context-fill", ignoreCase = true)) return true
+        if (v.equals("context-stroke", ignoreCase = true)) return true
         if (v == "@android:color/transparent") return true
 
         return Regex("""^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$""")
@@ -65,9 +67,16 @@ object SvgPaintResolver {
     fun normalizedAndroidColor(value: String?): String? {
         val v = value?.trim() ?: return null
 
-        if (isValidAndroidColor(v) && v != "none" && v != "currentColor") return v
+        if (isValidAndroidColor(v) &&
+            !v.equals("none", ignoreCase = true) &&
+            !v.equals("currentColor", ignoreCase = true) &&
+            !v.equals("context-fill", ignoreCase = true) &&
+            !v.equals("context-stroke", ignoreCase = true)
+        ) return v
 
         if (v.equals("currentColor", ignoreCase = true)) return "#000000"
+        if (v.equals("context-fill", ignoreCase = true)) return "#000000"
+        if (v.equals("context-stroke", ignoreCase = true)) return "#000000"
 
         svgNamedColor(v)?.let { return it }
 
@@ -233,6 +242,52 @@ object SvgPaintResolver {
         "yellow" to "#FFFF00",
         "yellowgreen" to "#9ACD32"
     )
+
+
+    fun resolveSpecialPaint(
+        value: String?,
+        currentColor: String?,
+        contextFill: String?,
+        contextStroke: String?
+    ): String? {
+        return resolveSpecialPaintInternal(value, currentColor, contextFill, contextStroke, 0)
+    }
+
+    private fun resolveSpecialPaintInternal(
+        value: String?,
+        currentColor: String?,
+        contextFill: String?,
+        contextStroke: String?,
+        depth: Int
+    ): String? {
+        val v = value?.trim() ?: return null
+        if (depth > 4) return currentColor?.takeIf { it.isNotBlank() } ?: "#000000"
+        return when {
+            v.equals("currentColor", ignoreCase = true) ->
+                currentColor?.takeIf { it.isNotBlank() } ?: "#000000"
+            v.equals("context-fill", ignoreCase = true) ->
+                resolveSpecialPaintInternal(
+                    contextFill?.takeIf { it.isNotBlank() } ?: currentColor,
+                    currentColor,
+                    null,
+                    null,
+                    depth + 1
+                ) ?: "#000000"
+            v.equals("context-stroke", ignoreCase = true) ->
+                resolveSpecialPaintInternal(
+                    contextStroke?.takeIf { it.isNotBlank() } ?: currentColor,
+                    currentColor,
+                    null,
+                    null,
+                    depth + 1
+                ) ?: "#000000"
+            else -> v
+        }
+    }
+
+    fun resolvedCurrentColor(value: String?): String {
+        return normalizedAndroidColor(value) ?: "#000000"
+    }
 
     fun safeFillColor(value: String?): String {
         val v = value?.trim()
