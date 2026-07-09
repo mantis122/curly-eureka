@@ -39,6 +39,9 @@ data class SvgConversionReportData(
     val unresolvedUseReferences: Int,
     val symbolCount: Int,
     val gradientFallbackColorCount: Int,
+    val patternApproximationCount: Int,
+    val markerDefinitionCount: Int,
+    val appliedMarkers: Int,
     val clipPathCount: Int,
     val clipPathReferenceCount: Int,
     val appliedClipPaths: Int,
@@ -276,7 +279,13 @@ object SvgConversionReporter {
 
             appendLine()
             appendLine("Converted in ${data.elapsedMs} ms")
+
             appendLine()
+            appendLine("────────────────────")
+            appendLine("Compatibility")
+            appendLine("────────────────────")
+            appendLine()
+            appendCompatibilitySummary(data)
 
             appendLine("────────────────────")
             appendLine("Drawable Elements Processed")
@@ -329,6 +338,14 @@ object SvgConversionReporter {
 
             if (data.gradientFallbackColorCount > 0)
                 appendLine("✓ Gradients converted: ${data.gradientFallbackColorCount}")
+
+            if (data.patternApproximationCount > 0)
+                appendLine("✓ Patterns approximated: ${data.patternApproximationCount}")
+
+            if (data.markerDefinitionCount > 0 || data.appliedMarkers > 0) {
+                appendLine("✓ Marker definitions: ${data.markerDefinitionCount}")
+                appendLine("✓ Markers approximated: ${data.appliedMarkers}")
+            }
 
             if (data.clipPathCount > 0) {
                 appendLine("✓ Clip paths: ${data.clipPathCount}")
@@ -485,6 +502,121 @@ object SvgConversionReporter {
                 }
             }
         }
+    }
+
+
+    private data class CompatibilitySummary(
+        val stars: String,
+        val label: String,
+        val fidelityPercent: Int,
+        val approximated: List<String>,
+        val ignored: List<String>,
+        val unsupported: List<String>
+    )
+
+    private fun StringBuilder.appendCompatibilitySummary(data: SvgConversionReportData) {
+        val summary = compatibilitySummary(data)
+
+        appendLine("${summary.stars} ${summary.label}")
+        appendLine("Estimated fidelity: ~${summary.fidelityPercent}%")
+
+        if (summary.approximated.isNotEmpty()) {
+            appendLine()
+            appendLine("Approximated")
+            summary.approximated.forEach { appendLine("• $it") }
+        }
+
+        if (summary.ignored.isNotEmpty()) {
+            appendLine()
+            appendLine("Ignored")
+            summary.ignored.forEach { appendLine("• $it") }
+        }
+
+        if (summary.unsupported.isNotEmpty()) {
+            appendLine()
+            appendLine("Unsupported")
+            summary.unsupported.forEach { appendLine("• $it") }
+        }
+
+        appendLine()
+    }
+
+    private fun compatibilitySummary(data: SvgConversionReportData): CompatibilitySummary {
+        val approximated = linkedSetOf<String>()
+        val ignored = linkedSetOf<String>()
+        val unsupported = linkedSetOf<String>()
+
+        if (data.patternApproximationCount > 0) approximated.add("Pattern fills")
+        if (data.maskPathCount > 0 || data.appliedMasks > 0) approximated.add("Masks as clip paths")
+        if (data.appliedMarkers > 0) approximated.add("Markers")
+        if (data.contextPaintApproximationCount > 0) approximated.add("context-fill/context-stroke")
+        if (data.dashedStrokesApproximated > 0) approximated.add("Dashed strokes")
+        if (data.nonScalingStrokesUncertain > 0) approximated.add("Non-scaling strokes under non-uniform transforms")
+
+        val unapproximatedDashedStrokes = maxOf(0, data.dashedStrokesDetected - data.dashedStrokesApproximated)
+        if (unapproximatedDashedStrokes > 0) unsupported.add("Dashed strokes")
+
+        if (data.cssExternalImportCount > 0) ignored.add("External CSS @import")
+        if (data.filterReferenceCount > 0) ignored.add("Filter effects")
+
+        if (data.textElementCount > 0 || data.tspanElementCount > 0 || data.textPathElementCount > 0) {
+            unsupported.add("Text")
+        }
+        if (data.imageStats.imageElementCount > 0) {
+            unsupported.add("Raster/external images")
+        }
+        if (data.unsupportedMatrixTransforms > 0) {
+            unsupported.add("Unsupported matrix transforms")
+        }
+        if (data.unresolvedUseReferences > 0) {
+            unsupported.add("Unresolved <use> references")
+        }
+
+        data.unsupportedWarnings.forEach { warning ->
+            val normalized = warning.trim()
+            when {
+                normalized.contains("Filter effects ignored", ignoreCase = true) -> ignored.add("Filter effects")
+                normalized.contains("Missing paint reference", ignoreCase = true) -> unsupported.add("Missing paint references")
+                normalized.contains("Linear gradients", ignoreCase = true) || normalized.contains("Radial gradients", ignoreCase = true) -> unsupported.add("Unsupported gradients")
+                normalized.contains("Patterns", ignoreCase = true) -> unsupported.add("Unsupported patterns")
+                normalized.contains("Masks", ignoreCase = true) -> unsupported.add("Unsupported masks")
+                normalized.contains("Clip paths", ignoreCase = true) -> unsupported.add("Unsupported clip paths")
+                normalized.isNotBlank() -> unsupported.add(normalized.removeSuffix("."))
+            }
+        }
+
+        val fidelity = when {
+            unsupported.size >= 4 || data.convertedPathCount == 0 && (data.visibleDrawableElementCount > 0 || data.imageStats.imageElementCount > 0 || data.textElementCount > 0) -> 25
+            unsupported.size >= 2 || (unsupported.isNotEmpty() && approximated.size >= 2) -> 55
+            unsupported.isNotEmpty() -> 80
+            approximated.isNotEmpty() || ignored.isNotEmpty() -> 95
+            else -> 100
+        }
+
+        val stars = when {
+            fidelity >= 100 -> "★★★★★"
+            fidelity >= 95 -> "★★★★☆"
+            fidelity >= 80 -> "★★★☆☆"
+            fidelity >= 55 -> "★★☆☆☆"
+            else -> "★☆☆☆☆"
+        }
+
+        val label = when {
+            fidelity >= 100 -> "Fully compatible"
+            fidelity >= 95 -> "Mostly compatible"
+            fidelity >= 80 -> "Partially compatible"
+            fidelity >= 55 -> "Limited compatibility"
+            else -> "Poor compatibility"
+        }
+
+        return CompatibilitySummary(
+            stars = stars,
+            label = label,
+            fidelityPercent = fidelity,
+            approximated = approximated.toList(),
+            ignored = ignored.toList(),
+            unsupported = unsupported.toList()
+        )
     }
 
     private fun imageConversionWarning(stats: SvgImageStats): String {
