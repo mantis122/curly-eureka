@@ -33,7 +33,11 @@ object SvgToVectorConverter {
             svg = svgWithCssClassStyles,
             basicShapeToPathData = SvgPathEmitter::basicShapeToPathData
         )
-        SvgTreeConverter.resetStats(clipPathData, maskPathData, markerDefinitions)
+        val patternDefinitions = SvgTreeConverter.collectPatternDefinitions(
+            svg = svgWithCssClassStyles,
+            basicShapeToPathData = SvgPathEmitter::basicShapeToPathData
+        )
+        SvgTreeConverter.resetStats(clipPathData, maskPathData, markerDefinitions, patternDefinitions)
 
         val viewBoxValues = getViewBox(svgWithCssClassStyles)
         val widthFromSvg = getNumberAttr(svgWithCssClassStyles, "width")
@@ -189,6 +193,8 @@ object SvgToVectorConverter {
                 gradientFallbackColorCount = gradientFallbackColors.size,
                 patternApproximationCount = patternFallbackColors.size,
                 patternApproximationStats = patternApproximationStats,
+                patternTileExpansionCount = SvgTreeConverter.patternTileExpansions,
+                patternTilePathCount = SvgTreeConverter.patternTilePathsEmitted,
                 markerDefinitionCount = markerDefinitions.size,
                 appliedMarkers = SvgTreeConverter.appliedMarkers,
                 clipPathCount = clipPathData.size,

@@ -370,6 +370,36 @@ object SvgPathEmitter {
         output.appendLine()
     }
 
+
+
+    internal fun appendRawPathForPatternTile(
+        output: StringBuilder,
+        d: String,
+        fill: String?,
+        stroke: String?,
+        strokeWidth: String?,
+        fillAlpha: String?,
+        strokeAlpha: String?,
+        indent: String
+    ) {
+        appendPath(
+            output = output,
+            d = d,
+            fill = fill ?: "@android:color/transparent",
+            stroke = stroke,
+            strokeWidth = strokeWidth,
+            strokeLineCap = null,
+            strokeLineJoin = null,
+            strokeMiterLimit = null,
+            fillRule = null,
+            fillAlpha = fillAlpha,
+            strokeAlpha = strokeAlpha,
+            fillGradient = null,
+            strokeGradient = null,
+            indent = indent
+        )
+    }
+
     fun appendFlatPathsFallback(
         output: StringBuilder,
         xml: String,

@@ -48,6 +48,8 @@ data class SvgConversionReportData(
     val gradientFallbackColorCount: Int,
     val patternApproximationCount: Int,
     val patternApproximationStats: SvgPatternApproximationStats,
+    val patternTileExpansionCount: Int = 0,
+    val patternTilePathCount: Int = 0,
     val markerDefinitionCount: Int,
     val appliedMarkers: Int,
     val clipPathCount: Int,
@@ -349,10 +351,18 @@ object SvgConversionReporter {
 
             if (data.patternApproximationCount > 0)
                 appendLine("✓ Patterns approximated: ${data.patternApproximationCount}")
-            if (data.patternApproximationStats.complexPatternApproximationCount > 0)
-                appendLine("ℹ Complex pattern fallback fills: ${data.patternApproximationStats.complexPatternApproximationCount}")
-            if (data.patternApproximationStats.sparsePatternApproximationCount > 0)
-                appendLine("ℹ Sparse/transparent pattern fallback fills: ${data.patternApproximationStats.sparsePatternApproximationCount}")
+            if (data.patternTileExpansionCount > 0) {
+                appendLine("✓ Pattern tiles expanded: ${data.patternTileExpansionCount}")
+                appendLine("✓ Pattern tile paths emitted: ${data.patternTilePathCount}")
+            }
+            if (data.patternApproximationStats.complexPatternApproximationCount > 0) {
+                val label = if (data.patternTileExpansionCount > 0) "Complex pattern tile definitions" else "Complex pattern fallback fills"
+                appendLine("ℹ $label: ${data.patternApproximationStats.complexPatternApproximationCount}")
+            }
+            if (data.patternApproximationStats.sparsePatternApproximationCount > 0) {
+                val label = if (data.patternTileExpansionCount > 0) "Sparse/transparent pattern tile definitions" else "Sparse/transparent pattern fallback fills"
+                appendLine("ℹ $label: ${data.patternApproximationStats.sparsePatternApproximationCount}")
+            }
 
             if (data.markerDefinitionCount > 0 || data.appliedMarkers > 0) {
                 appendLine("✓ Marker definitions: ${data.markerDefinitionCount}")
@@ -560,7 +570,8 @@ object SvgConversionReporter {
 
         if (data.patternApproximationCount > 0) {
             val patternLabel = when {
-                data.patternApproximationStats.sparsePatternApproximationCount > 0 -> "Pattern fills (sparse/transparent fallback)"
+                data.patternTileExpansionCount > 0 -> "Pattern fills (tile approximation)"
+                data.patternApproximationStats.sparsePatternApproximationCount > 0 -> "Pattern fills (fallback color)"
                 data.patternApproximationStats.complexPatternApproximationCount > 0 -> "Pattern fills (complex fallback)"
                 else -> "Pattern fills"
             }
@@ -627,6 +638,7 @@ object SvgConversionReporter {
                 else -> 80
             }
             approximationCount > 0 || ignoredCount > 0 -> when {
+                data.patternTileExpansionCount > 0 -> 95
                 data.patternApproximationStats.sparsePatternApproximationCount > 0 -> 80
                 data.patternApproximationStats.complexPatternApproximationCount > 0 -> 85
                 approximationCount + ignoredCount >= 4 -> 90

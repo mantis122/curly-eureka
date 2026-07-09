@@ -21,6 +21,9 @@ private var activeDashedStrokesApproximated = 0
 private var activeNonScalingStrokesDetected = 0
 private var activeNonScalingStrokesCompensated = 0
 private var activeNonScalingStrokesUncertain = 0
+private var activePatternDefinitions: Map<String, PatternDefinition> = emptyMap()
+private var activePatternTileExpansions = 0
+private var activePatternTilePathsEmitted = 0
 
 val appliedClipPaths: Int get() = activeAppliedClipPaths
 val appliedMasks: Int get() = activeAppliedMasks
@@ -33,6 +36,8 @@ val dashedStrokesApproximated: Int get() = activeDashedStrokesApproximated
 val nonScalingStrokesDetected: Int get() = activeNonScalingStrokesDetected
 val nonScalingStrokesCompensated: Int get() = activeNonScalingStrokesCompensated
 val nonScalingStrokesUncertain: Int get() = activeNonScalingStrokesUncertain
+val patternTileExpansions: Int get() = activePatternTileExpansions
+val patternTilePathsEmitted: Int get() = activePatternTilePathsEmitted
 
 private lateinit var appendElementPathCallback: (
     StringBuilder, Element, String,
@@ -75,14 +80,36 @@ data class MarkerDefinition(
     val paths: List<MarkerPath>
 )
 
+
+data class PatternTilePath(
+    val pathData: String,
+    val fill: String?,
+    val stroke: String?,
+    val strokeWidth: String?,
+    val fillOpacity: String?,
+    val strokeOpacity: String?
+)
+
+data class PatternDefinition(
+    val id: String,
+    val x: Float,
+    val y: Float,
+    val width: Float,
+    val height: Float,
+    val patternUnits: String,
+    val paths: List<PatternTilePath>
+)
+
 fun resetStats(
     clipPathData: Map<String, String>,
     maskPathData: Map<String, String> = emptyMap(),
-    markerDefinitions: Map<String, MarkerDefinition> = emptyMap()
+    markerDefinitions: Map<String, MarkerDefinition> = emptyMap(),
+    patternDefinitions: Map<String, PatternDefinition> = emptyMap()
 ) {
     activeClipPathData = clipPathData
     activeMaskPathData = maskPathData
     activeMarkerDefinitions = markerDefinitions
+    activePatternDefinitions = patternDefinitions
     activeAppliedClipPaths = 0
     activeAppliedMasks = 0
     activeResolvedUseExpansions = 0
@@ -93,6 +120,8 @@ fun resetStats(
     activeNonScalingStrokesDetected = 0
     activeNonScalingStrokesCompensated = 0
     activeNonScalingStrokesUncertain = 0
+    activePatternTileExpansions = 0
+    activePatternTilePathsEmitted = 0
 }
 
 fun markerDefinition(id: String?): MarkerDefinition? {
@@ -395,6 +424,97 @@ fun collectMarkerDefinitions(
             for (i in 0 until children.length) {
                 visit(children.item(i))
             }
+        }
+
+        visit(document.documentElement)
+    } catch (_: Exception) {
+        return emptyMap()
+    }
+
+    return result
+}
+
+
+fun collectPatternDefinitions(
+    svg: String,
+    basicShapeToPathData: (Element, String) -> String?
+): Map<String, PatternDefinition> {
+    basicShapeToPathDataCallback = basicShapeToPathData
+    val result = linkedMapOf<String, PatternDefinition>()
+
+    try {
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            isIgnoringComments = true
+        }
+        val document = factory.newDocumentBuilder().parse(InputSource(StringReader(svg)))
+
+        fun numberAttr(element: Element, name: String, fallback: Float): Float {
+            return element.getAttribute(name).trim().removeSuffix("px").toFloatOrNull() ?: fallback
+        }
+
+        fun tilePath(element: Element, tagName: String): PatternTilePath? {
+            val pathData = when (tagName) {
+                "path" -> element.getAttribute("d").trim()
+                "rect", "circle", "ellipse", "line", "polyline", "polygon" -> basicShapeToPathDataCallback(element, tagName).orEmpty()
+                else -> ""
+            }
+            if (pathData.isBlank()) return null
+            val style = element.getAttribute("style").ifBlank { null }
+            val fill = SvgPaintResolver.styleValue(style, "fill") ?: element.getAttribute("fill").ifBlank { null }
+            val stroke = SvgPaintResolver.styleValue(style, "stroke") ?: element.getAttribute("stroke").ifBlank { null }
+            return PatternTilePath(
+                pathData = pathData,
+                fill = fill,
+                stroke = stroke,
+                strokeWidth = SvgPaintResolver.styleValue(style, "stroke-width") ?: element.getAttribute("stroke-width").ifBlank { null },
+                fillOpacity = SvgPaintResolver.styleValue(style, "fill-opacity") ?: element.getAttribute("fill-opacity").ifBlank { null },
+                strokeOpacity = SvgPaintResolver.styleValue(style, "stroke-opacity") ?: element.getAttribute("stroke-opacity").ifBlank { null }
+            )
+        }
+
+        fun collectTilePaths(element: Element, depth: Int = 0): List<PatternTilePath> {
+            if (depth > 20) return emptyList()
+            val paths = mutableListOf<PatternTilePath>()
+            val children = element.childNodes
+            for (i in 0 until children.length) {
+                val child = children.item(i)
+                if (child.nodeType != Node.ELEMENT_NODE) continue
+                val childElement = child as Element
+                val tag = childElement.tagName.substringAfter(":").lowercase()
+                when (tag) {
+                    "path", "rect", "circle", "ellipse", "line", "polyline", "polygon" ->
+                        tilePath(childElement, tag)?.let { paths.add(it) }
+                    "g", "defs", "symbol" -> paths.addAll(collectTilePaths(childElement, depth + 1))
+                }
+            }
+            return paths
+        }
+
+        fun visit(node: Node) {
+            if (node.nodeType != Node.ELEMENT_NODE) return
+            val element = node as Element
+            val tag = element.tagName.substringAfter(":").lowercase()
+            if (tag == "pattern") {
+                val id = element.getAttribute("id").trim()
+                val width = numberAttr(element, "width", 0f)
+                val height = numberAttr(element, "height", 0f)
+                val paths = collectTilePaths(element)
+                val patternUnits = element.getAttribute("patternUnits").ifBlank { "objectBoundingBox" }
+                if (id.isNotBlank() && width > 0f && height > 0f && paths.isNotEmpty()) {
+                    result[id] = PatternDefinition(
+                        id = id,
+                        x = numberAttr(element, "x", 0f),
+                        y = numberAttr(element, "y", 0f),
+                        width = width,
+                        height = height,
+                        patternUnits = patternUnits,
+                        paths = paths
+                    )
+                }
+            }
+            val children = element.childNodes
+            for (i in 0 until children.length) visit(children.item(i))
         }
 
         visit(document.documentElement)
@@ -732,6 +852,102 @@ private fun appendChildrenWithClipGrouping(
     }
 }
 
+
+private fun patternIdFromPaint(value: String?): String? {
+    val raw = value?.trim() ?: return null
+    return Regex("""url\(\s*#([^)'"\s]+)\s*\)""")
+        .find(raw)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+}
+
+private data class SimpleBounds(val minX: Float, val minY: Float, val maxX: Float, val maxY: Float) {
+    val width: Float get() = (maxX - minX).coerceAtLeast(0.001f)
+    val height: Float get() = (maxY - minY).coerceAtLeast(0.001f)
+}
+
+private fun approximateBoundsFromPathData(pathData: String): SimpleBounds? {
+    val nums = Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""")
+        .findAll(pathData)
+        .mapNotNull { it.value.toFloatOrNull() }
+        .toList()
+    if (nums.size < 2) return null
+    val xs = mutableListOf<Float>()
+    val ys = mutableListOf<Float>()
+    var i = 0
+    while (i + 1 < nums.size) {
+        xs.add(nums[i])
+        ys.add(nums[i + 1])
+        i += 2
+    }
+    if (xs.isEmpty() || ys.isEmpty()) return null
+    return SimpleBounds(xs.minOrNull() ?: return null, ys.minOrNull() ?: return null, xs.maxOrNull() ?: return null, ys.maxOrNull() ?: return null)
+}
+
+private fun appendPatternFillApproximation(
+    output: StringBuilder,
+    targetPathData: String,
+    rawFill: String?,
+    inheritedOpacity: String?,
+    inheritedFillOpacity: String?,
+    indent: String
+): Boolean {
+    val patternId = patternIdFromPaint(rawFill) ?: return false
+    val pattern = activePatternDefinitions[patternId] ?: return false
+    val bounds = approximateBoundsFromPathData(targetPathData) ?: return false
+    if (!pattern.patternUnits.equals("userSpaceOnUse", ignoreCase = true)) return false
+
+    val startX = kotlin.math.floor(((bounds.minX - pattern.x) / pattern.width).toDouble()).toInt() * pattern.width + pattern.x
+    val startY = kotlin.math.floor(((bounds.minY - pattern.y) / pattern.height).toDouble()).toInt() * pattern.height + pattern.y
+    val endX = bounds.maxX + pattern.width
+    val endY = bounds.maxY + pattern.height
+    var emitted = 0
+    val maxTilePaths = 600
+
+    output.appendLine("${indent}<group>")
+    output.appendLine("${indent}    <!-- pattern #$patternId approximated by repeated tile paths -->")
+    output.appendLine("${indent}    <clip-path")
+    output.appendLine("${indent}        android:pathData=\"${escapeXmlCallback(targetPathData)}\"")
+    output.appendLine("${indent}    />")
+
+    var y = startY
+    while (y <= endY && emitted < maxTilePaths) {
+        var x = startX
+        while (x <= endX && emitted < maxTilePaths) {
+            pattern.paths.forEach { tile ->
+                if (emitted >= maxTilePaths) return@forEach
+                val translated = SvgPathDataTransformer.applyAffineTransform(
+                    tile.pathData,
+                    AffineTransform(e = x, f = y)
+                ) ?: tile.pathData
+                val fill = SvgPaintResolver.safeFillColor(tile.fill ?: "#000000")
+                val stroke = SvgPaintResolver.safeStrokeColor(tile.stroke)
+                SvgPathEmitter.appendRawPathForPatternTile(
+                    output = output,
+                    d = translated,
+                    fill = fill,
+                    stroke = stroke,
+                    strokeWidth = tile.strokeWidth,
+                    fillAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.fillOpacity ?: inheritedFillOpacity),
+                    strokeAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.strokeOpacity),
+                    indent = indent + "    "
+                )
+                emitted++
+            }
+            x += pattern.width
+        }
+        y += pattern.height
+    }
+
+    output.appendLine("${indent}</group>")
+    output.appendLine()
+    activePatternTileExpansions++
+    activePatternTilePathsEmitted += emitted
+    return true
+}
+
 private fun walkSvgNode(
     output: StringBuilder,
     node: Node,
@@ -987,6 +1203,10 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
         }
 
         "path" -> {
+            val sourcePathData = element.getAttribute("d").trim()
+            if (sourcePathData.isNotBlank() && appendPatternFillApproximation(output, sourcePathData, currentFill, currentOpacity, currentFillOpacity, indent)) {
+                return
+            }
             emitWithForcedStrokeWidth(strokeWidthForEmission) {
                 appendElementPathCallback(
                     output,
@@ -1009,6 +1229,10 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
         }
 
         "rect", "circle", "ellipse", "line", "polyline", "polygon" -> {
+            val sourcePathData = basicShapeToPathDataCallback(element, tagName)
+            if (!sourcePathData.isNullOrBlank() && tagName != "line" && appendPatternFillApproximation(output, sourcePathData, currentFill, currentOpacity, currentFillOpacity, indent)) {
+                return
+            }
             emitWithForcedStrokeWidth(strokeWidthForEmission) {
                 appendBasicShapePathCallback(
                     output,
