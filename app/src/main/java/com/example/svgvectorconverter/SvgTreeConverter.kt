@@ -2048,14 +2048,33 @@ private fun appendTextGlyphOutlines(
 
     val elementTextLength = explicitTextLength(element)
     val elementLengthAdjust = explicitLengthAdjust(element)
+    val totalGlyphCount = rawPreparedRuns.sumOf { it.glyphCount }
+    val totalNaturalAdvance = rawPreparedRuns.sumOf { it.advance.toDouble() }.toFloat()
+    val parentSpacingAdjustment = if (
+        elementTextLength != null &&
+        elementLengthAdjust == "spacing" &&
+        totalGlyphCount > 1
+    ) {
+        (elementTextLength - totalNaturalAdvance) / (totalGlyphCount - 1).toFloat()
+    } else 0f
+    val parentSpacingApplied = elementTextLength != null &&
+        elementLengthAdjust == "spacing" &&
+        totalGlyphCount > 1
+
+    if (parentSpacingApplied) activeTextLengthSpacingAdjustments++
+
     val preparedRuns = rawPreparedRuns.map { prepared ->
         val directTarget = if (prepared.run.element !== element) prepared.targetTextLength else null
-        val target = directTarget ?: if (rawPreparedRuns.size == 1) elementTextLength else null
-        val mode = if (directTarget != null) prepared.lengthAdjust else elementLengthAdjust
-        val adjustment = if (target != null && mode == "spacing" && prepared.glyphCount > 1) {
-            (target - prepared.advance) / (prepared.glyphCount - 1).toFloat()
-        } else 0f
-        if (target != null && mode == "spacing" && prepared.glyphCount > 1) {
+        val usesDirectTarget = directTarget != null
+        val target = directTarget ?: elementTextLength
+        val mode = if (usesDirectTarget) prepared.lengthAdjust else elementLengthAdjust
+        val adjustment = when {
+            usesDirectTarget && mode == "spacing" && prepared.glyphCount > 1 ->
+                (directTarget!! - prepared.advance) / (prepared.glyphCount - 1).toFloat()
+            !usesDirectTarget && parentSpacingApplied -> parentSpacingAdjustment
+            else -> 0f
+        }
+        if (usesDirectTarget && mode == "spacing" && prepared.glyphCount > 1) {
             activeTextLengthSpacingAdjustments++
         }
         prepared.copy(
@@ -2073,9 +2092,13 @@ private fun appendTextGlyphOutlines(
     val baseAnchor = normalizedTextAnchor(element)
     val baseVertical = isVerticalWritingMode(element)
     val hasPositionedRuns = runs.any { it.element !== element && textHasPositionAttribute(it.element) }
-    val totalAdvance = preparedRuns.sumOf { prepared ->
-        (prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0)).toDouble()
-    }.toFloat()
+    val totalAdvance = if (parentSpacingApplied) {
+        totalNaturalAdvance + parentSpacingAdjustment * (totalGlyphCount - 1)
+    } else {
+        preparedRuns.sumOf { prepared ->
+            (prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0)).toDouble()
+        }.toFloat()
+    }
 
     var currentX = if (baseVertical) {
         baseX + baseDx
@@ -2110,7 +2133,7 @@ private fun appendTextGlyphOutlines(
 
     var emittedGlyphComment = false
 
-    for (prepared in preparedRuns) {
+    for ((runIndex, prepared) in preparedRuns.withIndex()) {
         if (hasPositionedRuns) {
             if (prepared.explicitX != null) currentX = prepared.explicitX
             if (prepared.explicitY != null) currentY = prepared.explicitY
@@ -2193,7 +2216,13 @@ private fun appendTextGlyphOutlines(
             } else null
             val kern = kerningAdjustment(prepared.font, glyph, nextGlyph, vertical = prepared.vertical, recordMatch = true)
             if (abs(kern) > 0.001f) activeTextKerningAdjustmentsApplied++
-            val extraSpacing = if (nextGlyph != null && prepared.lengthAdjust == "spacing") prepared.spacingAdjustment else 0f
+            val hasFollowingRunGlyph = nextGlyph == null &&
+                runIndex < preparedRuns.lastIndex &&
+                preparedRuns.drop(runIndex + 1).any { it.glyphCount > 0 }
+            val extraSpacing = if (
+                prepared.lengthAdjust == "spacing" &&
+                (nextGlyph != null || (parentSpacingApplied && hasFollowingRunGlyph))
+            ) prepared.spacingAdjustment else 0f
             val advance = (glyphAdvance(prepared.font, glyph, vertical = prepared.vertical) - kern) * scale + extraSpacing
             if (prepared.vertical) {
                 currentY += advance
