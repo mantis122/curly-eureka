@@ -175,7 +175,7 @@ data class AffineTransform(
     }
 }
 
-internal data class AndroidGroupTransform(
+data class AndroidGroupTransform(
     val translateX: Float = 0f,
     val translateY: Float = 0f,
     val scaleX: Float = 1f,
