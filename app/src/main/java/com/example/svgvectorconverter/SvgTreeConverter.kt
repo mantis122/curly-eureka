@@ -132,6 +132,7 @@ data class SvgGlyphOutline(
     val unicode: String,
     val pathData: String,
     val horizAdvX: Float? = null,
+    val vertAdvY: Float? = null,
     val glyphName: String? = null
 )
 
@@ -150,6 +151,7 @@ data class SvgFontDefinition(
     val ascent: Float,
     val descent: Float,
     val horizAdvX: Float,
+    val vertAdvY: Float,
     val glyphsByUnicode: Map<String, SvgGlyphOutline>,
     val glyphsByName: Map<String, SvgGlyphOutline>,
     val horizontalKerningPairs: List<SvgKerningPair> = emptyList(),
@@ -810,6 +812,7 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
             if (tag == "font") {
                 val id = element.getAttribute("id").trim()
                 val fontHorizAdvX = numberAttr(element, "horiz-adv-x", 1024f).coerceAtLeast(1f)
+                val fontVertAdvYRaw = element.getAttribute("vert-adv-y").trim().toFloatOrNull()
                 var unitsPerEm = 1000f
                 var ascent = 800f
                 var descent = -200f
@@ -840,6 +843,7 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                                     unicode = unicode,
                                     pathData = d,
                                     horizAdvX = childElement.getAttribute("horiz-adv-x").trim().toFloatOrNull(),
+                                    vertAdvY = childElement.getAttribute("vert-adv-y").trim().toFloatOrNull(),
                                     glyphName = childElement.getAttribute("glyph-name").trim().ifBlank { null }
                                 )
                                 glyphs[unicode] = glyph
@@ -853,6 +857,7 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                                     unicode = "",
                                     pathData = d,
                                     horizAdvX = childElement.getAttribute("horiz-adv-x").trim().toFloatOrNull(),
+                                    vertAdvY = childElement.getAttribute("vert-adv-y").trim().toFloatOrNull(),
                                     glyphName = childElement.getAttribute("glyph-name").trim().ifBlank { null }
                                 )
                             }
@@ -871,6 +876,7 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                         ascent = ascent,
                         descent = descent,
                         horizAdvX = fontHorizAdvX,
+                        vertAdvY = (fontVertAdvYRaw ?: unitsPerEm).coerceAtLeast(1f),
                         glyphsByUnicode = glyphs,
                         glyphsByName = glyphsByName,
                         horizontalKerningPairs = horizontalKerningPairs,
@@ -1833,12 +1839,20 @@ private fun glyphForText(font: SvgFontDefinition, remainingText: String): Pair<S
     }
 }
 
-private fun glyphAdvance(font: SvgFontDefinition, glyph: SvgGlyphOutline?): Float {
-    return glyph?.horizAdvX?.takeIf { it > 0f } ?: font.horizAdvX
+private fun glyphAdvance(font: SvgFontDefinition, glyph: SvgGlyphOutline?, vertical: Boolean = false): Float {
+    return if (vertical) {
+        glyph?.vertAdvY?.takeIf { it > 0f } ?: font.vertAdvY
+    } else {
+        glyph?.horizAdvX?.takeIf { it > 0f } ?: font.horizAdvX
+    }
 }
 
-private fun hasGlyphSpecificAdvance(glyph: SvgGlyphOutline): Boolean {
-    return glyph.horizAdvX?.takeIf { it > 0f } != null
+private fun hasGlyphSpecificAdvance(glyph: SvgGlyphOutline, vertical: Boolean = false): Boolean {
+    return if (vertical) {
+        glyph.vertAdvY?.takeIf { it > 0f } != null
+    } else {
+        glyph.horizAdvX?.takeIf { it > 0f } != null
+    }
 }
 
 private fun kerningMatchesValue(values: Set<String>, glyph: SvgGlyphOutline): Boolean {
@@ -1898,13 +1912,13 @@ private fun textRunAdvance(font: SvgFontDefinition, text: String, fontSize: Floa
         val match = glyphForText(font, text.substring(index))
         if (match == null) {
             val cp = text.codePointAt(index)
-            total += font.horizAdvX * scale
+            total += glyphAdvance(font, null, vertical = vertical) * scale
             previousGlyph = null
             index += Character.charCount(cp)
         } else {
             val glyph = match.first
             total -= kerningAdjustment(font, previousGlyph, glyph, vertical = vertical) * scale
-            total += glyphAdvance(font, glyph) * scale
+            total += glyphAdvance(font, glyph, vertical = vertical) * scale
             previousGlyph = glyph
             index += match.second
         }
@@ -2062,9 +2076,9 @@ private fun appendTextGlyphOutlines(
             if (match == null) {
                 val cp = prepared.run.text.codePointAt(index)
                 if (prepared.vertical) {
-                    currentY += prepared.font.horizAdvX * scale
+                    currentY += glyphAdvance(prepared.font, null, vertical = true) * scale
                 } else {
-                    currentX += prepared.font.horizAdvX * scale
+                    currentX += glyphAdvance(prepared.font, null, vertical = false) * scale
                 }
                 index += Character.charCount(cp)
                 continue
@@ -2106,7 +2120,7 @@ private fun appendTextGlyphOutlines(
             }
             output.appendLine("${indent}/>")
 
-            if (hasGlyphSpecificAdvance(glyph)) activeTextGlyphSpecificAdvances++ else activeTextDefaultFontAdvances++
+            if (hasGlyphSpecificAdvance(glyph, vertical = prepared.vertical)) activeTextGlyphSpecificAdvances++ else activeTextDefaultFontAdvances++
 
             val nextStart = index + match.second
             val nextGlyph = if (nextStart < prepared.run.text.length) {
@@ -2114,7 +2128,7 @@ private fun appendTextGlyphOutlines(
             } else null
             val kern = kerningAdjustment(prepared.font, glyph, nextGlyph, vertical = prepared.vertical, recordMatch = true)
             if (abs(kern) > 0.001f) activeTextKerningAdjustmentsApplied++
-            val advance = (glyphAdvance(prepared.font, glyph) - kern) * scale
+            val advance = (glyphAdvance(prepared.font, glyph, vertical = prepared.vertical) - kern) * scale
             if (prepared.vertical) {
                 currentY += advance
             } else {
