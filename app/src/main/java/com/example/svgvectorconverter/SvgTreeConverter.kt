@@ -1382,6 +1382,45 @@ private fun textStyleValue(element: Element, style: String?, name: String): Stri
         ?: element.getAttribute(name).ifBlank { null }
 }
 
+private fun inheritedTextStyleValue(element: Element, name: String): String? {
+    var current: Node? = element
+    while (current is Element) {
+        val currentStyle = current.getAttribute("style").ifBlank { null }
+        val value = textStyleValue(current, currentStyle, name)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && !it.equals("inherit", ignoreCase = true) }
+        if (value != null) return value
+        current = current.parentNode
+    }
+    return null
+}
+
+private fun normalizedTextAnchor(element: Element): String {
+    return inheritedTextStyleValue(element, "text-anchor")
+        ?.lowercase()
+        ?.takeIf { it == "start" || it == "middle" || it == "end" }
+        ?: "start"
+}
+
+private fun normalizedDominantBaseline(element: Element): String {
+    return (inheritedTextStyleValue(element, "dominant-baseline")
+        ?: inheritedTextStyleValue(element, "alignment-baseline")
+        ?: "alphabetic")
+        .lowercase()
+}
+
+private fun textTopForBaseline(y: Float, dy: Float, height: Float, baseline: String): Float {
+    val baselineY = y + dy
+    return when (baseline) {
+        "middle", "central", "mathematical" -> baselineY - height / 2f
+        "hanging", "text-before-edge", "before-edge" -> baselineY
+        "text-after-edge", "after-edge" -> baselineY - height
+        "ideographic" -> baselineY - height * 0.88f
+        "alphabetic", "auto", "baseline" -> baselineY - height * 0.8f
+        else -> baselineY - height * 0.8f
+    }
+}
+
 private fun textContentForApproximation(element: Element): String {
     fun collect(node: Node, out: StringBuilder) {
         when (node.nodeType) {
@@ -1434,21 +1473,15 @@ private fun appendTextApproximation(
     val width = (textLength ?: (charCount * fontSize * widthFactor)).coerceAtLeast(fontSize * 0.35f)
     val height = fontSize
 
-    val anchor = textStyleValue(element, style, "text-anchor").orEmpty().lowercase()
+    val anchor = normalizedTextAnchor(element)
     val left = when (anchor) {
         "middle" -> x + dx - width / 2f
         "end" -> x + dx - width
         else -> x + dx
     }
 
-    val baseline = textStyleValue(element, style, "dominant-baseline")
-        ?: textStyleValue(element, style, "alignment-baseline")
-        ?: element.getAttribute("baseline-shift").ifBlank { "" }
-    val top = when (baseline.lowercase()) {
-        "middle", "central", "mathematical" -> y + dy - height / 2f
-        "hanging", "text-before-edge" -> y + dy
-        else -> y + dy - height * 0.8f
-    }
+    val baseline = normalizedDominantBaseline(element)
+    val top = textTopForBaseline(y, dy, height, baseline)
 
     val right = left + width
     val bottom = top + height
@@ -1486,6 +1519,8 @@ private fun appendTextApproximation(
     output.appendLine("${indent}<!-- text approximation:")
     output.appendLine("${indent}     \"${escapeXmlCallback(text)}\"")
     output.appendLine("${indent}     font-size=\"${formatNumber(fontSize)}\"")
+    output.appendLine("${indent}     text-anchor=\"$anchor\"")
+    output.appendLine("${indent}     dominant-baseline=\"$baseline\"")
     if (fontFamily.isNotBlank()) {
         output.appendLine("${indent}     font-family=\"${escapeXmlCallback(fontFamily)}\"")
     }
