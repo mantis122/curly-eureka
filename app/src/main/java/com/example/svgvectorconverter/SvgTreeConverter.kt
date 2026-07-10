@@ -1464,49 +1464,52 @@ private fun textHasPositionAttribute(element: Element): Boolean {
 
 private fun textApproximationRuns(element: Element): List<TextApproximationRun> {
     val runs = mutableListOf<TextApproximationRun>()
-    val pendingText = StringBuilder()
 
-    fun flushPendingText() {
-        val text = normalizeTextWhitespace(pendingText.toString())
-        if (text.isNotBlank()) {
-            runs.add(TextApproximationRun(text, element))
-        }
-        pendingText.clear()
-    }
+    fun collectInlineRuns(owner: Element) {
+        val pendingText = StringBuilder()
 
-    val children = element.childNodes
-    for (i in 0 until children.length) {
-        val child = children.item(i)
-        when (child.nodeType) {
-            Node.TEXT_NODE, Node.CDATA_SECTION_NODE -> {
-                pendingText.append(child.nodeValue.orEmpty())
+        fun flushPendingText() {
+            val text = normalizeTextWhitespace(pendingText.toString())
+            if (text.isNotBlank()) {
+                runs.add(TextApproximationRun(text, owner))
             }
+            pendingText.clear()
+        }
 
-            Node.ELEMENT_NODE -> {
-                val childElement = child as Element
-                val tag = childElement.tagName.substringAfter(":").lowercase()
-                when (tag) {
-                    "tspan" -> {
-                        flushPendingText()
-                        val tspanText = textContentForApproximation(childElement)
-                        if (tspanText.isNotBlank()) {
-                            runs.add(TextApproximationRun(tspanText, childElement))
+        val children = owner.childNodes
+        for (i in 0 until children.length) {
+            val child = children.item(i)
+            when (child.nodeType) {
+                Node.TEXT_NODE, Node.CDATA_SECTION_NODE -> {
+                    pendingText.append(child.nodeValue.orEmpty())
+                }
+
+                Node.ELEMENT_NODE -> {
+                    val childElement = child as Element
+                    val tag = childElement.tagName.substringAfter(":").lowercase()
+                    when (tag) {
+                        "tspan" -> {
+                            flushPendingText()
+                            collectInlineRuns(childElement)
                         }
-                    }
 
-                    "textpath" -> {
-                        flushPendingText()
-                    }
+                        "textpath" -> {
+                            flushPendingText()
+                        }
 
-                    else -> {
-                        pendingText.append(textContentForApproximation(childElement))
+                        else -> {
+                            flushPendingText()
+                            collectInlineRuns(childElement)
+                        }
                     }
                 }
             }
         }
+
+        flushPendingText()
     }
 
-    flushPendingText()
+    collectInlineRuns(element)
 
     if (runs.isEmpty()) {
         val fallbackText = textContentForApproximation(element)
@@ -1605,7 +1608,7 @@ private fun appendTextApproximation(
             ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
             ?.toFloatOrNull()
         val width = (textLength ?: (charCount * fontSize * widthFactor)).coerceAtLeast(fontSize * 0.35f)
-        val rawFill = textStyleValue(run.element, runStyle, "fill") ?: inheritedFill ?: "#000000"
+        val rawFill = inheritedTextStyleValue(run.element, "fill") ?: inheritedFill ?: "#000000"
 
         val isParentTextRun = run.element === element
 
@@ -1689,11 +1692,11 @@ private fun appendTextApproximation(
         val outlineColor = SvgPaintResolver.safeFillColor(prepared.rawFill)
         val opacity = SvgPaintResolver.inheritedOpacity(
             inheritedOpacity,
-            textStyleValue(run.element, runStyle, "opacity") ?: ""
+            inheritedTextStyleValue(run.element, "opacity") ?: ""
         )
         val fillOpacity = SvgPaintResolver.inheritedPaintOpacity(
             inheritedFillOpacity,
-            textStyleValue(run.element, runStyle, "fill-opacity") ?: ""
+            inheritedTextStyleValue(run.element, "fill-opacity") ?: ""
         )
         val outlineAlpha = SvgPaintResolver.combineAlpha(opacity, fillOpacity)
 
