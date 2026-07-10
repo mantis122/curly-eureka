@@ -220,6 +220,7 @@ object SvgToVectorConverter {
                 textElementsApproximated = SvgTreeConverter.textElementsApproximated,
                 textElementsConvertedToPaths = SvgTreeConverter.textElementsConvertedToPaths,
                 textGlyphPathsEmitted = SvgTreeConverter.textGlyphPathsEmitted,
+                textVariableGlyphAdvancesApplied = SvgTreeConverter.textVariableGlyphAdvancesApplied,
                 textFontFamilies = SvgTreeConverter.textFontFamilies,
                 textFontWeights = SvgTreeConverter.textFontWeights,
                 svgFontGlyphCount = svgFontGlyphCount,

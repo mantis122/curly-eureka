@@ -71,6 +71,7 @@ data class SvgConversionReportData(
     val textElementsApproximated: Int,
     val textElementsConvertedToPaths: Int = 0,
     val textGlyphPathsEmitted: Int = 0,
+    val textVariableGlyphAdvancesApplied: Int = 0,
     val textFontFamilies: List<String> = emptyList(),
     val textFontWeights: List<String> = emptyList(),
     val svgFontGlyphCount: Int,
@@ -351,6 +352,9 @@ object SvgConversionReporter {
                 if (data.textElementsConvertedToPaths > 0) {
                     appendLine("✓ Text converted to paths: ${data.textElementsConvertedToPaths}")
                     appendLine("✓ Glyph outline paths emitted: ${data.textGlyphPathsEmitted}")
+                    if (data.textVariableGlyphAdvancesApplied > 0) {
+                        appendLine("✓ Variable glyph advances applied: ${data.textVariableGlyphAdvancesApplied}")
+                    }
                 }
                 if (data.textElementsApproximated > 0) {
                     appendLine("✓ Bounding-box approximations: ${data.textElementsApproximated}")

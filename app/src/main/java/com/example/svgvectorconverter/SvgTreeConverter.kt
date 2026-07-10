@@ -28,6 +28,7 @@ private var activePatternTilePathsEmitted = 0
 private var activeTextElementsApproximated = 0
 private var activeTextElementsConvertedToPaths = 0
 private var activeTextGlyphPathsEmitted = 0
+private var activeTextVariableGlyphAdvancesApplied = 0
 private val activeTextFontFamilies = linkedSetOf<String>()
 private val activeTextFontWeights = linkedSetOf<String>()
 
@@ -47,6 +48,7 @@ val patternTilePathsEmitted: Int get() = activePatternTilePathsEmitted
 val textElementsApproximated: Int get() = activeTextElementsApproximated
 val textElementsConvertedToPaths: Int get() = activeTextElementsConvertedToPaths
 val textGlyphPathsEmitted: Int get() = activeTextGlyphPathsEmitted
+val textVariableGlyphAdvancesApplied: Int get() = activeTextVariableGlyphAdvancesApplied
 val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
 val textFontWeights: List<String> get() = activeTextFontWeights.toList()
 
@@ -156,6 +158,7 @@ fun resetStats(
     activeTextElementsApproximated = 0
     activeTextElementsConvertedToPaths = 0
     activeTextGlyphPathsEmitted = 0
+    activeTextVariableGlyphAdvancesApplied = 0
     activeTextFontFamilies.clear()
     activeTextFontWeights.clear()
 }
@@ -1746,6 +1749,15 @@ private fun glyphForText(font: SvgFontDefinition, remainingText: String): Pair<S
     }
 }
 
+private fun glyphAdvance(font: SvgFontDefinition, glyph: SvgGlyphOutline?): Float {
+    return glyph?.horizAdvX?.takeIf { it > 0f } ?: font.horizAdvX
+}
+
+private fun hasVariableGlyphAdvance(font: SvgFontDefinition, glyph: SvgGlyphOutline): Boolean {
+    val explicitAdvance = glyph.horizAdvX?.takeIf { it > 0f } ?: return false
+    return abs(explicitAdvance - font.horizAdvX) > 0.001f
+}
+
 private fun textRunAdvance(font: SvgFontDefinition, text: String, fontSize: Float): Float {
     val scale = fontSize / font.unitsPerEm
     var index = 0
@@ -1757,7 +1769,7 @@ private fun textRunAdvance(font: SvgFontDefinition, text: String, fontSize: Floa
             total += font.horizAdvX * scale
             index += Character.charCount(cp)
         } else {
-            total += (match.first.horizAdvX ?: font.horizAdvX) * scale
+            total += glyphAdvance(font, match.first) * scale
             index += match.second
         }
     }
@@ -1865,7 +1877,7 @@ private fun appendTextGlyphOutlines(
         transformOrigin
     )
 
-    output.appendLine("${indent}<!-- converted text to glyph outline paths from embedded SVG font -->")
+    var emittedGlyphComment = false
 
     for (prepared in preparedRuns) {
         if (hasPositionedRuns) {
@@ -1909,6 +1921,11 @@ private fun appendTextGlyphOutlines(
             }
             pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
 
+            if (!emittedGlyphComment) {
+                output.appendLine("${indent}<!-- converted text to glyph outline paths from embedded SVG font -->")
+                emittedGlyphComment = true
+            }
+
             val safeFill = SvgPaintResolver.safeFillColor(prepared.fill)
             val safeStroke = SvgPaintResolver.safeStrokeColor(prepared.stroke)
             val fillAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.fillOpacity)
@@ -1925,7 +1942,8 @@ private fun appendTextGlyphOutlines(
             }
             output.appendLine("${indent}/>")
 
-            currentX += (glyph.horizAdvX ?: prepared.font.horizAdvX) * scale
+            if (hasVariableGlyphAdvance(prepared.font, glyph)) activeTextVariableGlyphAdvancesApplied++
+            currentX += glyphAdvance(prepared.font, glyph) * scale
             index += match.second
             emittedGlyphs++
         }
