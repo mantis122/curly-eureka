@@ -97,6 +97,7 @@ data class PatternDefinition(
     val width: Float,
     val height: Float,
     val patternUnits: String,
+    val patternTransform: AffineTransform = AffineTransform.identity(),
     val paths: List<PatternTilePath>
 )
 
@@ -509,6 +510,9 @@ fun collectPatternDefinitions(
                         width = width,
                         height = height,
                         patternUnits = patternUnits,
+                        patternTransform = SvgTransformParser.combineTransformListToMatrix(
+                            SvgTransformParser.parseTransformList(element.getAttribute("patternTransform"))
+                        ) ?: AffineTransform.identity(),
                         paths = paths
                     )
                 }
@@ -853,6 +857,44 @@ private fun appendChildrenWithClipGrouping(
 }
 
 
+private fun inverseAffineTransform(matrix: AffineTransform): AffineTransform? {
+    val determinant = matrix.a * matrix.d - matrix.b * matrix.c
+    if (kotlin.math.abs(determinant) < 0.000001f) return null
+
+    val inverseA = matrix.d / determinant
+    val inverseB = -matrix.b / determinant
+    val inverseC = -matrix.c / determinant
+    val inverseD = matrix.a / determinant
+    val inverseE = (matrix.c * matrix.f - matrix.d * matrix.e) / determinant
+    val inverseF = (matrix.b * matrix.e - matrix.a * matrix.f) / determinant
+
+    return AffineTransform(
+        a = inverseA,
+        b = inverseB,
+        c = inverseC,
+        d = inverseD,
+        e = inverseE,
+        f = inverseF
+    )
+}
+
+private fun SimpleBounds.transformedBy(matrix: AffineTransform): SimpleBounds {
+    val points = listOf(
+        matrix.mapPoint(minX, minY),
+        matrix.mapPoint(maxX, minY),
+        matrix.mapPoint(maxX, maxY),
+        matrix.mapPoint(minX, maxY)
+    )
+    val xs = points.map { it.first }
+    val ys = points.map { it.second }
+    return SimpleBounds(
+        minX = xs.minOrNull() ?: minX,
+        minY = ys.minOrNull() ?: minY,
+        maxX = xs.maxOrNull() ?: maxX,
+        maxY = ys.maxOrNull() ?: maxY
+    )
+}
+
 private fun patternIdFromPaint(value: String?): String? {
     val raw = value?.trim() ?: return null
     return Regex("""url\(\s*#([^)'"\s]+)\s*\)""")
@@ -903,10 +945,14 @@ private fun appendPatternFillApproximation(
     val bounds = approximateBoundsFromPathData(targetPathData) ?: return false
     if (!pattern.patternUnits.equals("userSpaceOnUse", ignoreCase = true)) return false
 
-    val startX = kotlin.math.floor(((bounds.minX - pattern.x) / pattern.width).toDouble()).toInt() * pattern.width + pattern.x
-    val startY = kotlin.math.floor(((bounds.minY - pattern.y) / pattern.height).toDouble()).toInt() * pattern.height + pattern.y
-    val endX = bounds.maxX
-    val endY = bounds.maxY
+    val patternSpaceBounds = inverseAffineTransform(pattern.patternTransform)
+        ?.let { bounds.transformedBy(it) }
+        ?: bounds
+
+    val startX = kotlin.math.floor(((patternSpaceBounds.minX - pattern.x) / pattern.width).toDouble()).toInt() * pattern.width + pattern.x
+    val startY = kotlin.math.floor(((patternSpaceBounds.minY - pattern.y) / pattern.height).toDouble()).toInt() * pattern.height + pattern.y
+    val endX = patternSpaceBounds.maxX
+    val endY = patternSpaceBounds.maxY
     var emitted = 0
     val maxTilePaths = 600
 
@@ -922,9 +968,10 @@ private fun appendPatternFillApproximation(
         while (x <= endX && emitted < maxTilePaths) {
             pattern.paths.forEach { tile ->
                 if (emitted >= maxTilePaths) return@forEach
+                val tileTransform = pattern.patternTransform.multiply(AffineTransform(e = x, f = y))
                 val translated = SvgPathDataTransformer.applyAffineTransform(
                     tile.pathData,
-                    AffineTransform(e = x, f = y)
+                    tileTransform
                 ) ?: tile.pathData
                 val tileBounds = approximateBoundsFromPathData(translated)
                 if (tileBounds == null || tileBounds.intersects(bounds)) {
