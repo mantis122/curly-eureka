@@ -69,6 +69,8 @@ data class SvgConversionReportData(
     val tspanElementCount: Int,
     val textPathElementCount: Int,
     val textElementsApproximated: Int,
+    val textElementsConvertedToPaths: Int = 0,
+    val textGlyphPathsEmitted: Int = 0,
     val textFontFamilies: List<String> = emptyList(),
     val textFontWeights: List<String> = emptyList(),
     val svgFontGlyphCount: Int,
@@ -345,6 +347,10 @@ object SvgConversionReporter {
                 appendLine("────────────────────")
                 appendLine()
                 appendLine("✓ Text elements found: ${data.textElementCount}")
+                if (data.textElementsConvertedToPaths > 0) {
+                    appendLine("✓ Text converted to paths: ${data.textElementsConvertedToPaths}")
+                    appendLine("✓ Glyph outline paths emitted: ${data.textGlyphPathsEmitted}")
+                }
                 if (data.textElementsApproximated > 0) {
                     appendLine("✓ Bounding-box approximations: ${data.textElementsApproximated}")
                 }
@@ -546,7 +552,8 @@ object SvgConversionReporter {
                     appendLine(imageConversionWarning(data.imageStats))
                 }
 
-                val unapproximatedTextCount = maxOf(0, data.textElementCount - data.textElementsApproximated)
+                val handledTextCount = data.textElementsApproximated + data.textElementsConvertedToPaths
+                val unapproximatedTextCount = maxOf(0, data.textElementCount - handledTextCount)
                 if (unapproximatedTextCount > 0 || data.textPathElementCount > 0) {
                     appendLine(textConversionWarning(data))
                 }
@@ -612,6 +619,7 @@ object SvgConversionReporter {
         if (data.maskPathCount > 0 || data.appliedMasks > 0) approximated.add("Masks as clip paths")
         if (data.appliedMarkers > 0) approximated.add("Markers")
         if (data.contextPaintApproximationCount > 0) approximated.add("context-fill/context-stroke")
+        if (data.textElementsConvertedToPaths > 0) approximated.add("Text (${data.textElementsConvertedToPaths} converted to glyph path${if (data.textElementsConvertedToPaths == 1) "" else "s"})")
         if (data.textElementsApproximated > 0) approximated.add("Text (${data.textElementsApproximated} bounding box approximation${if (data.textElementsApproximated == 1) "" else "s"})")
 
         val unapproximatedDashedStrokes = maxOf(0, data.dashedStrokesDetected - data.dashedStrokesApproximated)
@@ -629,7 +637,8 @@ object SvgConversionReporter {
         if (data.cssExternalImportCount > 0) ignored.add("External CSS @import")
         if (data.filterReferenceCount > 0) ignored.add("Filter effects")
 
-        val unapproximatedTextCount = maxOf(0, data.textElementCount - data.textElementsApproximated)
+        val handledTextCount = data.textElementsApproximated + data.textElementsConvertedToPaths
+        val unapproximatedTextCount = maxOf(0, data.textElementCount - handledTextCount)
         if (unapproximatedTextCount > 0 || data.textPathElementCount > 0) {
             unsupported.add("Text")
         }
@@ -734,7 +743,7 @@ object SvgConversionReporter {
 
     private fun textConversionWarning(data: SvgConversionReportData): String {
         return if (data.svgFontGlyphCount > 0) {
-            "⚠ Some text could not be approximated. Embedded SVG font glyphs were found, but full font layout/text-to-path conversion is not implemented."
+            "⚠ Some text could not be converted exactly. Embedded SVG font glyphs were found, but unsupported characters, textPath, or advanced text layout may still need manual outlining."
         } else {
             "⚠ Some text could not be approximated accurately. Text is best converted to paths/outlines before importing for exact VectorDrawable output."
         }

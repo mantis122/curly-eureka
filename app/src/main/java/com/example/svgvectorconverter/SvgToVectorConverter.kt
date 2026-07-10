@@ -37,7 +37,8 @@ object SvgToVectorConverter {
             svg = svgWithCssClassStyles,
             basicShapeToPathData = SvgPathEmitter::basicShapeToPathData
         )
-        SvgTreeConverter.resetStats(clipPathData, maskPathData, markerDefinitions, patternDefinitions)
+        val svgFontDefinitions = SvgTreeConverter.collectSvgFontDefinitions(svgWithCssClassStyles)
+        SvgTreeConverter.resetStats(clipPathData, maskPathData, markerDefinitions, patternDefinitions, svgFontDefinitions)
 
         val viewBoxValues = getViewBox(svgWithCssClassStyles)
         val widthFromSvg = getNumberAttr(svgWithCssClassStyles, "width")
@@ -164,7 +165,8 @@ object SvgToVectorConverter {
             SvgTreeConverter.dashedStrokesDetected - SvgTreeConverter.dashedStrokesApproximated
         )
 
-        val unapproximatedTextCount = maxOf(0, textElementCount - SvgTreeConverter.textElementsApproximated)
+        val handledTextCount = SvgTreeConverter.textElementsApproximated + SvgTreeConverter.textElementsConvertedToPaths
+        val unapproximatedTextCount = maxOf(0, textElementCount - handledTextCount)
 
         val warningCount = unsupported.size +
             (if (unapproximatedTextCount > 0 || textPathElementCount > 0) 1 else 0) +
@@ -216,6 +218,8 @@ object SvgToVectorConverter {
                 tspanElementCount = tspanElementCount,
                 textPathElementCount = textPathElementCount,
                 textElementsApproximated = SvgTreeConverter.textElementsApproximated,
+                textElementsConvertedToPaths = SvgTreeConverter.textElementsConvertedToPaths,
+                textGlyphPathsEmitted = SvgTreeConverter.textGlyphPathsEmitted,
                 textFontFamilies = SvgTreeConverter.textFontFamilies,
                 textFontWeights = SvgTreeConverter.textFontWeights,
                 svgFontGlyphCount = svgFontGlyphCount,

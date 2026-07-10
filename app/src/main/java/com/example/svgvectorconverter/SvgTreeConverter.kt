@@ -22,9 +22,12 @@ private var activeNonScalingStrokesDetected = 0
 private var activeNonScalingStrokesCompensated = 0
 private var activeNonScalingStrokesUncertain = 0
 private var activePatternDefinitions: Map<String, PatternDefinition> = emptyMap()
+private var activeSvgFontDefinitions: Map<String, SvgFontDefinition> = emptyMap()
 private var activePatternTileExpansions = 0
 private var activePatternTilePathsEmitted = 0
 private var activeTextElementsApproximated = 0
+private var activeTextElementsConvertedToPaths = 0
+private var activeTextGlyphPathsEmitted = 0
 private val activeTextFontFamilies = linkedSetOf<String>()
 private val activeTextFontWeights = linkedSetOf<String>()
 
@@ -42,6 +45,8 @@ val nonScalingStrokesUncertain: Int get() = activeNonScalingStrokesUncertain
 val patternTileExpansions: Int get() = activePatternTileExpansions
 val patternTilePathsEmitted: Int get() = activePatternTilePathsEmitted
 val textElementsApproximated: Int get() = activeTextElementsApproximated
+val textElementsConvertedToPaths: Int get() = activeTextElementsConvertedToPaths
+val textGlyphPathsEmitted: Int get() = activeTextGlyphPathsEmitted
 val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
 val textFontWeights: List<String> get() = activeTextFontWeights.toList()
 
@@ -107,16 +112,35 @@ data class PatternDefinition(
     val paths: List<PatternTilePath>
 )
 
+data class SvgGlyphOutline(
+    val unicode: String,
+    val pathData: String,
+    val horizAdvX: Float? = null
+)
+
+data class SvgFontDefinition(
+    val id: String,
+    val familyNames: Set<String>,
+    val unitsPerEm: Float,
+    val ascent: Float,
+    val descent: Float,
+    val horizAdvX: Float,
+    val glyphsByUnicode: Map<String, SvgGlyphOutline>,
+    val missingGlyph: SvgGlyphOutline? = null
+)
+
 fun resetStats(
     clipPathData: Map<String, String>,
     maskPathData: Map<String, String> = emptyMap(),
     markerDefinitions: Map<String, MarkerDefinition> = emptyMap(),
-    patternDefinitions: Map<String, PatternDefinition> = emptyMap()
+    patternDefinitions: Map<String, PatternDefinition> = emptyMap(),
+    svgFontDefinitions: Map<String, SvgFontDefinition> = emptyMap()
 ) {
     activeClipPathData = clipPathData
     activeMaskPathData = maskPathData
     activeMarkerDefinitions = markerDefinitions
     activePatternDefinitions = patternDefinitions
+    activeSvgFontDefinitions = svgFontDefinitions
     activeAppliedClipPaths = 0
     activeAppliedMasks = 0
     activeResolvedUseExpansions = 0
@@ -130,6 +154,8 @@ fun resetStats(
     activePatternTileExpansions = 0
     activePatternTilePathsEmitted = 0
     activeTextElementsApproximated = 0
+    activeTextElementsConvertedToPaths = 0
+    activeTextGlyphPathsEmitted = 0
     activeTextFontFamilies.clear()
     activeTextFontWeights.clear()
 }
@@ -685,6 +711,110 @@ fun appendClipPath(output: StringBuilder, clipPathId: String?, indent: String): 
     output.appendLine("""${indent}    android:pathData="${escapeXmlCallback(pathData)}"""")
     output.appendLine("""${indent}/>""")
     return true
+}
+
+
+fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
+    val result = linkedMapOf<String, SvgFontDefinition>()
+
+    fun numberAttr(element: Element, name: String, fallback: Float): Float {
+        return element.getAttribute(name)
+            .trim()
+            .removeSuffix("px")
+            .toFloatOrNull()
+            ?: fallback
+    }
+
+    fun normalizedFamilyNames(raw: String): Set<String> {
+        return raw.split(',')
+            .map { it.trim().trim('\'', '"') }
+            .filter { it.isNotBlank() }
+            .toSet()
+    }
+
+    try {
+        val factory = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = false
+            isIgnoringComments = true
+        }
+        val document = factory.newDocumentBuilder().parse(InputSource(StringReader(svg)))
+
+        fun visit(node: Node) {
+            if (node.nodeType != Node.ELEMENT_NODE) return
+            val element = node as Element
+            val tag = element.tagName.substringAfter(":").lowercase()
+
+            if (tag == "font") {
+                val id = element.getAttribute("id").trim()
+                val fontHorizAdvX = numberAttr(element, "horiz-adv-x", 1024f).coerceAtLeast(1f)
+                var unitsPerEm = 1000f
+                var ascent = 800f
+                var descent = -200f
+                val familyNames = linkedSetOf<String>()
+                val glyphs = linkedMapOf<String, SvgGlyphOutline>()
+                var missingGlyph: SvgGlyphOutline? = null
+
+                val children = element.childNodes
+                for (i in 0 until children.length) {
+                    val child = children.item(i)
+                    if (child.nodeType != Node.ELEMENT_NODE) continue
+                    val childElement = child as Element
+                    when (childElement.tagName.substringAfter(":").lowercase()) {
+                        "font-face" -> {
+                            unitsPerEm = numberAttr(childElement, "units-per-em", unitsPerEm).coerceAtLeast(1f)
+                            ascent = numberAttr(childElement, "ascent", ascent)
+                            descent = numberAttr(childElement, "descent", descent)
+                            familyNames.addAll(normalizedFamilyNames(childElement.getAttribute("font-family")))
+                        }
+                        "glyph" -> {
+                            val unicode = childElement.getAttribute("unicode")
+                            val d = childElement.getAttribute("d").trim()
+                            if (unicode.isNotEmpty() && d.isNotBlank()) {
+                                glyphs[unicode] = SvgGlyphOutline(
+                                    unicode = unicode,
+                                    pathData = d,
+                                    horizAdvX = childElement.getAttribute("horiz-adv-x").trim().toFloatOrNull()
+                                )
+                            }
+                        }
+                        "missing-glyph" -> {
+                            val d = childElement.getAttribute("d").trim()
+                            if (d.isNotBlank()) {
+                                missingGlyph = SvgGlyphOutline(
+                                    unicode = "",
+                                    pathData = d,
+                                    horizAdvX = childElement.getAttribute("horiz-adv-x").trim().toFloatOrNull()
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (id.isNotBlank()) familyNames.add(id)
+                if (id.isNotBlank() && glyphs.isNotEmpty()) {
+                    result[id] = SvgFontDefinition(
+                        id = id,
+                        familyNames = familyNames,
+                        unitsPerEm = unitsPerEm,
+                        ascent = ascent,
+                        descent = descent,
+                        horizAdvX = fontHorizAdvX,
+                        glyphsByUnicode = glyphs,
+                        missingGlyph = missingGlyph
+                    )
+                }
+            }
+
+            val children = element.childNodes
+            for (i in 0 until children.length) visit(children.item(i))
+        }
+
+        visit(document.documentElement)
+    } catch (_: Exception) {
+        return emptyMap()
+    }
+
+    return result
 }
 
 fun appendConvertedSvgTree(
@@ -1274,7 +1404,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
         }
 
         "text" -> {
-            appendTextApproximation(
+            val convertedGlyphOutlines = appendTextGlyphOutlines(
                 output = output,
                 element = element,
                 indent = indent,
@@ -1285,6 +1415,19 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 inheritedFillOpacity = currentFillOpacity,
                 inheritedStrokeOpacity = currentStrokeOpacity
             )
+            if (!convertedGlyphOutlines) {
+                appendTextApproximation(
+                    output = output,
+                    element = element,
+                    indent = indent,
+                    inheritedFill = currentFill,
+                    inheritedStroke = currentStroke,
+                    inheritedStrokeWidth = strokeWidthForEmission,
+                    inheritedOpacity = currentOpacity,
+                    inheritedFillOpacity = currentFillOpacity,
+                    inheritedStrokeOpacity = currentStrokeOpacity
+                )
+            }
         }
 
         "tspan", "textpath" -> {
@@ -1552,6 +1695,245 @@ private fun widthFactorForTextWeight(fontWeight: String): Float {
         numeric != null && numeric >= 800 -> 0.66f
         else -> 0.60f
     }
+}
+
+
+private fun codePointStrings(text: String): List<String> {
+    val result = mutableListOf<String>()
+    var index = 0
+    while (index < text.length) {
+        val cp = text.codePointAt(index)
+        result.add(String(Character.toChars(cp)))
+        index += Character.charCount(cp)
+    }
+    return result
+}
+
+private fun normalizedFontFamilyCandidates(raw: String?): List<String> {
+    return raw.orEmpty()
+        .split(',')
+        .map { it.trim().trim('\'', '"') }
+        .filter { it.isNotBlank() }
+}
+
+private fun matchingSvgFont(fontFamily: String?): SvgFontDefinition? {
+    if (activeSvgFontDefinitions.isEmpty()) return null
+    val candidates = normalizedFontFamilyCandidates(fontFamily)
+    if (candidates.isEmpty() && activeSvgFontDefinitions.size == 1) {
+        return activeSvgFontDefinitions.values.first()
+    }
+    for (candidate in candidates) {
+        activeSvgFontDefinitions.values.firstOrNull { font ->
+            font.id.equals(candidate, ignoreCase = true) ||
+                font.familyNames.any { it.equals(candidate, ignoreCase = true) }
+        }?.let { return it }
+    }
+    return null
+}
+
+private fun glyphForText(font: SvgFontDefinition, remainingText: String): Pair<SvgGlyphOutline, Int>? {
+    if (remainingText.isEmpty()) return null
+    val direct = font.glyphsByUnicode[remainingText.take(1)]
+    var best: Pair<SvgGlyphOutline, Int>? = direct?.let { it to 1 }
+    for ((unicode, glyph) in font.glyphsByUnicode) {
+        if (unicode.length > (best?.second ?: 0) && remainingText.startsWith(unicode)) {
+            best = glyph to unicode.length
+        }
+    }
+    return best ?: font.missingGlyph?.let { missing ->
+        val cp = remainingText.codePointAt(0)
+        missing to Character.charCount(cp)
+    }
+}
+
+private fun textRunAdvance(font: SvgFontDefinition, text: String, fontSize: Float): Float {
+    val scale = fontSize / font.unitsPerEm
+    var index = 0
+    var total = 0f
+    while (index < text.length) {
+        val match = glyphForText(font, text.substring(index))
+        if (match == null) {
+            val cp = text.codePointAt(index)
+            total += font.horizAdvX * scale
+            index += Character.charCount(cp)
+        } else {
+            total += (match.first.horizAdvX ?: font.horizAdvX) * scale
+            index += match.second
+        }
+    }
+    return total
+}
+
+private fun appendTextGlyphOutlines(
+    output: StringBuilder,
+    element: Element,
+    indent: String,
+    inheritedFill: String?,
+    inheritedStroke: String?,
+    inheritedStrokeWidth: String?,
+    inheritedOpacity: String?,
+    inheritedFillOpacity: String?,
+    inheritedStrokeOpacity: String?
+): Boolean {
+    val runs = textApproximationRuns(element)
+    if (runs.isEmpty() || activeSvgFontDefinitions.isEmpty()) return false
+
+    data class GlyphTextRun(
+        val run: TextApproximationRun,
+        val font: SvgFontDefinition,
+        val fontSize: Float,
+        val fontFamily: String,
+        val fontWeight: String,
+        val advance: Float,
+        val fill: String,
+        val stroke: String?,
+        val strokeWidth: String?,
+        val opacity: String?,
+        val fillOpacity: String?,
+        val strokeOpacity: String?,
+        val anchor: String,
+        val baseline: String,
+        val explicitX: Float?,
+        val explicitY: Float?,
+        val dx: Float,
+        val dy: Float,
+        val sourceTag: String
+    )
+
+    val preparedRuns = runs.mapNotNull { run ->
+        val runStyle = run.element.getAttribute("style").ifBlank { null }
+        val fontSize = (inheritedTextStyleValue(run.element, "font-size")
+            ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
+            ?.toFloatOrNull()
+            ?: 16f).coerceAtLeast(1f)
+        val fontFamily = inheritedTextStyleValue(run.element, "font-family").orEmpty()
+        val font = matchingSvgFont(fontFamily) ?: return@mapNotNull null
+        val fontWeight = normalizeTextFontWeight(inheritedTextStyleValue(run.element, "font-weight"))
+        val isParentTextRun = run.element === element
+        GlyphTextRun(
+            run = run,
+            font = font,
+            fontSize = fontSize,
+            fontFamily = fontFamily,
+            fontWeight = fontWeight,
+            advance = textRunAdvance(font, run.text, fontSize).coerceAtLeast(fontSize * 0.15f),
+            fill = inheritedTextStyleValue(run.element, "fill") ?: inheritedFill ?: "#000000",
+            stroke = inheritedTextStyleValue(run.element, "stroke") ?: inheritedStroke,
+            strokeWidth = inheritedTextStyleValue(run.element, "stroke-width") ?: inheritedStrokeWidth,
+            opacity = SvgPaintResolver.inheritedOpacity(inheritedOpacity, inheritedTextStyleValue(run.element, "opacity") ?: ""),
+            fillOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedFillOpacity, inheritedTextStyleValue(run.element, "fill-opacity") ?: ""),
+            strokeOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedStrokeOpacity, inheritedTextStyleValue(run.element, "stroke-opacity") ?: ""),
+            anchor = normalizedTextAnchor(run.element),
+            baseline = normalizedDominantBaseline(run.element),
+            explicitX = if (!isParentTextRun && run.element.hasAttribute("x")) textNumericAttr(run.element, "x") else null,
+            explicitY = if (!isParentTextRun && run.element.hasAttribute("y")) textNumericAttr(run.element, "y") else null,
+            dx = if (!isParentTextRun) textNumericAttr(run.element, "dx") ?: 0f else 0f,
+            dy = if (!isParentTextRun) textNumericAttr(run.element, "dy") ?: 0f else 0f,
+            sourceTag = run.element.tagName.substringAfter(":").lowercase()
+        )
+    }
+
+    if (preparedRuns.size != runs.size || preparedRuns.isEmpty()) return false
+
+    val textStyle = element.getAttribute("style").ifBlank { null }
+    val baseX = textNumericAttr(element, "x") ?: 0f
+    val baseY = textNumericAttr(element, "y") ?: 0f
+    val baseDx = textNumericAttr(element, "dx") ?: 0f
+    val baseDy = textNumericAttr(element, "dy") ?: 0f
+    val baseAnchor = normalizedTextAnchor(element)
+    val hasPositionedRuns = runs.any { it.element !== element && textHasPositionAttribute(it.element) }
+    val totalAdvance = preparedRuns.sumOf { it.advance.toDouble() }.toFloat()
+
+    var currentX = when (baseAnchor) {
+        "middle" -> baseX + baseDx - totalAdvance / 2f
+        "end" -> baseX + baseDx - totalAdvance
+        else -> baseX + baseDx
+    }
+    var currentY = baseY + baseDy
+    var emittedGlyphs = 0
+
+    val elementTransform = element.getAttribute("transform")
+        .ifBlank { SvgPaintResolver.styleValue(textStyle, "transform") ?: "" }
+    val transformOrigin = SvgTransformParser.parseTransformOrigin(
+        SvgPaintResolver.styleValue(textStyle, "transform-origin")
+            ?: element.getAttribute("transform-origin").ifBlank { "" }
+    )
+    val elementMatrix = SvgTransformParser.combineTransformListToMatrix(
+        SvgTransformParser.parseTransformList(elementTransform),
+        transformOrigin
+    )
+
+    output.appendLine("${indent}<!-- converted text to glyph outline paths from embedded SVG font -->")
+
+    for (prepared in preparedRuns) {
+        if (hasPositionedRuns) {
+            if (prepared.explicitX != null) currentX = prepared.explicitX
+            if (prepared.explicitY != null) currentY = prepared.explicitY
+            currentX += prepared.dx
+            currentY += prepared.dy
+            currentX = when (prepared.anchor) {
+                "middle" -> currentX - prepared.advance / 2f
+                "end" -> currentX - prepared.advance
+                else -> currentX
+            }
+        }
+
+        if (prepared.fontFamily.isNotBlank()) activeTextFontFamilies.add(prepared.fontFamily)
+        if (prepared.fontWeight.isNotBlank()) activeTextFontWeights.add(prepared.fontWeight)
+
+        val scale = prepared.fontSize / prepared.font.unitsPerEm
+        var index = 0
+        while (index < prepared.run.text.length) {
+            val match = glyphForText(prepared.font, prepared.run.text.substring(index))
+            if (match == null) {
+                val cp = prepared.run.text.codePointAt(index)
+                currentX += prepared.font.horizAdvX * scale
+                index += Character.charCount(cp)
+                continue
+            }
+
+            val glyph = match.first
+            val placement = AffineTransform(
+                a = scale,
+                b = 0f,
+                c = 0f,
+                d = -scale,
+                e = currentX,
+                f = currentY
+            )
+            var pathData = SvgPathDataTransformer.applyAffineTransform(glyph.pathData, placement) ?: glyph.pathData
+            if (elementMatrix != null) {
+                pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
+            }
+            pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
+
+            val safeFill = SvgPaintResolver.safeFillColor(prepared.fill)
+            val safeStroke = prepared.stroke?.takeUnless { it.equals("none", ignoreCase = true) }?.let { SvgPaintResolver.safeFillColor(it) }
+            val fillAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.fillOpacity)
+            val strokeAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.strokeOpacity)
+
+            output.appendLine("${indent}<path")
+            output.appendLine("${indent}    android:pathData=\"${escapeXmlCallback(pathData)}\"")
+            output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
+            if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
+            if (safeStroke != null) {
+                output.appendLine("${indent}    android:strokeColor=\"$safeStroke\"")
+                output.appendLine("${indent}    android:strokeWidth=\"${prepared.strokeWidth?.takeIf { it.isNotBlank() } ?: "1"}\"")
+                if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
+            }
+            output.appendLine("${indent}/>")
+
+            currentX += (glyph.horizAdvX ?: prepared.font.horizAdvX) * scale
+            index += match.second
+            emittedGlyphs++
+        }
+    }
+
+    if (emittedGlyphs == 0) return false
+    output.appendLine()
+    activeTextElementsConvertedToPaths++
+    activeTextGlyphPathsEmitted += emittedGlyphs
+    return true
 }
 
 private fun appendTextApproximation(
