@@ -25,6 +25,8 @@ private var activePatternDefinitions: Map<String, PatternDefinition> = emptyMap(
 private var activePatternTileExpansions = 0
 private var activePatternTilePathsEmitted = 0
 private var activeTextElementsApproximated = 0
+private val activeTextFontFamilies = linkedSetOf<String>()
+private val activeTextFontWeights = linkedSetOf<String>()
 
 val appliedClipPaths: Int get() = activeAppliedClipPaths
 val appliedMasks: Int get() = activeAppliedMasks
@@ -40,6 +42,8 @@ val nonScalingStrokesUncertain: Int get() = activeNonScalingStrokesUncertain
 val patternTileExpansions: Int get() = activePatternTileExpansions
 val patternTilePathsEmitted: Int get() = activePatternTilePathsEmitted
 val textElementsApproximated: Int get() = activeTextElementsApproximated
+val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
+val textFontWeights: List<String> get() = activeTextFontWeights.toList()
 
 private lateinit var appendElementPathCallback: (
     StringBuilder, Element, String,
@@ -126,6 +130,8 @@ fun resetStats(
     activePatternTileExpansions = 0
     activePatternTilePathsEmitted = 0
     activeTextElementsApproximated = 0
+    activeTextFontFamilies.clear()
+    activeTextFontWeights.clear()
 }
 
 fun markerDefinition(id: String?): MarkerDefinition? {
@@ -1440,6 +1446,39 @@ private fun textContentForApproximation(element: Element): String {
     return out.toString().replace(Regex("\\s+"), " ").trim()
 }
 
+
+private fun normalizeTextFontWeight(raw: String?): String {
+    val value = raw
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it.isNotBlank() && it != "inherit" }
+        ?: return "400"
+
+    return when (value) {
+        "normal" -> "400"
+        "bold" -> "700"
+        "bolder" -> "700"
+        "lighter" -> "300"
+        else -> {
+            val numeric = value.toIntOrNull()
+            if (numeric != null) numeric.coerceIn(100, 900).toString() else value
+        }
+    }
+}
+
+private fun widthFactorForTextWeight(fontWeight: String): Float {
+    val numeric = fontWeight.toIntOrNull()
+    return when {
+        numeric != null && numeric <= 300 -> 0.56f
+        numeric == 400 || fontWeight == "normal" -> 0.60f
+        numeric == 500 -> 0.61f
+        numeric == 600 -> 0.62f
+        numeric == 700 || fontWeight == "bold" -> 0.64f
+        numeric != null && numeric >= 800 -> 0.66f
+        else -> 0.60f
+    }
+}
+
 private fun appendTextApproximation(
     output: StringBuilder,
     element: Element,
@@ -1459,14 +1498,15 @@ private fun appendTextApproximation(
     val y = textNumericAttr(element, "y") ?: 0f
     val dx = textNumericAttr(element, "dx") ?: 0f
     val dy = textNumericAttr(element, "dy") ?: 0f
-    val fontSize = (textStyleValue(element, style, "font-size")
+    val fontSize = (inheritedTextStyleValue(element, "font-size")
         ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
         ?.toFloatOrNull()
         ?: 16f).coerceAtLeast(1f)
 
     val charCount = text.codePointCount(0, text.length).coerceAtLeast(1)
-    val fontWeight = textStyleValue(element, style, "font-weight").orEmpty().lowercase()
-    val widthFactor = if (fontWeight == "bold" || fontWeight.toIntOrNull()?.let { it >= 600 } == true) 0.66f else 0.60f
+    val fontFamily = inheritedTextStyleValue(element, "font-family").orEmpty()
+    val fontWeight = normalizeTextFontWeight(inheritedTextStyleValue(element, "font-weight"))
+    val widthFactor = widthFactorForTextWeight(fontWeight)
     val textLength = textStyleValue(element, style, "textLength")
         ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
         ?.toFloatOrNull()
@@ -1513,8 +1553,9 @@ private fun appendTextApproximation(
         textStyleValue(element, style, "fill-opacity") ?: ""
     )
     val outlineAlpha = SvgPaintResolver.combineAlpha(opacity, fillOpacity)
-    val fontFamily = textStyleValue(element, style, "font-family")
-        ?: element.getAttribute("font-family").ifBlank { "" }
+
+    if (fontFamily.isNotBlank()) activeTextFontFamilies.add(fontFamily)
+    if (fontWeight.isNotBlank()) activeTextFontWeights.add(fontWeight)
 
     output.appendLine("${indent}<!-- text approximation:")
     output.appendLine("${indent}     \"${escapeXmlCallback(text)}\"")
@@ -1523,6 +1564,9 @@ private fun appendTextApproximation(
     output.appendLine("${indent}     dominant-baseline=\"$baseline\"")
     if (fontFamily.isNotBlank()) {
         output.appendLine("${indent}     font-family=\"${escapeXmlCallback(fontFamily)}\"")
+    }
+    if (fontWeight.isNotBlank()) {
+        output.appendLine("${indent}     font-weight=\"${escapeXmlCallback(fontWeight)}\"")
     }
     output.appendLine("${indent}-->")
     output.appendLine("${indent}<path")
