@@ -94,9 +94,9 @@ object SvgToVectorConverter {
         val finalXml = optimizeDuplicateClipPathGroups(rawXml)
         val finalXmlForStats = stripSvgComments(finalXml)
 
-        val convertedPathCount = Regex("""<path\b""").findAll(finalXmlForStats).count()
         val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
         val convertedOriginalPathCount = countConvertedOriginalSvgPaths(finalXml)
+        val convertedPathCount = convertedOriginalPathCount + convertedBasicShapeCount
         val generatedGroupCount = Regex("""<group\b""").findAll(finalXmlForStats).count()
 
         val generatedGroups = Regex("""<group[\s\S]*?>""")
@@ -379,6 +379,12 @@ paintUrlRefs
 
     private fun countConvertedBasicShapes(xml: String): Int {
         return Regex("""<!-- converted from <(rect|circle|ellipse|line|polyline|polygon)> -->""")
+            .findAll(xml)
+            .count()
+    }
+
+    private fun countConvertedOriginalSvgPaths(xml: String): Int {
+        return Regex("""<!-- converted from <path> -->\s*<path\b""")
             .findAll(xml)
             .count()
     }
