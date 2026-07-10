@@ -216,6 +216,8 @@ object SvgToVectorConverter {
                 tspanElementCount = tspanElementCount,
                 textPathElementCount = textPathElementCount,
                 textElementsApproximated = SvgTreeConverter.textElementsApproximated,
+                textFontFamilies = SvgTreeConverter.textFontFamilies,
+                textFontWeights = SvgTreeConverter.textFontWeights,
                 svgFontGlyphCount = svgFontGlyphCount,
                 contextPaintApproximationCount = contextPaintApproximationCount,
                 cssImportRuleCount = cssImportRuleCount,
