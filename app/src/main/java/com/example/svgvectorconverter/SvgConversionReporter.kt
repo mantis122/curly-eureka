@@ -73,6 +73,7 @@ data class SvgConversionReportData(
     val textGlyphPathsEmitted: Int = 0,
     val textGlyphSpecificAdvances: Int = 0,
     val textDefaultFontAdvances: Int = 0,
+    val textMissingGlyphFallbacks: Int = 0,
     val textHorizontalKerningPairs: Int = 0,
     val textVerticalKerningPairs: Int = 0,
     val textHorizontalKerningPairsMatched: Int = 0,
@@ -362,6 +363,9 @@ object SvgConversionReporter {
                     appendLine("✓ Glyphs rendered: ${data.textGlyphPathsEmitted}")
                     appendLine("✓ Glyph-specific advances: ${data.textGlyphSpecificAdvances}")
                     appendLine("✓ Default font advances: ${data.textDefaultFontAdvances}")
+                    if (data.textMissingGlyphFallbacks > 0) {
+                        appendLine("✓ Missing-glyph fallbacks rendered: ${data.textMissingGlyphFallbacks}")
+                    }
                     if (data.textHorizontalKerningPairs > 0 || data.textVerticalKerningPairs > 0 || data.textKerningAdjustmentsApplied > 0) {
                         appendLine("✓ Kerning rules parsed: ${data.textHorizontalKerningPairs + data.textVerticalKerningPairs}")
                         appendLine("✓ <hkern> entries parsed: ${data.textHorizontalKerningPairs}")

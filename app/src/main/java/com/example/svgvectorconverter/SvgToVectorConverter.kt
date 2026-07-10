@@ -222,6 +222,7 @@ object SvgToVectorConverter {
                 textGlyphPathsEmitted = SvgTreeConverter.textGlyphPathsEmitted,
                 textGlyphSpecificAdvances = SvgTreeConverter.textGlyphSpecificAdvances,
                 textDefaultFontAdvances = SvgTreeConverter.textDefaultFontAdvances,
+                textMissingGlyphFallbacks = SvgTreeConverter.textMissingGlyphFallbacks,
                 textHorizontalKerningPairs = SvgTreeConverter.textHorizontalKerningPairs,
                 textVerticalKerningPairs = SvgTreeConverter.textVerticalKerningPairs,
                 textHorizontalKerningPairsMatched = SvgTreeConverter.textHorizontalKerningPairsMatched,

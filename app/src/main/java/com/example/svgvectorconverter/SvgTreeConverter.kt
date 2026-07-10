@@ -30,6 +30,7 @@ private var activeTextElementsConvertedToPaths = 0
 private var activeTextGlyphPathsEmitted = 0
 private var activeTextGlyphSpecificAdvances = 0
 private var activeTextDefaultFontAdvances = 0
+private var activeTextMissingGlyphFallbacks = 0
 private var activeTextHorizontalKerningPairs = 0
 private var activeTextVerticalKerningPairs = 0
 private var activeTextHorizontalKerningPairsMatched = 0
@@ -60,6 +61,7 @@ val textElementsConvertedToPaths: Int get() = activeTextElementsConvertedToPaths
 val textGlyphPathsEmitted: Int get() = activeTextGlyphPathsEmitted
 val textGlyphSpecificAdvances: Int get() = activeTextGlyphSpecificAdvances
 val textDefaultFontAdvances: Int get() = activeTextDefaultFontAdvances
+val textMissingGlyphFallbacks: Int get() = activeTextMissingGlyphFallbacks
 val textHorizontalKerningPairs: Int get() = activeTextHorizontalKerningPairs
 val textVerticalKerningPairs: Int get() = activeTextVerticalKerningPairs
 val textHorizontalKerningPairsMatched: Int get() = activeTextHorizontalKerningPairsMatched
@@ -192,6 +194,7 @@ fun resetStats(
     activeTextGlyphPathsEmitted = 0
     activeTextGlyphSpecificAdvances = 0
     activeTextDefaultFontAdvances = 0
+    activeTextMissingGlyphFallbacks = 0
     activeTextHorizontalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.horizontalKerningPairs.size }
     activeTextVerticalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.verticalKerningPairs.size }
     activeTextHorizontalKerningPairsMatched = 0
@@ -874,7 +877,7 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                 }
 
                 if (id.isNotBlank()) familyNames.add(id)
-                if (id.isNotBlank() && glyphs.isNotEmpty()) {
+                if (id.isNotBlank() && (glyphs.isNotEmpty() || missingGlyph != null)) {
                     result[id] = SvgFontDefinition(
                         id = id,
                         familyNames = familyNames,
@@ -2201,6 +2204,7 @@ private fun appendTextGlyphOutlines(
             }
 
             val glyph = match.first
+            val isMissingGlyphFallback = prepared.font.missingGlyph === glyph
             val placement = if (prepared.vertical) {
                 AffineTransform(
                     a = scale,
@@ -2248,6 +2252,7 @@ private fun appendTextGlyphOutlines(
             output.appendLine("${indent}/>")
 
             if (hasGlyphSpecificAdvance(glyph, vertical = prepared.vertical)) activeTextGlyphSpecificAdvances++ else activeTextDefaultFontAdvances++
+            if (isMissingGlyphFallback) activeTextMissingGlyphFallbacks++
 
             val nextStart = index + match.second
             val nextGlyph = if (nextStart < prepared.run.text.length) {
