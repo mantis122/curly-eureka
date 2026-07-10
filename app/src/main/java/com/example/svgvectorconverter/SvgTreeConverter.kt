@@ -866,6 +866,10 @@ private fun patternIdFromPaint(value: String?): String? {
 private data class SimpleBounds(val minX: Float, val minY: Float, val maxX: Float, val maxY: Float) {
     val width: Float get() = (maxX - minX).coerceAtLeast(0.001f)
     val height: Float get() = (maxY - minY).coerceAtLeast(0.001f)
+
+    fun intersects(other: SimpleBounds): Boolean {
+        return maxX > other.minX && minX < other.maxX && maxY > other.minY && minY < other.maxY
+    }
 }
 
 private fun approximateBoundsFromPathData(pathData: String): SimpleBounds? {
@@ -901,8 +905,8 @@ private fun appendPatternFillApproximation(
 
     val startX = kotlin.math.floor(((bounds.minX - pattern.x) / pattern.width).toDouble()).toInt() * pattern.width + pattern.x
     val startY = kotlin.math.floor(((bounds.minY - pattern.y) / pattern.height).toDouble()).toInt() * pattern.height + pattern.y
-    val endX = bounds.maxX + pattern.width
-    val endY = bounds.maxY + pattern.height
+    val endX = bounds.maxX
+    val endY = bounds.maxY
     var emitted = 0
     val maxTilePaths = 600
 
@@ -922,19 +926,22 @@ private fun appendPatternFillApproximation(
                     tile.pathData,
                     AffineTransform(e = x, f = y)
                 ) ?: tile.pathData
-                val fill = SvgPaintResolver.safeFillColor(tile.fill ?: "#000000")
-                val stroke = SvgPaintResolver.safeStrokeColor(tile.stroke)
-                SvgPathEmitter.appendRawPathForPatternTile(
-                    output = output,
-                    d = translated,
-                    fill = fill,
-                    stroke = stroke,
-                    strokeWidth = tile.strokeWidth,
-                    fillAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.fillOpacity ?: inheritedFillOpacity),
-                    strokeAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.strokeOpacity),
-                    indent = indent + "    "
-                )
-                emitted++
+                val tileBounds = approximateBoundsFromPathData(translated)
+                if (tileBounds == null || tileBounds.intersects(bounds)) {
+                    val fill = SvgPaintResolver.safeFillColor(tile.fill ?: "#000000")
+                    val stroke = SvgPaintResolver.safeStrokeColor(tile.stroke)
+                    SvgPathEmitter.appendRawPathForPatternTile(
+                        output = output,
+                        d = translated,
+                        fill = fill,
+                        stroke = stroke,
+                        strokeWidth = tile.strokeWidth,
+                        fillAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.fillOpacity ?: inheritedFillOpacity),
+                        strokeAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.strokeOpacity),
+                        indent = indent + "    "
+                    )
+                    emitted++
+                }
             }
             x += pattern.width
         }
