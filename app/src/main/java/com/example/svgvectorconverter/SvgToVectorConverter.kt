@@ -227,6 +227,7 @@ object SvgToVectorConverter {
                 textHorizontalKerningPairsMatched = SvgTreeConverter.textHorizontalKerningPairsMatched,
                 textVerticalKerningPairsMatched = SvgTreeConverter.textVerticalKerningPairsMatched,
                 textKerningAdjustmentsApplied = SvgTreeConverter.textKerningAdjustmentsApplied,
+                textLengthSpacingAdjustments = SvgTreeConverter.textLengthSpacingAdjustments,
                 textFontFamilies = SvgTreeConverter.textFontFamilies,
                 textFontWeights = SvgTreeConverter.textFontWeights,
                 svgFontGlyphCount = svgFontGlyphCount,

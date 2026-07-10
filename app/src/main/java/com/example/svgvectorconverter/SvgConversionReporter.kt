@@ -78,6 +78,7 @@ data class SvgConversionReportData(
     val textHorizontalKerningPairsMatched: Int = 0,
     val textVerticalKerningPairsMatched: Int = 0,
     val textKerningAdjustmentsApplied: Int = 0,
+    val textLengthSpacingAdjustments: Int = 0,
     val textFontFamilies: List<String> = emptyList(),
     val textFontWeights: List<String> = emptyList(),
     val svgFontGlyphCount: Int,
@@ -368,6 +369,10 @@ object SvgConversionReporter {
                         appendLine("✓ <hkern> rules matched: ${data.textHorizontalKerningPairsMatched}")
                         appendLine("✓ <vkern> rules matched: ${data.textVerticalKerningPairsMatched}")
                         appendLine("✓ Kerning adjustments applied: ${data.textKerningAdjustmentsApplied}")
+                    }
+                    if (data.textLengthSpacingAdjustments > 0) {
+                        appendLine("✓ Text-length adjustments applied: ${data.textLengthSpacingAdjustments}")
+                        appendLine(" • spacing: ${data.textLengthSpacingAdjustments}")
                     }
                 }
                 if (data.textElementsApproximated > 0) {
