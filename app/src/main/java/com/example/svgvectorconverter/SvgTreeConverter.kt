@@ -954,6 +954,7 @@ private fun appendPatternFillApproximation(
     val endX = patternSpaceBounds.maxX
     val endY = patternSpaceBounds.maxY
     var emitted = 0
+    val emittedTileKeys = mutableSetOf<String>()
     val maxTilePaths = 600
     val tileBoundsCache = pattern.paths.map { tile ->
         tile to approximateBoundsFromPathData(tile.pathData)
@@ -985,14 +986,27 @@ private fun appendPatternFillApproximation(
                 if (tileBounds == null || tileBounds.intersects(bounds)) {
                     val fill = SvgPaintResolver.safeFillColor(tile.fill ?: "#000000")
                     val stroke = SvgPaintResolver.safeStrokeColor(tile.stroke)
+                    val fillAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.fillOpacity ?: inheritedFillOpacity)
+                    val strokeAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.strokeOpacity)
+                    val tileKey = listOf(
+                        translated,
+                        fill.orEmpty(),
+                        stroke.orEmpty(),
+                        tile.strokeWidth.orEmpty(),
+                        fillAlpha.orEmpty(),
+                        strokeAlpha.orEmpty()
+                    ).joinToString("|")
+                    if (!emittedTileKeys.add(tileKey)) {
+                        return@forEach
+                    }
                     SvgPathEmitter.appendRawPathForPatternTile(
                         output = output,
                         d = translated,
                         fill = fill,
                         stroke = stroke,
                         strokeWidth = tile.strokeWidth,
-                        fillAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.fillOpacity ?: inheritedFillOpacity),
-                        strokeAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.strokeOpacity),
+                        fillAlpha = fillAlpha,
+                        strokeAlpha = strokeAlpha,
                         indent = indent + "    "
                     )
                     emitted++
