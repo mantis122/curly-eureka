@@ -24,6 +24,7 @@ private var activeNonScalingStrokesUncertain = 0
 private var activePatternDefinitions: Map<String, PatternDefinition> = emptyMap()
 private var activePatternTileExpansions = 0
 private var activePatternTilePathsEmitted = 0
+private var activeTextElementsApproximated = 0
 
 val appliedClipPaths: Int get() = activeAppliedClipPaths
 val appliedMasks: Int get() = activeAppliedMasks
@@ -38,6 +39,7 @@ val nonScalingStrokesCompensated: Int get() = activeNonScalingStrokesCompensated
 val nonScalingStrokesUncertain: Int get() = activeNonScalingStrokesUncertain
 val patternTileExpansions: Int get() = activePatternTileExpansions
 val patternTilePathsEmitted: Int get() = activePatternTilePathsEmitted
+val textElementsApproximated: Int get() = activeTextElementsApproximated
 
 private lateinit var appendElementPathCallback: (
     StringBuilder, Element, String,
@@ -123,6 +125,7 @@ fun resetStats(
     activeNonScalingStrokesUncertain = 0
     activePatternTileExpansions = 0
     activePatternTilePathsEmitted = 0
+    activeTextElementsApproximated = 0
 }
 
 fun markerDefinition(id: String?): MarkerDefinition? {
@@ -954,7 +957,6 @@ private fun appendPatternFillApproximation(
     val endX = patternSpaceBounds.maxX
     val endY = patternSpaceBounds.maxY
     var emitted = 0
-    val emittedTileKeys = mutableSetOf<String>()
     val maxTilePaths = 600
     val tileBoundsCache = pattern.paths.map { tile ->
         tile to approximateBoundsFromPathData(tile.pathData)
@@ -986,27 +988,14 @@ private fun appendPatternFillApproximation(
                 if (tileBounds == null || tileBounds.intersects(bounds)) {
                     val fill = SvgPaintResolver.safeFillColor(tile.fill ?: "#000000")
                     val stroke = SvgPaintResolver.safeStrokeColor(tile.stroke)
-                    val fillAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.fillOpacity ?: inheritedFillOpacity)
-                    val strokeAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.strokeOpacity)
-                    val tileKey = listOf(
-                        translated,
-                        fill.orEmpty(),
-                        stroke.orEmpty(),
-                        tile.strokeWidth.orEmpty(),
-                        fillAlpha.orEmpty(),
-                        strokeAlpha.orEmpty()
-                    ).joinToString("|")
-                    if (!emittedTileKeys.add(tileKey)) {
-                        return@forEach
-                    }
                     SvgPathEmitter.appendRawPathForPatternTile(
                         output = output,
                         d = translated,
                         fill = fill,
                         stroke = stroke,
                         strokeWidth = tile.strokeWidth,
-                        fillAlpha = fillAlpha,
-                        strokeAlpha = strokeAlpha,
+                        fillAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.fillOpacity ?: inheritedFillOpacity),
+                        strokeAlpha = SvgPaintResolver.combineAlpha(inheritedOpacity, tile.strokeOpacity),
                         indent = indent + "    "
                     )
                     emitted++
@@ -1278,6 +1267,25 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
             }
         }
 
+        "text" -> {
+            appendTextApproximation(
+                output = output,
+                element = element,
+                indent = indent,
+                inheritedFill = currentFill,
+                inheritedStroke = currentStroke,
+                inheritedStrokeWidth = strokeWidthForEmission,
+                inheritedOpacity = currentOpacity,
+                inheritedFillOpacity = currentFillOpacity,
+                inheritedStrokeOpacity = currentStrokeOpacity
+            )
+        }
+
+        "tspan", "textpath" -> {
+            // These are handled as part of their parent <text> approximation.
+            return
+        }
+
         "path" -> {
             val sourcePathData = element.getAttribute("d").trim()
             if (sourcePathData.isNotBlank() && appendPatternFillApproximation(output, sourcePathData, currentFill, currentOpacity, currentFillOpacity, indent)) {
@@ -1357,6 +1365,146 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
         }
     }
 }
+
+
+private fun textNumericAttr(element: Element, name: String): Float? {
+    val raw = element.getAttribute(name).trim()
+    if (raw.isBlank()) return null
+    return raw
+        .split(Regex("[,\\s]+"))
+        .firstOrNull()
+        ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
+        ?.toFloatOrNull()
+}
+
+private fun textStyleValue(element: Element, style: String?, name: String): String? {
+    return SvgPaintResolver.styleValue(style, name)
+        ?: element.getAttribute(name).ifBlank { null }
+}
+
+private fun textContentForApproximation(element: Element): String {
+    fun collect(node: Node, out: StringBuilder) {
+        when (node.nodeType) {
+            Node.TEXT_NODE, Node.CDATA_SECTION_NODE -> out.append(node.nodeValue.orEmpty())
+            Node.ELEMENT_NODE -> {
+                val childElement = node as Element
+                val tag = childElement.tagName.substringAfter(":").lowercase()
+                if (tag == "textpath") return
+                val children = childElement.childNodes
+                for (i in 0 until children.length) collect(children.item(i), out)
+            }
+        }
+    }
+
+    val out = StringBuilder()
+    collect(element, out)
+    return out.toString().replace(Regex("\\s+"), " ").trim()
+}
+
+private fun appendTextApproximation(
+    output: StringBuilder,
+    element: Element,
+    indent: String,
+    inheritedFill: String?,
+    inheritedStroke: String?,
+    inheritedStrokeWidth: String?,
+    inheritedOpacity: String?,
+    inheritedFillOpacity: String?,
+    inheritedStrokeOpacity: String?
+): Boolean {
+    val text = textContentForApproximation(element)
+    if (text.isBlank()) return false
+
+    val style = element.getAttribute("style").ifBlank { null }
+    val x = textNumericAttr(element, "x") ?: 0f
+    val y = textNumericAttr(element, "y") ?: 0f
+    val dx = textNumericAttr(element, "dx") ?: 0f
+    val dy = textNumericAttr(element, "dy") ?: 0f
+    val fontSize = (textStyleValue(element, style, "font-size")
+        ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
+        ?.toFloatOrNull()
+        ?: 16f).coerceAtLeast(1f)
+
+    val charCount = text.codePointCount(0, text.length).coerceAtLeast(1)
+    val fontWeight = textStyleValue(element, style, "font-weight").orEmpty().lowercase()
+    val widthFactor = if (fontWeight == "bold" || fontWeight.toIntOrNull()?.let { it >= 600 } == true) 0.66f else 0.60f
+    val textLength = textStyleValue(element, style, "textLength")
+        ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
+        ?.toFloatOrNull()
+    val width = (textLength ?: (charCount * fontSize * widthFactor)).coerceAtLeast(fontSize * 0.35f)
+    val height = fontSize
+
+    val anchor = textStyleValue(element, style, "text-anchor").orEmpty().lowercase()
+    val left = when (anchor) {
+        "middle" -> x + dx - width / 2f
+        "end" -> x + dx - width
+        else -> x + dx
+    }
+
+    val baseline = textStyleValue(element, style, "dominant-baseline")
+        ?: textStyleValue(element, style, "alignment-baseline")
+        ?: element.getAttribute("baseline-shift").ifBlank { "" }
+    val top = when (baseline.lowercase()) {
+        "middle", "central", "mathematical" -> y + dy - height / 2f
+        "hanging", "text-before-edge" -> y + dy
+        else -> y + dy - height * 0.8f
+    }
+
+    val right = left + width
+    val bottom = top + height
+    var pathData = "M ${formatNumber(left)},${formatNumber(top)} L ${formatNumber(right)},${formatNumber(top)} L ${formatNumber(right)},${formatNumber(bottom)} L ${formatNumber(left)},${formatNumber(bottom)} Z"
+
+    val transform = element.getAttribute("transform")
+        .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
+    val transformOrigin = SvgTransformParser.parseTransformOrigin(
+        SvgPaintResolver.styleValue(style, "transform-origin")
+            ?: element.getAttribute("transform-origin").ifBlank { "" }
+    )
+    val elementMatrix = SvgTransformParser.combineTransformListToMatrix(
+        SvgTransformParser.parseTransformList(transform),
+        transformOrigin
+    )
+    if (elementMatrix != null) {
+        pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
+    }
+    pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
+
+    val rawFill = textStyleValue(element, style, "fill") ?: inheritedFill ?: "#000000"
+    val rawStroke = textStyleValue(element, style, "stroke") ?: inheritedStroke.orEmpty()
+    val fillColor = SvgPaintResolver.safeFillColor(rawFill)
+    val strokeColor = SvgPaintResolver.safeStrokeColor(rawStroke)
+    val strokeWidth = textStyleValue(element, style, "stroke-width") ?: inheritedStrokeWidth.orEmpty()
+    val opacity = SvgPaintResolver.inheritedOpacity(
+        inheritedOpacity,
+        textStyleValue(element, style, "opacity") ?: ""
+    )
+    val fillOpacity = SvgPaintResolver.inheritedPaintOpacity(
+        inheritedFillOpacity,
+        textStyleValue(element, style, "fill-opacity") ?: ""
+    )
+    val strokeOpacity = SvgPaintResolver.inheritedPaintOpacity(
+        inheritedStrokeOpacity,
+        textStyleValue(element, style, "stroke-opacity") ?: ""
+    )
+    val fillAlpha = SvgPaintResolver.combineAlpha(opacity, fillOpacity)
+    val strokeAlpha = SvgPaintResolver.combineAlpha(opacity, strokeOpacity)
+
+    output.appendLine("${indent}<!-- approximated from <text>: ${escapeXmlCallback(text.take(40))} -->")
+    output.appendLine("${indent}<path")
+    output.appendLine("${indent}    android:pathData=\"${escapeXmlCallback(pathData)}\"")
+    output.appendLine("${indent}    android:fillColor=\"$fillColor\"")
+    if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
+    if (strokeColor != null && strokeWidth.isNotBlank()) {
+        output.appendLine("${indent}    android:strokeColor=\"$strokeColor\"")
+        output.appendLine("${indent}    android:strokeWidth=\"${escapeXmlCallback(strokeWidth)}\"")
+        if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
+    }
+    output.appendLine("${indent}/>")
+    output.appendLine()
+    activeTextElementsApproximated++
+    return true
+}
+
 
 private fun useHrefId(element: Element): String? {
     val href = element.getAttribute("href").ifBlank {

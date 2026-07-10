@@ -17,8 +17,13 @@ object SvgPathEmitter {
         }
     }
 
-    private fun currentFlattenTransform(): AffineTransform? {
+    internal fun currentFlattenTransform(): AffineTransform? {
         return flattenTransformStack.lastOrNull()
+    }
+
+    internal fun applyCurrentFlattenTransform(pathData: String): String {
+        val matrix = currentFlattenTransform() ?: return pathData
+        return SvgPathDataTransformer.applyAffineTransform(pathData, matrix) ?: pathData
     }
 
     internal fun pushForcedStrokeWidth(strokeWidth: String?) {
