@@ -1590,7 +1590,8 @@ private fun appendTextApproximation(
         val explicitX: Float?,
         val explicitY: Float?,
         val dx: Float,
-        val dy: Float
+        val dy: Float,
+        val sourceTag: String
     )
 
     val preparedRuns = runs.map { run ->
@@ -1625,7 +1626,8 @@ private fun appendTextApproximation(
             explicitX = if (!isParentTextRun && run.element.hasAttribute("x")) textNumericAttr(run.element, "x") else null,
             explicitY = if (!isParentTextRun && run.element.hasAttribute("y")) textNumericAttr(run.element, "y") else null,
             dx = if (!isParentTextRun) textNumericAttr(run.element, "dx") ?: 0f else 0f,
-            dy = if (!isParentTextRun) textNumericAttr(run.element, "dy") ?: 0f else 0f
+            dy = if (!isParentTextRun) textNumericAttr(run.element, "dy") ?: 0f else 0f,
+            sourceTag = run.element.tagName.substringAfter(":").lowercase()
         )
     }
 
@@ -1654,19 +1656,32 @@ private fun appendTextApproximation(
 
         val left: Float
         val top: Float
+        val resolvedTextX: Float
+        val resolvedTextY: Float
+        val positionMode: String
         if (hasPositionedRuns) {
             if (prepared.explicitX != null) currentX = prepared.explicitX
             if (prepared.explicitY != null) currentY = prepared.explicitY
             currentX += prepared.dx
             currentY += prepared.dy
 
+            resolvedTextX = currentX
+            resolvedTextY = currentY
             left = leftForAnchor(prepared.anchor, currentX, prepared.width)
             top = textTopForBaseline(currentY, 0f, prepared.height, prepared.baseline)
             currentX += prepared.width
+            positionMode = "cursor"
         } else {
             left = currentLeft
             top = textTopForBaseline(baseY, baseDy, prepared.height, baseline)
+            resolvedTextX = when (prepared.anchor) {
+                "middle" -> left + prepared.width / 2f
+                "end" -> left + prepared.width
+                else -> left
+            }
+            resolvedTextY = baseY + baseDy
             currentLeft += prepared.width
+            positionMode = "inline"
         }
 
         val right = left + prepared.width
@@ -1705,6 +1720,11 @@ private fun appendTextApproximation(
 
         output.appendLine("${indent}<!-- text approximation:")
         output.appendLine("${indent}     \"${escapeXmlCallback(run.text)}\"")
+        output.appendLine("${indent}     source=\"<${prepared.sourceTag}>\"")
+        output.appendLine("${indent}     approximation=\"bounding-box placeholder\"")
+        output.appendLine("${indent}     position-mode=\"$positionMode\"")
+        output.appendLine("${indent}     resolved-x=\"${formatNumber(resolvedTextX)}\"")
+        output.appendLine("${indent}     resolved-y=\"${formatNumber(resolvedTextY)}\"")
         output.appendLine("${indent}     font-size=\"${formatNumber(prepared.fontSize)}\"")
         output.appendLine("${indent}     text-anchor=\"${prepared.anchor}\"")
         output.appendLine("${indent}     dominant-baseline=\"${prepared.baseline}\"")
