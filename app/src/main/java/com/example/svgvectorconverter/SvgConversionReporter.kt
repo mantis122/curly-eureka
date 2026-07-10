@@ -75,6 +75,8 @@ data class SvgConversionReportData(
     val textDefaultFontAdvances: Int = 0,
     val textHorizontalKerningPairs: Int = 0,
     val textVerticalKerningPairs: Int = 0,
+    val textHorizontalKerningPairsMatched: Int = 0,
+    val textVerticalKerningPairsMatched: Int = 0,
     val textKerningAdjustmentsApplied: Int = 0,
     val textFontFamilies: List<String> = emptyList(),
     val textFontWeights: List<String> = emptyList(),
@@ -359,9 +361,13 @@ object SvgConversionReporter {
                     appendLine("✓ Glyph-specific advances: ${data.textGlyphSpecificAdvances}")
                     appendLine("✓ Default font advances: ${data.textDefaultFontAdvances}")
                     if (data.textHorizontalKerningPairs > 0 || data.textVerticalKerningPairs > 0 || data.textKerningAdjustmentsApplied > 0) {
+                        appendLine("✓ Kerning rules parsed: ${data.textHorizontalKerningPairs + data.textVerticalKerningPairs}")
+                        appendLine("✓ <hkern> entries parsed: ${data.textHorizontalKerningPairs}")
+                        appendLine("✓ <vkern> entries parsed: ${data.textVerticalKerningPairs}")
+                        appendLine("✓ Kerning rules matched: ${data.textHorizontalKerningPairsMatched + data.textVerticalKerningPairsMatched}")
+                        appendLine("✓ <hkern> rules matched: ${data.textHorizontalKerningPairsMatched}")
+                        appendLine("✓ <vkern> rules matched: ${data.textVerticalKerningPairsMatched}")
                         appendLine("✓ Kerning adjustments applied: ${data.textKerningAdjustmentsApplied}")
-                        appendLine("✓ <hkern> pairs found: ${data.textHorizontalKerningPairs}")
-                        appendLine("✓ <vkern> pairs found: ${data.textVerticalKerningPairs}")
                     }
                 }
                 if (data.textElementsApproximated > 0) {

@@ -32,7 +32,11 @@ private var activeTextGlyphSpecificAdvances = 0
 private var activeTextDefaultFontAdvances = 0
 private var activeTextHorizontalKerningPairs = 0
 private var activeTextVerticalKerningPairs = 0
+private var activeTextHorizontalKerningPairsMatched = 0
+private var activeTextVerticalKerningPairsMatched = 0
 private var activeTextKerningAdjustmentsApplied = 0
+private val activeMatchedHorizontalKerningPairs = linkedSetOf<SvgKerningPair>()
+private val activeMatchedVerticalKerningPairs = linkedSetOf<SvgKerningPair>()
 private val activeTextFontFamilies = linkedSetOf<String>()
 private val activeTextFontWeights = linkedSetOf<String>()
 
@@ -56,6 +60,8 @@ val textGlyphSpecificAdvances: Int get() = activeTextGlyphSpecificAdvances
 val textDefaultFontAdvances: Int get() = activeTextDefaultFontAdvances
 val textHorizontalKerningPairs: Int get() = activeTextHorizontalKerningPairs
 val textVerticalKerningPairs: Int get() = activeTextVerticalKerningPairs
+val textHorizontalKerningPairsMatched: Int get() = activeTextHorizontalKerningPairsMatched
+val textVerticalKerningPairsMatched: Int get() = activeTextVerticalKerningPairsMatched
 val textKerningAdjustmentsApplied: Int get() = activeTextKerningAdjustmentsApplied
 val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
 val textFontWeights: List<String> get() = activeTextFontWeights.toList()
@@ -182,7 +188,11 @@ fun resetStats(
     activeTextDefaultFontAdvances = 0
     activeTextHorizontalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.horizontalKerningPairs.size }
     activeTextVerticalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.verticalKerningPairs.size }
+    activeTextHorizontalKerningPairsMatched = 0
+    activeTextVerticalKerningPairsMatched = 0
     activeTextKerningAdjustmentsApplied = 0
+    activeMatchedHorizontalKerningPairs.clear()
+    activeMatchedVerticalKerningPairs.clear()
     activeTextFontFamilies.clear()
     activeTextFontWeights.clear()
 }
@@ -1832,15 +1842,39 @@ private fun kerningMatchesName(values: Set<String>, glyph: SvgGlyphOutline): Boo
     return name in values
 }
 
-private fun kerningAdjustment(font: SvgFontDefinition, first: SvgGlyphOutline?, second: SvgGlyphOutline?, vertical: Boolean = false): Float {
-    if (first == null || second == null) return 0f
+private fun matchingKerningPair(
+    font: SvgFontDefinition,
+    first: SvgGlyphOutline?,
+    second: SvgGlyphOutline?,
+    vertical: Boolean = false
+): SvgKerningPair? {
+    if (first == null || second == null) return null
     val pairs = if (vertical) font.verticalKerningPairs else font.horizontalKerningPairs
-    if (pairs.isEmpty()) return 0f
-    val pair = pairs.firstOrNull { candidate ->
+    if (pairs.isEmpty()) return null
+    return pairs.firstOrNull { candidate ->
         (kerningMatchesValue(candidate.firstUnicodeValues, first) || kerningMatchesName(candidate.firstGlyphNames, first)) &&
             (kerningMatchesValue(candidate.secondUnicodeValues, second) || kerningMatchesName(candidate.secondGlyphNames, second))
     }
-    return pair?.amount ?: 0f
+}
+
+private fun kerningAdjustment(
+    font: SvgFontDefinition,
+    first: SvgGlyphOutline?,
+    second: SvgGlyphOutline?,
+    vertical: Boolean = false,
+    recordMatch: Boolean = false
+): Float {
+    val pair = matchingKerningPair(font, first, second, vertical) ?: return 0f
+    if (recordMatch && abs(pair.amount) > 0.001f) {
+        if (vertical) {
+            activeMatchedVerticalKerningPairs.add(pair)
+            activeTextVerticalKerningPairsMatched = activeMatchedVerticalKerningPairs.size
+        } else {
+            activeMatchedHorizontalKerningPairs.add(pair)
+            activeTextHorizontalKerningPairsMatched = activeMatchedHorizontalKerningPairs.size
+        }
+    }
+    return pair.amount
 }
 
 private fun textRunAdvance(font: SvgFontDefinition, text: String, fontSize: Float): Float {
@@ -2038,7 +2072,7 @@ private fun appendTextGlyphOutlines(
             val nextGlyph = if (nextStart < prepared.run.text.length) {
                 glyphForText(prepared.font, prepared.run.text.substring(nextStart))?.first
             } else null
-            val kern = kerningAdjustment(prepared.font, glyph, nextGlyph)
+            val kern = kerningAdjustment(prepared.font, glyph, nextGlyph, recordMatch = true)
             if (abs(kern) > 0.001f) activeTextKerningAdjustmentsApplied++
             currentX += (glyphAdvance(prepared.font, glyph) - kern) * scale
             index += match.second
