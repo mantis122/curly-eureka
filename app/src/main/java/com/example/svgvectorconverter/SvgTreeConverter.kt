@@ -1470,10 +1470,7 @@ private fun appendTextApproximation(
     pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
 
     val rawFill = textStyleValue(element, style, "fill") ?: inheritedFill ?: "#000000"
-    val rawStroke = textStyleValue(element, style, "stroke") ?: inheritedStroke.orEmpty()
-    val fillColor = SvgPaintResolver.safeFillColor(rawFill)
-    val strokeColor = SvgPaintResolver.safeStrokeColor(rawStroke)
-    val strokeWidth = textStyleValue(element, style, "stroke-width") ?: inheritedStrokeWidth.orEmpty()
+    val outlineColor = SvgPaintResolver.safeFillColor(rawFill)
     val opacity = SvgPaintResolver.inheritedOpacity(
         inheritedOpacity,
         textStyleValue(element, style, "opacity") ?: ""
@@ -1482,23 +1479,23 @@ private fun appendTextApproximation(
         inheritedFillOpacity,
         textStyleValue(element, style, "fill-opacity") ?: ""
     )
-    val strokeOpacity = SvgPaintResolver.inheritedPaintOpacity(
-        inheritedStrokeOpacity,
-        textStyleValue(element, style, "stroke-opacity") ?: ""
-    )
-    val fillAlpha = SvgPaintResolver.combineAlpha(opacity, fillOpacity)
-    val strokeAlpha = SvgPaintResolver.combineAlpha(opacity, strokeOpacity)
+    val outlineAlpha = SvgPaintResolver.combineAlpha(opacity, fillOpacity)
+    val fontFamily = textStyleValue(element, style, "font-family")
+        ?: element.getAttribute("font-family").ifBlank { "" }
 
-    output.appendLine("${indent}<!-- approximated from <text>: ${escapeXmlCallback(text.take(40))} -->")
+    output.appendLine("${indent}<!-- text approximation:")
+    output.appendLine("${indent}     \"${escapeXmlCallback(text)}\"")
+    output.appendLine("${indent}     font-size=\"${formatNumber(fontSize)}\"")
+    if (fontFamily.isNotBlank()) {
+        output.appendLine("${indent}     font-family=\"${escapeXmlCallback(fontFamily)}\"")
+    }
+    output.appendLine("${indent}-->")
     output.appendLine("${indent}<path")
     output.appendLine("${indent}    android:pathData=\"${escapeXmlCallback(pathData)}\"")
-    output.appendLine("${indent}    android:fillColor=\"$fillColor\"")
-    if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
-    if (strokeColor != null && strokeWidth.isNotBlank()) {
-        output.appendLine("${indent}    android:strokeColor=\"$strokeColor\"")
-        output.appendLine("${indent}    android:strokeWidth=\"${escapeXmlCallback(strokeWidth)}\"")
-        if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
-    }
+    output.appendLine("${indent}    android:fillColor=\"@android:color/transparent\"")
+    output.appendLine("${indent}    android:strokeColor=\"$outlineColor\"")
+    output.appendLine("${indent}    android:strokeWidth=\"1\"")
+    if (outlineAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$outlineAlpha\"")
     output.appendLine("${indent}/>")
     output.appendLine()
     activeTextElementsApproximated++

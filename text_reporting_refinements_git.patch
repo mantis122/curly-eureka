@@ -1,0 +1,147 @@
+diff --git a/app/src/main/java/com/example/svgvectorconverter/SvgConversionReporter.kt b/app/src/main/java/com/example/svgvectorconverter/SvgConversionReporter.kt
+index 9e6ca02..062dd37 100644
+--- a/app/src/main/java/com/example/svgvectorconverter/SvgConversionReporter.kt
++++ b/app/src/main/java/com/example/svgvectorconverter/SvgConversionReporter.kt
+@@ -104,6 +104,12 @@ object SvgConversionReporter {
+             .count()
+     }
+ 
++    fun countConvertedOriginalSvgPaths(xml: String): Int {
++        return Regex("""<!-- converted from <path> -->""")
++            .findAll(xml)
++            .count()
++    }
++
+     fun countDrawableBasicShapeBreakdown(svg: String): BasicShapeBreakdown {
+         var rectangles = 0
+         var roundedRectangles = 0
+@@ -330,6 +336,27 @@ object SvgConversionReporter {
+                 appendLine("✓ Matrix: 0")
+             }
+ 
++            if (data.textElementCount > 0 || data.tspanElementCount > 0 || data.textPathElementCount > 0 || data.svgFontGlyphCount > 0) {
++                appendLine()
++                appendLine("────────────────────")
++                appendLine("Text")
++                appendLine("────────────────────")
++                appendLine()
++                appendLine("✓ Text elements found: ${data.textElementCount}")
++                if (data.textElementsApproximated > 0) {
++                    appendLine("✓ Bounding-box approximations: ${data.textElementsApproximated}")
++                }
++                if (data.tspanElementCount > 0) {
++                    appendLine("⚠ Text spans found: ${data.tspanElementCount}")
++                }
++                if (data.textPathElementCount > 0) {
++                    appendLine("⚠ Text-on-path elements found: ${data.textPathElementCount}")
++                }
++                if (data.svgFontGlyphCount > 0) {
++                    appendLine("ℹ Embedded SVG font glyph outlines found: ${data.svgFontGlyphCount}")
++                }
++            }
++
+             appendLine()
+             appendLine("────────────────────")
+             appendLine("SVG Analysis")
+@@ -402,22 +429,6 @@ object SvgConversionReporter {
+                 appendLine("⚠ Filter references ignored: ${data.filterReferenceCount}")
+             }
+ 
+-            if (data.textElementCount > 0 || data.tspanElementCount > 0 || data.textPathElementCount > 0 || data.svgFontGlyphCount > 0) {
+-                appendLine("⚠ Text elements found: ${data.textElementCount}")
+-                if (data.tspanElementCount > 0) {
+-                    appendLine("⚠ Text spans found: ${data.tspanElementCount}")
+-                }
+-                if (data.textElementsApproximated > 0) {
+-                    appendLine("✓ Text elements approximated: ${data.textElementsApproximated}")
+-                }
+-                if (data.textPathElementCount > 0) {
+-                    appendLine("⚠ Text-on-path elements found: ${data.textPathElementCount}")
+-                }
+-                if (data.svgFontGlyphCount > 0) {
+-                    appendLine("ℹ Embedded SVG font glyph outlines found: ${data.svgFontGlyphCount}")
+-                }
+-            }
+-
+             if (data.contextPaintApproximationCount > 0) {
+                 appendLine("ℹ context-fill/context-stroke approximated using inherited paint.")
+             }
+@@ -485,7 +496,7 @@ object SvgConversionReporter {
+                 data.nonScalingStrokesUncertain > 0 ||
+                 data.cssExternalImportCount > 0 ||
+                 data.imageStats.imageElementCount > 0 ||
+-                data.textElementCount > 0 ||
++                maxOf(0, data.textElementCount - data.textElementsApproximated) > 0 ||
+                 data.tspanElementCount > 0 ||
+                 data.textPathElementCount > 0
+             ) {
+diff --git a/app/src/main/java/com/example/svgvectorconverter/SvgToVectorConverter.kt b/app/src/main/java/com/example/svgvectorconverter/SvgToVectorConverter.kt
+index b58c474..994ba3a 100644
+--- a/app/src/main/java/com/example/svgvectorconverter/SvgToVectorConverter.kt
++++ b/app/src/main/java/com/example/svgvectorconverter/SvgToVectorConverter.kt
+@@ -95,8 +95,8 @@ object SvgToVectorConverter {
+         val finalXmlForStats = stripSvgComments(finalXml)
+ 
+         val convertedPathCount = Regex("""<path\b""").findAll(finalXmlForStats).count()
+-        val convertedBasicShapeCount = countConvertedBasicShapes(finalXmlForStats)
+-        val convertedOriginalPathCount = convertedPathCount - convertedBasicShapeCount
++        val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
++        val convertedOriginalPathCount = countConvertedOriginalSvgPaths(finalXml)
+         val generatedGroupCount = Regex("""<group\b""").findAll(finalXmlForStats).count()
+ 
+         val generatedGroups = Regex("""<group[\s\S]*?>""")
+diff --git a/app/src/main/java/com/example/svgvectorconverter/SvgTreeConverter.kt b/app/src/main/java/com/example/svgvectorconverter/SvgTreeConverter.kt
+index b572a21..1d34f69 100644
+--- a/app/src/main/java/com/example/svgvectorconverter/SvgTreeConverter.kt
++++ b/app/src/main/java/com/example/svgvectorconverter/SvgTreeConverter.kt
+@@ -1470,10 +1470,7 @@ private fun appendTextApproximation(
+     pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
+ 
+     val rawFill = textStyleValue(element, style, "fill") ?: inheritedFill ?: "#000000"
+-    val rawStroke = textStyleValue(element, style, "stroke") ?: inheritedStroke.orEmpty()
+-    val fillColor = SvgPaintResolver.safeFillColor(rawFill)
+-    val strokeColor = SvgPaintResolver.safeStrokeColor(rawStroke)
+-    val strokeWidth = textStyleValue(element, style, "stroke-width") ?: inheritedStrokeWidth.orEmpty()
++    val outlineColor = SvgPaintResolver.safeFillColor(rawFill)
+     val opacity = SvgPaintResolver.inheritedOpacity(
+         inheritedOpacity,
+         textStyleValue(element, style, "opacity") ?: ""
+@@ -1482,23 +1479,23 @@ private fun appendTextApproximation(
+         inheritedFillOpacity,
+         textStyleValue(element, style, "fill-opacity") ?: ""
+     )
+-    val strokeOpacity = SvgPaintResolver.inheritedPaintOpacity(
+-        inheritedStrokeOpacity,
+-        textStyleValue(element, style, "stroke-opacity") ?: ""
+-    )
+-    val fillAlpha = SvgPaintResolver.combineAlpha(opacity, fillOpacity)
+-    val strokeAlpha = SvgPaintResolver.combineAlpha(opacity, strokeOpacity)
+-
+-    output.appendLine("${indent}<!-- approximated from <text>: ${escapeXmlCallback(text.take(40))} -->")
++    val outlineAlpha = SvgPaintResolver.combineAlpha(opacity, fillOpacity)
++    val fontFamily = textStyleValue(element, style, "font-family")
++        ?: element.getAttribute("font-family").ifBlank { "" }
++
++    output.appendLine("${indent}<!-- text approximation:")
++    output.appendLine("${indent}     \"${escapeXmlCallback(text)}\"")
++    output.appendLine("${indent}     font-size=\"${formatNumber(fontSize)}\"")
++    if (fontFamily.isNotBlank()) {
++        output.appendLine("${indent}     font-family=\"${escapeXmlCallback(fontFamily)}\"")
++    }
++    output.appendLine("${indent}-->")
+     output.appendLine("${indent}<path")
+     output.appendLine("${indent}    android:pathData=\"${escapeXmlCallback(pathData)}\"")
+-    output.appendLine("${indent}    android:fillColor=\"$fillColor\"")
+-    if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
+-    if (strokeColor != null && strokeWidth.isNotBlank()) {
+-        output.appendLine("${indent}    android:strokeColor=\"$strokeColor\"")
+-        output.appendLine("${indent}    android:strokeWidth=\"${escapeXmlCallback(strokeWidth)}\"")
+-        if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
+-    }
++    output.appendLine("${indent}    android:fillColor=\"@android:color/transparent\"")
++    output.appendLine("${indent}    android:strokeColor=\"$outlineColor\"")
++    output.appendLine("${indent}    android:strokeWidth=\"1\"")
++    if (outlineAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$outlineAlpha\"")
+     output.appendLine("${indent}/>")
+     output.appendLine()
+     activeTextElementsApproximated++

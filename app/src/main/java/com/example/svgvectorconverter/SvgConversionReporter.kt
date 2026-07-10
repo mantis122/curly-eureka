@@ -104,6 +104,12 @@ object SvgConversionReporter {
             .count()
     }
 
+    fun countConvertedOriginalSvgPaths(xml: String): Int {
+        return Regex("""<!-- converted from <path> -->""")
+            .findAll(xml)
+            .count()
+    }
+
     fun countDrawableBasicShapeBreakdown(svg: String): BasicShapeBreakdown {
         var rectangles = 0
         var roundedRectangles = 0
@@ -330,6 +336,27 @@ object SvgConversionReporter {
                 appendLine("✓ Matrix: 0")
             }
 
+            if (data.textElementCount > 0 || data.tspanElementCount > 0 || data.textPathElementCount > 0 || data.svgFontGlyphCount > 0) {
+                appendLine()
+                appendLine("────────────────────")
+                appendLine("Text")
+                appendLine("────────────────────")
+                appendLine()
+                appendLine("✓ Text elements found: ${data.textElementCount}")
+                if (data.textElementsApproximated > 0) {
+                    appendLine("✓ Bounding-box approximations: ${data.textElementsApproximated}")
+                }
+                if (data.tspanElementCount > 0) {
+                    appendLine("⚠ Text spans found: ${data.tspanElementCount}")
+                }
+                if (data.textPathElementCount > 0) {
+                    appendLine("⚠ Text-on-path elements found: ${data.textPathElementCount}")
+                }
+                if (data.svgFontGlyphCount > 0) {
+                    appendLine("ℹ Embedded SVG font glyph outlines found: ${data.svgFontGlyphCount}")
+                }
+            }
+
             appendLine()
             appendLine("────────────────────")
             appendLine("SVG Analysis")
@@ -402,22 +429,6 @@ object SvgConversionReporter {
                 appendLine("⚠ Filter references ignored: ${data.filterReferenceCount}")
             }
 
-            if (data.textElementCount > 0 || data.tspanElementCount > 0 || data.textPathElementCount > 0 || data.svgFontGlyphCount > 0) {
-                appendLine("⚠ Text elements found: ${data.textElementCount}")
-                if (data.tspanElementCount > 0) {
-                    appendLine("⚠ Text spans found: ${data.tspanElementCount}")
-                }
-                if (data.textElementsApproximated > 0) {
-                    appendLine("✓ Text elements approximated: ${data.textElementsApproximated}")
-                }
-                if (data.textPathElementCount > 0) {
-                    appendLine("⚠ Text-on-path elements found: ${data.textPathElementCount}")
-                }
-                if (data.svgFontGlyphCount > 0) {
-                    appendLine("ℹ Embedded SVG font glyph outlines found: ${data.svgFontGlyphCount}")
-                }
-            }
-
             if (data.contextPaintApproximationCount > 0) {
                 appendLine("ℹ context-fill/context-stroke approximated using inherited paint.")
             }
@@ -485,7 +496,7 @@ object SvgConversionReporter {
                 data.nonScalingStrokesUncertain > 0 ||
                 data.cssExternalImportCount > 0 ||
                 data.imageStats.imageElementCount > 0 ||
-                data.textElementCount > 0 ||
+                maxOf(0, data.textElementCount - data.textElementsApproximated) > 0 ||
                 data.tspanElementCount > 0 ||
                 data.textPathElementCount > 0
             ) {
