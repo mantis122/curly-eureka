@@ -28,7 +28,11 @@ private var activePatternTilePathsEmitted = 0
 private var activeTextElementsApproximated = 0
 private var activeTextElementsConvertedToPaths = 0
 private var activeTextGlyphPathsEmitted = 0
-private var activeTextVariableGlyphAdvancesApplied = 0
+private var activeTextGlyphSpecificAdvances = 0
+private var activeTextDefaultFontAdvances = 0
+private var activeTextHorizontalKerningPairs = 0
+private var activeTextVerticalKerningPairs = 0
+private var activeTextKerningAdjustmentsApplied = 0
 private val activeTextFontFamilies = linkedSetOf<String>()
 private val activeTextFontWeights = linkedSetOf<String>()
 
@@ -48,7 +52,11 @@ val patternTilePathsEmitted: Int get() = activePatternTilePathsEmitted
 val textElementsApproximated: Int get() = activeTextElementsApproximated
 val textElementsConvertedToPaths: Int get() = activeTextElementsConvertedToPaths
 val textGlyphPathsEmitted: Int get() = activeTextGlyphPathsEmitted
-val textVariableGlyphAdvancesApplied: Int get() = activeTextVariableGlyphAdvancesApplied
+val textGlyphSpecificAdvances: Int get() = activeTextGlyphSpecificAdvances
+val textDefaultFontAdvances: Int get() = activeTextDefaultFontAdvances
+val textHorizontalKerningPairs: Int get() = activeTextHorizontalKerningPairs
+val textVerticalKerningPairs: Int get() = activeTextVerticalKerningPairs
+val textKerningAdjustmentsApplied: Int get() = activeTextKerningAdjustmentsApplied
 val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
 val textFontWeights: List<String> get() = activeTextFontWeights.toList()
 
@@ -117,7 +125,16 @@ data class PatternDefinition(
 data class SvgGlyphOutline(
     val unicode: String,
     val pathData: String,
-    val horizAdvX: Float? = null
+    val horizAdvX: Float? = null,
+    val glyphName: String? = null
+)
+
+data class SvgKerningPair(
+    val firstUnicodeValues: Set<String>,
+    val secondUnicodeValues: Set<String>,
+    val firstGlyphNames: Set<String>,
+    val secondGlyphNames: Set<String>,
+    val amount: Float
 )
 
 data class SvgFontDefinition(
@@ -128,6 +145,9 @@ data class SvgFontDefinition(
     val descent: Float,
     val horizAdvX: Float,
     val glyphsByUnicode: Map<String, SvgGlyphOutline>,
+    val glyphsByName: Map<String, SvgGlyphOutline>,
+    val horizontalKerningPairs: List<SvgKerningPair> = emptyList(),
+    val verticalKerningPairs: List<SvgKerningPair> = emptyList(),
     val missingGlyph: SvgGlyphOutline? = null
 )
 
@@ -158,7 +178,11 @@ fun resetStats(
     activeTextElementsApproximated = 0
     activeTextElementsConvertedToPaths = 0
     activeTextGlyphPathsEmitted = 0
-    activeTextVariableGlyphAdvancesApplied = 0
+    activeTextGlyphSpecificAdvances = 0
+    activeTextDefaultFontAdvances = 0
+    activeTextHorizontalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.horizontalKerningPairs.size }
+    activeTextVerticalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.verticalKerningPairs.size }
+    activeTextKerningAdjustmentsApplied = 0
     activeTextFontFamilies.clear()
     activeTextFontWeights.clear()
 }
@@ -735,6 +759,32 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
             .toSet()
     }
 
+
+    fun listAttr(element: Element, name: String): Set<String> {
+        return element.getAttribute(name)
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+    }
+
+    fun kerningPair(element: Element): SvgKerningPair? {
+        val amount = element.getAttribute("k").trim().toFloatOrNull() ?: return null
+        val firstUnicode = listAttr(element, "u1")
+        val secondUnicode = listAttr(element, "u2")
+        val firstNames = listAttr(element, "g1")
+        val secondNames = listAttr(element, "g2")
+        if ((firstUnicode.isEmpty() && firstNames.isEmpty()) ||
+            (secondUnicode.isEmpty() && secondNames.isEmpty())) return null
+        return SvgKerningPair(
+            firstUnicodeValues = firstUnicode,
+            secondUnicodeValues = secondUnicode,
+            firstGlyphNames = firstNames,
+            secondGlyphNames = secondNames,
+            amount = amount
+        )
+    }
+
     try {
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = false
@@ -755,6 +805,9 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                 var descent = -200f
                 val familyNames = linkedSetOf<String>()
                 val glyphs = linkedMapOf<String, SvgGlyphOutline>()
+                val glyphsByName = linkedMapOf<String, SvgGlyphOutline>()
+                val horizontalKerningPairs = mutableListOf<SvgKerningPair>()
+                val verticalKerningPairs = mutableListOf<SvgKerningPair>()
                 var missingGlyph: SvgGlyphOutline? = null
 
                 val children = element.childNodes
@@ -773,11 +826,14 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                             val unicode = childElement.getAttribute("unicode")
                             val d = childElement.getAttribute("d").trim()
                             if (unicode.isNotEmpty() && d.isNotBlank()) {
-                                glyphs[unicode] = SvgGlyphOutline(
+                                val glyph = SvgGlyphOutline(
                                     unicode = unicode,
                                     pathData = d,
-                                    horizAdvX = childElement.getAttribute("horiz-adv-x").trim().toFloatOrNull()
+                                    horizAdvX = childElement.getAttribute("horiz-adv-x").trim().toFloatOrNull(),
+                                    glyphName = childElement.getAttribute("glyph-name").trim().ifBlank { null }
                                 )
+                                glyphs[unicode] = glyph
+                                glyph.glyphName?.let { glyphsByName[it] = glyph }
                             }
                         }
                         "missing-glyph" -> {
@@ -786,10 +842,13 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                                 missingGlyph = SvgGlyphOutline(
                                     unicode = "",
                                     pathData = d,
-                                    horizAdvX = childElement.getAttribute("horiz-adv-x").trim().toFloatOrNull()
+                                    horizAdvX = childElement.getAttribute("horiz-adv-x").trim().toFloatOrNull(),
+                                    glyphName = childElement.getAttribute("glyph-name").trim().ifBlank { null }
                                 )
                             }
                         }
+                        "hkern" -> kerningPair(childElement)?.let { horizontalKerningPairs.add(it) }
+                        "vkern" -> kerningPair(childElement)?.let { verticalKerningPairs.add(it) }
                     }
                 }
 
@@ -803,6 +862,9 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                         descent = descent,
                         horizAdvX = fontHorizAdvX,
                         glyphsByUnicode = glyphs,
+                        glyphsByName = glyphsByName,
+                        horizontalKerningPairs = horizontalKerningPairs,
+                        verticalKerningPairs = verticalKerningPairs,
                         missingGlyph = missingGlyph
                     )
                 }
@@ -1753,23 +1815,51 @@ private fun glyphAdvance(font: SvgFontDefinition, glyph: SvgGlyphOutline?): Floa
     return glyph?.horizAdvX?.takeIf { it > 0f } ?: font.horizAdvX
 }
 
-private fun hasVariableGlyphAdvance(font: SvgFontDefinition, glyph: SvgGlyphOutline): Boolean {
-    val explicitAdvance = glyph.horizAdvX?.takeIf { it > 0f } ?: return false
-    return abs(explicitAdvance - font.horizAdvX) > 0.001f
+private fun hasGlyphSpecificAdvance(glyph: SvgGlyphOutline): Boolean {
+    return glyph.horizAdvX?.takeIf { it > 0f } != null
+}
+
+private fun kerningMatchesValue(values: Set<String>, glyph: SvgGlyphOutline): Boolean {
+    if (values.isEmpty()) return false
+    if (glyph.unicode in values) return true
+    return values.any { token ->
+        token.length == 1 && glyph.unicode.length == 1 && token == glyph.unicode
+    }
+}
+
+private fun kerningMatchesName(values: Set<String>, glyph: SvgGlyphOutline): Boolean {
+    val name = glyph.glyphName ?: return false
+    return name in values
+}
+
+private fun kerningAdjustment(font: SvgFontDefinition, first: SvgGlyphOutline?, second: SvgGlyphOutline?, vertical: Boolean = false): Float {
+    if (first == null || second == null) return 0f
+    val pairs = if (vertical) font.verticalKerningPairs else font.horizontalKerningPairs
+    if (pairs.isEmpty()) return 0f
+    val pair = pairs.firstOrNull { candidate ->
+        (kerningMatchesValue(candidate.firstUnicodeValues, first) || kerningMatchesName(candidate.firstGlyphNames, first)) &&
+            (kerningMatchesValue(candidate.secondUnicodeValues, second) || kerningMatchesName(candidate.secondGlyphNames, second))
+    }
+    return pair?.amount ?: 0f
 }
 
 private fun textRunAdvance(font: SvgFontDefinition, text: String, fontSize: Float): Float {
     val scale = fontSize / font.unitsPerEm
     var index = 0
     var total = 0f
+    var previousGlyph: SvgGlyphOutline? = null
     while (index < text.length) {
         val match = glyphForText(font, text.substring(index))
         if (match == null) {
             val cp = text.codePointAt(index)
             total += font.horizAdvX * scale
+            previousGlyph = null
             index += Character.charCount(cp)
         } else {
-            total += glyphAdvance(font, match.first) * scale
+            val glyph = match.first
+            total -= kerningAdjustment(font, previousGlyph, glyph) * scale
+            total += glyphAdvance(font, glyph) * scale
+            previousGlyph = glyph
             index += match.second
         }
     }
@@ -1942,8 +2032,15 @@ private fun appendTextGlyphOutlines(
             }
             output.appendLine("${indent}/>")
 
-            if (hasVariableGlyphAdvance(prepared.font, glyph)) activeTextVariableGlyphAdvancesApplied++
-            currentX += glyphAdvance(prepared.font, glyph) * scale
+            if (hasGlyphSpecificAdvance(glyph)) activeTextGlyphSpecificAdvances++ else activeTextDefaultFontAdvances++
+
+            val nextStart = index + match.second
+            val nextGlyph = if (nextStart < prepared.run.text.length) {
+                glyphForText(prepared.font, prepared.run.text.substring(nextStart))?.first
+            } else null
+            val kern = kerningAdjustment(prepared.font, glyph, nextGlyph)
+            if (abs(kern) > 0.001f) activeTextKerningAdjustmentsApplied++
+            currentX += (glyphAdvance(prepared.font, glyph) - kern) * scale
             index += match.second
             emittedGlyphs++
         }

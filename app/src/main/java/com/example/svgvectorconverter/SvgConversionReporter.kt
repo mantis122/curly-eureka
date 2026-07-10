@@ -71,7 +71,11 @@ data class SvgConversionReportData(
     val textElementsApproximated: Int,
     val textElementsConvertedToPaths: Int = 0,
     val textGlyphPathsEmitted: Int = 0,
-    val textVariableGlyphAdvancesApplied: Int = 0,
+    val textGlyphSpecificAdvances: Int = 0,
+    val textDefaultFontAdvances: Int = 0,
+    val textHorizontalKerningPairs: Int = 0,
+    val textVerticalKerningPairs: Int = 0,
+    val textKerningAdjustmentsApplied: Int = 0,
     val textFontFamilies: List<String> = emptyList(),
     val textFontWeights: List<String> = emptyList(),
     val svgFontGlyphCount: Int,
@@ -351,9 +355,13 @@ object SvgConversionReporter {
                 appendLine("✓ Text elements found: ${data.textElementCount}")
                 if (data.textElementsConvertedToPaths > 0) {
                     appendLine("✓ Text converted to paths: ${data.textElementsConvertedToPaths}")
-                    appendLine("✓ Glyph outline paths emitted: ${data.textGlyphPathsEmitted}")
-                    if (data.textVariableGlyphAdvancesApplied > 0) {
-                        appendLine("✓ Variable glyph advances applied: ${data.textVariableGlyphAdvancesApplied}")
+                    appendLine("✓ Glyphs rendered: ${data.textGlyphPathsEmitted}")
+                    appendLine("✓ Glyph-specific advances: ${data.textGlyphSpecificAdvances}")
+                    appendLine("✓ Default font advances: ${data.textDefaultFontAdvances}")
+                    if (data.textHorizontalKerningPairs > 0 || data.textVerticalKerningPairs > 0 || data.textKerningAdjustmentsApplied > 0) {
+                        appendLine("✓ Kerning adjustments applied: ${data.textKerningAdjustmentsApplied}")
+                        appendLine("✓ <hkern> pairs found: ${data.textHorizontalKerningPairs}")
+                        appendLine("✓ <vkern> pairs found: ${data.textVerticalKerningPairs}")
                     }
                 }
                 if (data.textElementsApproximated > 0) {
