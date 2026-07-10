@@ -40,7 +40,7 @@ internal sealed class ParsedTransform {
  * the full SVG matrix internally, then decomposes it into the group attributes Android
  * can represent: translate, scale, rotation, and optional pivot.
  */
-internal data class AffineTransform(
+data class AffineTransform(
     val a: Float = 1f,
     val b: Float = 0f,
     val c: Float = 0f,
