@@ -36,6 +36,7 @@ private var activeTextHorizontalKerningPairsMatched = 0
 private var activeTextVerticalKerningPairsMatched = 0
 private var activeTextKerningAdjustmentsApplied = 0
 private var activeTextLengthSpacingAdjustments = 0
+private var activeTextLengthSpacingAndGlyphsAdjustments = 0
 private val activeMatchedHorizontalKerningPairs = linkedSetOf<SvgKerningPair>()
 private val activeMatchedVerticalKerningPairs = linkedSetOf<SvgKerningPair>()
 private val activeTextFontFamilies = linkedSetOf<String>()
@@ -65,6 +66,7 @@ val textHorizontalKerningPairsMatched: Int get() = activeTextHorizontalKerningPa
 val textVerticalKerningPairsMatched: Int get() = activeTextVerticalKerningPairsMatched
 val textKerningAdjustmentsApplied: Int get() = activeTextKerningAdjustmentsApplied
 val textLengthSpacingAdjustments: Int get() = activeTextLengthSpacingAdjustments
+val textLengthSpacingAndGlyphsAdjustments: Int get() = activeTextLengthSpacingAndGlyphsAdjustments
 val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
 val textFontWeights: List<String> get() = activeTextFontWeights.toList()
 
@@ -196,6 +198,7 @@ fun resetStats(
     activeTextVerticalKerningPairsMatched = 0
     activeTextKerningAdjustmentsApplied = 0
     activeTextLengthSpacingAdjustments = 0
+    activeTextLengthSpacingAndGlyphsAdjustments = 0
     activeMatchedHorizontalKerningPairs.clear()
     activeMatchedVerticalKerningPairs.clear()
     activeTextFontFamilies.clear()
@@ -1987,6 +1990,7 @@ private fun appendTextGlyphOutlines(
         val targetTextLength: Float?,
         val lengthAdjust: String,
         val spacingAdjustment: Float,
+        val glyphAxisScale: Float,
         val fill: String,
         val stroke: String?,
         val strokeWidth: String?,
@@ -2025,6 +2029,7 @@ private fun appendTextGlyphOutlines(
             targetTextLength = explicitTextLength(run.element),
             lengthAdjust = explicitLengthAdjust(run.element),
             spacingAdjustment = 0f,
+            glyphAxisScale = 1f,
             fill = inheritedTextStyleValue(run.element, "fill") ?: inheritedFill ?: "#000000",
             stroke = inheritedTextStyleValue(run.element, "stroke")
                 ?: inheritedStroke?.trim()?.takeIf { it.isNotBlank() },
@@ -2060,8 +2065,19 @@ private fun appendTextGlyphOutlines(
     val parentSpacingApplied = elementTextLength != null &&
         elementLengthAdjust == "spacing" &&
         totalGlyphCount > 1
+    val parentGlyphAxisScale = if (
+        elementTextLength != null &&
+        elementLengthAdjust == "spacingandglyphs" &&
+        totalNaturalAdvance > 0.0001f
+    ) {
+        elementTextLength / totalNaturalAdvance
+    } else 1f
+    val parentSpacingAndGlyphsApplied = elementTextLength != null &&
+        elementLengthAdjust == "spacingandglyphs" &&
+        totalNaturalAdvance > 0.0001f
 
     if (parentSpacingApplied) activeTextLengthSpacingAdjustments++
+    if (parentSpacingAndGlyphsApplied) activeTextLengthSpacingAndGlyphsAdjustments++
 
     val preparedRuns = rawPreparedRuns.map { prepared ->
         val directTarget = if (prepared.run.element !== element) prepared.targetTextLength else null
@@ -2074,13 +2090,23 @@ private fun appendTextGlyphOutlines(
             !usesDirectTarget && parentSpacingApplied -> parentSpacingAdjustment
             else -> 0f
         }
+        val axisScale = when {
+            usesDirectTarget && mode == "spacingandglyphs" && prepared.advance > 0.0001f ->
+                directTarget!! / prepared.advance
+            !usesDirectTarget && parentSpacingAndGlyphsApplied -> parentGlyphAxisScale
+            else -> 1f
+        }
         if (usesDirectTarget && mode == "spacing" && prepared.glyphCount > 1) {
             activeTextLengthSpacingAdjustments++
+        }
+        if (usesDirectTarget && mode == "spacingandglyphs" && prepared.advance > 0.0001f) {
+            activeTextLengthSpacingAndGlyphsAdjustments++
         }
         prepared.copy(
             targetTextLength = target,
             lengthAdjust = mode,
-            spacingAdjustment = adjustment
+            spacingAdjustment = adjustment,
+            glyphAxisScale = axisScale
         )
     }
 
@@ -2092,11 +2118,13 @@ private fun appendTextGlyphOutlines(
     val baseAnchor = normalizedTextAnchor(element)
     val baseVertical = isVerticalWritingMode(element)
     val hasPositionedRuns = runs.any { it.element !== element && textHasPositionAttribute(it.element) }
-    val totalAdvance = if (parentSpacingApplied) {
-        totalNaturalAdvance + parentSpacingAdjustment * (totalGlyphCount - 1)
-    } else {
-        preparedRuns.sumOf { prepared ->
-            (prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0)).toDouble()
+    val totalAdvance = when {
+        parentSpacingApplied ->
+            totalNaturalAdvance + parentSpacingAdjustment * (totalGlyphCount - 1)
+        parentSpacingAndGlyphsApplied ->
+            totalNaturalAdvance * parentGlyphAxisScale
+        else -> preparedRuns.sumOf { prepared ->
+            ((prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0)) * prepared.glyphAxisScale).toDouble()
         }.toFloat()
     }
 
@@ -2141,14 +2169,14 @@ private fun appendTextGlyphOutlines(
             currentY += prepared.dy
             if (prepared.vertical) {
                 currentY = when (prepared.anchor) {
-                    "middle" -> currentY - (prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0)) / 2f
-                    "end" -> currentY - (prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0))
+                    "middle" -> currentY - ((prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0)) * prepared.glyphAxisScale) / 2f
+                    "end" -> currentY - ((prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0)) * prepared.glyphAxisScale)
                     else -> currentY
                 }
             } else {
                 currentX = when (prepared.anchor) {
-                    "middle" -> currentX - (prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0)) / 2f
-                    "end" -> currentX - (prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0))
+                    "middle" -> currentX - ((prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0)) * prepared.glyphAxisScale) / 2f
+                    "end" -> currentX - ((prepared.advance + prepared.spacingAdjustment * (prepared.glyphCount - 1).coerceAtLeast(0)) * prepared.glyphAxisScale)
                     else -> currentX
                 }
             }
@@ -2164,23 +2192,34 @@ private fun appendTextGlyphOutlines(
             if (match == null) {
                 val cp = prepared.run.text.codePointAt(index)
                 if (prepared.vertical) {
-                    currentY += glyphAdvance(prepared.font, null, vertical = true) * scale
+                    currentY += glyphAdvance(prepared.font, null, vertical = true) * scale * prepared.glyphAxisScale
                 } else {
-                    currentX += glyphAdvance(prepared.font, null, vertical = false) * scale
+                    currentX += glyphAdvance(prepared.font, null, vertical = false) * scale * prepared.glyphAxisScale
                 }
                 index += Character.charCount(cp)
                 continue
             }
 
             val glyph = match.first
-            val placement = AffineTransform(
-                a = scale,
-                b = 0f,
-                c = 0f,
-                d = -scale,
-                e = currentX,
-                f = currentY
-            )
+            val placement = if (prepared.vertical) {
+                AffineTransform(
+                    a = scale,
+                    b = 0f,
+                    c = 0f,
+                    d = -scale * prepared.glyphAxisScale,
+                    e = currentX,
+                    f = currentY
+                )
+            } else {
+                AffineTransform(
+                    a = scale * prepared.glyphAxisScale,
+                    b = 0f,
+                    c = 0f,
+                    d = -scale,
+                    e = currentX,
+                    f = currentY
+                )
+            }
             var pathData = SvgPathDataTransformer.applyAffineTransform(glyph.pathData, placement) ?: glyph.pathData
             if (elementMatrix != null) {
                 pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
@@ -2223,7 +2262,7 @@ private fun appendTextGlyphOutlines(
                 prepared.lengthAdjust == "spacing" &&
                 (nextGlyph != null || (parentSpacingApplied && hasFollowingRunGlyph))
             ) prepared.spacingAdjustment else 0f
-            val advance = (glyphAdvance(prepared.font, glyph, vertical = prepared.vertical) - kern) * scale + extraSpacing
+            val advance = ((glyphAdvance(prepared.font, glyph, vertical = prepared.vertical) - kern) * scale + extraSpacing) * prepared.glyphAxisScale
             if (prepared.vertical) {
                 currentY += advance
             } else {
