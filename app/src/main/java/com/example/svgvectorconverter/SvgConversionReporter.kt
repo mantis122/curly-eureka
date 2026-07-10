@@ -74,6 +74,7 @@ data class SvgConversionReportData(
     val textGlyphSpecificAdvances: Int = 0,
     val textDefaultFontAdvances: Int = 0,
     val textMissingGlyphFallbacks: Int = 0,
+    val textGlyphNameLookups: Int = 0,
     val textHorizontalKerningPairs: Int = 0,
     val textVerticalKerningPairs: Int = 0,
     val textHorizontalKerningPairsMatched: Int = 0,
@@ -363,6 +364,9 @@ object SvgConversionReporter {
                     appendLine("✓ Glyphs rendered: ${data.textGlyphPathsEmitted}")
                     appendLine("✓ Glyph-specific advances: ${data.textGlyphSpecificAdvances}")
                     appendLine("✓ Default font advances: ${data.textDefaultFontAdvances}")
+                    if (data.textGlyphNameLookups > 0) {
+                        appendLine("✓ Glyph-name lookups rendered: ${data.textGlyphNameLookups}")
+                    }
                     if (data.textMissingGlyphFallbacks > 0) {
                         appendLine("✓ Missing-glyph fallbacks rendered: ${data.textMissingGlyphFallbacks}")
                     }

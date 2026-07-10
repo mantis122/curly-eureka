@@ -31,6 +31,7 @@ private var activeTextGlyphPathsEmitted = 0
 private var activeTextGlyphSpecificAdvances = 0
 private var activeTextDefaultFontAdvances = 0
 private var activeTextMissingGlyphFallbacks = 0
+private var activeTextGlyphNameLookups = 0
 private var activeTextHorizontalKerningPairs = 0
 private var activeTextVerticalKerningPairs = 0
 private var activeTextHorizontalKerningPairsMatched = 0
@@ -62,6 +63,7 @@ val textGlyphPathsEmitted: Int get() = activeTextGlyphPathsEmitted
 val textGlyphSpecificAdvances: Int get() = activeTextGlyphSpecificAdvances
 val textDefaultFontAdvances: Int get() = activeTextDefaultFontAdvances
 val textMissingGlyphFallbacks: Int get() = activeTextMissingGlyphFallbacks
+val textGlyphNameLookups: Int get() = activeTextGlyphNameLookups
 val textHorizontalKerningPairs: Int get() = activeTextHorizontalKerningPairs
 val textVerticalKerningPairs: Int get() = activeTextVerticalKerningPairs
 val textHorizontalKerningPairsMatched: Int get() = activeTextHorizontalKerningPairsMatched
@@ -195,6 +197,7 @@ fun resetStats(
     activeTextGlyphSpecificAdvances = 0
     activeTextDefaultFontAdvances = 0
     activeTextMissingGlyphFallbacks = 0
+    activeTextGlyphNameLookups = 0
     activeTextHorizontalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.horizontalKerningPairs.size }
     activeTextVerticalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.verticalKerningPairs.size }
     activeTextHorizontalKerningPairsMatched = 0
@@ -847,16 +850,23 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                         "glyph" -> {
                             val unicode = childElement.getAttribute("unicode")
                             val d = childElement.getAttribute("d").trim()
-                            if (unicode.isNotEmpty() && d.isNotBlank()) {
+                            val glyphNames = buildList {
+                                addAll(childElement.getAttribute("glyph-name")
+                                    .split(',')
+                                    .map { it.trim() }
+                                    .filter { it.isNotBlank() })
+                                childElement.getAttribute("id").trim().takeIf { it.isNotBlank() }?.let { add(it) }
+                            }.distinct()
+                            if (d.isNotBlank() && (unicode.isNotEmpty() || glyphNames.isNotEmpty())) {
                                 val glyph = SvgGlyphOutline(
                                     unicode = unicode,
                                     pathData = d,
                                     horizAdvX = childElement.getAttribute("horiz-adv-x").trim().toFloatOrNull(),
                                     vertAdvY = childElement.getAttribute("vert-adv-y").trim().toFloatOrNull(),
-                                    glyphName = childElement.getAttribute("glyph-name").trim().ifBlank { null }
+                                    glyphName = glyphNames.firstOrNull()
                                 )
-                                glyphs[unicode] = glyph
-                                glyph.glyphName?.let { glyphsByName[it] = glyph }
+                                if (unicode.isNotEmpty()) glyphs[unicode] = glyph
+                                glyphNames.forEach { glyphName -> glyphsByName[glyphName] = glyph }
                             }
                         }
                         "missing-glyph" -> {
@@ -1697,7 +1707,8 @@ private fun normalizeTextWhitespace(value: String): String {
 
 private data class TextApproximationRun(
     val text: String,
-    val element: Element
+    val element: Element,
+    val glyphNames: List<String>? = null
 )
 
 private fun textHasPositionAttribute(element: Element): Boolean {
@@ -1707,7 +1718,31 @@ private fun textHasPositionAttribute(element: Element): Boolean {
         element.hasAttribute("dy")
 }
 
+private fun glyphNameReferences(element: Element): List<String> {
+    val direct = listOf(
+        element.getAttribute("glyph-name"),
+        element.getAttribute("glyphRef"),
+        element.getAttribute("glyph-ref")
+    ).firstOrNull { it.isNotBlank() }
+
+    val href = element.getAttribute("href").ifBlank { element.getAttribute("xlink:href") }
+    val raw = direct ?: href.substringAfterLast('#', "")
+    return raw
+        .split(Regex("""[\s,]+"""))
+        .map { it.trim().removePrefix("#") }
+        .filter { it.isNotBlank() }
+}
+
 private fun textApproximationRuns(element: Element): List<TextApproximationRun> {
+    val rootGlyphNames = glyphNameReferences(element)
+    if (rootGlyphNames.isNotEmpty()) {
+        return listOf(TextApproximationRun(
+            text = normalizeTextWhitespace(element.textContent.orEmpty()),
+            element = element,
+            glyphNames = rootGlyphNames
+        ))
+    }
+
     val runs = mutableListOf<TextApproximationRun>()
 
     fun collectInlineRuns(owner: Element) {
@@ -1735,7 +1770,30 @@ private fun textApproximationRuns(element: Element): List<TextApproximationRun> 
                     when (tag) {
                         "tspan" -> {
                             flushPendingText()
-                            collectInlineRuns(childElement)
+                            val glyphNames = glyphNameReferences(childElement)
+                            if (glyphNames.isNotEmpty()) {
+                                runs.add(TextApproximationRun(
+                                    text = normalizeTextWhitespace(childElement.textContent.orEmpty()),
+                                    element = childElement,
+                                    glyphNames = glyphNames
+                                ))
+                            } else {
+                                collectInlineRuns(childElement)
+                            }
+                        }
+
+                        "altglyph" -> {
+                            flushPendingText()
+                            val glyphNames = glyphNameReferences(childElement)
+                            if (glyphNames.isNotEmpty()) {
+                                runs.add(TextApproximationRun(
+                                    text = normalizeTextWhitespace(childElement.textContent.orEmpty()),
+                                    element = childElement,
+                                    glyphNames = glyphNames
+                                ))
+                            } else {
+                                collectInlineRuns(childElement)
+                            }
                         }
 
                         "textpath" -> {
@@ -1744,7 +1802,16 @@ private fun textApproximationRuns(element: Element): List<TextApproximationRun> 
 
                         else -> {
                             flushPendingText()
-                            collectInlineRuns(childElement)
+                            val glyphNames = glyphNameReferences(childElement)
+                            if (glyphNames.isNotEmpty()) {
+                                runs.add(TextApproximationRun(
+                                    text = normalizeTextWhitespace(childElement.textContent.orEmpty()),
+                                    element = childElement,
+                                    glyphNames = glyphNames
+                                ))
+                            } else {
+                                collectInlineRuns(childElement)
+                            }
                         }
                     }
                 }
@@ -1848,6 +1915,44 @@ private fun glyphForText(font: SvgFontDefinition, remainingText: String): Pair<S
     }
 }
 
+private data class ResolvedTextGlyph(
+    val glyph: SvgGlyphOutline,
+    val consumedChars: Int,
+    val fromGlyphName: Boolean
+)
+
+private fun glyphByName(font: SvgFontDefinition, name: String): SvgGlyphOutline? {
+    return font.glyphsByName[name]
+        ?: font.glyphsByName.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+}
+
+private fun resolvedGlyphsForRun(
+    font: SvgFontDefinition,
+    text: String,
+    glyphNames: List<String>?
+): List<ResolvedTextGlyph> {
+    if (!glyphNames.isNullOrEmpty()) {
+        return glyphNames.mapNotNull { name ->
+            val glyph = glyphByName(font, name) ?: font.missingGlyph ?: return@mapNotNull null
+            ResolvedTextGlyph(glyph = glyph, consumedChars = 0, fromGlyphName = glyphByName(font, name) != null)
+        }
+    }
+
+    val result = mutableListOf<ResolvedTextGlyph>()
+    var index = 0
+    while (index < text.length) {
+        val match = glyphForText(font, text.substring(index))
+        if (match == null) {
+            val cp = text.codePointAt(index)
+            index += Character.charCount(cp)
+        } else {
+            result.add(ResolvedTextGlyph(match.first, match.second, false))
+            index += match.second
+        }
+    }
+    return result
+}
+
 private fun glyphAdvance(font: SvgFontDefinition, glyph: SvgGlyphOutline?, vertical: Boolean = false): Float {
     return if (vertical) {
         glyph?.vertAdvY?.takeIf { it > 0f } ?: font.vertAdvY
@@ -1912,43 +2017,28 @@ private fun kerningAdjustment(
     return pair.amount
 }
 
-private fun textRunAdvance(font: SvgFontDefinition, text: String, fontSize: Float, vertical: Boolean = false): Float {
+private fun textRunAdvance(
+    font: SvgFontDefinition,
+    text: String,
+    fontSize: Float,
+    vertical: Boolean = false,
+    glyphNames: List<String>? = null
+): Float {
     val scale = fontSize / font.unitsPerEm
-    var index = 0
+    val glyphs = resolvedGlyphsForRun(font, text, glyphNames)
     var total = 0f
     var previousGlyph: SvgGlyphOutline? = null
-    while (index < text.length) {
-        val match = glyphForText(font, text.substring(index))
-        if (match == null) {
-            val cp = text.codePointAt(index)
-            total += glyphAdvance(font, null, vertical = vertical) * scale
-            previousGlyph = null
-            index += Character.charCount(cp)
-        } else {
-            val glyph = match.first
-            total -= kerningAdjustment(font, previousGlyph, glyph, vertical = vertical) * scale
-            total += glyphAdvance(font, glyph, vertical = vertical) * scale
-            previousGlyph = glyph
-            index += match.second
-        }
+    for (resolved in glyphs) {
+        val glyph = resolved.glyph
+        total -= kerningAdjustment(font, previousGlyph, glyph, vertical = vertical) * scale
+        total += glyphAdvance(font, glyph, vertical = vertical) * scale
+        previousGlyph = glyph
     }
     return total
 }
 
-private fun textRunGlyphCount(font: SvgFontDefinition, text: String): Int {
-    var index = 0
-    var count = 0
-    while (index < text.length) {
-        val match = glyphForText(font, text.substring(index))
-        if (match == null) {
-            val cp = text.codePointAt(index)
-            index += Character.charCount(cp)
-        } else {
-            index += match.second
-        }
-        count++
-    }
-    return count
+private fun textRunGlyphCount(font: SvgFontDefinition, text: String, glyphNames: List<String>? = null): Int {
+    return resolvedGlyphsForRun(font, text, glyphNames).size
 }
 
 private fun explicitTextLength(element: Element): Float? {
@@ -2007,7 +2097,8 @@ private fun appendTextGlyphOutlines(
         val explicitY: Float?,
         val dx: Float,
         val dy: Float,
-        val sourceTag: String
+        val sourceTag: String,
+        val glyphNames: List<String>?
     )
 
     val rawPreparedRuns = runs.mapNotNull { run ->
@@ -2027,8 +2118,8 @@ private fun appendTextGlyphOutlines(
             fontSize = fontSize,
             fontFamily = fontFamily,
             fontWeight = fontWeight,
-            advance = textRunAdvance(font, run.text, fontSize, vertical = vertical).coerceAtLeast(fontSize * 0.15f),
-            glyphCount = textRunGlyphCount(font, run.text),
+            advance = textRunAdvance(font, run.text, fontSize, vertical = vertical, glyphNames = run.glyphNames).coerceAtLeast(fontSize * 0.15f),
+            glyphCount = textRunGlyphCount(font, run.text, run.glyphNames),
             targetTextLength = explicitTextLength(run.element),
             lengthAdjust = explicitLengthAdjust(run.element),
             spacingAdjustment = 0f,
@@ -2048,7 +2139,8 @@ private fun appendTextGlyphOutlines(
             explicitY = if (!isParentTextRun && run.element.hasAttribute("y")) textNumericAttr(run.element, "y") else null,
             dx = if (!isParentTextRun) textNumericAttr(run.element, "dx") ?: 0f else 0f,
             dy = if (!isParentTextRun) textNumericAttr(run.element, "dy") ?: 0f else 0f,
-            sourceTag = run.element.tagName.substringAfter(":").lowercase()
+            sourceTag = run.element.tagName.substringAfter(":").lowercase(),
+            glyphNames = run.glyphNames
         )
     }
 
@@ -2189,21 +2281,9 @@ private fun appendTextGlyphOutlines(
         if (prepared.fontWeight.isNotBlank()) activeTextFontWeights.add(prepared.fontWeight)
 
         val scale = prepared.fontSize / prepared.font.unitsPerEm
-        var index = 0
-        while (index < prepared.run.text.length) {
-            val match = glyphForText(prepared.font, prepared.run.text.substring(index))
-            if (match == null) {
-                val cp = prepared.run.text.codePointAt(index)
-                if (prepared.vertical) {
-                    currentY += glyphAdvance(prepared.font, null, vertical = true) * scale * prepared.glyphAxisScale
-                } else {
-                    currentX += glyphAdvance(prepared.font, null, vertical = false) * scale * prepared.glyphAxisScale
-                }
-                index += Character.charCount(cp)
-                continue
-            }
-
-            val glyph = match.first
+        val resolvedGlyphs = resolvedGlyphsForRun(prepared.font, prepared.run.text, prepared.glyphNames)
+        for ((glyphIndex, resolved) in resolvedGlyphs.withIndex()) {
+            val glyph = resolved.glyph
             val isMissingGlyphFallback = prepared.font.missingGlyph === glyph
             val placement = if (prepared.vertical) {
                 AffineTransform(
@@ -2254,10 +2334,9 @@ private fun appendTextGlyphOutlines(
             if (hasGlyphSpecificAdvance(glyph, vertical = prepared.vertical)) activeTextGlyphSpecificAdvances++ else activeTextDefaultFontAdvances++
             if (isMissingGlyphFallback) activeTextMissingGlyphFallbacks++
 
-            val nextStart = index + match.second
-            val nextGlyph = if (nextStart < prepared.run.text.length) {
-                glyphForText(prepared.font, prepared.run.text.substring(nextStart))?.first
-            } else null
+            if (resolved.fromGlyphName) activeTextGlyphNameLookups++
+
+            val nextGlyph = resolvedGlyphs.getOrNull(glyphIndex + 1)?.glyph
             val kern = kerningAdjustment(prepared.font, glyph, nextGlyph, vertical = prepared.vertical, recordMatch = true)
             if (abs(kern) > 0.001f) activeTextKerningAdjustmentsApplied++
             val hasFollowingRunGlyph = nextGlyph == null &&
@@ -2273,7 +2352,6 @@ private fun appendTextGlyphOutlines(
             } else {
                 currentX += advance
             }
-            index += match.second
             emittedGlyphs++
         }
     }
@@ -2322,7 +2400,8 @@ private fun appendTextApproximation(
         val explicitY: Float?,
         val dx: Float,
         val dy: Float,
-        val sourceTag: String
+        val sourceTag: String,
+        val glyphNames: List<String>?
     )
 
     val preparedRuns = runs.map { run ->
@@ -2358,7 +2437,8 @@ private fun appendTextApproximation(
             explicitY = if (!isParentTextRun && run.element.hasAttribute("y")) textNumericAttr(run.element, "y") else null,
             dx = if (!isParentTextRun) textNumericAttr(run.element, "dx") ?: 0f else 0f,
             dy = if (!isParentTextRun) textNumericAttr(run.element, "dy") ?: 0f else 0f,
-            sourceTag = run.element.tagName.substringAfter(":").lowercase()
+            sourceTag = run.element.tagName.substringAfter(":").lowercase(),
+            glyphNames = run.glyphNames
         )
     }
 
