@@ -69,8 +69,6 @@ data class SvgConversionReportData(
     val tspanElementCount: Int,
     val textPathElementCount: Int,
     val textElementsApproximated: Int,
-    val textFontFamilies: List<String> = emptyList(),
-    val textFontWeights: List<String> = emptyList(),
     val svgFontGlyphCount: Int,
     val contextPaintApproximationCount: Int,
     val cssImportRuleCount: Int,
@@ -348,18 +346,8 @@ object SvgConversionReporter {
                 if (data.textElementsApproximated > 0) {
                     appendLine("✓ Bounding-box approximations: ${data.textElementsApproximated}")
                 }
-                if (data.textFontFamilies.isNotEmpty()) {
-                    appendLine("✓ Font families: ${data.textFontFamilies.size}")
-                    data.textFontFamilies.take(8).forEach { appendLine(" • $it") }
-                    if (data.textFontFamilies.size > 8) appendLine(" • …")
-                }
-                if (data.textFontWeights.isNotEmpty()) {
-                    appendLine("✓ Font weights: ${data.textFontWeights.size}")
-                    data.textFontWeights.take(8).forEach { appendLine(" • $it") }
-                    if (data.textFontWeights.size > 8) appendLine(" • …")
-                }
                 if (data.tspanElementCount > 0) {
-                    appendLine("⚠ Text spans found: ${data.tspanElementCount}")
+                    appendLine("✓ Text spans processed: ${data.tspanElementCount}")
                 }
                 if (data.textPathElementCount > 0) {
                     appendLine("⚠ Text-on-path elements found: ${data.textPathElementCount}")

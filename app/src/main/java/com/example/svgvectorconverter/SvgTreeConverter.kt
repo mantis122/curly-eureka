@@ -1455,6 +1455,13 @@ private data class TextApproximationRun(
     val element: Element
 )
 
+private fun textHasPositionAttribute(element: Element): Boolean {
+    return element.hasAttribute("x") ||
+        element.hasAttribute("y") ||
+        element.hasAttribute("dx") ||
+        element.hasAttribute("dy")
+}
+
 private fun textApproximationRuns(element: Element): List<TextApproximationRun> {
     val runs = mutableListOf<TextApproximationRun>()
     val pendingText = StringBuilder()
@@ -1565,6 +1572,7 @@ private fun appendTextApproximation(
     val baseDy = textNumericAttr(element, "dy") ?: 0f
     val anchor = normalizedTextAnchor(element)
     val baseline = normalizedDominantBaseline(element)
+    val hasPositionedRuns = runs.any { it.element !== element && textHasPositionAttribute(it.element) }
 
     data class PreparedTextRun(
         val run: TextApproximationRun,
@@ -1573,7 +1581,13 @@ private fun appendTextApproximation(
         val fontWeight: String,
         val width: Float,
         val height: Float,
-        val rawFill: String
+        val rawFill: String,
+        val anchor: String,
+        val baseline: String,
+        val explicitX: Float?,
+        val explicitY: Float?,
+        val dx: Float,
+        val dy: Float
     )
 
     val preparedRuns = runs.map { run ->
@@ -1593,6 +1607,8 @@ private fun appendTextApproximation(
         val width = (textLength ?: (charCount * fontSize * widthFactor)).coerceAtLeast(fontSize * 0.35f)
         val rawFill = textStyleValue(run.element, runStyle, "fill") ?: inheritedFill ?: "#000000"
 
+        val isParentTextRun = run.element === element
+
         PreparedTextRun(
             run = run,
             fontSize = fontSize,
@@ -1600,7 +1616,13 @@ private fun appendTextApproximation(
             fontWeight = fontWeight,
             width = width,
             height = fontSize,
-            rawFill = rawFill
+            rawFill = rawFill,
+            anchor = normalizedTextAnchor(run.element),
+            baseline = normalizedDominantBaseline(run.element),
+            explicitX = if (!isParentTextRun && run.element.hasAttribute("x")) textNumericAttr(run.element, "x") else null,
+            explicitY = if (!isParentTextRun && run.element.hasAttribute("y")) textNumericAttr(run.element, "y") else null,
+            dx = if (!isParentTextRun) textNumericAttr(run.element, "dx") ?: 0f else 0f,
+            dy = if (!isParentTextRun) textNumericAttr(run.element, "dy") ?: 0f else 0f
         )
     }
 
@@ -1610,17 +1632,42 @@ private fun appendTextApproximation(
         "end" -> baseX + baseDx - totalWidth
         else -> baseX + baseDx
     }
+    var currentX = baseX + baseDx
+    var currentY = baseY + baseDy
+
+    fun leftForAnchor(anchorValue: String, x: Float, width: Float): Float {
+        return when (anchorValue) {
+            "middle" -> x - width / 2f
+            "end" -> x - width
+            else -> x
+        }
+    }
 
     var emitted = false
 
     for (prepared in preparedRuns) {
         val run = prepared.run
         val runStyle = run.element.getAttribute("style").ifBlank { null }
-        val left = currentLeft
-        val top = textTopForBaseline(baseY, baseDy, prepared.height, baseline)
+
+        val left: Float
+        val top: Float
+        if (hasPositionedRuns) {
+            if (prepared.explicitX != null) currentX = prepared.explicitX
+            if (prepared.explicitY != null) currentY = prepared.explicitY
+            currentX += prepared.dx
+            currentY += prepared.dy
+
+            left = leftForAnchor(prepared.anchor, currentX, prepared.width)
+            top = textTopForBaseline(currentY, 0f, prepared.height, prepared.baseline)
+            currentX += prepared.width
+        } else {
+            left = currentLeft
+            top = textTopForBaseline(baseY, baseDy, prepared.height, baseline)
+            currentLeft += prepared.width
+        }
+
         val right = left + prepared.width
         val bottom = top + prepared.height
-        currentLeft = right
 
         var pathData = "M ${formatNumber(left)},${formatNumber(top)} L ${formatNumber(right)},${formatNumber(top)} L ${formatNumber(right)},${formatNumber(bottom)} L ${formatNumber(left)},${formatNumber(bottom)} Z"
 
@@ -1656,8 +1703,12 @@ private fun appendTextApproximation(
         output.appendLine("${indent}<!-- text approximation:")
         output.appendLine("${indent}     \"${escapeXmlCallback(run.text)}\"")
         output.appendLine("${indent}     font-size=\"${formatNumber(prepared.fontSize)}\"")
-        output.appendLine("${indent}     text-anchor=\"$anchor\"")
-        output.appendLine("${indent}     dominant-baseline=\"$baseline\"")
+        output.appendLine("${indent}     text-anchor=\"${prepared.anchor}\"")
+        output.appendLine("${indent}     dominant-baseline=\"${prepared.baseline}\"")
+        if (prepared.explicitX != null) output.appendLine("${indent}     x=\"${formatNumber(prepared.explicitX)}\"")
+        if (prepared.explicitY != null) output.appendLine("${indent}     y=\"${formatNumber(prepared.explicitY)}\"")
+        if (prepared.dx != 0f) output.appendLine("${indent}     dx=\"${formatNumber(prepared.dx)}\"")
+        if (prepared.dy != 0f) output.appendLine("${indent}     dy=\"${formatNumber(prepared.dy)}\"")
         if (prepared.fontFamily.isNotBlank()) {
             output.appendLine("${indent}     font-family=\"${escapeXmlCallback(prepared.fontFamily)}\"")
         }
