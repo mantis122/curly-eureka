@@ -955,6 +955,9 @@ private fun appendPatternFillApproximation(
     val endY = patternSpaceBounds.maxY
     var emitted = 0
     val maxTilePaths = 600
+    val tileBoundsCache = pattern.paths.map { tile ->
+        tile to approximateBoundsFromPathData(tile.pathData)
+    }
 
     output.appendLine("${indent}<group>")
     output.appendLine("${indent}    <!-- pattern #$patternId approximated by repeated tile paths -->")
@@ -966,9 +969,14 @@ private fun appendPatternFillApproximation(
     while (y <= endY && emitted < maxTilePaths) {
         var x = startX
         while (x <= endX && emitted < maxTilePaths) {
-            pattern.paths.forEach { tile ->
+            tileBoundsCache.forEach { (tile, localBounds) ->
                 if (emitted >= maxTilePaths) return@forEach
                 val tileTransform = pattern.patternTransform.multiply(AffineTransform(e = x, f = y))
+                val transformedBounds = localBounds?.transformedBy(tileTransform)
+                if (transformedBounds != null && !transformedBounds.intersects(bounds)) {
+                    return@forEach
+                }
+
                 val translated = SvgPathDataTransformer.applyAffineTransform(
                     tile.pathData,
                     tileTransform
