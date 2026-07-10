@@ -1443,7 +1443,72 @@ private fun textContentForApproximation(element: Element): String {
 
     val out = StringBuilder()
     collect(element, out)
-    return out.toString().replace(Regex("\\s+"), " ").trim()
+    return normalizeTextWhitespace(out.toString())
+}
+
+private fun normalizeTextWhitespace(value: String): String {
+    return value.replace(Regex("\\s+"), " ").trim()
+}
+
+private data class TextApproximationRun(
+    val text: String,
+    val element: Element
+)
+
+private fun textApproximationRuns(element: Element): List<TextApproximationRun> {
+    val runs = mutableListOf<TextApproximationRun>()
+    val pendingText = StringBuilder()
+
+    fun flushPendingText() {
+        val text = normalizeTextWhitespace(pendingText.toString())
+        if (text.isNotBlank()) {
+            runs.add(TextApproximationRun(text, element))
+        }
+        pendingText.clear()
+    }
+
+    val children = element.childNodes
+    for (i in 0 until children.length) {
+        val child = children.item(i)
+        when (child.nodeType) {
+            Node.TEXT_NODE, Node.CDATA_SECTION_NODE -> {
+                pendingText.append(child.nodeValue.orEmpty())
+            }
+
+            Node.ELEMENT_NODE -> {
+                val childElement = child as Element
+                val tag = childElement.tagName.substringAfter(":").lowercase()
+                when (tag) {
+                    "tspan" -> {
+                        flushPendingText()
+                        val tspanText = textContentForApproximation(childElement)
+                        if (tspanText.isNotBlank()) {
+                            runs.add(TextApproximationRun(tspanText, childElement))
+                        }
+                    }
+
+                    "textpath" -> {
+                        flushPendingText()
+                    }
+
+                    else -> {
+                        pendingText.append(textContentForApproximation(childElement))
+                    }
+                }
+            }
+        }
+    }
+
+    flushPendingText()
+
+    if (runs.isEmpty()) {
+        val fallbackText = textContentForApproximation(element)
+        if (fallbackText.isNotBlank()) {
+            runs.add(TextApproximationRun(fallbackText, element))
+        }
+    }
+
+    return runs
 }
 
 
@@ -1490,95 +1555,129 @@ private fun appendTextApproximation(
     inheritedFillOpacity: String?,
     inheritedStrokeOpacity: String?
 ): Boolean {
-    val text = textContentForApproximation(element)
-    if (text.isBlank()) return false
+    val runs = textApproximationRuns(element)
+    if (runs.isEmpty()) return false
 
-    val style = element.getAttribute("style").ifBlank { null }
-    val x = textNumericAttr(element, "x") ?: 0f
-    val y = textNumericAttr(element, "y") ?: 0f
-    val dx = textNumericAttr(element, "dx") ?: 0f
-    val dy = textNumericAttr(element, "dy") ?: 0f
-    val fontSize = (inheritedTextStyleValue(element, "font-size")
-        ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
-        ?.toFloatOrNull()
-        ?: 16f).coerceAtLeast(1f)
-
-    val charCount = text.codePointCount(0, text.length).coerceAtLeast(1)
-    val fontFamily = inheritedTextStyleValue(element, "font-family").orEmpty()
-    val fontWeight = normalizeTextFontWeight(inheritedTextStyleValue(element, "font-weight"))
-    val widthFactor = widthFactorForTextWeight(fontWeight)
-    val textLength = textStyleValue(element, style, "textLength")
-        ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
-        ?.toFloatOrNull()
-    val width = (textLength ?: (charCount * fontSize * widthFactor)).coerceAtLeast(fontSize * 0.35f)
-    val height = fontSize
-
+    val textStyle = element.getAttribute("style").ifBlank { null }
+    val baseX = textNumericAttr(element, "x") ?: 0f
+    val baseY = textNumericAttr(element, "y") ?: 0f
+    val baseDx = textNumericAttr(element, "dx") ?: 0f
+    val baseDy = textNumericAttr(element, "dy") ?: 0f
     val anchor = normalizedTextAnchor(element)
-    val left = when (anchor) {
-        "middle" -> x + dx - width / 2f
-        "end" -> x + dx - width
-        else -> x + dx
-    }
-
     val baseline = normalizedDominantBaseline(element)
-    val top = textTopForBaseline(y, dy, height, baseline)
 
-    val right = left + width
-    val bottom = top + height
-    var pathData = "M ${formatNumber(left)},${formatNumber(top)} L ${formatNumber(right)},${formatNumber(top)} L ${formatNumber(right)},${formatNumber(bottom)} L ${formatNumber(left)},${formatNumber(bottom)} Z"
+    data class PreparedTextRun(
+        val run: TextApproximationRun,
+        val fontSize: Float,
+        val fontFamily: String,
+        val fontWeight: String,
+        val width: Float,
+        val height: Float,
+        val rawFill: String
+    )
 
-    val transform = element.getAttribute("transform")
-        .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
-    val transformOrigin = SvgTransformParser.parseTransformOrigin(
-        SvgPaintResolver.styleValue(style, "transform-origin")
-            ?: element.getAttribute("transform-origin").ifBlank { "" }
-    )
-    val elementMatrix = SvgTransformParser.combineTransformListToMatrix(
-        SvgTransformParser.parseTransformList(transform),
-        transformOrigin
-    )
-    if (elementMatrix != null) {
-        pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
+    val preparedRuns = runs.map { run ->
+        val runStyle = run.element.getAttribute("style").ifBlank { null }
+        val fontSize = (inheritedTextStyleValue(run.element, "font-size")
+            ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
+            ?.toFloatOrNull()
+            ?: 16f).coerceAtLeast(1f)
+
+        val fontFamily = inheritedTextStyleValue(run.element, "font-family").orEmpty()
+        val fontWeight = normalizeTextFontWeight(inheritedTextStyleValue(run.element, "font-weight"))
+        val widthFactor = widthFactorForTextWeight(fontWeight)
+        val charCount = run.text.codePointCount(0, run.text.length).coerceAtLeast(1)
+        val textLength = textStyleValue(run.element, runStyle, "textLength")
+            ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
+            ?.toFloatOrNull()
+        val width = (textLength ?: (charCount * fontSize * widthFactor)).coerceAtLeast(fontSize * 0.35f)
+        val rawFill = textStyleValue(run.element, runStyle, "fill") ?: inheritedFill ?: "#000000"
+
+        PreparedTextRun(
+            run = run,
+            fontSize = fontSize,
+            fontFamily = fontFamily,
+            fontWeight = fontWeight,
+            width = width,
+            height = fontSize,
+            rawFill = rawFill
+        )
     }
-    pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
 
-    val rawFill = textStyleValue(element, style, "fill") ?: inheritedFill ?: "#000000"
-    val outlineColor = SvgPaintResolver.safeFillColor(rawFill)
-    val opacity = SvgPaintResolver.inheritedOpacity(
-        inheritedOpacity,
-        textStyleValue(element, style, "opacity") ?: ""
-    )
-    val fillOpacity = SvgPaintResolver.inheritedPaintOpacity(
-        inheritedFillOpacity,
-        textStyleValue(element, style, "fill-opacity") ?: ""
-    )
-    val outlineAlpha = SvgPaintResolver.combineAlpha(opacity, fillOpacity)
-
-    if (fontFamily.isNotBlank()) activeTextFontFamilies.add(fontFamily)
-    if (fontWeight.isNotBlank()) activeTextFontWeights.add(fontWeight)
-
-    output.appendLine("${indent}<!-- text approximation:")
-    output.appendLine("${indent}     \"${escapeXmlCallback(text)}\"")
-    output.appendLine("${indent}     font-size=\"${formatNumber(fontSize)}\"")
-    output.appendLine("${indent}     text-anchor=\"$anchor\"")
-    output.appendLine("${indent}     dominant-baseline=\"$baseline\"")
-    if (fontFamily.isNotBlank()) {
-        output.appendLine("${indent}     font-family=\"${escapeXmlCallback(fontFamily)}\"")
+    val totalWidth = preparedRuns.sumOf { it.width.toDouble() }.toFloat()
+    var currentLeft = when (anchor) {
+        "middle" -> baseX + baseDx - totalWidth / 2f
+        "end" -> baseX + baseDx - totalWidth
+        else -> baseX + baseDx
     }
-    if (fontWeight.isNotBlank()) {
-        output.appendLine("${indent}     font-weight=\"${escapeXmlCallback(fontWeight)}\"")
+
+    var emitted = false
+
+    for (prepared in preparedRuns) {
+        val run = prepared.run
+        val runStyle = run.element.getAttribute("style").ifBlank { null }
+        val left = currentLeft
+        val top = textTopForBaseline(baseY, baseDy, prepared.height, baseline)
+        val right = left + prepared.width
+        val bottom = top + prepared.height
+        currentLeft = right
+
+        var pathData = "M ${formatNumber(left)},${formatNumber(top)} L ${formatNumber(right)},${formatNumber(top)} L ${formatNumber(right)},${formatNumber(bottom)} L ${formatNumber(left)},${formatNumber(bottom)} Z"
+
+        val transform = element.getAttribute("transform")
+            .ifBlank { SvgPaintResolver.styleValue(textStyle, "transform") ?: "" }
+        val transformOrigin = SvgTransformParser.parseTransformOrigin(
+            SvgPaintResolver.styleValue(textStyle, "transform-origin")
+                ?: element.getAttribute("transform-origin").ifBlank { "" }
+        )
+        val elementMatrix = SvgTransformParser.combineTransformListToMatrix(
+            SvgTransformParser.parseTransformList(transform),
+            transformOrigin
+        )
+        if (elementMatrix != null) {
+            pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
+        }
+        pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
+
+        val outlineColor = SvgPaintResolver.safeFillColor(prepared.rawFill)
+        val opacity = SvgPaintResolver.inheritedOpacity(
+            inheritedOpacity,
+            textStyleValue(run.element, runStyle, "opacity") ?: ""
+        )
+        val fillOpacity = SvgPaintResolver.inheritedPaintOpacity(
+            inheritedFillOpacity,
+            textStyleValue(run.element, runStyle, "fill-opacity") ?: ""
+        )
+        val outlineAlpha = SvgPaintResolver.combineAlpha(opacity, fillOpacity)
+
+        if (prepared.fontFamily.isNotBlank()) activeTextFontFamilies.add(prepared.fontFamily)
+        if (prepared.fontWeight.isNotBlank()) activeTextFontWeights.add(prepared.fontWeight)
+
+        output.appendLine("${indent}<!-- text approximation:")
+        output.appendLine("${indent}     \"${escapeXmlCallback(run.text)}\"")
+        output.appendLine("${indent}     font-size=\"${formatNumber(prepared.fontSize)}\"")
+        output.appendLine("${indent}     text-anchor=\"$anchor\"")
+        output.appendLine("${indent}     dominant-baseline=\"$baseline\"")
+        if (prepared.fontFamily.isNotBlank()) {
+            output.appendLine("${indent}     font-family=\"${escapeXmlCallback(prepared.fontFamily)}\"")
+        }
+        if (prepared.fontWeight.isNotBlank()) {
+            output.appendLine("${indent}     font-weight=\"${escapeXmlCallback(prepared.fontWeight)}\"")
+        }
+        output.appendLine("${indent}-->")
+        output.appendLine("${indent}<path")
+        output.appendLine("${indent}    android:pathData=\"${escapeXmlCallback(pathData)}\"")
+        output.appendLine("${indent}    android:fillColor=\"@android:color/transparent\"")
+        output.appendLine("${indent}    android:strokeColor=\"$outlineColor\"")
+        output.appendLine("${indent}    android:strokeWidth=\"1\"")
+        if (outlineAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$outlineAlpha\"")
+        output.appendLine("${indent}/>")
+        output.appendLine()
+        activeTextElementsApproximated++
+        emitted = true
     }
-    output.appendLine("${indent}-->")
-    output.appendLine("${indent}<path")
-    output.appendLine("${indent}    android:pathData=\"${escapeXmlCallback(pathData)}\"")
-    output.appendLine("${indent}    android:fillColor=\"@android:color/transparent\"")
-    output.appendLine("${indent}    android:strokeColor=\"$outlineColor\"")
-    output.appendLine("${indent}    android:strokeWidth=\"1\"")
-    if (outlineAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$outlineAlpha\"")
-    output.appendLine("${indent}/>")
-    output.appendLine()
-    activeTextElementsApproximated++
-    return true
+
+    return emitted
 }
 
 
