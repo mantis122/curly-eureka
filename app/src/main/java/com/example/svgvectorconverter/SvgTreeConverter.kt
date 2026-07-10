@@ -1818,8 +1818,10 @@ private fun appendTextGlyphOutlines(
             fontWeight = fontWeight,
             advance = textRunAdvance(font, run.text, fontSize).coerceAtLeast(fontSize * 0.15f),
             fill = inheritedTextStyleValue(run.element, "fill") ?: inheritedFill ?: "#000000",
-            stroke = inheritedTextStyleValue(run.element, "stroke") ?: inheritedStroke,
-            strokeWidth = inheritedTextStyleValue(run.element, "stroke-width") ?: inheritedStrokeWidth,
+            stroke = inheritedTextStyleValue(run.element, "stroke")
+                ?: inheritedStroke?.trim()?.takeIf { it.isNotBlank() },
+            strokeWidth = inheritedTextStyleValue(run.element, "stroke-width")
+                ?: inheritedStrokeWidth?.trim()?.takeIf { it.isNotBlank() },
             opacity = SvgPaintResolver.inheritedOpacity(inheritedOpacity, inheritedTextStyleValue(run.element, "opacity") ?: ""),
             fillOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedFillOpacity, inheritedTextStyleValue(run.element, "fill-opacity") ?: ""),
             strokeOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedStrokeOpacity, inheritedTextStyleValue(run.element, "stroke-opacity") ?: ""),
@@ -1908,7 +1910,7 @@ private fun appendTextGlyphOutlines(
             pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
 
             val safeFill = SvgPaintResolver.safeFillColor(prepared.fill)
-            val safeStroke = prepared.stroke?.takeUnless { it.equals("none", ignoreCase = true) }?.let { SvgPaintResolver.safeFillColor(it) }
+            val safeStroke = SvgPaintResolver.safeStrokeColor(prepared.stroke)
             val fillAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.fillOpacity)
             val strokeAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.strokeOpacity)
 

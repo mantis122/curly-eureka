@@ -313,6 +313,7 @@ object SvgConversionReporter {
             appendLine("────────────────────")
             appendLine()
 
+            appendLine("✓ Generated VectorDrawable paths: ${data.convertedPathCount}")
             appendLine("✓ SVG path elements converted: ${data.convertedOriginalPathCount}")
             appendLine("✓ Basic shapes converted: ${data.convertedBasicShapeCount}")
             appendBasicShapeBreakdown(data.basicShapeBreakdown)
@@ -518,7 +519,7 @@ object SvgConversionReporter {
                 data.nonScalingStrokesUncertain > 0 ||
                 data.cssExternalImportCount > 0 ||
                 data.imageStats.imageElementCount > 0 ||
-                maxOf(0, data.textElementCount - data.textElementsApproximated) > 0 ||
+                maxOf(0, data.textElementCount - data.textElementsApproximated - data.textElementsConvertedToPaths) > 0 ||
                 data.tspanElementCount > 0 ||
                 data.textPathElementCount > 0
             ) {
@@ -570,6 +571,7 @@ object SvgConversionReporter {
         val stars: String,
         val label: String,
         val fidelityPercent: Int,
+        val converted: List<String>,
         val approximated: List<String>,
         val ignored: List<String>,
         val unsupported: List<String>
@@ -580,6 +582,12 @@ object SvgConversionReporter {
 
         appendLine("${summary.stars} ${summary.label}")
         appendLine("Estimated visual fidelity: ~${summary.fidelityPercent}%")
+
+        if (summary.converted.isNotEmpty()) {
+            appendLine()
+            appendLine("Converted")
+            summary.converted.forEach { appendLine("✓ $it") }
+        }
 
         if (summary.approximated.isNotEmpty()) {
             appendLine()
@@ -603,6 +611,7 @@ object SvgConversionReporter {
     }
 
     private fun compatibilitySummary(data: SvgConversionReportData): CompatibilitySummary {
+        val converted = linkedSetOf<String>()
         val approximated = linkedSetOf<String>()
         val ignored = linkedSetOf<String>()
         val unsupported = linkedSetOf<String>()
@@ -619,7 +628,7 @@ object SvgConversionReporter {
         if (data.maskPathCount > 0 || data.appliedMasks > 0) approximated.add("Masks as clip paths")
         if (data.appliedMarkers > 0) approximated.add("Markers")
         if (data.contextPaintApproximationCount > 0) approximated.add("context-fill/context-stroke")
-        if (data.textElementsConvertedToPaths > 0) approximated.add("Text (${data.textElementsConvertedToPaths} converted to glyph path${if (data.textElementsConvertedToPaths == 1) "" else "s"})")
+        if (data.textElementsConvertedToPaths > 0) converted.add("Text converted to vector paths")
         if (data.textElementsApproximated > 0) approximated.add("Text (${data.textElementsApproximated} bounding box approximation${if (data.textElementsApproximated == 1) "" else "s"})")
 
         val unapproximatedDashedStrokes = maxOf(0, data.dashedStrokesDetected - data.dashedStrokesApproximated)
@@ -710,6 +719,7 @@ object SvgConversionReporter {
             stars = stars,
             label = label,
             fidelityPercent = fidelity,
+            converted = converted.toList(),
             approximated = approximated.toList(),
             ignored = ignored.toList(),
             unsupported = unsupported.toList()

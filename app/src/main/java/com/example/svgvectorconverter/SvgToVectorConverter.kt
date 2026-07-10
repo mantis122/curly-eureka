@@ -97,7 +97,7 @@ object SvgToVectorConverter {
 
         val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
         val convertedOriginalPathCount = countConvertedOriginalSvgPaths(finalXml)
-        val convertedPathCount = convertedOriginalPathCount + convertedBasicShapeCount
+        val convertedPathCount = Regex("""<path\b""").findAll(finalXmlForStats).count()
         val generatedGroupCount = Regex("""<group\b""").findAll(finalXmlForStats).count()
 
         val generatedGroups = Regex("""<group[\s\S]*?>""")
