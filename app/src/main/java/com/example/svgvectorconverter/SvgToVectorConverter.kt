@@ -37,7 +37,7 @@ object SvgToVectorConverter {
             svg = svgWithCssClassStyles,
             basicShapeToPathData = SvgPathEmitter::basicShapeToPathData
         )
-        val svgFontDefinitions = SvgTreeConverter.collectSvgFontDefinitions(svgWithCssClassStyles)
+        val svgFontDefinitions = SvgFontResolver.collectDefinitions(svgWithCssClassStyles)
         SvgTreeConverter.resetStats(clipPathData, maskPathData, markerDefinitions, patternDefinitions, svgFontDefinitions)
 
         val viewBoxValues = getViewBox(svgWithCssClassStyles)
