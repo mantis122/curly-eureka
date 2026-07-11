@@ -887,7 +887,7 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                 }
 
                 if (id.isNotBlank()) familyNames.add(id)
-                if (id.isNotBlank() && (glyphs.isNotEmpty() || missingGlyph != null)) {
+                if (id.isNotBlank() && (glyphs.isNotEmpty() || glyphsByName.isNotEmpty() || missingGlyph != null)) {
                     result[id] = SvgFontDefinition(
                         id = id,
                         familyNames = familyNames,
