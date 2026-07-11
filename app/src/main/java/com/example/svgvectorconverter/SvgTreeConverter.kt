@@ -141,7 +141,8 @@ data class SvgGlyphOutline(
     val pathData: String,
     val horizAdvX: Float? = null,
     val vertAdvY: Float? = null,
-    val glyphName: String? = null
+    val glyphName: String? = null,
+    val transform: AffineTransform? = null
 )
 
 data class SvgKerningPair(
@@ -792,6 +793,22 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
             .toSet()
     }
 
+    fun glyphTransform(element: Element): AffineTransform? {
+        val style = element.getAttribute("style").ifBlank { null }
+        val rawTransform = element.getAttribute("transform")
+            .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
+        if (rawTransform.isBlank()) return null
+
+        val rawOrigin = element.getAttribute("transform-origin")
+            .ifBlank { SvgPaintResolver.styleValue(style, "transform-origin") ?: "" }
+        val origin = SvgTransformParser.parseTransformOrigin(rawOrigin)
+
+        return SvgTransformParser.combineTransformListToMatrix(
+            SvgTransformParser.parseTransformList(rawTransform),
+            origin
+        )
+    }
+
     fun kerningPair(element: Element): SvgKerningPair? {
         val amount = element.getAttribute("k").trim().toFloatOrNull() ?: return null
         val firstUnicode = listAttr(element, "u1")
@@ -863,7 +880,8 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                                     pathData = d,
                                     horizAdvX = childElement.getAttribute("horiz-adv-x").trim().toFloatOrNull(),
                                     vertAdvY = childElement.getAttribute("vert-adv-y").trim().toFloatOrNull(),
-                                    glyphName = glyphNames.firstOrNull()
+                                    glyphName = glyphNames.firstOrNull(),
+                                    transform = glyphTransform(childElement)
                                 )
                                 if (unicode.isNotEmpty()) glyphs[unicode] = glyph
                                 glyphNames.forEach { glyphName -> glyphsByName[glyphName] = glyph }
@@ -877,7 +895,8 @@ fun collectSvgFontDefinitions(svg: String): Map<String, SvgFontDefinition> {
                                     pathData = d,
                                     horizAdvX = childElement.getAttribute("horiz-adv-x").trim().toFloatOrNull(),
                                     vertAdvY = childElement.getAttribute("vert-adv-y").trim().toFloatOrNull(),
-                                    glyphName = childElement.getAttribute("glyph-name").trim().ifBlank { null }
+                                    glyphName = childElement.getAttribute("glyph-name").trim().ifBlank { null },
+                                    transform = glyphTransform(childElement)
                                 )
                             }
                         }
@@ -2304,7 +2323,13 @@ private fun appendTextGlyphOutlines(
                     f = currentY
                 )
             }
-            var pathData = SvgPathDataTransformer.applyAffineTransform(glyph.pathData, placement) ?: glyph.pathData
+            var glyphPathData = glyph.pathData
+            if (glyph.transform != null) {
+                glyphPathData = SvgPathDataTransformer.applyAffineTransform(glyphPathData, glyph.transform)
+                    ?: glyphPathData
+            }
+
+            var pathData = SvgPathDataTransformer.applyAffineTransform(glyphPathData, placement) ?: glyphPathData
             if (elementMatrix != null) {
                 pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
             }
