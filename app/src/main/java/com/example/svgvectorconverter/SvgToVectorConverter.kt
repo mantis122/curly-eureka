@@ -168,8 +168,9 @@ object SvgToVectorConverter {
         val handledTextCount = SvgTreeConverter.textElementsApproximated + SvgTreeConverter.textElementsConvertedToPaths
         val unapproximatedTextCount = maxOf(0, textElementCount - handledTextCount)
 
+        val unconvertedTextPathCount = maxOf(0, textPathElementCount - SvgTreeConverter.textPathsConverted)
         val warningCount = unsupported.size +
-            (if (unapproximatedTextCount > 0 || textPathElementCount > 0) 1 else 0) +
+            (if (unapproximatedTextCount > 0 || unconvertedTextPathCount > 0) 1 else 0) +
             (if (SvgTransformParser.unsupportedMatrixTransforms > 0) 1 else 0) +
             (if (unresolvedUseReferences > 0) 1 else 0) +
             (if (unapproximatedDashedStrokes > 0) 1 else 0) +
@@ -232,6 +233,8 @@ object SvgToVectorConverter {
                 textLengthSpacingAdjustments = SvgTreeConverter.textLengthSpacingAdjustments,
                 textLengthSpacingAndGlyphsAdjustments = SvgTreeConverter.textLengthSpacingAndGlyphsAdjustments,
                 textGlyphRotationsApplied = SvgTreeConverter.textGlyphRotationsApplied,
+                textPathsConverted = SvgTreeConverter.textPathsConverted,
+                textPathGlyphsEmitted = SvgTreeConverter.textPathGlyphsEmitted,
                 textFontFamilies = SvgTreeConverter.textFontFamilies,
                 textFontWeights = SvgTreeConverter.textFontWeights,
                 svgFontGlyphCount = svgFontGlyphCount,

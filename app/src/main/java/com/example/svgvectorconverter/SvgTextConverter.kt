@@ -18,6 +18,8 @@ object SvgTextConverter {
     private var activeTextLengthSpacingAdjustments = 0
     private var activeTextLengthSpacingAndGlyphsAdjustments = 0
     private var activeTextGlyphRotationsApplied = 0
+    private var activeTextPathsConverted = 0
+    private var activeTextPathGlyphsEmitted = 0
     private val activeMatchedHorizontalKerningPairs = linkedSetOf<SvgKerningPair>()
     private val activeMatchedVerticalKerningPairs = linkedSetOf<SvgKerningPair>()
     private val activeTextFontFamilies = linkedSetOf<String>()
@@ -36,6 +38,8 @@ object SvgTextConverter {
     val textLengthSpacingAdjustments: Int get() = activeTextLengthSpacingAdjustments
     val textLengthSpacingAndGlyphsAdjustments: Int get() = activeTextLengthSpacingAndGlyphsAdjustments
     val textGlyphRotationsApplied: Int get() = activeTextGlyphRotationsApplied
+    val textPathsConverted: Int get() = activeTextPathsConverted
+    val textPathGlyphsEmitted: Int get() = activeTextPathGlyphsEmitted
     val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
     val textFontWeights: List<String> get() = activeTextFontWeights.toList()
 
@@ -53,6 +57,8 @@ object SvgTextConverter {
         activeTextLengthSpacingAdjustments = 0
         activeTextLengthSpacingAndGlyphsAdjustments = 0
         activeTextGlyphRotationsApplied = 0
+        activeTextPathsConverted = 0
+        activeTextPathGlyphsEmitted = 0
         activeMatchedHorizontalKerningPairs.clear()
         activeMatchedVerticalKerningPairs.clear()
         activeTextFontFamilies.clear()
@@ -175,13 +181,14 @@ private fun textHasPositionAttribute(element: Element): Boolean {
 }
 
 private fun glyphNameReferences(element: Element): List<String> {
+    val tag = element.tagName.substringAfter(":").lowercase()
     val direct = listOf(
         element.getAttribute("glyph-name"),
         element.getAttribute("glyphRef"),
         element.getAttribute("glyph-ref")
     ).firstOrNull { it.isNotBlank() }
 
-    val href = element.getAttribute("href").ifBlank { element.getAttribute("xlink:href") }
+    val href = if (tag == "textpath") "" else element.getAttribute("href").ifBlank { element.getAttribute("xlink:href") }
     val raw = direct ?: href.substringAfterLast('#', "")
     return raw
         .split(Regex("""[\s,]+"""))
@@ -395,6 +402,273 @@ private fun textLengthOwners(runElement: Element, rootTextElement: Element): Lis
     return owners
 }
 
+
+private fun descendantTextPaths(element: Element): List<Element> {
+    val result = mutableListOf<Element>()
+    fun visit(node: Node) {
+        if (node.nodeType != Node.ELEMENT_NODE) return
+        val child = node as Element
+        if (child.tagName.substringAfter(":").equals("textPath", ignoreCase = true)) {
+            result.add(child)
+            return
+        }
+        val children = child.childNodes
+        for (i in 0 until children.length) visit(children.item(i))
+    }
+    val children = element.childNodes
+    for (i in 0 until children.length) visit(children.item(i))
+    return result
+}
+
+private fun hrefId(element: Element): String? {
+    val href = element.getAttribute("href").ifBlank {
+        element.getAttribute("xlink:href").ifBlank {
+            element.getAttributeNS("http://www.w3.org/1999/xlink", "href")
+        }
+    }.trim()
+    return href.removePrefix("#").takeIf { it.isNotBlank() }
+}
+
+private fun findElementById(root: Element, id: String): Element? {
+    if (root.getAttribute("id") == id) return root
+    val children = root.childNodes
+    for (i in 0 until children.length) {
+        val child = children.item(i)
+        if (child.nodeType == Node.ELEMENT_NODE) {
+            val found = findElementById(child as Element, id)
+            if (found != null) return found
+        }
+    }
+    return null
+}
+
+private fun referencedTextPathData(textPath: Element): String? {
+    val id = hrefId(textPath) ?: return null
+    val documentRoot = textPath.ownerDocument?.documentElement ?: return null
+    val referenced = findElementById(documentRoot, id) ?: return null
+    val tag = referenced.tagName.substringAfter(":").lowercase()
+    var data = when (tag) {
+        "path" -> referenced.getAttribute("d").trim().takeIf { it.isNotBlank() }
+        "rect", "circle", "ellipse", "line", "polyline", "polygon" ->
+            SvgShapeConverters.basicShapeToPathData(referenced, tag)
+        else -> null
+    } ?: return null
+
+    val style = referenced.getAttribute("style").ifBlank { null }
+    val transform = referenced.getAttribute("transform")
+        .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
+    if (transform.isNotBlank()) {
+        val origin = SvgTransformParser.parseTransformOrigin(
+            SvgPaintResolver.styleValue(style, "transform-origin")
+                ?: referenced.getAttribute("transform-origin").ifBlank { "" }
+        )
+        val matrix = SvgTransformParser.combineTransformListToMatrix(
+            SvgTransformParser.parseTransformList(transform), origin
+        )
+        if (matrix != null) data = SvgPathDataTransformer.applyAffineTransform(data, matrix) ?: data
+    }
+    return data
+}
+
+private fun startOffset(textPath: Element, pathLength: Float): Float {
+    val style = textPath.getAttribute("style").ifBlank { null }
+    val raw = (SvgPaintResolver.styleValue(style, "start-offset")
+        ?: SvgPaintResolver.styleValue(style, "startOffset")
+        ?: textPath.getAttribute("startOffset").ifBlank { null })?.trim().orEmpty()
+    if (raw.endsWith("%")) {
+        return (raw.removeSuffix("%").trim().toFloatOrNull() ?: 0f) * pathLength / 100f
+    }
+    return Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""")
+        .find(raw)?.value?.toFloatOrNull() ?: 0f
+}
+
+private fun appendTextPathGlyphOutlines(
+    output: StringBuilder,
+    rootText: Element,
+    indent: String,
+    fontDefinitions: Map<String, SvgFontDefinition>,
+    escapeXml: (String) -> String,
+    inheritedFill: String?,
+    inheritedStroke: String?,
+    inheritedStrokeWidth: String?,
+    inheritedOpacity: String?,
+    inheritedFillOpacity: String?,
+    inheritedStrokeOpacity: String?
+): Int {
+    if (fontDefinitions.isEmpty()) return 0
+    val textPaths = descendantTextPaths(rootText)
+    if (textPaths.isEmpty()) return 0
+
+    val textStyle = rootText.getAttribute("style").ifBlank { null }
+    val rootTransform = rootText.getAttribute("transform")
+        .ifBlank { SvgPaintResolver.styleValue(textStyle, "transform") ?: "" }
+    val rootOrigin = SvgTransformParser.parseTransformOrigin(
+        SvgPaintResolver.styleValue(textStyle, "transform-origin")
+            ?: rootText.getAttribute("transform-origin").ifBlank { "" }
+    )
+    val rootMatrix = SvgTransformParser.combineTransformListToMatrix(
+        SvgTransformParser.parseTransformList(rootTransform), rootOrigin
+    )
+
+    var emitted = 0
+    var commentWritten = false
+
+    for (textPath in textPaths) {
+        val pathData = referencedTextPathData(textPath) ?: continue
+        val measured = SvgPathSampler.measure(pathData) ?: continue
+        val runs = textApproximationRuns(textPath)
+        if (runs.isEmpty()) continue
+
+        data class PathRun(
+            val run: TextApproximationRun,
+            val font: SvgFontDefinition,
+            val fontSize: Float,
+            val fontFamily: String,
+            val fontWeight: String,
+            val fill: String,
+            val stroke: String?,
+            val strokeWidth: String?,
+            val opacity: String?,
+            val fillOpacity: String?,
+            val strokeOpacity: String?,
+            val rotateOwners: List<Element>,
+            val glyphs: List<ResolvedTextGlyph>,
+            val advances: List<Float>
+        )
+
+        val prepared = runs.mapNotNull { run ->
+            val fontSize = (inheritedTextStyleValue(run.element, "font-size")
+                ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
+                ?.toFloatOrNull() ?: 16f).coerceAtLeast(1f)
+            val family = inheritedTextStyleValue(run.element, "font-family").orEmpty()
+            val font = SvgFontResolver.findMatchingFont(fontDefinitions, family) ?: return@mapNotNull null
+            val glyphs = SvgFontResolver.resolveGlyphs(font, run.text, run.glyphNames)
+            val scale = fontSize / font.unitsPerEm
+            val advances = glyphs.mapIndexed { index, resolved ->
+                val next = glyphs.getOrNull(index + 1)?.glyph
+                val kern = kerningAdjustment(font, resolved.glyph, next, vertical = false, recordMatch = true)
+                if (abs(kern) > 0.001f) activeTextKerningAdjustmentsApplied++
+                (SvgFontResolver.glyphAdvance(font, resolved.glyph, vertical = false) - kern) * scale
+            }
+            PathRun(
+                run, font, fontSize, family,
+                normalizeTextFontWeight(inheritedTextStyleValue(run.element, "font-weight")),
+                inheritedTextStyleValue(run.element, "fill") ?: inheritedFill ?: "#000000",
+                inheritedTextStyleValue(run.element, "stroke") ?: inheritedStroke?.trim()?.takeIf { it.isNotBlank() },
+                inheritedTextStyleValue(run.element, "stroke-width") ?: inheritedStrokeWidth?.trim()?.takeIf { it.isNotBlank() },
+                SvgPaintResolver.inheritedOpacity(inheritedOpacity, inheritedTextStyleValue(run.element, "opacity") ?: ""),
+                SvgPaintResolver.inheritedPaintOpacity(inheritedFillOpacity, inheritedTextStyleValue(run.element, "fill-opacity") ?: ""),
+                SvgPaintResolver.inheritedPaintOpacity(inheritedStrokeOpacity, inheritedTextStyleValue(run.element, "stroke-opacity") ?: ""),
+                buildList {
+                    var current: Node? = run.element
+                    while (current is Element) {
+                        if (current.hasAttribute("rotate") && textNumericListAttr(current, "rotate").isNotEmpty()) add(current)
+                        if (current === rootText) break
+                        current = current.parentNode
+                    }
+                }, glyphs, advances
+            )
+        }
+        if (prepared.size != runs.size) continue
+
+        val totalAdvance = prepared.sumOf { it.advances.sum().toDouble() }.toFloat()
+        val anchor = normalizedTextAnchor(textPath)
+        var cursor = startOffset(textPath, measured.length) + (textNumericAttr(textPath, "dx") ?: 0f)
+        cursor = when (anchor) {
+            "middle" -> cursor - totalAdvance / 2f
+            "end" -> cursor - totalAdvance
+            else -> cursor
+        }
+        val baselineOffset = textNumericAttr(textPath, "dy") ?: 0f
+        val rotateIndex = mutableMapOf<Element, Int>()
+
+        var pathGlyphs = 0
+        for (run in prepared) {
+            if (run.fontFamily.isNotBlank()) activeTextFontFamilies.add(run.fontFamily)
+            if (run.fontWeight.isNotBlank()) activeTextFontWeights.add(run.fontWeight)
+            val scale = run.fontSize / run.font.unitsPerEm
+            for ((index, resolved) in run.glyphs.withIndex()) {
+                val advance = run.advances[index]
+                val centerDistance = cursor + advance / 2f
+                if (centerDistance < 0f || centerDistance > measured.length) {
+                    cursor += advance
+                    for (owner in run.rotateOwners) rotateIndex[owner] = (rotateIndex[owner] ?: 0) + 1
+                    continue
+                }
+                val sample = measured.sample(centerDistance) ?: continue
+                val tangentRadians = Math.toRadians(sample.angleDegrees.toDouble())
+                val tangentX = kotlin.math.cos(tangentRadians).toFloat()
+                val tangentY = kotlin.math.sin(tangentRadians).toFloat()
+                val normalX = -tangentY
+                val normalY = tangentX
+                val originX = sample.x - tangentX * advance / 2f + normalX * baselineOffset
+                val originY = sample.y - tangentY * advance / 2f + normalY * baselineOffset
+
+                val rotateOwner = run.rotateOwners.firstOrNull()
+                val extraRotation = rotateOwner?.let { owner ->
+                    val values = textNumericListAttr(owner, "rotate")
+                    val i = rotateIndex[owner] ?: 0
+                    when { values.isEmpty() -> 0f; i < values.size -> values[i]; else -> values.last() }
+                } ?: 0f
+                val angle = sample.angleDegrees + extraRotation
+                if (abs(extraRotation) > 0.0001f) activeTextGlyphRotationsApplied++
+                val radians = Math.toRadians(angle.toDouble())
+                val cos = kotlin.math.cos(radians).toFloat()
+                val sin = kotlin.math.sin(radians).toFloat()
+                val base = AffineTransform(scale, 0f, 0f, -scale, originX, originY)
+                val placement = AffineTransform(
+                    a = cos * base.a - sin * base.b,
+                    b = sin * base.a + cos * base.b,
+                    c = cos * base.c - sin * base.d,
+                    d = sin * base.c + cos * base.d,
+                    e = base.e, f = base.f
+                )
+                var glyphData = resolved.glyph.pathData
+                if (resolved.glyph.transform != null) {
+                    glyphData = SvgPathDataTransformer.applyAffineTransform(glyphData, resolved.glyph.transform) ?: glyphData
+                }
+                var finalData = SvgPathDataTransformer.applyAffineTransform(glyphData, placement) ?: glyphData
+                if (rootMatrix != null) finalData = SvgPathDataTransformer.applyAffineTransform(finalData, rootMatrix) ?: finalData
+                finalData = SvgPathEmitter.applyCurrentFlattenTransform(finalData)
+
+                if (!commentWritten) {
+                    output.appendLine("${indent}<!-- converted textPath glyph outlines from embedded SVG font -->")
+                    commentWritten = true
+                }
+                val safeFill = SvgPaintResolver.safeFillColor(run.fill)
+                val safeStroke = SvgPaintResolver.safeStrokeColor(run.stroke)
+                val fillAlpha = SvgPaintResolver.combineAlpha(run.opacity, run.fillOpacity)
+                val strokeAlpha = SvgPaintResolver.combineAlpha(run.opacity, run.strokeOpacity)
+                output.appendLine("${indent}<path")
+                output.appendLine("${indent}    android:pathData=\"${escapeXml(finalData)}\"")
+                output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
+                if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
+                if (safeStroke != null) {
+                    output.appendLine("${indent}    android:strokeColor=\"$safeStroke\"")
+                    output.appendLine("${indent}    android:strokeWidth=\"${run.strokeWidth?.takeIf { it.isNotBlank() } ?: "1"}\"")
+                    if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
+                }
+                output.appendLine("${indent}/>")
+
+                if (SvgFontResolver.hasGlyphSpecificAdvance(resolved.glyph, vertical = false)) activeTextGlyphSpecificAdvances++ else activeTextDefaultFontAdvances++
+                if (run.font.missingGlyph === resolved.glyph) activeTextMissingGlyphFallbacks++
+                if (resolved.fromGlyphName) activeTextGlyphNameLookups++
+                pathGlyphs++
+                emitted++
+                cursor += advance
+                for (owner in run.rotateOwners) rotateIndex[owner] = (rotateIndex[owner] ?: 0) + 1
+            }
+        }
+        if (pathGlyphs > 0) activeTextPathsConverted++
+    }
+    if (emitted > 0) {
+        output.appendLine()
+        activeTextPathGlyphsEmitted += emitted
+        activeTextGlyphPathsEmitted += emitted
+    }
+    return emitted
+}
+
 fun appendTextGlyphOutlines(
     output: StringBuilder,
     element: Element,
@@ -408,8 +682,15 @@ fun appendTextGlyphOutlines(
     inheritedFillOpacity: String?,
     inheritedStrokeOpacity: String?
 ): Boolean {
+    val textPathGlyphs = appendTextPathGlyphOutlines(
+        output, element, indent, fontDefinitions, escapeXml, inheritedFill, inheritedStroke,
+        inheritedStrokeWidth, inheritedOpacity, inheritedFillOpacity, inheritedStrokeOpacity
+    )
     val runs = textApproximationRuns(element)
-    if (runs.isEmpty() || fontDefinitions.isEmpty()) return false
+    if (runs.isEmpty() || fontDefinitions.isEmpty()) {
+        if (textPathGlyphs > 0) activeTextElementsConvertedToPaths++
+        return textPathGlyphs > 0
+    }
 
     data class GlyphTextRun(
         val run: TextApproximationRun,
