@@ -482,6 +482,14 @@ private fun startOffset(textPath: Element, pathLength: Float): Float {
         .find(raw)?.value?.toFloatOrNull() ?: 0f
 }
 
+private fun textPathMethod(textPath: Element): String {
+    val style = textPath.getAttribute("style").ifBlank { null }
+    val raw = (SvgPaintResolver.styleValue(style, "method")
+        ?: textPath.getAttribute("method").ifBlank { null })
+        ?.trim()?.lowercase()
+    return if (raw == "stretch") "stretch" else "align"
+}
+
 private fun appendTextPathGlyphOutlines(
     output: StringBuilder,
     rootText: Element,
@@ -516,6 +524,7 @@ private fun appendTextPathGlyphOutlines(
     for (textPath in textPaths) {
         val pathData = referencedTextPathData(textPath) ?: continue
         val measured = SvgPathSampler.measure(pathData) ?: continue
+        val method = textPathMethod(textPath)
         val runs = textApproximationRuns(textPath)
         if (runs.isEmpty()) continue
 
@@ -612,22 +621,42 @@ private fun appendTextPathGlyphOutlines(
                 } ?: 0f
                 val angle = sample.angleDegrees + extraRotation
                 if (abs(extraRotation) > 0.0001f) activeTextGlyphRotationsApplied++
-                val radians = Math.toRadians(angle.toDouble())
-                val cos = kotlin.math.cos(radians).toFloat()
-                val sin = kotlin.math.sin(radians).toFloat()
-                val base = AffineTransform(scale, 0f, 0f, -scale, originX, originY)
-                val placement = AffineTransform(
-                    a = cos * base.a - sin * base.b,
-                    b = sin * base.a + cos * base.b,
-                    c = cos * base.c - sin * base.d,
-                    d = sin * base.c + cos * base.d,
-                    e = base.e, f = base.f
-                )
                 var glyphData = resolved.glyph.pathData
                 if (resolved.glyph.transform != null) {
                     glyphData = SvgPathDataTransformer.applyAffineTransform(glyphData, resolved.glyph.transform) ?: glyphData
                 }
-                var finalData = SvgPathDataTransformer.applyAffineTransform(glyphData, placement) ?: glyphData
+                var finalData = if (method == "stretch") {
+                    val extraRadians = Math.toRadians(extraRotation.toDouble())
+                    val extraCos = kotlin.math.cos(extraRadians).toFloat()
+                    val extraSin = kotlin.math.sin(extraRadians).toFloat()
+                    SvgPathSampler.mapFlattenedPath(glyphData) { glyphX, glyphY ->
+                        val localX = glyphX * scale
+                        val localY = -glyphY * scale
+                        val rotatedX = extraCos * localX - extraSin * localY
+                        val rotatedY = extraSin * localX + extraCos * localY
+                        val pointSample = measured.sample(cursor + rotatedX) ?: return@mapFlattenedPath null
+                        val pointRadians = Math.toRadians(pointSample.angleDegrees.toDouble())
+                        val pointNormalX = -kotlin.math.sin(pointRadians).toFloat()
+                        val pointNormalY = kotlin.math.cos(pointRadians).toFloat()
+                        SvgPathSampler.Point(
+                            pointSample.x + pointNormalX * (baselineOffset + rotatedY),
+                            pointSample.y + pointNormalY * (baselineOffset + rotatedY)
+                        )
+                    } ?: glyphData
+                } else {
+                    val radians = Math.toRadians(angle.toDouble())
+                    val cos = kotlin.math.cos(radians).toFloat()
+                    val sin = kotlin.math.sin(radians).toFloat()
+                    val base = AffineTransform(scale, 0f, 0f, -scale, originX, originY)
+                    val placement = AffineTransform(
+                        a = cos * base.a - sin * base.b,
+                        b = sin * base.a + cos * base.b,
+                        c = cos * base.c - sin * base.d,
+                        d = sin * base.c + cos * base.d,
+                        e = base.e, f = base.f
+                    )
+                    SvgPathDataTransformer.applyAffineTransform(glyphData, placement) ?: glyphData
+                }
                 if (rootMatrix != null) finalData = SvgPathDataTransformer.applyAffineTransform(finalData, rootMatrix) ?: finalData
                 finalData = SvgPathEmitter.applyCurrentFlattenTransform(finalData)
 

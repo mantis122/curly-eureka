@@ -125,6 +125,162 @@ internal object SvgPathSampler {
         return if(segments.isEmpty()) null else MeasuredPath(segments,walked)
     }
 
+
+    /**
+     * Flattens a path and maps every generated point through [mapper].
+     * This is used for non-affine textPath stretching, where each point in a
+     * glyph must follow a different tangent and normal on the referenced path.
+     */
+    fun mapFlattenedPath(
+        pathData: String,
+        curveSteps: Int = 12,
+        mapper: (Float, Float) -> Point?
+    ): String? {
+        val tokens = tokenize(pathData)
+        if (tokens.isEmpty()) return null
+        val output = StringBuilder()
+        var index = 0
+        var command: Char? = null
+        var current = Point(0f, 0f)
+        var subStart = current
+        var lastCubic: Point? = null
+        var lastQuad: Point? = null
+        var previousCommand: Char? = null
+
+        fun hasNumber(): Boolean = index < tokens.size && !isCommand(tokens[index])
+        fun read(): Float? = tokens.getOrNull(index++)?.toFloatOrNull()
+        fun number(value: Float): String {
+            if (!value.isFinite()) return "0"
+            val rounded = kotlin.math.round(value * 10000f) / 10000f
+            return if (kotlin.math.abs(rounded - rounded.toInt()) < 0.0001f) {
+                rounded.toInt().toString()
+            } else rounded.toString().trimEnd('0').trimEnd('.')
+        }
+        fun appendMapped(prefix: Char, point: Point): Boolean {
+            val mapped = mapper(point.x, point.y) ?: return false
+            output.append(prefix).append(' ')
+                .append(number(mapped.x)).append(',').append(number(mapped.y)).append(' ')
+            return true
+        }
+        fun lineTo(point: Point): Boolean {
+            current = point
+            return appendMapped('L', point)
+        }
+        fun cubic(p0: Point, p1: Point, p2: Point, p3: Point): Boolean {
+            for (step in 1..curveSteps) {
+                val t = step.toFloat() / curveSteps
+                val u = 1f - t
+                val point = Point(
+                    u*u*u*p0.x + 3f*u*u*t*p1.x + 3f*u*t*t*p2.x + t*t*t*p3.x,
+                    u*u*u*p0.y + 3f*u*u*t*p1.y + 3f*u*t*t*p2.y + t*t*t*p3.y
+                )
+                if (!appendMapped('L', point)) return false
+            }
+            current = p3
+            return true
+        }
+        fun quad(p0: Point, p1: Point, p2: Point): Boolean {
+            for (step in 1..curveSteps) {
+                val t = step.toFloat() / curveSteps
+                val u = 1f - t
+                val point = Point(
+                    u*u*p0.x + 2f*u*t*p1.x + t*t*p2.x,
+                    u*u*p0.y + 2f*u*t*p1.y + t*t*p2.y
+                )
+                if (!appendMapped('L', point)) return false
+            }
+            current = p2
+            return true
+        }
+
+        while (index < tokens.size) {
+            if (isCommand(tokens[index])) command = tokens[index++][0]
+            else if (command == null) return null
+            val cmd = command ?: return null
+            val absolute = cmd.isUpperCase()
+            when (cmd.uppercaseChar()) {
+                'M' -> {
+                    var first = true
+                    while (hasNumber()) {
+                        val xr = read() ?: return null
+                        val yr = read() ?: return null
+                        val point = Point(if (absolute) xr else current.x + xr, if (absolute) yr else current.y + yr)
+                        if (first) {
+                            if (!appendMapped('M', point)) return null
+                            current = point
+                            subStart = point
+                            first = false
+                        } else if (!lineTo(point)) return null
+                    }
+                    command = if (absolute) 'L' else 'l'
+                    lastCubic = null; lastQuad = null; previousCommand = 'M'
+                }
+                'L' -> while (hasNumber()) {
+                    val xr = read() ?: return null; val yr = read() ?: return null
+                    if (!lineTo(Point(if (absolute) xr else current.x + xr, if (absolute) yr else current.y + yr))) return null
+                    lastCubic = null; lastQuad = null; previousCommand = 'L'
+                }
+                'H' -> while (hasNumber()) {
+                    val xr = read() ?: return null
+                    if (!lineTo(Point(if (absolute) xr else current.x + xr, current.y))) return null
+                    lastCubic = null; lastQuad = null; previousCommand = 'H'
+                }
+                'V' -> while (hasNumber()) {
+                    val yr = read() ?: return null
+                    if (!lineTo(Point(current.x, if (absolute) yr else current.y + yr))) return null
+                    lastCubic = null; lastQuad = null; previousCommand = 'V'
+                }
+                'C' -> while (hasNumber()) {
+                    val a=read()?:return null; val b=read()?:return null; val c=read()?:return null
+                    val d=read()?:return null; val e=read()?:return null; val f=read()?:return null
+                    val p1=Point(if(absolute)a else current.x+a,if(absolute)b else current.y+b)
+                    val p2=Point(if(absolute)c else current.x+c,if(absolute)d else current.y+d)
+                    val p3=Point(if(absolute)e else current.x+e,if(absolute)f else current.y+f)
+                    if (!cubic(current,p1,p2,p3)) return null
+                    lastCubic=p2; lastQuad=null; previousCommand='C'
+                }
+                'S' -> while (hasNumber()) {
+                    val c=read()?:return null; val d=read()?:return null; val e=read()?:return null; val f=read()?:return null
+                    val p1=if(previousCommand=='C'||previousCommand=='S') Point(2f*current.x-(lastCubic?.x?:current.x),2f*current.y-(lastCubic?.y?:current.y)) else current
+                    val p2=Point(if(absolute)c else current.x+c,if(absolute)d else current.y+d)
+                    val p3=Point(if(absolute)e else current.x+e,if(absolute)f else current.y+f)
+                    if (!cubic(current,p1,p2,p3)) return null
+                    lastCubic=p2; lastQuad=null; previousCommand='S'
+                }
+                'Q' -> while (hasNumber()) {
+                    val a=read()?:return null; val b=read()?:return null; val c=read()?:return null; val d=read()?:return null
+                    val p1=Point(if(absolute)a else current.x+a,if(absolute)b else current.y+b)
+                    val p2=Point(if(absolute)c else current.x+c,if(absolute)d else current.y+d)
+                    if (!quad(current,p1,p2)) return null
+                    lastQuad=p1; lastCubic=null; previousCommand='Q'
+                }
+                'T' -> while (hasNumber()) {
+                    val c=read()?:return null; val d=read()?:return null
+                    val p1=if(previousCommand=='Q'||previousCommand=='T') Point(2f*current.x-(lastQuad?.x?:current.x),2f*current.y-(lastQuad?.y?:current.y)) else current
+                    val p2=Point(if(absolute)c else current.x+c,if(absolute)d else current.y+d)
+                    if (!quad(current,p1,p2)) return null
+                    lastQuad=p1; lastCubic=null; previousCommand='T'
+                }
+                'A' -> while (hasNumber()) {
+                    val rx=abs(read()?:return null); val ry=abs(read()?:return null); val rotation=read()?:return null
+                    val large=(read()?:return null)!=0f; val sweep=(read()?:return null)!=0f
+                    val xr=read()?:return null; val yr=read()?:return null
+                    val end=Point(if(absolute)xr else current.x+xr,if(absolute)yr else current.y+yr)
+                    for (point in sampleArc(current,end,rx,ry,rotation,large,sweep,curveSteps)) {
+                        if (!appendMapped('L', point)) return null
+                    }
+                    current=end; lastCubic=null; lastQuad=null; previousCommand='A'
+                }
+                'Z' -> {
+                    output.append("Z ")
+                    current=subStart; lastCubic=null; lastQuad=null; previousCommand='Z'
+                }
+                else -> return null
+            }
+        }
+        return output.toString().trim().takeIf { it.isNotBlank() }
+    }
+
     private fun sampleArc(start: Point,end: Point,rxIn:Float,ryIn:Float,rotDeg:Float,large:Boolean,sweep:Boolean,steps:Int):List<Point>{
         if(rxIn<=0f||ryIn<=0f||start==end)return listOf(end)
         val phi=Math.toRadians((rotDeg%360f).toDouble());val cosPhi=cos(phi);val sinPhi=sin(phi)
