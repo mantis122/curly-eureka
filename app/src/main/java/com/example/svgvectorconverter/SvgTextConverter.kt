@@ -1,5 +1,10 @@
 package com.example.svgvectorconverter
 
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PathMeasure
+import android.graphics.Typeface
+
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import kotlin.math.abs
@@ -698,6 +703,220 @@ private fun appendTextPathGlyphOutlines(
     return emitted
 }
 
+
+private fun androidTypefaceFor(element: Element): Typeface {
+    val familyRaw = inheritedTextStyleValue(element, "font-family")
+        ?.split(',')
+        ?.firstOrNull()
+        ?.trim()
+        ?.trim('"', '\'')
+        ?.takeIf { it.isNotBlank() }
+        ?: "sans-serif"
+
+    val family = when (familyRaw.lowercase()) {
+        "system-ui", "sans", "sans-serif", "arial", "helvetica" -> "sans-serif"
+        "serif", "times", "times new roman" -> "serif"
+        "monospace", "mono", "courier", "courier new" -> "monospace"
+        "cursive" -> "cursive"
+        else -> familyRaw
+    }
+
+    val weight = normalizeTextFontWeight(inheritedTextStyleValue(element, "font-weight"))
+        .toIntOrNull() ?: 400
+    val italic = inheritedTextStyleValue(element, "font-style")
+        ?.trim()
+        ?.lowercase()
+        .let { it == "italic" || it == "oblique" }
+
+    val style = when {
+        weight >= 600 && italic -> Typeface.BOLD_ITALIC
+        weight >= 600 -> Typeface.BOLD
+        italic -> Typeface.ITALIC
+        else -> Typeface.NORMAL
+    }
+    return Typeface.create(family, style)
+}
+
+private fun androidPathToVectorPathData(path: Path): String? {
+    val measure = PathMeasure(path, false)
+    val out = StringBuilder()
+    val pos = FloatArray(2)
+    var hasAny = false
+
+    do {
+        val length = measure.length
+        if (length > 0.01f) {
+            val step = (length / 180f).coerceIn(0.45f, 2.0f)
+            var distance = 0f
+            var first = true
+            while (distance < length) {
+                if (measure.getPosTan(distance, pos, null)) {
+                    if (first) {
+                        if (out.isNotEmpty()) out.append(' ')
+                        out.append("M ").append(formatNumber(pos[0])).append(',').append(formatNumber(pos[1]))
+                        first = false
+                        hasAny = true
+                    } else {
+                        out.append(" L ").append(formatNumber(pos[0])).append(',').append(formatNumber(pos[1]))
+                    }
+                }
+                distance += step
+            }
+            if (measure.getPosTan(length, pos, null)) {
+                out.append(" L ").append(formatNumber(pos[0])).append(',').append(formatNumber(pos[1]))
+            }
+            out.append(" Z")
+        }
+    } while (measure.nextContour())
+
+    return out.toString().takeIf { hasAny }
+}
+
+private fun appendAndroidSystemFontOutlines(
+    output: StringBuilder,
+    element: Element,
+    indent: String,
+    escapeXml: (String) -> String,
+    inheritedFill: String?,
+    inheritedStroke: String?,
+    inheritedStrokeWidth: String?,
+    inheritedOpacity: String?,
+    inheritedFillOpacity: String?,
+    inheritedStrokeOpacity: String?
+): Boolean {
+    if (descendantTextPaths(element).isNotEmpty()) return false
+
+    val runs = textApproximationRuns(element)
+    if (runs.isEmpty()) return false
+
+    data class AndroidRun(
+        val run: TextApproximationRun,
+        val paint: Paint,
+        val width: Float,
+        val fontSize: Float,
+        val fill: String,
+        val stroke: String?,
+        val strokeWidth: String?,
+        val opacity: String?,
+        val fillOpacity: String?,
+        val strokeOpacity: String?,
+        val explicitX: Float?,
+        val explicitY: Float?,
+        val dx: Float,
+        val dy: Float
+    )
+
+    val prepared = runs.mapNotNull { run ->
+        if (run.text.isBlank()) return@mapNotNull null
+        val fontSize = inheritedTextStyleValue(run.element, "font-size")
+            ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
+            ?.toFloatOrNull()
+            ?.coerceAtLeast(1f)
+            ?: 16f
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = fontSize
+            typeface = androidTypefaceFor(run.element)
+            isSubpixelText = true
+        }
+        AndroidRun(
+            run = run,
+            paint = paint,
+            width = paint.measureText(run.text),
+            fontSize = fontSize,
+            fill = inheritedTextStyleValue(run.element, "fill") ?: inheritedFill ?: "#000000",
+            stroke = inheritedTextStyleValue(run.element, "stroke")
+                ?: inheritedStroke?.trim()?.takeIf { it.isNotBlank() },
+            strokeWidth = inheritedTextStyleValue(run.element, "stroke-width")
+                ?: inheritedStrokeWidth?.trim()?.takeIf { it.isNotBlank() },
+            opacity = SvgPaintResolver.inheritedOpacity(inheritedOpacity, inheritedTextStyleValue(run.element, "opacity") ?: ""),
+            fillOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedFillOpacity, inheritedTextStyleValue(run.element, "fill-opacity") ?: ""),
+            strokeOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedStrokeOpacity, inheritedTextStyleValue(run.element, "stroke-opacity") ?: ""),
+            explicitX = if (run.element.hasAttribute("x")) textNumericAttr(run.element, "x") else null,
+            explicitY = if (run.element.hasAttribute("y")) textNumericAttr(run.element, "y") else null,
+            dx = textNumericAttr(run.element, "dx") ?: 0f,
+            dy = textNumericAttr(run.element, "dy") ?: 0f
+        )
+    }
+    if (prepared.isEmpty()) return false
+
+    val rootX = textNumericAttr(element, "x") ?: 0f
+    val rootY = textNumericAttr(element, "y") ?: 0f
+    val rootDx = textNumericAttr(element, "dx") ?: 0f
+    val rootDy = textNumericAttr(element, "dy") ?: 0f
+    val totalWidth = prepared.sumOf { it.width.toDouble() }.toFloat()
+    val anchor = normalizedTextAnchor(element)
+    var cursorX = rootX + rootDx - when (anchor) {
+        "middle" -> totalWidth / 2f
+        "end" -> totalWidth
+        else -> 0f
+    }
+    var cursorY = rootY + rootDy
+
+    val textStyle = element.getAttribute("style").ifBlank { null }
+    val transform = element.getAttribute("transform")
+        .ifBlank { SvgPaintResolver.styleValue(textStyle, "transform") ?: "" }
+    val transformOrigin = SvgTransformParser.parseTransformOrigin(
+        SvgPaintResolver.styleValue(textStyle, "transform-origin")
+            ?: element.getAttribute("transform-origin").ifBlank { "" }
+    )
+    val elementMatrix = SvgTransformParser.combineTransformListToMatrix(
+        SvgTransformParser.parseTransformList(transform),
+        transformOrigin
+    )
+
+    var emitted = 0
+    for (item in prepared) {
+        if (item.explicitX != null) cursorX = item.explicitX
+        if (item.explicitY != null) cursorY = item.explicitY
+        cursorX += item.dx
+        cursorY += item.dy
+
+        val androidPath = Path()
+        item.paint.getTextPath(item.run.text, 0, item.run.text.length, cursorX, cursorY, androidPath)
+        var pathData = androidPathToVectorPathData(androidPath)
+        if (pathData != null) {
+            if (elementMatrix != null) {
+                pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
+            }
+            pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
+
+            if (emitted == 0) {
+                output.appendLine("${indent}<!-- converted text to outlines using Android system font -->")
+            }
+
+            val safeFill = SvgPaintResolver.safeFillColor(item.fill)
+            val safeStroke = SvgPaintResolver.safeStrokeColor(item.stroke)
+            val fillAlpha = SvgPaintResolver.combineAlpha(item.opacity, item.fillOpacity)
+            val strokeAlpha = SvgPaintResolver.combineAlpha(item.opacity, item.strokeOpacity)
+
+            output.appendLine("${indent}<path")
+            output.appendLine("${indent}    android:pathData=\"${escapeXml(pathData)}\"")
+            output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
+            output.appendLine("${indent}    android:fillType=\"evenOdd\"")
+            if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
+            if (safeStroke != null) {
+                output.appendLine("${indent}    android:strokeColor=\"$safeStroke\"")
+                output.appendLine("${indent}    android:strokeWidth=\"${item.strokeWidth?.takeIf { it.isNotBlank() } ?: "1"}\"")
+                if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
+            }
+            output.appendLine("${indent}/>")
+            emitted++
+        }
+
+        val family = inheritedTextStyleValue(item.run.element, "font-family").orEmpty()
+        val weight = normalizeTextFontWeight(inheritedTextStyleValue(item.run.element, "font-weight"))
+        if (family.isNotBlank()) activeTextFontFamilies.add(family)
+        if (weight.isNotBlank()) activeTextFontWeights.add(weight)
+        cursorX += item.width
+    }
+
+    if (emitted == 0) return false
+    output.appendLine()
+    activeTextGlyphPathsEmitted += emitted
+    activeTextElementsConvertedToPaths++
+    return true
+}
+
 fun appendTextGlyphOutlines(
     output: StringBuilder,
     element: Element,
@@ -717,8 +936,22 @@ fun appendTextGlyphOutlines(
     )
     val runs = textApproximationRuns(element)
     if (runs.isEmpty() || fontDefinitions.isEmpty()) {
-        if (textPathGlyphs > 0) activeTextElementsConvertedToPaths++
-        return textPathGlyphs > 0
+        if (textPathGlyphs > 0) {
+            activeTextElementsConvertedToPaths++
+            return true
+        }
+        return appendAndroidSystemFontOutlines(
+            output = output,
+            element = element,
+            indent = indent,
+            escapeXml = escapeXml,
+            inheritedFill = inheritedFill,
+            inheritedStroke = inheritedStroke,
+            inheritedStrokeWidth = inheritedStrokeWidth,
+            inheritedOpacity = inheritedOpacity,
+            inheritedFillOpacity = inheritedFillOpacity,
+            inheritedStrokeOpacity = inheritedStrokeOpacity
+        )
     }
 
     data class GlyphTextRun(
