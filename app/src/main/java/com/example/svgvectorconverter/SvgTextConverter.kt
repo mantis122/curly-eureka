@@ -65,14 +65,18 @@ object SvgTextConverter {
             .trimEnd('.')
     }
 
-private fun textNumericAttr(element: Element, name: String): Float? {
+private fun textNumericListAttr(element: Element, name: String): List<Float> {
     val raw = element.getAttribute(name).trim()
-    if (raw.isBlank()) return null
-    return raw
-        .split(Regex("[,\\s]+"))
-        .firstOrNull()
-        ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
-        ?.toFloatOrNull()
+    if (raw.isBlank()) return emptyList()
+
+    return Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""")
+        .findAll(raw)
+        .mapNotNull { it.value.toFloatOrNull() }
+        .toList()
+}
+
+private fun textNumericAttr(element: Element, name: String): Float? {
+    return textNumericListAttr(element, name).firstOrNull()
 }
 
 private fun textStyleValue(element: Element, style: String?, name: String): String? {
@@ -405,6 +409,10 @@ fun appendTextGlyphOutlines(
         val explicitY: Float?,
         val dx: Float,
         val dy: Float,
+        val xValues: List<Float>,
+        val yValues: List<Float>,
+        val dxValues: List<Float>,
+        val dyValues: List<Float>,
         val sourceTag: String,
         val glyphNames: List<String>?
     )
@@ -447,6 +455,10 @@ fun appendTextGlyphOutlines(
             explicitY = if (!isParentTextRun && run.element.hasAttribute("y")) textNumericAttr(run.element, "y") else null,
             dx = if (!isParentTextRun) textNumericAttr(run.element, "dx") ?: 0f else 0f,
             dy = if (!isParentTextRun) textNumericAttr(run.element, "dy") ?: 0f else 0f,
+            xValues = textNumericListAttr(run.element, "x"),
+            yValues = textNumericListAttr(run.element, "y"),
+            dxValues = textNumericListAttr(run.element, "dx"),
+            dyValues = textNumericListAttr(run.element, "dy"),
             sourceTag = run.element.tagName.substringAfter(":").lowercase(),
             glyphNames = run.glyphNames
         )
@@ -514,10 +526,14 @@ fun appendTextGlyphOutlines(
     }
 
     val textStyle = element.getAttribute("style").ifBlank { null }
-    val baseX = textNumericAttr(element, "x") ?: 0f
-    val baseY = textNumericAttr(element, "y") ?: 0f
-    val baseDx = textNumericAttr(element, "dx") ?: 0f
-    val baseDy = textNumericAttr(element, "dy") ?: 0f
+    val rootXValues = textNumericListAttr(element, "x")
+    val rootYValues = textNumericListAttr(element, "y")
+    val rootDxValues = textNumericListAttr(element, "dx")
+    val rootDyValues = textNumericListAttr(element, "dy")
+    val baseX = rootXValues.firstOrNull() ?: 0f
+    val baseY = rootYValues.firstOrNull() ?: 0f
+    val baseDx = rootDxValues.firstOrNull() ?: 0f
+    val baseDy = rootDyValues.firstOrNull() ?: 0f
     val baseAnchor = normalizedTextAnchor(element)
     val baseVertical = isVerticalWritingMode(element)
     val hasPositionedRuns = runs.any { it.element !== element && textHasPositionAttribute(it.element) }
@@ -550,6 +566,7 @@ fun appendTextGlyphOutlines(
         baseY + baseDy
     }
     var emittedGlyphs = 0
+    var globalGlyphIndex = 0
 
     val elementTransform = element.getAttribute("transform")
         .ifBlank { SvgPaintResolver.styleValue(textStyle, "transform") ?: "" }
@@ -591,6 +608,32 @@ fun appendTextGlyphOutlines(
         val scale = prepared.fontSize / prepared.font.unitsPerEm
         val resolvedGlyphs = SvgFontResolver.resolveGlyphs(prepared.font, prepared.run.text, prepared.glyphNames)
         for ((glyphIndex, resolved) in resolvedGlyphs.withIndex()) {
+            // Index 0 is already applied when the root cursor is initialized or when a
+            // positioned <tspan> begins. Subsequent local values position later glyphs.
+            // Root lists continue across child spans when the child does not override them.
+            val localX = if (glyphIndex > 0) prepared.xValues.getOrNull(glyphIndex) else null
+            val localY = if (glyphIndex > 0) prepared.yValues.getOrNull(glyphIndex) else null
+            val localDx = if (glyphIndex > 0) prepared.dxValues.getOrNull(glyphIndex) else null
+            val localDy = if (glyphIndex > 0) prepared.dyValues.getOrNull(glyphIndex) else null
+
+            val rootX = if (globalGlyphIndex > 0 && (prepared.run.element === element || prepared.xValues.isEmpty())) {
+                rootXValues.getOrNull(globalGlyphIndex)
+            } else null
+            val rootY = if (globalGlyphIndex > 0 && (prepared.run.element === element || prepared.yValues.isEmpty())) {
+                rootYValues.getOrNull(globalGlyphIndex)
+            } else null
+            val rootDx = if (globalGlyphIndex > 0 && (prepared.run.element === element || prepared.dxValues.isEmpty())) {
+                rootDxValues.getOrNull(globalGlyphIndex)
+            } else null
+            val rootDy = if (globalGlyphIndex > 0 && (prepared.run.element === element || prepared.dyValues.isEmpty())) {
+                rootDyValues.getOrNull(globalGlyphIndex)
+            } else null
+
+            if (localX != null || rootX != null) currentX = localX ?: rootX!!
+            if (localY != null || rootY != null) currentY = localY ?: rootY!!
+            currentX += localDx ?: rootDx ?: 0f
+            currentY += localDy ?: rootDy ?: 0f
+
             val glyph = resolved.glyph
             val isMissingGlyphFallback = prepared.font.missingGlyph === glyph
             val placement = if (prepared.vertical) {
@@ -667,6 +710,7 @@ fun appendTextGlyphOutlines(
                 currentX += advance
             }
             emittedGlyphs++
+            globalGlyphIndex++
         }
     }
 
