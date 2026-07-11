@@ -55,6 +55,7 @@ val textVerticalKerningPairsMatched: Int get() = SvgTextConverter.textVerticalKe
 val textKerningAdjustmentsApplied: Int get() = SvgTextConverter.textKerningAdjustmentsApplied
 val textLengthSpacingAdjustments: Int get() = SvgTextConverter.textLengthSpacingAdjustments
 val textLengthSpacingAndGlyphsAdjustments: Int get() = SvgTextConverter.textLengthSpacingAndGlyphsAdjustments
+val textGlyphRotationsApplied: Int get() = SvgTextConverter.textGlyphRotationsApplied
 val textFontFamilies: List<String> get() = SvgTextConverter.textFontFamilies
 val textFontWeights: List<String> get() = SvgTextConverter.textFontWeights
 

@@ -17,6 +17,7 @@ object SvgTextConverter {
     private var activeTextKerningAdjustmentsApplied = 0
     private var activeTextLengthSpacingAdjustments = 0
     private var activeTextLengthSpacingAndGlyphsAdjustments = 0
+    private var activeTextGlyphRotationsApplied = 0
     private val activeMatchedHorizontalKerningPairs = linkedSetOf<SvgKerningPair>()
     private val activeMatchedVerticalKerningPairs = linkedSetOf<SvgKerningPair>()
     private val activeTextFontFamilies = linkedSetOf<String>()
@@ -34,6 +35,7 @@ object SvgTextConverter {
     val textKerningAdjustmentsApplied: Int get() = activeTextKerningAdjustmentsApplied
     val textLengthSpacingAdjustments: Int get() = activeTextLengthSpacingAdjustments
     val textLengthSpacingAndGlyphsAdjustments: Int get() = activeTextLengthSpacingAndGlyphsAdjustments
+    val textGlyphRotationsApplied: Int get() = activeTextGlyphRotationsApplied
     val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
     val textFontWeights: List<String> get() = activeTextFontWeights.toList()
 
@@ -50,6 +52,7 @@ object SvgTextConverter {
         activeTextKerningAdjustmentsApplied = 0
         activeTextLengthSpacingAdjustments = 0
         activeTextLengthSpacingAndGlyphsAdjustments = 0
+        activeTextGlyphRotationsApplied = 0
         activeMatchedHorizontalKerningPairs.clear()
         activeMatchedVerticalKerningPairs.clear()
         activeTextFontFamilies.clear()
@@ -439,6 +442,7 @@ fun appendTextGlyphOutlines(
         val yValues: List<Float>,
         val dxValues: List<Float>,
         val dyValues: List<Float>,
+        val rotateOwners: List<Element>,
         val sourceTag: String,
         val glyphNames: List<String>?
     )
@@ -489,6 +493,14 @@ fun appendTextGlyphOutlines(
             yValues = textNumericListAttr(run.element, "y"),
             dxValues = textNumericListAttr(run.element, "dx"),
             dyValues = textNumericListAttr(run.element, "dy"),
+            rotateOwners = buildList {
+                var current: Node? = run.element
+                while (current is Element) {
+                    if (current.hasAttribute("rotate") && textNumericListAttr(current, "rotate").isNotEmpty()) add(current)
+                    if (current === element) break
+                    current = current.parentNode
+                }
+            },
             sourceTag = run.element.tagName.substringAfter(":").lowercase(),
             glyphNames = run.glyphNames
         )
@@ -644,6 +656,7 @@ fun appendTextGlyphOutlines(
 
     var emittedGlyphComment = false
     val remainingGlyphsByLengthOwner = lengthGroups.mapValues { (_, group) -> group.glyphCount }.toMutableMap()
+    val rotateIndexByOwner = mutableMapOf<Element, Int>()
 
     for (prepared in preparedRuns) {
         if (hasPositionedRuns) {
@@ -700,7 +713,19 @@ fun appendTextGlyphOutlines(
 
             val glyph = resolved.glyph
             val isMissingGlyphFallback = prepared.font.missingGlyph === glyph
-            val placement = if (prepared.vertical) {
+
+            val rotateOwner = prepared.rotateOwners.firstOrNull()
+            val rotateDegrees = rotateOwner?.let { owner ->
+                val values = textNumericListAttr(owner, "rotate")
+                val index = rotateIndexByOwner[owner] ?: 0
+                when {
+                    values.isEmpty() -> 0f
+                    index < values.size -> values[index]
+                    else -> values.last()
+                }
+            } ?: 0f
+
+            val basePlacement = if (prepared.vertical) {
                 AffineTransform(
                     a = scale,
                     b = 0f,
@@ -719,6 +744,20 @@ fun appendTextGlyphOutlines(
                     f = currentY
                 )
             }
+            val placement = if (abs(rotateDegrees) > 0.0001f) {
+                val radians = Math.toRadians(rotateDegrees.toDouble())
+                val cos = kotlin.math.cos(radians).toFloat()
+                val sin = kotlin.math.sin(radians).toFloat()
+                activeTextGlyphRotationsApplied++
+                AffineTransform(
+                    a = cos * basePlacement.a - sin * basePlacement.b,
+                    b = sin * basePlacement.a + cos * basePlacement.b,
+                    c = cos * basePlacement.c - sin * basePlacement.d,
+                    d = sin * basePlacement.c + cos * basePlacement.d,
+                    e = basePlacement.e,
+                    f = basePlacement.f
+                )
+            } else basePlacement
             var glyphPathData = glyph.pathData
             if (glyph.transform != null) {
                 glyphPathData = SvgPathDataTransformer.applyAffineTransform(glyphPathData, glyph.transform)
@@ -777,6 +816,9 @@ fun appendTextGlyphOutlines(
                 currentY += advance
             } else {
                 currentX += advance
+            }
+            for (owner in prepared.rotateOwners) {
+                rotateIndexByOwner[owner] = (rotateIndexByOwner[owner] ?: 0) + 1
             }
             emittedGlyphs++
             globalGlyphIndex++
