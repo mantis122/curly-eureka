@@ -130,19 +130,73 @@ private fun isVerticalWritingMode(element: Element): Boolean {
         value == "vertical-lr"
 }
 
+private val supportedBaselineValues = setOf(
+    "auto", "baseline", "alphabetic", "ideographic", "hanging", "mathematical",
+    "central", "middle", "text-before-edge", "before-edge", "text-after-edge", "after-edge",
+    "text-top", "text-bottom"
+)
+
+private fun normalizedBaselineValue(value: String?): String? {
+    val normalized = value?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
+    return normalized.takeIf { it in supportedBaselineValues }
+}
+
 private fun normalizedDominantBaseline(element: Element): String {
-    return (inheritedTextStyleValue(element, "dominant-baseline")
-        ?: inheritedTextStyleValue(element, "alignment-baseline")
-        ?: "alphabetic")
-        .lowercase()
+    val alignment = normalizedBaselineValue(inheritedTextStyleValue(element, "alignment-baseline"))
+    if (alignment != null && alignment != "auto" && alignment != "baseline") return alignment
+
+    return normalizedBaselineValue(inheritedTextStyleValue(element, "dominant-baseline"))
+        ?.takeUnless { it == "auto" || it == "baseline" }
+        ?: "alphabetic"
+}
+
+/**
+ * Converts an SVG baseline coordinate into the alphabetic baseline expected by
+ * Android Paint.getTextPath(). FontMetrics values use Android coordinates:
+ * ascent/top are negative and descent/bottom are positive.
+ */
+private fun androidAlphabeticBaselineFor(
+    requestedBaselineY: Float,
+    metrics: Paint.FontMetrics,
+    baseline: String
+): Float {
+    return when (baseline) {
+        "middle", "central" -> requestedBaselineY - (metrics.ascent + metrics.descent) / 2f
+        "mathematical" -> requestedBaselineY - (metrics.ascent + metrics.descent) * 0.45f
+        "hanging" -> requestedBaselineY - metrics.ascent * 0.8f
+        "text-before-edge", "before-edge", "text-top" -> requestedBaselineY - metrics.top
+        "text-after-edge", "after-edge", "text-bottom" -> requestedBaselineY - metrics.bottom
+        "ideographic" -> requestedBaselineY - metrics.descent
+        else -> requestedBaselineY
+    }
+}
+
+/** Returns the alphabetic-baseline shift for an embedded SVG font. */
+private fun embeddedAlphabeticBaselineOffset(
+    font: SvgFontDefinition,
+    fontSize: Float,
+    baseline: String
+): Float {
+    val scale = fontSize / font.unitsPerEm
+    val ascent = font.ascent * scale
+    val descent = kotlin.math.abs(font.descent) * scale
+    return when (baseline) {
+        "middle", "central" -> (ascent - descent) / 2f
+        "mathematical" -> (ascent - descent) * 0.45f
+        "hanging" -> ascent * 0.8f
+        "text-before-edge", "before-edge", "text-top" -> ascent
+        "text-after-edge", "after-edge", "text-bottom" -> -descent
+        "ideographic" -> -descent
+        else -> 0f
+    }
 }
 
 private fun textTopForBaseline(y: Float, dy: Float, height: Float, baseline: String): Float {
     val baselineY = y + dy
     return when (baseline) {
         "middle", "central", "mathematical" -> baselineY - height / 2f
-        "hanging", "text-before-edge", "before-edge" -> baselineY
-        "text-after-edge", "after-edge" -> baselineY - height
+        "hanging", "text-before-edge", "before-edge", "text-top" -> baselineY
+        "text-after-edge", "after-edge", "text-bottom" -> baselineY - height
         "ideographic" -> baselineY - height * 0.88f
         "alphabetic", "auto", "baseline" -> baselineY - height * 0.8f
         else -> baselineY - height * 0.8f
@@ -801,6 +855,7 @@ private fun appendAndroidSystemFontOutlines(
         val fillOpacity: String?,
         val strokeOpacity: String?,
         val anchor: String,
+        val baseline: String,
         val explicitX: Float?,
         val explicitY: Float?,
         val dx: Float,
@@ -833,6 +888,7 @@ private fun appendAndroidSystemFontOutlines(
             fillOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedFillOpacity, inheritedTextStyleValue(run.element, "fill-opacity") ?: ""),
             strokeOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedStrokeOpacity, inheritedTextStyleValue(run.element, "stroke-opacity") ?: ""),
             anchor = normalizedTextAnchor(run.element),
+            baseline = normalizedDominantBaseline(run.element),
             // The root <text> x/y values establish the initial cursor and must not be
             // reapplied as run-level positioning. Reapplying root x here would erase
             // the root text-anchor offset calculated below.
@@ -889,7 +945,12 @@ private fun appendAndroidSystemFontOutlines(
         cursorY += item.dy
 
         val androidPath = Path()
-        item.paint.getTextPath(item.run.text, 0, item.run.text.length, cursorX, cursorY, androidPath)
+        val drawBaselineY = androidAlphabeticBaselineFor(
+            requestedBaselineY = cursorY,
+            metrics = item.paint.fontMetrics,
+            baseline = item.baseline
+        )
+        item.paint.getTextPath(item.run.text, 0, item.run.text.length, cursorX, drawBaselineY, androidPath)
         var pathData = androidPathToVectorPathData(androidPath)
         if (pathData != null) {
             if (elementMatrix != null) {
@@ -1285,13 +1346,18 @@ fun appendTextGlyphOutlines(
                 }
             } ?: 0f
 
+            val baselineOffset = embeddedAlphabeticBaselineOffset(
+                font = prepared.font,
+                fontSize = prepared.fontSize,
+                baseline = prepared.baseline
+            )
             val basePlacement = if (prepared.vertical) {
                 AffineTransform(
                     a = scale,
                     b = 0f,
                     c = 0f,
                     d = -scale * prepared.glyphAxisScale,
-                    e = currentX,
+                    e = currentX + baselineOffset,
                     f = currentY
                 )
             } else {
@@ -1301,7 +1367,7 @@ fun appendTextGlyphOutlines(
                     c = 0f,
                     d = -scale,
                     e = currentX,
-                    f = currentY
+                    f = currentY + baselineOffset
                 )
             }
             val placement = if (abs(rotateDegrees) > 0.0001f) {
