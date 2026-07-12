@@ -111,6 +111,51 @@ private fun inheritedTextStyleValue(element: Element, name: String): String? {
     return null
 }
 
+
+private fun baselineShiftValue(value: String?, fontSize: Float): Float {
+    val raw = value?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return 0f
+    return when (raw) {
+        "baseline", "inherit", "initial", "unset" -> 0f
+        "sub" -> -fontSize * 0.20f
+        "super" -> fontSize * 0.40f
+        else -> {
+            val match = Regex("""^([-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?)(%|em|ex|px|pt|pc|mm|cm|in)?$""")
+                .matchEntire(raw) ?: return 0f
+            val number = match.groupValues[1].toFloatOrNull() ?: return 0f
+            when (match.groupValues[2]) {
+                "%" -> fontSize * number / 100f
+                "em" -> fontSize * number
+                "ex" -> fontSize * 0.5f * number
+                "pt" -> number * (96f / 72f)
+                "pc" -> number * 16f
+                "mm" -> number * (96f / 25.4f)
+                "cm" -> number * (96f / 2.54f)
+                "in" -> number * 96f
+                else -> number
+            }
+        }
+    }
+}
+
+/**
+ * Returns the cumulative SVG baseline shift in user units. Positive values move
+ * text upward, matching SVG's baseline-shift semantics in a downward-positive Y axis.
+ */
+private fun resolvedBaselineShift(element: Element, fontSize: Float, stopAt: Element? = null): Float {
+    var current: Node? = element
+    var shift = 0f
+    while (current is Element) {
+        val style = current.getAttribute("style").ifBlank { null }
+        val raw = textStyleValue(current, style, "baseline-shift")
+        if (!raw.isNullOrBlank() && !raw.trim().equals("inherit", ignoreCase = true)) {
+            shift += baselineShiftValue(raw, fontSize)
+        }
+        if (current === stopAt) break
+        current = current.parentNode
+    }
+    return shift
+}
+
 private fun normalizedTextAnchor(element: Element): String {
     return inheritedTextStyleValue(element, "text-anchor")
         ?.lowercase()
@@ -591,6 +636,7 @@ private fun appendTextPathGlyphOutlines(
             val run: TextApproximationRun,
             val font: SvgFontDefinition,
             val fontSize: Float,
+            val baselineShift: Float,
             val fontFamily: String,
             val fontWeight: String,
             val fill: String,
@@ -619,7 +665,7 @@ private fun appendTextPathGlyphOutlines(
                 (SvgFontResolver.glyphAdvance(font, resolved.glyph, vertical = false) - kern) * scale
             }
             PathRun(
-                run, font, fontSize, family,
+                run, font, fontSize, resolvedBaselineShift(run.element, fontSize, rootText), family,
                 normalizeTextFontWeight(inheritedTextStyleValue(run.element, "font-weight")),
                 inheritedTextStyleValue(run.element, "fill") ?: inheritedFill ?: "#000000",
                 inheritedTextStyleValue(run.element, "stroke") ?: inheritedStroke?.trim()?.takeIf { it.isNotBlank() },
@@ -669,8 +715,9 @@ private fun appendTextPathGlyphOutlines(
                 val tangentY = kotlin.math.sin(tangentRadians).toFloat()
                 val normalX = -tangentY
                 val normalY = tangentX
-                val originX = sample.x - tangentX * advance / 2f + normalX * baselineOffset
-                val originY = sample.y - tangentY * advance / 2f + normalY * baselineOffset
+                val runBaselineOffset = baselineOffset - run.baselineShift
+                val originX = sample.x - tangentX * advance / 2f + normalX * runBaselineOffset
+                val originY = sample.y - tangentY * advance / 2f + normalY * runBaselineOffset
 
                 val rotateOwner = run.rotateOwners.firstOrNull()
                 val extraRotation = rotateOwner?.let { owner ->
@@ -698,8 +745,8 @@ private fun appendTextPathGlyphOutlines(
                         val pointNormalX = -kotlin.math.sin(pointRadians).toFloat()
                         val pointNormalY = kotlin.math.cos(pointRadians).toFloat()
                         SvgPathSampler.Point(
-                            pointSample.x + pointNormalX * (baselineOffset + rotatedY),
-                            pointSample.y + pointNormalY * (baselineOffset + rotatedY)
+                            pointSample.x + pointNormalX * (runBaselineOffset + rotatedY),
+                            pointSample.y + pointNormalY * (runBaselineOffset + rotatedY)
                         )
                     } ?: glyphData
                 } else {
@@ -856,6 +903,7 @@ private fun appendAndroidSystemFontOutlines(
         val strokeOpacity: String?,
         val anchor: String,
         val baseline: String,
+        val baselineShift: Float,
         val explicitX: Float?,
         val explicitY: Float?,
         val dx: Float,
@@ -889,6 +937,7 @@ private fun appendAndroidSystemFontOutlines(
             strokeOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedStrokeOpacity, inheritedTextStyleValue(run.element, "stroke-opacity") ?: ""),
             anchor = normalizedTextAnchor(run.element),
             baseline = normalizedDominantBaseline(run.element),
+            baselineShift = resolvedBaselineShift(run.element, fontSize, element),
             // The root <text> x/y values establish the initial cursor and must not be
             // reapplied as run-level positioning. Reapplying root x here would erase
             // the root text-anchor offset calculated below.
@@ -946,7 +995,7 @@ private fun appendAndroidSystemFontOutlines(
 
         val androidPath = Path()
         val drawBaselineY = androidAlphabeticBaselineFor(
-            requestedBaselineY = cursorY,
+            requestedBaselineY = cursorY - item.baselineShift,
             metrics = item.paint.fontMetrics,
             baseline = item.baseline
         )
@@ -1054,6 +1103,7 @@ fun appendTextGlyphOutlines(
         val strokeOpacity: String?,
         val anchor: String,
         val baseline: String,
+        val baselineShift: Float,
         val vertical: Boolean,
         val explicitX: Float?,
         val explicitY: Float?,
@@ -1105,6 +1155,7 @@ fun appendTextGlyphOutlines(
             strokeOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedStrokeOpacity, inheritedTextStyleValue(run.element, "stroke-opacity") ?: ""),
             anchor = normalizedTextAnchor(run.element),
             baseline = normalizedDominantBaseline(run.element),
+            baselineShift = resolvedBaselineShift(run.element, fontSize, element),
             vertical = vertical,
             explicitX = if (!isParentTextRun && run.element.hasAttribute("x")) textNumericAttr(run.element, "x") else null,
             explicitY = if (!isParentTextRun && run.element.hasAttribute("y")) textNumericAttr(run.element, "y") else null,
@@ -1357,7 +1408,7 @@ fun appendTextGlyphOutlines(
                     b = 0f,
                     c = 0f,
                     d = -scale * prepared.glyphAxisScale,
-                    e = currentX + baselineOffset,
+                    e = currentX + baselineOffset - prepared.baselineShift,
                     f = currentY
                 )
             } else {
@@ -1367,7 +1418,7 @@ fun appendTextGlyphOutlines(
                     c = 0f,
                     d = -scale,
                     e = currentX,
-                    f = currentY + baselineOffset
+                    f = currentY + baselineOffset - prepared.baselineShift
                 )
             }
             val placement = if (abs(rotateDegrees) > 0.0001f) {
@@ -1492,6 +1543,7 @@ fun appendTextApproximation(
         val rawFill: String,
         val anchor: String,
         val baseline: String,
+        val baselineShift: Float,
         val explicitX: Float?,
         val explicitY: Float?,
         val dx: Float,
@@ -1529,6 +1581,7 @@ fun appendTextApproximation(
             rawFill = rawFill,
             anchor = normalizedTextAnchor(run.element),
             baseline = normalizedDominantBaseline(run.element),
+            baselineShift = resolvedBaselineShift(run.element, fontSize, element),
             explicitX = if (!isParentTextRun && run.element.hasAttribute("x")) textNumericAttr(run.element, "x") else null,
             explicitY = if (!isParentTextRun && run.element.hasAttribute("y")) textNumericAttr(run.element, "y") else null,
             dx = if (!isParentTextRun) textNumericAttr(run.element, "dx") ?: 0f else 0f,
@@ -1575,12 +1628,12 @@ fun appendTextApproximation(
             resolvedTextX = currentX
             resolvedTextY = currentY
             left = leftForAnchor(prepared.anchor, currentX, prepared.width)
-            top = textTopForBaseline(currentY, 0f, prepared.height, prepared.baseline)
+            top = textTopForBaseline(currentY - prepared.baselineShift, 0f, prepared.height, prepared.baseline)
             currentX += prepared.width
             positionMode = "cursor"
         } else {
             left = currentLeft
-            top = textTopForBaseline(baseY, baseDy, prepared.height, baseline)
+            top = textTopForBaseline(baseY - prepared.baselineShift, baseDy, prepared.height, baseline)
             resolvedTextX = when (prepared.anchor) {
                 "middle" -> left + prepared.width / 2f
                 "end" -> left + prepared.width
