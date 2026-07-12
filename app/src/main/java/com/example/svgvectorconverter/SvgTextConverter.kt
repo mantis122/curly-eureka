@@ -800,6 +800,7 @@ private fun appendAndroidSystemFontOutlines(
         val opacity: String?,
         val fillOpacity: String?,
         val strokeOpacity: String?,
+        val anchor: String,
         val explicitX: Float?,
         val explicitY: Float?,
         val dx: Float,
@@ -831,8 +832,12 @@ private fun appendAndroidSystemFontOutlines(
             opacity = SvgPaintResolver.inheritedOpacity(inheritedOpacity, inheritedTextStyleValue(run.element, "opacity") ?: ""),
             fillOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedFillOpacity, inheritedTextStyleValue(run.element, "fill-opacity") ?: ""),
             strokeOpacity = SvgPaintResolver.inheritedPaintOpacity(inheritedStrokeOpacity, inheritedTextStyleValue(run.element, "stroke-opacity") ?: ""),
-            explicitX = if (run.element.hasAttribute("x")) textNumericAttr(run.element, "x") else null,
-            explicitY = if (run.element.hasAttribute("y")) textNumericAttr(run.element, "y") else null,
+            anchor = normalizedTextAnchor(run.element),
+            // The root <text> x/y values establish the initial cursor and must not be
+            // reapplied as run-level positioning. Reapplying root x here would erase
+            // the root text-anchor offset calculated below.
+            explicitX = if (run.element !== element && run.element.hasAttribute("x")) textNumericAttr(run.element, "x") else null,
+            explicitY = if (run.element !== element && run.element.hasAttribute("y")) textNumericAttr(run.element, "y") else null,
             dx = textNumericAttr(run.element, "dx") ?: 0f,
             dy = textNumericAttr(run.element, "dy") ?: 0f
         )
@@ -865,8 +870,20 @@ private fun appendAndroidSystemFontOutlines(
     )
 
     var emitted = 0
+    fun anchorOffset(anchorValue: String, width: Float): Float {
+        return when (anchorValue) {
+            "middle" -> width / 2f
+            "end" -> width
+            else -> 0f
+        }
+    }
+
     for (item in prepared) {
-        if (item.explicitX != null) cursorX = item.explicitX
+        // A positioned child run (normally a <tspan x="...">) starts a new
+        // anchored text chunk. Apply that run's own anchor against its width.
+        if (item.explicitX != null) {
+            cursorX = item.explicitX - anchorOffset(item.anchor, item.width)
+        }
         if (item.explicitY != null) cursorY = item.explicitY
         cursorX += item.dx
         cursorY += item.dy
