@@ -23,6 +23,7 @@ object SvgTextConverter {
     private var activeTextLengthSpacingAdjustments = 0
     private var activeTextLengthSpacingAndGlyphsAdjustments = 0
     private var activeTextGlyphRotationsApplied = 0
+    private var activeTextLetterSpacingAdjustmentsApplied = 0
     private var activeTextPathsConverted = 0
     private var activeTextPathGlyphsEmitted = 0
     private val activeMatchedHorizontalKerningPairs = linkedSetOf<SvgKerningPair>()
@@ -43,6 +44,7 @@ object SvgTextConverter {
     val textLengthSpacingAdjustments: Int get() = activeTextLengthSpacingAdjustments
     val textLengthSpacingAndGlyphsAdjustments: Int get() = activeTextLengthSpacingAndGlyphsAdjustments
     val textGlyphRotationsApplied: Int get() = activeTextGlyphRotationsApplied
+    val textLetterSpacingAdjustmentsApplied: Int get() = activeTextLetterSpacingAdjustmentsApplied
     val textPathsConverted: Int get() = activeTextPathsConverted
     val textPathGlyphsEmitted: Int get() = activeTextPathGlyphsEmitted
     val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
@@ -62,6 +64,7 @@ object SvgTextConverter {
         activeTextLengthSpacingAdjustments = 0
         activeTextLengthSpacingAndGlyphsAdjustments = 0
         activeTextGlyphRotationsApplied = 0
+        activeTextLetterSpacingAdjustmentsApplied = 0
         activeTextPathsConverted = 0
         activeTextPathGlyphsEmitted = 0
         activeMatchedHorizontalKerningPairs.clear()
@@ -109,6 +112,29 @@ private fun inheritedTextStyleValue(element: Element, name: String): String? {
         current = current.parentNode
     }
     return null
+}
+
+private fun textLengthValue(rawValue: String?, fontSize: Float): Float {
+    val raw = rawValue?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return 0f
+    if (raw == "normal" || raw == "initial" || raw == "unset") return 0f
+
+    val match = Regex("""^([-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?)(em|ex|px|pt|pc|mm|cm|in)?$""")
+        .matchEntire(raw) ?: return 0f
+    val number = match.groupValues[1].toFloatOrNull() ?: return 0f
+    return when (match.groupValues[2]) {
+        "em" -> fontSize * number
+        "ex" -> fontSize * 0.5f * number
+        "pt" -> number * (96f / 72f)
+        "pc" -> number * 16f
+        "mm" -> number * (96f / 25.4f)
+        "cm" -> number * (96f / 2.54f)
+        "in" -> number * 96f
+        else -> number
+    }
+}
+
+private fun resolvedLetterSpacing(element: Element, fontSize: Float): Float {
+    return textLengthValue(inheritedTextStyleValue(element, "letter-spacing"), fontSize)
 }
 
 
@@ -684,6 +710,7 @@ private fun appendTextPathGlyphOutlines(
             val baselineShift: Float,
             val fontFamily: String,
             val fontWeight: String,
+            val letterSpacing: Float,
             val fill: String,
             val stroke: String?,
             val strokeWidth: String?,
@@ -717,6 +744,7 @@ private fun appendTextPathGlyphOutlines(
                 baselineShift = resolvedBaselineShift(run.element, fontSize, rootText),
                 fontFamily = family,
                 fontWeight = normalizeTextFontWeight(inheritedTextStyleValue(run.element, "font-weight")),
+                letterSpacing = resolvedLetterSpacing(run.element, fontSize),
                 fill = inheritedTextStyleValue(run.element, "fill") ?: inheritedFill ?: "#000000",
                 stroke = inheritedTextStyleValue(run.element, "stroke")
                     ?: inheritedStroke?.trim()?.takeIf { it.isNotBlank() },
@@ -756,7 +784,11 @@ private fun appendTextPathGlyphOutlines(
         val glyphCount = prepared.sumOf { it.glyphs.size }
         if (glyphCount == 0) continue
 
-        val naturalTotalAdvance = prepared.sumOf { it.naturalAdvances.sum().toDouble() }.toFloat()
+        val naturalTotalAdvance = prepared.sumOf { it.naturalAdvances.sum().toDouble() }.toFloat() +
+            prepared.mapIndexed { runIndex, item ->
+                val gaps = item.glyphs.size - if (runIndex == prepared.lastIndex) 1 else 0
+                item.letterSpacing * gaps.coerceAtLeast(0)
+            }.sum()
         val lengthOwner = nearestTextLengthOwner(textPath, rootText)
         val targetTextLength = lengthOwner?.let { explicitTextLength(it) }
         val lengthAdjust = lengthOwner?.let { explicitLengthAdjust(it) } ?: "spacing"
@@ -822,8 +854,12 @@ private fun appendTextPathGlyphOutlines(
                 val naturalAdvance = run.naturalAdvances[index]
                 val scaledAdvance = naturalAdvance * glyphAxisScale
                 val hasFollowingGlyph = globalGlyphIndex < glyphCount - 1
+                val authoredSpacing = if (hasFollowingGlyph) run.letterSpacing * glyphAxisScale else 0f
                 val advanceAfterGlyph =
-                    scaledAdvance + if (hasFollowingGlyph) spacingAdjustment else 0f
+                    scaledAdvance + authoredSpacing + if (hasFollowingGlyph) spacingAdjustment else 0f
+                if (hasFollowingGlyph && abs(authoredSpacing) > 0.0001f) {
+                    activeTextLetterSpacingAdjustmentsApplied++
+                }
                 val centerDistance = cursor + scaledAdvance / 2f
 
                 val rotateOwner = run.rotateOwners.firstOrNull()
@@ -1326,6 +1362,7 @@ fun appendTextGlyphOutlines(
         val fontSize: Float,
         val fontFamily: String,
         val fontWeight: String,
+        val letterSpacing: Float,
         val advance: Float,
         val glyphCount: Int,
         val lengthOwner: Element?,
@@ -1357,27 +1394,32 @@ fun appendTextGlyphOutlines(
         val glyphNames: List<String>?
     )
 
-    val rawPreparedRuns = runs.mapNotNull { run ->
+    val rawPreparedRuns = runs.mapIndexedNotNull { runIndex, run ->
         val runStyle = run.element.getAttribute("style").ifBlank { null }
         val fontSize = (inheritedTextStyleValue(run.element, "font-size")
             ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
             ?.toFloatOrNull()
             ?: 16f).coerceAtLeast(1f)
         val fontFamily = inheritedTextStyleValue(run.element, "font-family").orEmpty()
-        val font = SvgFontResolver.findMatchingFont(fontDefinitions, fontFamily) ?: return@mapNotNull null
+        val font = SvgFontResolver.findMatchingFont(fontDefinitions, fontFamily) ?: return@mapIndexedNotNull null
         val fontWeight = normalizeTextFontWeight(inheritedTextStyleValue(run.element, "font-weight"))
         val vertical = isVerticalWritingMode(run.element)
         val isParentTextRun = run.element === element
         val lengthOwners = textLengthOwners(run.element, element)
         val lengthOwner = lengthOwners.firstOrNull()
+        val glyphCount = SvgFontResolver.textRunGlyphCount(font, run.text, run.glyphNames)
+        val letterSpacing = resolvedLetterSpacing(run.element, fontSize)
+        val letterSpacingGapCount = (glyphCount - if (runIndex == runs.lastIndex) 1 else 0).coerceAtLeast(0)
         GlyphTextRun(
             run = run,
             font = font,
             fontSize = fontSize,
             fontFamily = fontFamily,
             fontWeight = fontWeight,
-            advance = SvgFontResolver.textRunAdvance(font, run.text, fontSize, vertical = vertical, glyphNames = run.glyphNames).coerceAtLeast(fontSize * 0.15f),
-            glyphCount = SvgFontResolver.textRunGlyphCount(font, run.text, run.glyphNames),
+            letterSpacing = letterSpacing,
+            advance = (SvgFontResolver.textRunAdvance(font, run.text, fontSize, vertical = vertical, glyphNames = run.glyphNames) +
+                letterSpacing * letterSpacingGapCount).coerceAtLeast(fontSize * 0.15f),
+            glyphCount = glyphCount,
             lengthOwner = lengthOwner,
             lengthOwners = lengthOwners,
             targetTextLength = lengthOwner?.let { explicitTextLength(it) },
@@ -1566,6 +1608,7 @@ fun appendTextGlyphOutlines(
     )
 
     var emittedGlyphComment = false
+    val totalGlyphCount = rawPreparedRuns.sumOf { it.glyphCount }
     val remainingGlyphsByLengthOwner = lengthGroups.mapValues { (_, group) -> group.glyphCount }.toMutableMap()
     val rotateIndexByOwner = mutableMapOf<Element, Int>()
 
@@ -1730,7 +1773,12 @@ fun appendTextGlyphOutlines(
                 } else 0.0
             }.toFloat()
             val naturalAdvance = (SvgFontResolver.glyphAdvance(prepared.font, glyph, vertical = prepared.vertical) - kern) * scale
-            val advance = naturalAdvance * prepared.glyphAxisScale + extraSpacing
+            val hasFollowingGlyph = globalGlyphIndex < totalGlyphCount - 1
+            val authoredSpacing = if (hasFollowingGlyph) prepared.letterSpacing * prepared.glyphAxisScale else 0f
+            if (hasFollowingGlyph && abs(authoredSpacing) > 0.0001f) {
+                activeTextLetterSpacingAdjustmentsApplied++
+            }
+            val advance = naturalAdvance * prepared.glyphAxisScale + authoredSpacing + extraSpacing
             for (group in owningGroups) {
                 val remaining = remainingGlyphsByLengthOwner[group.owner] ?: 0
                 remainingGlyphsByLengthOwner[group.owner] = (remaining - 1).coerceAtLeast(0)
@@ -1813,7 +1861,9 @@ fun appendTextApproximation(
         val textLength = textStyleValue(run.element, runStyle, "textLength")
             ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value }
             ?.toFloatOrNull()
-        val width = (textLength ?: (charCount * fontSize * widthFactor)).coerceAtLeast(fontSize * 0.35f)
+        val letterSpacing = resolvedLetterSpacing(run.element, fontSize)
+        val width = (textLength ?: (charCount * fontSize * widthFactor +
+            letterSpacing * (charCount - 1).coerceAtLeast(0))).coerceAtLeast(fontSize * 0.35f)
         val rawFill = inheritedTextStyleValue(run.element, "fill") ?: inheritedFill ?: "#000000"
 
         val isParentTextRun = run.element === element

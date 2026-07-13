@@ -83,6 +83,7 @@ data class SvgConversionReportData(
     val textLengthSpacingAdjustments: Int = 0,
     val textLengthSpacingAndGlyphsAdjustments: Int = 0,
     val textGlyphRotationsApplied: Int = 0,
+    val textLetterSpacingAdjustmentsApplied: Int = 0,
     val textPathsConverted: Int = 0,
     val textPathGlyphsEmitted: Int = 0,
     val textFontFamilies: List<String> = emptyList(),
@@ -434,6 +435,7 @@ object SvgConversionReporter {
                     data.lengthAdjustModes.isNotEmpty() ||
                     data.textPathMethods.isNotEmpty() ||
                     data.textGlyphRotationsApplied > 0 ||
+                    data.textLetterSpacingAdjustmentsApplied > 0 ||
                     textLengthAdjustmentCount > 0
 
                 if (hasTextLayout) {
@@ -459,6 +461,9 @@ object SvgConversionReporter {
 
                     if (data.textGlyphRotationsApplied > 0) {
                         appendLine("✓ Rotated glyphs: ${data.textGlyphRotationsApplied}")
+                    }
+                    if (data.textLetterSpacingAdjustmentsApplied > 0) {
+                        appendLine("✓ Letter-spacing gaps applied: ${data.textLetterSpacingAdjustmentsApplied}")
                     }
                     if (textLengthAdjustmentCount > 0) {
                         appendLine("✓ Text-length adjustments applied: $textLengthAdjustmentCount")
