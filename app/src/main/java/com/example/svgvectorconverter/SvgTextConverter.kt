@@ -827,7 +827,9 @@ private fun appendTextPathGlyphOutlines(
                     }
                 } ?: 0f
 
-                if (centerDistance >= 0f && centerDistance <= measured.length) {
+                if (!resolved.isWhitespace &&
+                    centerDistance >= 0f && centerDistance <= measured.length
+                ) {
                     val sample = measured.sample(centerDistance)
                     if (sample != null) {
                         val tangentRadians = Math.toRadians(sample.angleDegrees.toDouble())
@@ -1617,81 +1619,83 @@ fun appendTextGlyphOutlines(
                 }
             } ?: 0f
 
-            val baselineOffset = embeddedAlphabeticBaselineOffset(
-                font = prepared.font,
-                fontSize = prepared.fontSize,
-                baseline = prepared.baseline
-            )
-            val basePlacement = if (prepared.vertical) {
-                AffineTransform(
-                    a = scale,
-                    b = 0f,
-                    c = 0f,
-                    d = -scale * prepared.glyphAxisScale,
-                    e = currentX + baselineOffset - prepared.baselineShift,
-                    f = currentY
+            if (!resolved.isWhitespace) {
+                val baselineOffset = embeddedAlphabeticBaselineOffset(
+                    font = prepared.font,
+                    fontSize = prepared.fontSize,
+                    baseline = prepared.baseline
                 )
-            } else {
-                AffineTransform(
-                    a = scale * prepared.glyphAxisScale,
-                    b = 0f,
-                    c = 0f,
-                    d = -scale,
-                    e = currentX,
-                    f = currentY + baselineOffset - prepared.baselineShift
-                )
+                val basePlacement = if (prepared.vertical) {
+                    AffineTransform(
+                        a = scale,
+                        b = 0f,
+                        c = 0f,
+                        d = -scale * prepared.glyphAxisScale,
+                        e = currentX + baselineOffset - prepared.baselineShift,
+                        f = currentY
+                    )
+                } else {
+                    AffineTransform(
+                        a = scale * prepared.glyphAxisScale,
+                        b = 0f,
+                        c = 0f,
+                        d = -scale,
+                        e = currentX,
+                        f = currentY + baselineOffset - prepared.baselineShift
+                    )
+                }
+                val placement = if (abs(rotateDegrees) > 0.0001f) {
+                    val radians = Math.toRadians(rotateDegrees.toDouble())
+                    val cos = kotlin.math.cos(radians).toFloat()
+                    val sin = kotlin.math.sin(radians).toFloat()
+                    activeTextGlyphRotationsApplied++
+                    AffineTransform(
+                        a = cos * basePlacement.a - sin * basePlacement.b,
+                        b = sin * basePlacement.a + cos * basePlacement.b,
+                        c = cos * basePlacement.c - sin * basePlacement.d,
+                        d = sin * basePlacement.c + cos * basePlacement.d,
+                        e = basePlacement.e,
+                        f = basePlacement.f
+                    )
+                } else basePlacement
+                var glyphPathData = glyph.pathData
+                if (glyph.transform != null) {
+                    glyphPathData = SvgPathDataTransformer.applyAffineTransform(glyphPathData, glyph.transform)
+                        ?: glyphPathData
+                }
+
+                var pathData = SvgPathDataTransformer.applyAffineTransform(glyphPathData, placement) ?: glyphPathData
+                if (elementMatrix != null) {
+                    pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
+                }
+                pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
+
+                if (!emittedGlyphComment) {
+                    output.appendLine("${indent}<!-- converted text to glyph outline paths from embedded SVG font -->")
+                    emittedGlyphComment = true
+                }
+
+                val safeFill = SvgPaintResolver.safeFillColor(prepared.fill)
+                val safeStroke = SvgPaintResolver.safeStrokeColor(prepared.stroke)
+                val fillAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.fillOpacity)
+                val strokeAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.strokeOpacity)
+
+                output.appendLine("${indent}<path")
+                output.appendLine("${indent}    android:pathData=\"${escapeXml(pathData)}\"")
+                output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
+                if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
+                if (safeStroke != null) {
+                    output.appendLine("${indent}    android:strokeColor=\"$safeStroke\"")
+                    output.appendLine("${indent}    android:strokeWidth=\"${prepared.strokeWidth?.takeIf { it.isNotBlank() } ?: "1"}\"")
+                    if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
+                }
+                output.appendLine("${indent}/>")
+
+                if (SvgFontResolver.hasGlyphSpecificAdvance(glyph, vertical = prepared.vertical)) activeTextGlyphSpecificAdvances++ else activeTextDefaultFontAdvances++
+                if (isMissingGlyphFallback) activeTextMissingGlyphFallbacks++
+
+                if (resolved.fromGlyphName) activeTextGlyphNameLookups++
             }
-            val placement = if (abs(rotateDegrees) > 0.0001f) {
-                val radians = Math.toRadians(rotateDegrees.toDouble())
-                val cos = kotlin.math.cos(radians).toFloat()
-                val sin = kotlin.math.sin(radians).toFloat()
-                activeTextGlyphRotationsApplied++
-                AffineTransform(
-                    a = cos * basePlacement.a - sin * basePlacement.b,
-                    b = sin * basePlacement.a + cos * basePlacement.b,
-                    c = cos * basePlacement.c - sin * basePlacement.d,
-                    d = sin * basePlacement.c + cos * basePlacement.d,
-                    e = basePlacement.e,
-                    f = basePlacement.f
-                )
-            } else basePlacement
-            var glyphPathData = glyph.pathData
-            if (glyph.transform != null) {
-                glyphPathData = SvgPathDataTransformer.applyAffineTransform(glyphPathData, glyph.transform)
-                    ?: glyphPathData
-            }
-
-            var pathData = SvgPathDataTransformer.applyAffineTransform(glyphPathData, placement) ?: glyphPathData
-            if (elementMatrix != null) {
-                pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
-            }
-            pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
-
-            if (!emittedGlyphComment) {
-                output.appendLine("${indent}<!-- converted text to glyph outline paths from embedded SVG font -->")
-                emittedGlyphComment = true
-            }
-
-            val safeFill = SvgPaintResolver.safeFillColor(prepared.fill)
-            val safeStroke = SvgPaintResolver.safeStrokeColor(prepared.stroke)
-            val fillAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.fillOpacity)
-            val strokeAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.strokeOpacity)
-
-            output.appendLine("${indent}<path")
-            output.appendLine("${indent}    android:pathData=\"${escapeXml(pathData)}\"")
-            output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
-            if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
-            if (safeStroke != null) {
-                output.appendLine("${indent}    android:strokeColor=\"$safeStroke\"")
-                output.appendLine("${indent}    android:strokeWidth=\"${prepared.strokeWidth?.takeIf { it.isNotBlank() } ?: "1"}\"")
-                if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
-            }
-            output.appendLine("${indent}/>")
-
-            if (SvgFontResolver.hasGlyphSpecificAdvance(glyph, vertical = prepared.vertical)) activeTextGlyphSpecificAdvances++ else activeTextDefaultFontAdvances++
-            if (isMissingGlyphFallback) activeTextMissingGlyphFallbacks++
-
-            if (resolved.fromGlyphName) activeTextGlyphNameLookups++
 
             val nextGlyph = resolvedGlyphs.getOrNull(glyphIndex + 1)?.glyph
             val kern = kerningAdjustment(prepared.font, glyph, nextGlyph, vertical = prepared.vertical, recordMatch = true)
@@ -1717,7 +1721,7 @@ fun appendTextGlyphOutlines(
             for (owner in prepared.rotateOwners) {
                 rotateIndexByOwner[owner] = (rotateIndexByOwner[owner] ?: 0) + 1
             }
-            emittedGlyphs++
+            if (!resolved.isWhitespace) emittedGlyphs++
             globalGlyphIndex++
         }
     }

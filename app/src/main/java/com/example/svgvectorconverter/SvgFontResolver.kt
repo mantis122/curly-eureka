@@ -41,7 +41,8 @@ data class SvgFontDefinition(
 data class ResolvedTextGlyph(
     val glyph: SvgGlyphOutline,
     val consumedChars: Int,
-    val fromGlyphName: Boolean
+    val fromGlyphName: Boolean,
+    val isWhitespace: Boolean = false
 )
 
 object SvgFontResolver {
@@ -209,9 +210,32 @@ object SvgFontResolver {
         val result = mutableListOf<ResolvedTextGlyph>()
         var index = 0
         while (index < text.length) {
+            val codePoint = text.codePointAt(index)
+            val consumedChars = Character.charCount(codePoint)
+
+            // Whitespace affects text layout but normally has no drawable outline.
+            // Represent it as an invisible advance-only glyph instead of falling back
+            // to <missing-glyph>, which would incorrectly emit a path and warning.
+            if (Character.isWhitespace(codePoint)) {
+                result.add(
+                    ResolvedTextGlyph(
+                        glyph = SvgGlyphOutline(
+                            unicode = String(Character.toChars(codePoint)),
+                            pathData = ""
+                        ),
+                        consumedChars = consumedChars,
+                        fromGlyphName = false,
+                        isWhitespace = true
+                    )
+                )
+                index += consumedChars
+                continue
+            }
+
             val match = glyphForText(font, text.substring(index))
-            if (match == null) index += Character.charCount(text.codePointAt(index))
-            else {
+            if (match == null) {
+                index += consumedChars
+            } else {
                 result.add(ResolvedTextGlyph(match.first, match.second, false))
                 index += match.second
             }
