@@ -139,7 +139,7 @@ object SvgToVectorConverter {
         val textElementCount = countTags(svgForTransformStats, "text")
         val tspanElementCount = countTags(svgForTransformStats, "tspan")
         val textPathElementCount = countTags(svgForTransformStats, "textPath")
-        val textWritingStats = collectTextWritingStats(svgWithCssClassStyles)
+        val textLayoutStats = collectTextLayoutStats(svgWithCssClassStyles)
         val svgFontGlyphCount = countSvgFontGlyphs(svgForTransformStats)
         val contextPaintApproximationCount = countContextPaintReferences(svgForTransformStats)
         val cssImportRuleCount = SvgStyleResolver.cssImportRuleCount
@@ -238,8 +238,14 @@ object SvgToVectorConverter {
                 textPathGlyphsEmitted = SvgTreeConverter.textPathGlyphsEmitted,
                 textFontFamilies = SvgTreeConverter.textFontFamilies,
                 textFontWeights = SvgTreeConverter.textFontWeights,
-                verticalWritingTextCount = textWritingStats.verticalTextCount,
-                writingModes = textWritingStats.writingModes,
+                verticalWritingTextCount = textLayoutStats.verticalTextCount,
+                writingModes = textLayoutStats.writingModes,
+                textAnchors = textLayoutStats.textAnchors,
+                dominantBaselines = textLayoutStats.dominantBaselines,
+                alignmentBaselines = textLayoutStats.alignmentBaselines,
+                baselineShifts = textLayoutStats.baselineShifts,
+                lengthAdjustModes = textLayoutStats.lengthAdjustModes,
+                textPathMethods = textLayoutStats.textPathMethods,
                 svgFontGlyphCount = svgFontGlyphCount,
                 contextPaintApproximationCount = contextPaintApproximationCount,
                 cssImportRuleCount = cssImportRuleCount,
@@ -268,19 +274,32 @@ object SvgToVectorConverter {
     }
 
 
-    private data class TextWritingStats(
+    private data class TextLayoutStats(
         val verticalTextCount: Int = 0,
-        val writingModes: List<String> = emptyList()
+        val writingModes: List<String> = emptyList(),
+        val textAnchors: List<String> = emptyList(),
+        val dominantBaselines: List<String> = emptyList(),
+        val alignmentBaselines: List<String> = emptyList(),
+        val baselineShifts: List<String> = emptyList(),
+        val lengthAdjustModes: List<String> = emptyList(),
+        val textPathMethods: List<String> = emptyList()
     )
 
-    private fun collectTextWritingStats(svg: String): TextWritingStats {
+    private fun collectTextLayoutStats(svg: String): TextLayoutStats {
         return try {
             val factory = DocumentBuilderFactory.newInstance().apply {
                 isNamespaceAware = true
             }
             val document = factory.newDocumentBuilder().parse(InputSource(StringReader(svg)))
             val textElements = document.getElementsByTagNameNS("*", "text")
-            val modes = linkedSetOf<String>()
+
+            val writingModes = linkedSetOf<String>()
+            val textAnchors = linkedSetOf<String>()
+            val dominantBaselines = linkedSetOf<String>()
+            val alignmentBaselines = linkedSetOf<String>()
+            val baselineShifts = linkedSetOf<String>()
+            val lengthAdjustModes = linkedSetOf<String>()
+            val textPathMethods = linkedSetOf<String>()
             var verticalTextCount = 0
 
             fun localName(element: Element): String =
@@ -301,49 +320,91 @@ object SvgToVectorConverter {
                     ?.second
             }
 
+            fun directValue(element: Element, property: String): String? {
+                return inlineStyleValue(element, property)
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: element.getAttribute(property).trim().takeIf { it.isNotBlank() }
+            }
+
+            fun inheritedValue(element: Element, property: String): String? {
+                var current: Node? = element
+                while (current is Element) {
+                    directValue(current, property)?.let { return it }
+                    current = current.parentNode
+                }
+                return null
+            }
+
             fun normalizeMode(raw: String?): String? {
                 val value = raw?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
                 return when (value) {
                     "horizontal-tb", "lr", "lr-tb", "rl", "rl-tb" -> "horizontal-tb"
                     "vertical-rl", "tb-rl" -> "vertical-rl"
                     "vertical-lr", "tb", "tb-lr" -> "vertical-lr"
-                    else -> null
+                    else -> value
                 }
             }
 
-            fun resolvedMode(element: Element): String {
-                var current: Node? = element
-                while (current is Element) {
-                    val direct = normalizeMode(inlineStyleValue(current, "writing-mode"))
-                        ?: normalizeMode(current.getAttribute("writing-mode"))
-                    if (direct != null) return direct
-                    current = current.parentNode
-                }
-                return "horizontal-tb"
-            }
+            fun normalized(raw: String?): String? =
+                raw?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
 
-            fun collectDescendantModes(element: Element) {
+            fun collectElement(element: Element) {
                 val tag = localName(element)
                 if (tag == "text" || tag == "tspan" || tag == "textpath") {
-                    modes.add(resolvedMode(element))
+                    normalizeMode(inheritedValue(element, "writing-mode"))
+                        ?.let(writingModes::add)
+                    normalized(inheritedValue(element, "text-anchor"))
+                        ?.let(textAnchors::add)
+                    normalized(inheritedValue(element, "dominant-baseline"))
+                        ?.let(dominantBaselines::add)
+                    normalized(inheritedValue(element, "alignment-baseline"))
+                        ?.let(alignmentBaselines::add)
+                    normalized(inheritedValue(element, "baseline-shift"))
+                        ?.let(baselineShifts::add)
+                    normalized(inheritedValue(element, "lengthAdjust"))
+                        ?.let { value ->
+                            lengthAdjustModes.add(
+                                when (value) {
+                                    "spacingandglyphs" -> "spacingAndGlyphs"
+                                    else -> value
+                                }
+                            )
+                        }
                 }
+
+                if (tag == "textpath") {
+                    val method = normalized(directValue(element, "method")) ?: "align"
+                    textPathMethods.add(method)
+                }
+
                 val children = element.childNodes
                 for (i in 0 until children.length) {
                     val child = children.item(i)
-                    if (child is Element) collectDescendantModes(child)
+                    if (child is Element) collectElement(child)
                 }
             }
 
             for (i in 0 until textElements.length) {
                 val element = textElements.item(i) as? Element ?: continue
-                val mode = resolvedMode(element)
+                val mode = normalizeMode(inheritedValue(element, "writing-mode")) ?: "horizontal-tb"
+                writingModes.add(mode)
                 if (mode == "vertical-rl" || mode == "vertical-lr") verticalTextCount++
-                collectDescendantModes(element)
+                collectElement(element)
             }
 
-            TextWritingStats(verticalTextCount, modes.toList())
+            TextLayoutStats(
+                verticalTextCount = verticalTextCount,
+                writingModes = writingModes.toList(),
+                textAnchors = textAnchors.toList(),
+                dominantBaselines = dominantBaselines.toList(),
+                alignmentBaselines = alignmentBaselines.toList(),
+                baselineShifts = baselineShifts.toList(),
+                lengthAdjustModes = lengthAdjustModes.toList(),
+                textPathMethods = textPathMethods.toList()
+            )
         } catch (_: Exception) {
-            TextWritingStats()
+            TextLayoutStats()
         }
     }
 

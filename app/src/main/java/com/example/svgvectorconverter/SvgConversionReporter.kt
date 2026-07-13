@@ -89,6 +89,12 @@ data class SvgConversionReportData(
     val textFontWeights: List<String> = emptyList(),
     val verticalWritingTextCount: Int = 0,
     val writingModes: List<String> = emptyList(),
+    val textAnchors: List<String> = emptyList(),
+    val dominantBaselines: List<String> = emptyList(),
+    val alignmentBaselines: List<String> = emptyList(),
+    val baselineShifts: List<String> = emptyList(),
+    val lengthAdjustModes: List<String> = emptyList(),
+    val textPathMethods: List<String> = emptyList(),
     val svgFontGlyphCount: Int,
     val contextPaintApproximationCount: Int,
     val cssImportRuleCount: Int,
@@ -384,19 +390,6 @@ object SvgConversionReporter {
                         appendLine("✓ <vkern> rules matched: ${data.textVerticalKerningPairsMatched}")
                         appendLine("✓ Kerning adjustments applied: ${data.textKerningAdjustmentsApplied}")
                     }
-                    if (data.textGlyphRotationsApplied > 0) {
-                        appendLine("✓ Per-glyph rotations applied: ${data.textGlyphRotationsApplied}")
-                    }
-                    val textLengthAdjustmentCount = data.textLengthSpacingAdjustments + data.textLengthSpacingAndGlyphsAdjustments
-                    if (textLengthAdjustmentCount > 0) {
-                        appendLine("✓ Text-length adjustments applied: $textLengthAdjustmentCount")
-                        if (data.textLengthSpacingAdjustments > 0) {
-                            appendLine(" • spacing: ${data.textLengthSpacingAdjustments}")
-                        }
-                        if (data.textLengthSpacingAndGlyphsAdjustments > 0) {
-                            appendLine(" • spacingAndGlyphs: ${data.textLengthSpacingAndGlyphsAdjustments}")
-                        }
-                    }
                 }
                 if (data.textElementsApproximated > 0) {
                     appendLine("✓ Bounding-box approximations: ${data.textElementsApproximated}")
@@ -430,17 +423,51 @@ object SvgConversionReporter {
                     appendLine("ℹ Embedded SVG font glyph outlines found: ${data.svgFontGlyphCount}")
                 }
 
-                val hasTextFeatures = data.verticalWritingTextCount > 0 || data.writingModes.isNotEmpty()
-                if (hasTextFeatures) {
+                val textLengthAdjustmentCount =
+                    data.textLengthSpacingAdjustments + data.textLengthSpacingAndGlyphsAdjustments
+                val hasTextLayout =
+                    data.writingModes.isNotEmpty() ||
+                    data.textAnchors.isNotEmpty() ||
+                    data.dominantBaselines.isNotEmpty() ||
+                    data.alignmentBaselines.isNotEmpty() ||
+                    data.baselineShifts.isNotEmpty() ||
+                    data.lengthAdjustModes.isNotEmpty() ||
+                    data.textPathMethods.isNotEmpty() ||
+                    data.textGlyphRotationsApplied > 0 ||
+                    textLengthAdjustmentCount > 0
+
+                if (hasTextLayout) {
                     appendLine()
                     appendLine("────────────────────")
-                    appendLine("Text Features")
+                    appendLine("Text Layout")
                     appendLine("────────────────────")
                     appendLine()
-                    appendLine("✓ Vertical writing: ${data.verticalWritingTextCount}")
-                    appendLine("✓ Writing modes:")
-                    data.writingModes.forEach { mode ->
-                        appendLine(" • $mode")
+
+                    fun appendValues(label: String, values: List<String>) {
+                        if (values.isEmpty()) return
+                        appendLine("✓ $label:")
+                        values.forEach { value -> appendLine(" • $value") }
+                    }
+
+                    appendValues("Writing modes", data.writingModes)
+                    appendValues("Text anchors", data.textAnchors)
+                    appendValues("Dominant baselines", data.dominantBaselines)
+                    appendValues("Alignment baselines", data.alignmentBaselines)
+                    appendValues("Baseline shifts", data.baselineShifts)
+                    appendValues("lengthAdjust modes", data.lengthAdjustModes)
+                    appendValues("textPath methods", data.textPathMethods)
+
+                    if (data.textGlyphRotationsApplied > 0) {
+                        appendLine("✓ Rotated glyphs: ${data.textGlyphRotationsApplied}")
+                    }
+                    if (textLengthAdjustmentCount > 0) {
+                        appendLine("✓ Text-length adjustments applied: $textLengthAdjustmentCount")
+                        if (data.textLengthSpacingAdjustments > 0) {
+                            appendLine(" • spacing: ${data.textLengthSpacingAdjustments}")
+                        }
+                        if (data.textLengthSpacingAndGlyphsAdjustments > 0) {
+                            appendLine(" • spacingAndGlyphs: ${data.textLengthSpacingAndGlyphsAdjustments}")
+                        }
                     }
                 }
             }
