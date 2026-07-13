@@ -808,7 +808,12 @@ private fun appendTextPathGlyphOutlines(
             if (run.fontWeight.isNotBlank()) activeTextFontWeights.add(run.fontWeight)
 
             val fontScale = run.fontSize / run.font.unitsPerEm
+            var runSourceOffset = 0
             for ((index, resolved) in run.glyphs.withIndex()) {
+                val consumedChars = resolved.consumedChars.coerceAtLeast(1)
+                val sourceEnd = (runSourceOffset + consumedChars).coerceAtMost(run.run.text.length)
+                val sourceSegment = run.run.text.substring(runSourceOffset, sourceEnd)
+                val sourceIsWhitespace = sourceSegment.isNotEmpty() && sourceSegment.all { it.isWhitespace() }
                 val naturalAdvance = run.naturalAdvances[index]
                 val scaledAdvance = naturalAdvance * glyphAxisScale
                 val hasFollowingGlyph = globalGlyphIndex < glyphCount - 1
@@ -968,7 +973,7 @@ private fun appendTextPathGlyphOutlines(
                         } else {
                             activeTextDefaultFontAdvances++
                         }
-                        if (run.font.missingGlyph === resolved.glyph) {
+                        if (run.font.missingGlyph === resolved.glyph && !sourceIsWhitespace) {
                             activeTextMissingGlyphFallbacks++
                         }
                         if (resolved.fromGlyphName) activeTextGlyphNameLookups++
@@ -982,6 +987,7 @@ private fun appendTextPathGlyphOutlines(
                 for (owner in run.rotateOwners) {
                     rotateIndex[owner] = (rotateIndex[owner] ?: 0) + 1
                 }
+                runSourceOffset = sourceEnd
             }
         }
 
@@ -1578,7 +1584,12 @@ fun appendTextGlyphOutlines(
 
         val scale = prepared.fontSize / prepared.font.unitsPerEm
         val resolvedGlyphs = SvgFontResolver.resolveGlyphs(prepared.font, prepared.run.text, prepared.glyphNames)
+        var runSourceOffset = 0
         for ((glyphIndex, resolved) in resolvedGlyphs.withIndex()) {
+            val consumedChars = resolved.consumedChars.coerceAtLeast(1)
+            val sourceEnd = (runSourceOffset + consumedChars).coerceAtMost(prepared.run.text.length)
+            val sourceSegment = prepared.run.text.substring(runSourceOffset, sourceEnd)
+            val sourceIsWhitespace = sourceSegment.isNotEmpty() && sourceSegment.all { it.isWhitespace() }
             // Index 0 is already applied when the root cursor is initialized or when a
             // positioned <tspan> begins. Subsequent local values position later glyphs.
             // Root lists continue across child spans when the child does not override them.
@@ -1692,7 +1703,7 @@ fun appendTextGlyphOutlines(
                 output.appendLine("${indent}/>")
 
                 if (SvgFontResolver.hasGlyphSpecificAdvance(glyph, vertical = prepared.vertical)) activeTextGlyphSpecificAdvances++ else activeTextDefaultFontAdvances++
-                if (isMissingGlyphFallback) activeTextMissingGlyphFallbacks++
+                if (isMissingGlyphFallback && !sourceIsWhitespace) activeTextMissingGlyphFallbacks++
 
                 if (resolved.fromGlyphName) activeTextGlyphNameLookups++
             }
@@ -1723,6 +1734,7 @@ fun appendTextGlyphOutlines(
             }
             if (!resolved.isWhitespace) emittedGlyphs++
             globalGlyphIndex++
+            runSourceOffset = sourceEnd
         }
     }
 
