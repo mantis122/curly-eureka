@@ -558,18 +558,23 @@ private fun referencedTextPathData(textPath: Element): String? {
         else -> null
     } ?: return null
 
-    val style = referenced.getAttribute("style").ifBlank { null }
-    val transform = referenced.getAttribute("transform")
-        .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
-    if (transform.isNotBlank()) {
-        val origin = SvgTransformParser.parseTransformOrigin(
-            SvgPaintResolver.styleValue(style, "transform-origin")
-                ?: referenced.getAttribute("transform-origin").ifBlank { "" }
-        )
-        val matrix = SvgTransformParser.combineTransformListToMatrix(
-            SvgTransformParser.parseTransformList(transform), origin
-        )
-        if (matrix != null) data = SvgPathDataTransformer.applyAffineTransform(data, matrix) ?: data
+    // A referenced path is measured in the coordinate system produced by its
+    // complete ancestor transform chain, not only by its own transform.
+    val chain = mutableListOf<Element>()
+    var current: Node? = referenced
+    while (current is Element) {
+        chain.add(current)
+        if (current === documentRoot) break
+        current = current.parentNode
+    }
+
+    var matrix: AffineTransform? = null
+    for (element in chain.asReversed()) {
+        val elementMatrix = elementTransformMatrix(element) ?: continue
+        matrix = if (matrix == null) elementMatrix else matrix.multiply(elementMatrix)
+    }
+    if (matrix != null) {
+        data = SvgPathDataTransformer.applyAffineTransform(data, matrix) ?: data
     }
     return data
 }
@@ -832,10 +837,13 @@ private fun appendTextPathGlyphOutlines(
                     }
                 } ?: 0f
 
-                if (!resolved.isWhitespace &&
-                    centerDistance >= 0f && centerDistance <= measured.length
-                ) {
-                    val sample = measured.sample(centerDistance)
+                val centerIsPlaceable = measured.isClosed ||
+                    (centerDistance >= 0f && centerDistance <= measured.length)
+                if (!resolved.isWhitespace && centerIsPlaceable) {
+                    val sample = measured.sample(
+                        centerDistance,
+                        wrapClosed = measured.isClosed
+                    )
                     if (sample != null) {
                         val tangentRadians = Math.toRadians(sample.angleDegrees.toDouble())
                         val tangentX = kotlin.math.cos(tangentRadians).toFloat()
@@ -868,8 +876,11 @@ private fun appendTextPathGlyphOutlines(
                                 val localY = -glyphY * fontScale
                                 val rotatedX = extraCos * localX - extraSin * localY
                                 val rotatedY = extraSin * localX + extraCos * localY
-                                val pointSample = measured.sample(cursor + rotatedX)
-                                    ?: return@mapFlattenedPath null
+                                val pointDistance = cursor + rotatedX
+                                val pointSample = measured.sample(
+                                    pointDistance,
+                                    wrapClosed = measured.isClosed
+                                ) ?: return@mapFlattenedPath null
                                 val pointRadians =
                                     Math.toRadians(pointSample.angleDegrees.toDouble())
                                 val pointNormalX =

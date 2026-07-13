@@ -9,10 +9,18 @@ internal object SvgPathSampler {
     internal data class Point(val x: Float, val y: Float)
     internal data class Segment(val from: Point, val to: Point, val start: Float, val length: Float)
 
-    class MeasuredPath internal constructor(private val segments: List<Segment>, val length: Float) {
-        fun sample(distance: Float): Sample? {
+    class MeasuredPath internal constructor(
+        private val segments: List<Segment>,
+        val length: Float,
+        val isClosed: Boolean
+    ) {
+        fun sample(distance: Float, wrapClosed: Boolean = false): Sample? {
             if (segments.isEmpty()) return null
-            val d = distance.coerceIn(0f, length)
+            val d = if (wrapClosed && isClosed && length > 0.0001f) {
+                ((distance % length) + length) % length
+            } else {
+                distance.coerceIn(0f, length)
+            }
             val segment = segments.firstOrNull { d <= it.start + it.length } ?: segments.last()
             val ratio = if (segment.length <= 0.0001f) 0f else ((d - segment.start) / segment.length).coerceIn(0f, 1f)
             val x = segment.from.x + (segment.to.x - segment.from.x) * ratio
@@ -33,6 +41,7 @@ internal object SvgPathSampler {
         var lastCubic: Point? = null
         var lastQuad: Point? = null
         var previousCommand: Char? = null
+        var closed = false
 
         fun hasNumber(): Boolean = index < tokens.size && !isCommand(tokens[index])
         fun read(): Float? = tokens.getOrNull(index++)?.toFloatOrNull()
@@ -113,7 +122,11 @@ internal object SvgPathSampler {
                     for(p in arc) addLine(p)
                     lastCubic=null;lastQuad=null;previousCommand='A'
                 }
-                'Z' -> { addLine(subStart); lastCubic=null;lastQuad=null;previousCommand='Z' }
+                'Z' -> {
+                    addLine(subStart)
+                    closed = true
+                    lastCubic=null;lastQuad=null;previousCommand='Z'
+                }
                 else -> return null
             }
         }
@@ -122,7 +135,7 @@ internal object SvgPathSampler {
             val len=hypot((to.x-from.x).toDouble(),(to.y-from.y).toDouble()).toFloat()
             Segment(from,to,walked,len).also { walked+=len }
         }.filter { it.length>0.0001f }
-        return if(segments.isEmpty()) null else MeasuredPath(segments,walked)
+        return if(segments.isEmpty()) null else MeasuredPath(segments,walked,closed)
     }
 
 
