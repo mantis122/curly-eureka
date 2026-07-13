@@ -894,6 +894,7 @@ private fun appendAndroidSystemFontOutlines(
         val run: TextApproximationRun,
         val paint: Paint,
         val width: Float,
+        val verticalAdvance: Float,
         val fontSize: Float,
         val fill: String,
         val stroke: String?,
@@ -904,6 +905,7 @@ private fun appendAndroidSystemFontOutlines(
         val anchor: String,
         val baseline: String,
         val baselineShift: Float,
+        val vertical: Boolean,
         val explicitX: Float?,
         val explicitY: Float?,
         val dx: Float,
@@ -922,10 +924,12 @@ private fun appendAndroidSystemFontOutlines(
             typeface = androidTypefaceFor(run.element)
             isSubpixelText = true
         }
+        val vertical = isVerticalWritingMode(run.element)
         AndroidRun(
             run = run,
             paint = paint,
             width = paint.measureText(run.text),
+            verticalAdvance = codePointStrings(run.text).size * fontSize,
             fontSize = fontSize,
             fill = inheritedTextStyleValue(run.element, "fill") ?: inheritedFill ?: "#000000",
             stroke = inheritedTextStyleValue(run.element, "stroke")
@@ -938,6 +942,7 @@ private fun appendAndroidSystemFontOutlines(
             anchor = normalizedTextAnchor(run.element),
             baseline = normalizedDominantBaseline(run.element),
             baselineShift = resolvedBaselineShift(run.element, fontSize, element),
+            vertical = vertical,
             // The root <text> x/y values establish the initial cursor and must not be
             // reapplied as run-level positioning. Reapplying root x here would erase
             // the root text-anchor offset calculated below.
@@ -953,14 +958,26 @@ private fun appendAndroidSystemFontOutlines(
     val rootY = textNumericAttr(element, "y") ?: 0f
     val rootDx = textNumericAttr(element, "dx") ?: 0f
     val rootDy = textNumericAttr(element, "dy") ?: 0f
-    val totalWidth = prepared.sumOf { it.width.toDouble() }.toFloat()
+    val rootVertical = isVerticalWritingMode(element)
+    val totalAdvance = prepared.sumOf {
+        (if (it.vertical) it.verticalAdvance else it.width).toDouble()
+    }.toFloat()
     val anchor = normalizedTextAnchor(element)
-    var cursorX = rootX + rootDx - when (anchor) {
-        "middle" -> totalWidth / 2f
-        "end" -> totalWidth
-        else -> 0f
-    }
+    var cursorX = rootX + rootDx
     var cursorY = rootY + rootDy
+    if (rootVertical) {
+        cursorY -= when (anchor) {
+            "middle" -> totalAdvance / 2f
+            "end" -> totalAdvance
+            else -> 0f
+        }
+    } else {
+        cursorX -= when (anchor) {
+            "middle" -> totalAdvance / 2f
+            "end" -> totalAdvance
+            else -> 0f
+        }
+    }
 
     val textStyle = element.getAttribute("style").ifBlank { null }
     val transform = element.getAttribute("transform")
@@ -986,55 +1003,68 @@ private fun appendAndroidSystemFontOutlines(
     for (item in prepared) {
         // A positioned child run (normally a <tspan x="...">) starts a new
         // anchored text chunk. Apply that run's own anchor against its width.
-        if (item.explicitX != null) {
-            cursorX = item.explicitX - anchorOffset(item.anchor, item.width)
+        if (item.vertical) {
+            if (item.explicitX != null) cursorX = item.explicitX
+            if (item.explicitY != null) {
+                cursorY = item.explicitY - anchorOffset(item.anchor, item.verticalAdvance)
+            }
+        } else {
+            if (item.explicitX != null) {
+                cursorX = item.explicitX - anchorOffset(item.anchor, item.width)
+            }
+            if (item.explicitY != null) cursorY = item.explicitY
         }
-        if (item.explicitY != null) cursorY = item.explicitY
         cursorX += item.dx
         cursorY += item.dy
 
-        val androidPath = Path()
-        val drawBaselineY = androidAlphabeticBaselineFor(
-            requestedBaselineY = cursorY - item.baselineShift,
-            metrics = item.paint.fontMetrics,
-            baseline = item.baseline
-        )
-        item.paint.getTextPath(item.run.text, 0, item.run.text.length, cursorX, drawBaselineY, androidPath)
-        var pathData = androidPathToVectorPathData(androidPath)
-        if (pathData != null) {
-            if (elementMatrix != null) {
-                pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
-            }
-            pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
+        val glyphTexts = if (item.vertical) codePointStrings(item.run.text) else listOf(item.run.text)
+        for (glyphText in glyphTexts) {
+            val androidPath = Path()
+            val glyphWidth = item.paint.measureText(glyphText)
+            val glyphX = if (item.vertical) cursorX - glyphWidth / 2f else cursorX
+            val drawBaselineY = androidAlphabeticBaselineFor(
+                requestedBaselineY = cursorY - item.baselineShift,
+                metrics = item.paint.fontMetrics,
+                baseline = item.baseline
+            )
+            item.paint.getTextPath(glyphText, 0, glyphText.length, glyphX, drawBaselineY, androidPath)
+            var pathData = androidPathToVectorPathData(androidPath)
+            if (pathData != null) {
+                if (elementMatrix != null) {
+                    pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
+                }
+                pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
 
-            if (emitted == 0) {
-                output.appendLine("${indent}<!-- converted text to outlines using Android system font -->")
+                if (emitted == 0) {
+                    output.appendLine("${indent}<!-- converted text to outlines using Android system font -->")
+                }
+
+                val safeFill = SvgPaintResolver.safeFillColor(item.fill)
+                val safeStroke = SvgPaintResolver.safeStrokeColor(item.stroke)
+                val fillAlpha = SvgPaintResolver.combineAlpha(item.opacity, item.fillOpacity)
+                val strokeAlpha = SvgPaintResolver.combineAlpha(item.opacity, item.strokeOpacity)
+
+                output.appendLine("${indent}<path")
+                output.appendLine("${indent}    android:pathData=\"${escapeXml(pathData)}\"")
+                output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
+                output.appendLine("${indent}    android:fillType=\"evenOdd\"")
+                if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
+                if (safeStroke != null) {
+                    output.appendLine("${indent}    android:strokeColor=\"$safeStroke\"")
+                    output.appendLine("${indent}    android:strokeWidth=\"${item.strokeWidth?.takeIf { it.isNotBlank() } ?: "1"}\"")
+                    if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
+                }
+                output.appendLine("${indent}/>")
+                emitted++
             }
 
-            val safeFill = SvgPaintResolver.safeFillColor(item.fill)
-            val safeStroke = SvgPaintResolver.safeStrokeColor(item.stroke)
-            val fillAlpha = SvgPaintResolver.combineAlpha(item.opacity, item.fillOpacity)
-            val strokeAlpha = SvgPaintResolver.combineAlpha(item.opacity, item.strokeOpacity)
-
-            output.appendLine("${indent}<path")
-            output.appendLine("${indent}    android:pathData=\"${escapeXml(pathData)}\"")
-            output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
-            output.appendLine("${indent}    android:fillType=\"evenOdd\"")
-            if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
-            if (safeStroke != null) {
-                output.appendLine("${indent}    android:strokeColor=\"$safeStroke\"")
-                output.appendLine("${indent}    android:strokeWidth=\"${item.strokeWidth?.takeIf { it.isNotBlank() } ?: "1"}\"")
-                if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
-            }
-            output.appendLine("${indent}/>")
-            emitted++
+            if (item.vertical) cursorY += item.fontSize else cursorX += glyphWidth
         }
 
         val family = inheritedTextStyleValue(item.run.element, "font-family").orEmpty()
         val weight = normalizeTextFontWeight(inheritedTextStyleValue(item.run.element, "font-weight"))
         if (family.isNotBlank()) activeTextFontFamilies.add(family)
         if (weight.isNotBlank()) activeTextFontWeights.add(weight)
-        cursorX += item.width
     }
 
     if (emitted == 0) return false
