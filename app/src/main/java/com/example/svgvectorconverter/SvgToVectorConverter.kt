@@ -139,6 +139,7 @@ object SvgToVectorConverter {
         val textElementCount = countTags(svgForTransformStats, "text")
         val tspanElementCount = countTags(svgForTransformStats, "tspan")
         val textPathElementCount = countTags(svgForTransformStats, "textPath")
+        val textWritingStats = collectTextWritingStats(svgWithCssClassStyles)
         val svgFontGlyphCount = countSvgFontGlyphs(svgForTransformStats)
         val contextPaintApproximationCount = countContextPaintReferences(svgForTransformStats)
         val cssImportRuleCount = SvgStyleResolver.cssImportRuleCount
@@ -237,6 +238,8 @@ object SvgToVectorConverter {
                 textPathGlyphsEmitted = SvgTreeConverter.textPathGlyphsEmitted,
                 textFontFamilies = SvgTreeConverter.textFontFamilies,
                 textFontWeights = SvgTreeConverter.textFontWeights,
+                verticalWritingTextCount = textWritingStats.verticalTextCount,
+                writingModes = textWritingStats.writingModes,
                 svgFontGlyphCount = svgFontGlyphCount,
                 contextPaintApproximationCount = contextPaintApproximationCount,
                 cssImportRuleCount = cssImportRuleCount,
@@ -262,6 +265,86 @@ object SvgToVectorConverter {
         )
 
         return ConversionResult(finalXml, report)
+    }
+
+
+    private data class TextWritingStats(
+        val verticalTextCount: Int = 0,
+        val writingModes: List<String> = emptyList()
+    )
+
+    private fun collectTextWritingStats(svg: String): TextWritingStats {
+        return try {
+            val factory = DocumentBuilderFactory.newInstance().apply {
+                isNamespaceAware = true
+            }
+            val document = factory.newDocumentBuilder().parse(InputSource(StringReader(svg)))
+            val textElements = document.getElementsByTagNameNS("*", "text")
+            val modes = linkedSetOf<String>()
+            var verticalTextCount = 0
+
+            fun localName(element: Element): String =
+                (element.localName ?: element.tagName.substringAfter(':')).lowercase()
+
+            fun inlineStyleValue(element: Element, property: String): String? {
+                val style = element.getAttribute("style")
+                if (style.isBlank()) return null
+                return style.split(';')
+                    .asSequence()
+                    .mapNotNull { declaration ->
+                        val index = declaration.indexOf(':')
+                        if (index <= 0) null
+                        else declaration.substring(0, index).trim().lowercase() to
+                            declaration.substring(index + 1).trim()
+                    }
+                    .firstOrNull { it.first == property }
+                    ?.second
+            }
+
+            fun normalizeMode(raw: String?): String? {
+                val value = raw?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
+                return when (value) {
+                    "horizontal-tb", "lr", "lr-tb", "rl", "rl-tb" -> "horizontal-tb"
+                    "vertical-rl", "tb-rl" -> "vertical-rl"
+                    "vertical-lr", "tb", "tb-lr" -> "vertical-lr"
+                    else -> null
+                }
+            }
+
+            fun resolvedMode(element: Element): String {
+                var current: Node? = element
+                while (current is Element) {
+                    val direct = normalizeMode(inlineStyleValue(current, "writing-mode"))
+                        ?: normalizeMode(current.getAttribute("writing-mode"))
+                    if (direct != null) return direct
+                    current = current.parentNode
+                }
+                return "horizontal-tb"
+            }
+
+            fun collectDescendantModes(element: Element) {
+                val tag = localName(element)
+                if (tag == "text" || tag == "tspan" || tag == "textpath") {
+                    modes.add(resolvedMode(element))
+                }
+                val children = element.childNodes
+                for (i in 0 until children.length) {
+                    val child = children.item(i)
+                    if (child is Element) collectDescendantModes(child)
+                }
+            }
+
+            for (i in 0 until textElements.length) {
+                val element = textElements.item(i) as? Element ?: continue
+                val mode = resolvedMode(element)
+                if (mode == "vertical-rl" || mode == "vertical-lr") verticalTextCount++
+                collectDescendantModes(element)
+            }
+
+            TextWritingStats(verticalTextCount, modes.toList())
+        } catch (_: Exception) {
+            TextWritingStats()
+        }
     }
 
     private fun buildUnsupportedWarnings(

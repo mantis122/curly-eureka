@@ -87,6 +87,8 @@ data class SvgConversionReportData(
     val textPathGlyphsEmitted: Int = 0,
     val textFontFamilies: List<String> = emptyList(),
     val textFontWeights: List<String> = emptyList(),
+    val verticalWritingTextCount: Int = 0,
+    val writingModes: List<String> = emptyList(),
     val svgFontGlyphCount: Int,
     val contextPaintApproximationCount: Int,
     val cssImportRuleCount: Int,
@@ -426,6 +428,20 @@ object SvgConversionReporter {
                 }
                 if (data.svgFontGlyphCount > 0) {
                     appendLine("ℹ Embedded SVG font glyph outlines found: ${data.svgFontGlyphCount}")
+                }
+
+                val hasTextFeatures = data.verticalWritingTextCount > 0 || data.writingModes.isNotEmpty()
+                if (hasTextFeatures) {
+                    appendLine()
+                    appendLine("────────────────────")
+                    appendLine("Text Features")
+                    appendLine("────────────────────")
+                    appendLine()
+                    appendLine("✓ Vertical writing: ${data.verticalWritingTextCount}")
+                    appendLine("✓ Writing modes:")
+                    data.writingModes.forEach { mode ->
+                        appendLine(" • $mode")
+                    }
                 }
             }
 
