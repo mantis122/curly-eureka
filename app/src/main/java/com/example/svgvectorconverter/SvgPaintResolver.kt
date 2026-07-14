@@ -343,6 +343,37 @@ object SvgPaintResolver {
         return normalizedAndroidColor(value) ?: "#000000"
     }
 
+    /**
+     * Resolves the computed SVG `color` property for an element.
+     *
+     * Stage 1 intentionally covers presentation attributes and inline styles:
+     * - `color` inherits through the SVG element tree.
+     * - a child declaration overrides its inherited value.
+     * - `color: inherit` and `color: currentColor` continue searching upward.
+     * - the SVG/CSS initial value is black when no declaration is found.
+     */
+    fun resolvedCurrentColorForElement(element: org.w3c.dom.Element): String {
+        var node: org.w3c.dom.Node? = element
+
+        while (node != null && node.nodeType == org.w3c.dom.Node.ELEMENT_NODE) {
+            val current = node as org.w3c.dom.Element
+            val style = current.getAttribute("style").ifBlank { null }
+            val declared = styleValue(style, "color")
+                ?: current.getAttribute("color").ifBlank { null }
+
+            if (!declared.isNullOrBlank() &&
+                !declared.equals("inherit", ignoreCase = true) &&
+                !declared.equals("currentColor", ignoreCase = true)
+            ) {
+                normalizedAndroidColor(declared)?.let { return it }
+            }
+
+            node = current.parentNode
+        }
+
+        return "#000000"
+    }
+
     fun safeFillColor(value: String?): String {
         val v = value?.trim()
 
