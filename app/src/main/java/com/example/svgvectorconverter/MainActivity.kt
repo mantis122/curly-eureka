@@ -511,8 +511,11 @@ class MainActivity : ComponentActivity() {
 
         val description = makeText(
             """
-            Convert SVG artwork into
+            Convert static SVG artwork into
             Android VectorDrawable XML.
+
+            Supports most commonly used SVG 1.1 features,
+            including advanced text converted to vector paths.
             """.trimIndent(),
             16f,
             Color.DKGRAY,
@@ -524,20 +527,58 @@ class MainActivity : ComponentActivity() {
             """
             Core Features
 
-            ✓ SVG → VectorDrawable conversion
-            ✓ Batch SVG conversion with ZIP export
-            ✓ Live preview and XML output
+            ✓ Single and batch SVG conversion
+            ✓ ZIP export, XML copy, and file saving
+            ✓ Live VectorDrawable preview
             ✓ Size presets and conversion profiles
-            ✓ Compatibility summary with estimated visual fidelity
+            ✓ Compatibility and visual-fidelity reporting
 
-            Supported SVG Features
+            Drawing and Paint
 
-            ✓ Paths, rectangles, rounded rectangles, circles, ellipses, lines, polygons, and polylines
-            ✓ Fill and stroke colors, opacity, line caps, joins, miter limits, fill rules, and dashed strokes
-            ✓ CSS style attributes, presentation attributes, selectors, variables, currentColor, and inline CSS imports
-            ✓ Linear and radial gradients, gradient inheritance, gradient transforms, and stop opacity
-            ✓ Patterns, clip paths, masks, markers, defs, symbols, and use references
-            ✓ Translate, scale, rotate, skew, matrix transforms, transform-origin, and nested transforms
+            ✓ Paths and basic shapes
+            ✓ Fill, stroke, opacity, fill rules, and dashed strokes
+            ✓ Linear and radial gradients
+            ✓ Patterns, clip paths, masks, and markers
+            ✓ Paint-order support
+            ✓ defs, symbols, and use references
+
+            CSS and Transforms
+
+            ✓ Style and presentation attributes
+            ✓ CSS selectors, custom properties, currentColor, and inline imports
+            ✓ Translate, scale, rotate, skew, matrix, and transform-origin
+            ✓ Nested and inherited transforms
+
+            Advanced Text
+
+            ✓ Embedded SVG fonts converted to vector paths
+            ✓ Android system-font outline fallback
+            ✓ Font family, weight, anchors, and baselines
+            ✓ tspan, dx/dy lists, and per-glyph rotation
+            ✓ Kerning with hkern and vkern
+            ✓ textLength and lengthAdjust
+            ✓ Letter spacing and word spacing
+            ✓ Text decoration
+            ✓ Vertical writing modes
+            ✓ textPath with align, stretch, startOffset, and closed-path wrapping
+            ✓ Right-to-left and bidirectional text
+            """.trimIndent(),
+            15f,
+            Color.DKGRAY,
+            Gravity.START,
+            paddingBottom = 28
+        )
+
+        val releaseHighlights = makeText(
+            """
+            Version 1.2 Highlights
+
+            • Complete vector-path text engine
+            • Embedded SVG font rendering
+            • Advanced text layout and textPath support
+            • Letter spacing, word spacing, and decorations
+            • Paint-order layering
+            • RTL and bidirectional text
             """.trimIndent(),
             15f,
             Color.DKGRAY,
@@ -548,7 +589,7 @@ class MainActivity : ComponentActivity() {
         val note = makeText(
             """
             Unsupported or approximated SVG features are reported when detected.
-            Some SVG features are approximated because Android VectorDrawable cannot represent the full SVG behavior exactly.
+            Some behavior may be approximated where Android VectorDrawable cannot represent SVG exactly.
             """.trimIndent(),
             15f,
             Color.DKGRAY,
@@ -570,11 +611,23 @@ class MainActivity : ComponentActivity() {
         layout.addView(title)
         layout.addView(description)
         layout.addView(features)
+        layout.addView(releaseHighlights)
         layout.addView(note)
         layout.addView(footer)
 
+        val scrollView = ScrollView(this).apply {
+            isFillViewport = true
+            addView(
+                layout,
+                ScrollView.LayoutParams(
+                    ScrollView.LayoutParams.MATCH_PARENT,
+                    ScrollView.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+
         android.app.AlertDialog.Builder(this)
-            .setView(layout)
+            .setView(scrollView)
             .setPositiveButton("OK", null)
             .show()
     }
