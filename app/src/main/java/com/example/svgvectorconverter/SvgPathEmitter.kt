@@ -6,6 +6,13 @@ import java.util.Locale
 object SvgPathEmitter {
     private val flattenTransformStack = mutableListOf<AffineTransform>()
     private val forcedStrokeWidthStack = mutableListOf<String?>()
+    private var activePaintOrderElementsApplied = 0
+
+    val paintOrderElementsApplied: Int get() = activePaintOrderElementsApplied
+
+    internal fun resetStats() {
+        activePaintOrderElementsApplied = 0
+    }
 
     internal fun pushFlattenTransform(matrix: AffineTransform) {
         flattenTransformStack.add(matrix)
@@ -38,6 +45,32 @@ object SvgPathEmitter {
 
     private fun currentForcedStrokeWidth(): String? {
         return forcedStrokeWidthStack.lastOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+
+    private enum class PaintLayer { FILL, STROKE, MARKERS }
+
+    private fun resolvedPaintOrder(value: String?): List<PaintLayer>? {
+        val raw = value?.trim()?.lowercase(Locale.US).orEmpty()
+        if (raw.isBlank() || raw == "normal") return null
+
+        val requested = mutableListOf<PaintLayer>()
+        raw.split(Regex("\\s+"))
+            .forEach { token ->
+                val layer = when (token) {
+                    "fill" -> PaintLayer.FILL
+                    "stroke" -> PaintLayer.STROKE
+                    "markers" -> PaintLayer.MARKERS
+                    else -> null
+                }
+                if (layer != null && layer !in requested) requested += layer
+            }
+
+        if (requested.isEmpty()) return null
+        listOf(PaintLayer.FILL, PaintLayer.STROKE, PaintLayer.MARKERS)
+            .filterNot { it in requested }
+            .forEach { requested += it }
+        return requested
     }
 
     fun appendBasicShapePath(
@@ -142,6 +175,10 @@ object SvgPathEmitter {
         sourceTag: String?
     ) {
         val style = element.getAttribute("style").ifBlank { null }
+        val paintOrder = resolvedPaintOrder(
+            SvgPaintResolver.styleValue(style, "paint-order")
+                ?: element.getAttribute("paint-order").ifBlank { null }
+        )
 
         val rawFill = SvgPaintResolver.styleValue(style, "fill")
             ?: element.getAttribute("fill").ifBlank { inheritedFill ?: "#000000" }
@@ -304,9 +341,14 @@ object SvgPathEmitter {
             if (sourceTag != null) {
                 output.appendLine("${currentIndent}<!-- converted from <$sourceTag> -->")
             }
-            appendPath(
+            appendPaintOrderedElement(
                 output = output,
-                d = effectivePathData,
+                element = element,
+                style = style,
+                paintOrder = paintOrder,
+                fillPathData = transformedPathData,
+                strokePathData = effectivePathData,
+                markerPathData = markerPathData,
                 fill = fill,
                 stroke = stroke,
                 strokeWidth = strokeWidth.ifBlank { null },
@@ -318,17 +360,6 @@ object SvgPathEmitter {
                 strokeAlpha = strokeAlpha,
                 fillGradient = fillGradient,
                 strokeGradient = strokeGradient,
-                indent = currentIndent
-            )
-            appendMarkersForPath(
-                output = output,
-                element = element,
-                style = style,
-                pathData = markerPathData,
-                inheritedStroke = stroke,
-                inheritedStrokeWidth = strokeWidth,
-                inheritedFillAlpha = fillAlpha,
-                inheritedStrokeAlpha = strokeAlpha,
                 indent = currentIndent
             )
 
@@ -343,9 +374,14 @@ object SvgPathEmitter {
             if (sourceTag != null) {
                 output.appendLine("${indent}<!-- converted from <$sourceTag> -->")
             }
-            appendPath(
+            appendPaintOrderedElement(
                 output = output,
-                d = effectivePathData,
+                element = element,
+                style = style,
+                paintOrder = paintOrder,
+                fillPathData = transformedPathData,
+                strokePathData = effectivePathData,
+                markerPathData = markerPathData,
                 fill = fill,
                 stroke = stroke,
                 strokeWidth = strokeWidth.ifBlank { null },
@@ -359,23 +395,88 @@ object SvgPathEmitter {
                 strokeGradient = strokeGradient,
                 indent = indent
             )
-            appendMarkersForPath(
-                output = output,
-                element = element,
-                style = style,
-                pathData = markerPathData,
-                inheritedStroke = stroke,
-                inheritedStrokeWidth = strokeWidth,
-                inheritedFillAlpha = fillAlpha,
-                inheritedStrokeAlpha = strokeAlpha,
-                indent = indent
-            )
         }
 
         output.appendLine()
     }
 
 
+
+    private fun appendPaintOrderedElement(
+        output: StringBuilder,
+        element: Element,
+        style: String?,
+        paintOrder: List<PaintLayer>?,
+        fillPathData: String,
+        strokePathData: String,
+        markerPathData: String,
+        fill: String,
+        stroke: String?,
+        strokeWidth: String?,
+        strokeLineCap: String?,
+        strokeLineJoin: String?,
+        strokeMiterLimit: String?,
+        fillRule: String?,
+        fillAlpha: String?,
+        strokeAlpha: String?,
+        fillGradient: SvgVectorGradient?,
+        strokeGradient: SvgVectorGradient?,
+        indent: String
+    ) {
+        if (paintOrder == null) {
+            appendPath(
+                output = output,
+                d = strokePathData,
+                fill = fill,
+                stroke = stroke,
+                strokeWidth = strokeWidth,
+                strokeLineCap = strokeLineCap,
+                strokeLineJoin = strokeLineJoin,
+                strokeMiterLimit = strokeMiterLimit,
+                fillRule = fillRule,
+                fillAlpha = fillAlpha,
+                strokeAlpha = strokeAlpha,
+                fillGradient = fillGradient,
+                strokeGradient = strokeGradient,
+                indent = indent
+            )
+            appendMarkersForPath(
+                output = output, element = element, style = style, pathData = markerPathData,
+                inheritedStroke = stroke, inheritedStrokeWidth = strokeWidth,
+                inheritedFillAlpha = fillAlpha, inheritedStrokeAlpha = strokeAlpha, indent = indent
+            )
+            return
+        }
+
+        activePaintOrderElementsApplied++
+        output.appendLine("${indent}<!-- paint-order applied: ${paintOrder.joinToString(" ") { it.name.lowercase(Locale.US) }} -->")
+
+        paintOrder.forEach { layer ->
+            when (layer) {
+                PaintLayer.FILL -> if (fill != "@android:color/transparent") {
+                    appendPath(
+                        output = output, d = fillPathData, fill = fill, stroke = null, strokeWidth = null,
+                        strokeLineCap = null, strokeLineJoin = null, strokeMiterLimit = null,
+                        fillRule = fillRule, fillAlpha = fillAlpha, strokeAlpha = null,
+                        fillGradient = fillGradient, strokeGradient = null, indent = indent
+                    )
+                }
+                PaintLayer.STROKE -> if (!stroke.isNullOrBlank()) {
+                    appendPath(
+                        output = output, d = strokePathData, fill = "@android:color/transparent", stroke = stroke,
+                        strokeWidth = strokeWidth, strokeLineCap = strokeLineCap, strokeLineJoin = strokeLineJoin,
+                        strokeMiterLimit = strokeMiterLimit, fillRule = null, fillAlpha = null,
+                        strokeAlpha = strokeAlpha, fillGradient = null, strokeGradient = strokeGradient, indent = indent
+                    )
+                }
+                PaintLayer.MARKERS -> appendMarkersForPath(
+                    output = output, element = element, style = style, pathData = markerPathData,
+                    inheritedStroke = stroke, inheritedStrokeWidth = strokeWidth,
+                    inheritedFillAlpha = fillAlpha, inheritedStrokeAlpha = strokeAlpha, indent = indent
+                )
+            }
+        }
+    }
 
     internal fun appendRawPathForPatternTile(
         output: StringBuilder,

@@ -52,6 +52,7 @@ data class SvgConversionReportData(
     val patternTilePathCount: Int = 0,
     val markerDefinitionCount: Int,
     val appliedMarkers: Int,
+    val paintOrderElementsApplied: Int = 0,
     val clipPathCount: Int,
     val clipPathReferenceCount: Int,
     val appliedClipPaths: Int,
@@ -525,6 +526,9 @@ object SvgConversionReporter {
             if (data.markerDefinitionCount > 0 || data.appliedMarkers > 0) {
                 appendLine("✓ Marker definitions: ${data.markerDefinitionCount}")
                 appendLine("✓ Markers approximated: ${data.appliedMarkers}")
+            }
+            if (data.paintOrderElementsApplied > 0) {
+                appendLine("✓ paint-order elements layered: ${data.paintOrderElementsApplied}")
             }
 
             if (data.clipPathCount > 0) {

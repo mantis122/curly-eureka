@@ -59,6 +59,7 @@ val textGlyphRotationsApplied: Int get() = SvgTextConverter.textGlyphRotationsAp
 val textLetterSpacingAdjustmentsApplied: Int get() = SvgTextConverter.textLetterSpacingAdjustmentsApplied
 val textWordSpacingAdjustmentsApplied: Int get() = SvgTextConverter.textWordSpacingAdjustmentsApplied
 val textDecorationPathsEmitted: Int get() = SvgTextConverter.textDecorationPathsEmitted
+val paintOrderElementsApplied: Int get() = SvgPathEmitter.paintOrderElementsApplied
 val textPathsConverted: Int get() = SvgTextConverter.textPathsConverted
 val textPathGlyphsEmitted: Int get() = SvgTextConverter.textPathGlyphsEmitted
 val textFontFamilies: List<String> get() = SvgTextConverter.textFontFamilies
@@ -153,6 +154,7 @@ fun resetStats(
     activeTextHorizontalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.horizontalKerningPairs.size }
     activeTextVerticalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.verticalKerningPairs.size }
     SvgTextConverter.resetStats()
+    SvgPathEmitter.resetStats()
 }
 
 fun markerDefinition(id: String?): MarkerDefinition? {

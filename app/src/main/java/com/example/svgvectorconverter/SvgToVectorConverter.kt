@@ -203,6 +203,7 @@ object SvgToVectorConverter {
                 patternTilePathCount = SvgTreeConverter.patternTilePathsEmitted,
                 markerDefinitionCount = markerDefinitions.size,
                 appliedMarkers = SvgTreeConverter.appliedMarkers,
+                paintOrderElementsApplied = SvgTreeConverter.paintOrderElementsApplied,
                 clipPathCount = clipPathData.size,
                 clipPathReferenceCount = clipPathReferenceCount,
                 appliedClipPaths = SvgTreeConverter.appliedClipPaths,
