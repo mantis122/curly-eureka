@@ -236,6 +236,7 @@ object SvgToVectorConverter {
                 textGlyphRotationsApplied = SvgTreeConverter.textGlyphRotationsApplied,
                 textLetterSpacingAdjustmentsApplied = SvgTreeConverter.textLetterSpacingAdjustmentsApplied,
                 textWordSpacingAdjustmentsApplied = SvgTreeConverter.textWordSpacingAdjustmentsApplied,
+                textDecorationPathsEmitted = SvgTreeConverter.textDecorationPathsEmitted,
                 textPathsConverted = SvgTreeConverter.textPathsConverted,
                 textPathGlyphsEmitted = SvgTreeConverter.textPathGlyphsEmitted,
                 textFontFamilies = SvgTreeConverter.textFontFamilies,

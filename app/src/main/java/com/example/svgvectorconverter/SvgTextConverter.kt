@@ -25,6 +25,7 @@ object SvgTextConverter {
     private var activeTextGlyphRotationsApplied = 0
     private var activeTextLetterSpacingAdjustmentsApplied = 0
     private var activeTextWordSpacingAdjustmentsApplied = 0
+    private var activeTextDecorationPathsEmitted = 0
     private var activeTextPathsConverted = 0
     private var activeTextPathGlyphsEmitted = 0
     private val activeMatchedHorizontalKerningPairs = linkedSetOf<SvgKerningPair>()
@@ -47,6 +48,7 @@ object SvgTextConverter {
     val textGlyphRotationsApplied: Int get() = activeTextGlyphRotationsApplied
     val textLetterSpacingAdjustmentsApplied: Int get() = activeTextLetterSpacingAdjustmentsApplied
     val textWordSpacingAdjustmentsApplied: Int get() = activeTextWordSpacingAdjustmentsApplied
+    val textDecorationPathsEmitted: Int get() = activeTextDecorationPathsEmitted
     val textPathsConverted: Int get() = activeTextPathsConverted
     val textPathGlyphsEmitted: Int get() = activeTextPathGlyphsEmitted
     val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
@@ -68,6 +70,7 @@ object SvgTextConverter {
         activeTextGlyphRotationsApplied = 0
         activeTextLetterSpacingAdjustmentsApplied = 0
         activeTextWordSpacingAdjustmentsApplied = 0
+        activeTextDecorationPathsEmitted = 0
         activeTextPathsConverted = 0
         activeTextPathGlyphsEmitted = 0
         activeMatchedHorizontalKerningPairs.clear()
@@ -142,6 +145,18 @@ private fun resolvedLetterSpacing(element: Element, fontSize: Float): Float {
 
 private fun resolvedWordSpacing(element: Element, fontSize: Float): Float {
     return textLengthValue(inheritedTextStyleValue(element, "word-spacing"), fontSize)
+}
+
+private fun resolvedTextDecorations(element: Element): Set<String> {
+    val raw = inheritedTextStyleValue(element, "text-decoration")
+        ?.trim()
+        ?.lowercase()
+        .orEmpty()
+    if (raw.isBlank() || raw == "none" || raw == "initial" || raw == "unset") return emptySet()
+    return raw.split(Regex("""[\s,]+"""))
+        .map { it.trim() }
+        .filter { it == "underline" || it == "overline" || it == "line-through" }
+        .toSet()
 }
 
 
@@ -1380,6 +1395,7 @@ fun appendTextGlyphOutlines(
         val fontWeight: String,
         val letterSpacing: Float,
         val wordSpacing: Float,
+        val decorations: Set<String>,
         val advance: Float,
         val glyphCount: Int,
         val lengthOwner: Element?,
@@ -1438,6 +1454,7 @@ fun appendTextGlyphOutlines(
             fontWeight = fontWeight,
             letterSpacing = letterSpacing,
             wordSpacing = wordSpacing,
+            decorations = resolvedTextDecorations(run.element),
             advance = (SvgFontResolver.textRunAdvance(font, run.text, fontSize, vertical = vertical, glyphNames = run.glyphNames) +
                 letterSpacing * letterSpacingGapCount +
                 wordSpacing * whitespaceGlyphCount).coerceAtLeast(fontSize * 0.15f),
@@ -1634,6 +1651,24 @@ fun appendTextGlyphOutlines(
     val remainingGlyphsByLengthOwner = lengthGroups.mapValues { (_, group) -> group.glyphCount }.toMutableMap()
     val rotateIndexByOwner = mutableMapOf<Element, Int>()
 
+    fun emitDecorationRect(prepared: GlyphTextRun, x1: Float, y1: Float, x2: Float, y2: Float) {
+        if (abs(x2 - x1) < 0.0001f || abs(y2 - y1) < 0.0001f) return
+        var pathData = "M ${formatNumber(x1)},${formatNumber(y1)} L ${formatNumber(x2)},${formatNumber(y1)} L ${formatNumber(x2)},${formatNumber(y2)} L ${formatNumber(x1)},${formatNumber(y2)} Z"
+        if (elementMatrix != null) {
+            pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
+        }
+        pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
+        val safeFill = SvgPaintResolver.safeFillColor(prepared.fill)
+        val fillAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.fillOpacity)
+        output.appendLine("${indent}<!-- converted text decoration -->")
+        output.appendLine("${indent}<path")
+        output.appendLine("${indent}    android:pathData=\"${escapeXml(pathData)}\"")
+        output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
+        if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
+        output.appendLine("${indent}/>")
+        activeTextDecorationPathsEmitted++
+    }
+
     for (prepared in preparedRuns) {
         if (hasPositionedRuns) {
             if (prepared.explicitX != null) currentX = prepared.explicitX
@@ -1654,6 +1689,9 @@ fun appendTextGlyphOutlines(
                 }
             }
         }
+
+        val decorationStartX = currentX
+        val decorationStartY = currentY
 
         if (prepared.fontFamily.isNotBlank()) activeTextFontFamilies.add(prepared.fontFamily)
         if (prepared.fontWeight.isNotBlank()) activeTextFontWeights.add(prepared.fontWeight)
@@ -1820,6 +1858,48 @@ fun appendTextGlyphOutlines(
             if (!resolved.isWhitespace) emittedGlyphs++
             globalGlyphIndex++
             runSourceOffset = sourceEnd
+        }
+
+        if (prepared.decorations.isNotEmpty()) {
+            val thickness = (prepared.fontSize * 0.06f).coerceAtLeast(1f)
+            val baselineOffset = embeddedAlphabeticBaselineOffset(
+                font = prepared.font,
+                fontSize = prepared.fontSize,
+                baseline = prepared.baseline
+            )
+            if (prepared.vertical) {
+                val top = minOf(decorationStartY, currentY)
+                val bottom = maxOf(decorationStartY, currentY)
+                val baselineX = decorationStartX + baselineOffset - prepared.baselineShift
+                if ("underline" in prepared.decorations) {
+                    val x = baselineX + prepared.fontSize * 0.10f
+                    emitDecorationRect(prepared, x, top, x + thickness, bottom)
+                }
+                if ("overline" in prepared.decorations) {
+                    val x = baselineX - prepared.fontSize * 0.80f
+                    emitDecorationRect(prepared, x, top, x + thickness, bottom)
+                }
+                if ("line-through" in prepared.decorations) {
+                    val x = baselineX - prepared.fontSize * 0.32f
+                    emitDecorationRect(prepared, x, top, x + thickness, bottom)
+                }
+            } else {
+                val left = minOf(decorationStartX, currentX)
+                val right = maxOf(decorationStartX, currentX)
+                val baselineY = decorationStartY + baselineOffset - prepared.baselineShift
+                if ("underline" in prepared.decorations) {
+                    val y = baselineY + prepared.fontSize * 0.10f
+                    emitDecorationRect(prepared, left, y, right, y + thickness)
+                }
+                if ("overline" in prepared.decorations) {
+                    val y = baselineY - prepared.fontSize * 0.80f
+                    emitDecorationRect(prepared, left, y, right, y + thickness)
+                }
+                if ("line-through" in prepared.decorations) {
+                    val y = baselineY - prepared.fontSize * 0.32f
+                    emitDecorationRect(prepared, left, y, right, y + thickness)
+                }
+            }
         }
     }
 

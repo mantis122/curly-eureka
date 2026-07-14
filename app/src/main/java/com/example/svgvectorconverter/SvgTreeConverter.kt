@@ -58,6 +58,7 @@ val textLengthSpacingAndGlyphsAdjustments: Int get() = SvgTextConverter.textLeng
 val textGlyphRotationsApplied: Int get() = SvgTextConverter.textGlyphRotationsApplied
 val textLetterSpacingAdjustmentsApplied: Int get() = SvgTextConverter.textLetterSpacingAdjustmentsApplied
 val textWordSpacingAdjustmentsApplied: Int get() = SvgTextConverter.textWordSpacingAdjustmentsApplied
+val textDecorationPathsEmitted: Int get() = SvgTextConverter.textDecorationPathsEmitted
 val textPathsConverted: Int get() = SvgTextConverter.textPathsConverted
 val textPathGlyphsEmitted: Int get() = SvgTextConverter.textPathGlyphsEmitted
 val textFontFamilies: List<String> get() = SvgTextConverter.textFontFamilies
