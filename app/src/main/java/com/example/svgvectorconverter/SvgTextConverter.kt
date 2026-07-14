@@ -8,6 +8,8 @@ import android.graphics.Typeface
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import kotlin.math.abs
+import java.util.Collections
+import java.util.IdentityHashMap
 
 object SvgTextConverter {
     private var activeTextElementsApproximated = 0
@@ -26,6 +28,8 @@ object SvgTextConverter {
     private var activeTextLetterSpacingAdjustmentsApplied = 0
     private var activeTextWordSpacingAdjustmentsApplied = 0
     private var activeTextDecorationPathsEmitted = 0
+    private var activeTextPaintOrderElementsApplied = 0
+    private val activePaintOrderedTextElements = Collections.newSetFromMap(IdentityHashMap<Element, Boolean>())
     private var activeTextPathsConverted = 0
     private var activeTextPathGlyphsEmitted = 0
     private val activeMatchedHorizontalKerningPairs = linkedSetOf<SvgKerningPair>()
@@ -49,6 +53,7 @@ object SvgTextConverter {
     val textLetterSpacingAdjustmentsApplied: Int get() = activeTextLetterSpacingAdjustmentsApplied
     val textWordSpacingAdjustmentsApplied: Int get() = activeTextWordSpacingAdjustmentsApplied
     val textDecorationPathsEmitted: Int get() = activeTextDecorationPathsEmitted
+    val textPaintOrderElementsApplied: Int get() = activeTextPaintOrderElementsApplied
     val textPathsConverted: Int get() = activeTextPathsConverted
     val textPathGlyphsEmitted: Int get() = activeTextPathGlyphsEmitted
     val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
@@ -71,12 +76,69 @@ object SvgTextConverter {
         activeTextLetterSpacingAdjustmentsApplied = 0
         activeTextWordSpacingAdjustmentsApplied = 0
         activeTextDecorationPathsEmitted = 0
+        activeTextPaintOrderElementsApplied = 0
+        activePaintOrderedTextElements.clear()
         activeTextPathsConverted = 0
         activeTextPathGlyphsEmitted = 0
         activeMatchedHorizontalKerningPairs.clear()
         activeMatchedVerticalKerningPairs.clear()
         activeTextFontFamilies.clear()
         activeTextFontWeights.clear()
+    }
+
+    private fun appendTextPaintOrderedPath(
+        output: StringBuilder,
+        element: Element,
+        pathData: String,
+        safeFill: String,
+        safeStroke: String?,
+        strokeWidth: String?,
+        fillAlpha: String?,
+        strokeAlpha: String?,
+        fillType: String?,
+        indent: String,
+        escapeXml: (String) -> String
+    ) {
+        val paintOrder = SvgPaintResolver.resolvedPaintOrder(element)
+
+        fun appendLayer(fill: String, stroke: String?, includeFillAlpha: Boolean, includeStrokeAlpha: Boolean) {
+            output.appendLine("${indent}<path")
+            output.appendLine("${indent}    android:pathData=\"${escapeXml(pathData)}\"")
+            output.appendLine("${indent}    android:fillColor=\"$fill\"")
+            if (fillType != null) output.appendLine("${indent}    android:fillType=\"$fillType\"")
+            if (includeFillAlpha && fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
+            if (stroke != null) {
+                output.appendLine("${indent}    android:strokeColor=\"$stroke\"")
+                output.appendLine("${indent}    android:strokeWidth=\"${strokeWidth?.takeIf { it.isNotBlank() } ?: "1"}\"")
+                if (includeStrokeAlpha && strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
+            }
+            output.appendLine("${indent}/>")
+        }
+
+        if (paintOrder == null) {
+            appendLayer(safeFill, safeStroke, includeFillAlpha = true, includeStrokeAlpha = true)
+            return
+        }
+
+        if (activePaintOrderedTextElements.add(element)) {
+            activeTextPaintOrderElementsApplied++
+        }
+        output.appendLine("${indent}<!-- text paint-order applied: ${paintOrder.joinToString(" ") { it.name.lowercase() }} -->")
+        paintOrder.forEach { layer ->
+            when (layer) {
+                SvgPaintResolver.PaintOrderLayer.FILL -> {
+                    if (safeFill != "@android:color/transparent") {
+                        appendLayer(safeFill, null, includeFillAlpha = true, includeStrokeAlpha = false)
+                    }
+                }
+                SvgPaintResolver.PaintOrderLayer.STROKE -> {
+                    if (safeStroke != null) {
+                        appendLayer("@android:color/transparent", safeStroke, includeFillAlpha = false, includeStrokeAlpha = true)
+                    }
+                }
+                SvgPaintResolver.PaintOrderLayer.MARKERS -> Unit
+            }
+        }
     }
 
     private fun formatNumber(value: Float): String {
@@ -1016,31 +1078,19 @@ private fun appendTextPathGlyphOutlines(
                             run.strokeOpacity
                         )
 
-                        output.appendLine("${indent}<path")
-                        output.appendLine(
-                            "${indent}    android:pathData=\"${escapeXml(finalData)}\""
+                        appendTextPaintOrderedPath(
+                            output = output,
+                            element = run.run.element,
+                            pathData = finalData,
+                            safeFill = safeFill,
+                            safeStroke = safeStroke,
+                            strokeWidth = run.strokeWidth,
+                            fillAlpha = fillAlpha,
+                            strokeAlpha = strokeAlpha,
+                            fillType = null,
+                            indent = indent,
+                            escapeXml = escapeXml
                         )
-                        output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
-                        if (fillAlpha != null) {
-                            output.appendLine(
-                                "${indent}    android:fillAlpha=\"$fillAlpha\""
-                            )
-                        }
-                        if (safeStroke != null) {
-                            output.appendLine(
-                                "${indent}    android:strokeColor=\"$safeStroke\""
-                            )
-                            output.appendLine(
-                                "${indent}    android:strokeWidth=\"" +
-                                    "${run.strokeWidth?.takeIf { it.isNotBlank() } ?: "1"}\""
-                            )
-                            if (strokeAlpha != null) {
-                                output.appendLine(
-                                    "${indent}    android:strokeAlpha=\"$strokeAlpha\""
-                                )
-                            }
-                        }
-                        output.appendLine("${indent}/>")
 
                         if (SvgFontResolver.hasGlyphSpecificAdvance(
                                 resolved.glyph,
@@ -1320,17 +1370,19 @@ private fun appendAndroidSystemFontOutlines(
                 val fillAlpha = SvgPaintResolver.combineAlpha(item.opacity, item.fillOpacity)
                 val strokeAlpha = SvgPaintResolver.combineAlpha(item.opacity, item.strokeOpacity)
 
-                output.appendLine("${indent}<path")
-                output.appendLine("${indent}    android:pathData=\"${escapeXml(pathData)}\"")
-                output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
-                output.appendLine("${indent}    android:fillType=\"evenOdd\"")
-                if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
-                if (safeStroke != null) {
-                    output.appendLine("${indent}    android:strokeColor=\"$safeStroke\"")
-                    output.appendLine("${indent}    android:strokeWidth=\"${item.strokeWidth?.takeIf { it.isNotBlank() } ?: "1"}\"")
-                    if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
-                }
-                output.appendLine("${indent}/>")
+                appendTextPaintOrderedPath(
+                    output = output,
+                    element = item.run.element,
+                    pathData = pathData,
+                    safeFill = safeFill,
+                    safeStroke = safeStroke,
+                    strokeWidth = item.strokeWidth,
+                    fillAlpha = fillAlpha,
+                    strokeAlpha = strokeAlpha,
+                    fillType = "evenOdd",
+                    indent = indent,
+                    escapeXml = escapeXml
+                )
                 emitted++
             }
 
@@ -1805,16 +1857,19 @@ fun appendTextGlyphOutlines(
                 val fillAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.fillOpacity)
                 val strokeAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.strokeOpacity)
 
-                output.appendLine("${indent}<path")
-                output.appendLine("${indent}    android:pathData=\"${escapeXml(pathData)}\"")
-                output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
-                if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
-                if (safeStroke != null) {
-                    output.appendLine("${indent}    android:strokeColor=\"$safeStroke\"")
-                    output.appendLine("${indent}    android:strokeWidth=\"${prepared.strokeWidth?.takeIf { it.isNotBlank() } ?: "1"}\"")
-                    if (strokeAlpha != null) output.appendLine("${indent}    android:strokeAlpha=\"$strokeAlpha\"")
-                }
-                output.appendLine("${indent}/>")
+                appendTextPaintOrderedPath(
+                    output = output,
+                    element = prepared.run.element,
+                    pathData = pathData,
+                    safeFill = safeFill,
+                    safeStroke = safeStroke,
+                    strokeWidth = prepared.strokeWidth,
+                    fillAlpha = fillAlpha,
+                    strokeAlpha = strokeAlpha,
+                    fillType = null,
+                    indent = indent,
+                    escapeXml = escapeXml
+                )
 
                 if (SvgFontResolver.hasGlyphSpecificAdvance(glyph, vertical = prepared.vertical)) activeTextGlyphSpecificAdvances++ else activeTextDefaultFontAdvances++
                 if (isMissingGlyphFallback && !sourceIsWhitespace) activeTextMissingGlyphFallbacks++
