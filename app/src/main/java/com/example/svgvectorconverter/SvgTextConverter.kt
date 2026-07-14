@@ -10,6 +10,7 @@ import org.w3c.dom.Node
 import kotlin.math.abs
 import java.util.Collections
 import java.util.IdentityHashMap
+import java.text.Bidi
 
 object SvgTextConverter {
     private var activeTextElementsApproximated = 0
@@ -29,6 +30,9 @@ object SvgTextConverter {
     private var activeTextWordSpacingAdjustmentsApplied = 0
     private var activeTextDecorationPathsEmitted = 0
     private var activeTextPaintOrderElementsApplied = 0
+    private var activeTextBidiRunsReordered = 0
+    private val activeTextDirections = linkedSetOf<String>()
+    private val activeTextUnicodeBidiModes = linkedSetOf<String>()
     private val activePaintOrderedTextElements = Collections.newSetFromMap(IdentityHashMap<Element, Boolean>())
     private var activeTextPathsConverted = 0
     private var activeTextPathGlyphsEmitted = 0
@@ -54,6 +58,9 @@ object SvgTextConverter {
     val textWordSpacingAdjustmentsApplied: Int get() = activeTextWordSpacingAdjustmentsApplied
     val textDecorationPathsEmitted: Int get() = activeTextDecorationPathsEmitted
     val textPaintOrderElementsApplied: Int get() = activeTextPaintOrderElementsApplied
+    val textBidiRunsReordered: Int get() = activeTextBidiRunsReordered
+    val textDirections: List<String> get() = activeTextDirections.toList()
+    val textUnicodeBidiModes: List<String> get() = activeTextUnicodeBidiModes.toList()
     val textPathsConverted: Int get() = activeTextPathsConverted
     val textPathGlyphsEmitted: Int get() = activeTextPathGlyphsEmitted
     val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
@@ -77,6 +84,9 @@ object SvgTextConverter {
         activeTextWordSpacingAdjustmentsApplied = 0
         activeTextDecorationPathsEmitted = 0
         activeTextPaintOrderElementsApplied = 0
+        activeTextBidiRunsReordered = 0
+        activeTextDirections.clear()
+        activeTextUnicodeBidiModes.clear()
         activePaintOrderedTextElements.clear()
         activeTextPathsConverted = 0
         activeTextPathGlyphsEmitted = 0
@@ -266,11 +276,74 @@ private fun resolvedBaselineShift(element: Element, fontSize: Float, stopAt: Ele
     return shift
 }
 
+private fun normalizedDirection(element: Element): String {
+    val value = inheritedTextStyleValue(element, "direction")
+        ?.trim()
+        ?.lowercase()
+    val direction = if (value == "rtl") "rtl" else "ltr"
+    activeTextDirections.add(direction)
+    return direction
+}
+
+private fun normalizedUnicodeBidi(element: Element): String {
+    val value = inheritedTextStyleValue(element, "unicode-bidi")
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it in setOf("normal", "embed", "bidi-override", "isolate", "isolate-override", "plaintext") }
+        ?: "normal"
+    activeTextUnicodeBidiModes.add(value)
+    return value
+}
+
+private fun reverseCodePoints(value: String): String = codePointStrings(value).asReversed().joinToString("")
+
+private fun bidiVisualText(element: Element, text: String): String {
+    if (text.isBlank()) return text
+    val direction = normalizedDirection(element)
+    val mode = normalizedUnicodeBidi(element)
+
+    val reordered = if (mode == "bidi-override" || mode == "isolate-override") {
+        if (direction == "rtl") reverseCodePoints(text) else text
+    } else {
+        val baseFlag = when {
+            mode == "plaintext" && direction == "rtl" -> Bidi.DIRECTION_DEFAULT_RIGHT_TO_LEFT
+            mode == "plaintext" -> Bidi.DIRECTION_DEFAULT_LEFT_TO_RIGHT
+            direction == "rtl" -> Bidi.DIRECTION_RIGHT_TO_LEFT
+            else -> Bidi.DIRECTION_LEFT_TO_RIGHT
+        }
+        val bidi = Bidi(text, baseFlag)
+        if (!bidi.isMixed && !bidi.isRightToLeft) {
+            text
+        } else {
+            val count = bidi.runCount
+            val levels = ByteArray(count) { bidi.getRunLevel(it).toByte() }
+            val order = Array<Any>(count) { it }
+            Bidi.reorderVisually(levels, 0, order, 0, count)
+            buildString {
+                for (item in order) {
+                    val index = item as Int
+                    val part = text.substring(bidi.getRunStart(index), bidi.getRunLimit(index))
+                    append(if ((bidi.getRunLevel(index) and 1) != 0) reverseCodePoints(part) else part)
+                }
+            }
+        }
+    }
+
+    if (reordered != text) activeTextBidiRunsReordered++
+    return reordered
+}
+
 private fun normalizedTextAnchor(element: Element): String {
-    return inheritedTextStyleValue(element, "text-anchor")
+    val declared = inheritedTextStyleValue(element, "text-anchor")
         ?.lowercase()
         ?.takeIf { it == "start" || it == "middle" || it == "end" }
         ?: "start"
+    if (normalizedDirection(element) != "rtl") return declared
+    return when (declared) {
+        "start" -> "end"
+        "end" -> "start"
+        else -> declared
+    }
 }
 
 private fun isVerticalWritingMode(element: Element): Boolean {
@@ -428,7 +501,7 @@ private fun textApproximationRuns(element: Element): List<TextApproximationRun> 
         fun flushPendingText() {
             val text = normalizeTextWhitespace(pendingText.toString())
             if (text.isNotBlank()) {
-                runs.add(TextApproximationRun(text, owner))
+                runs.add(TextApproximationRun(bidiVisualText(owner, text), owner))
             }
             pendingText.clear()
         }
@@ -503,7 +576,7 @@ private fun textApproximationRuns(element: Element): List<TextApproximationRun> 
     if (runs.isEmpty()) {
         val fallbackText = textContentForApproximation(element)
         if (fallbackText.isNotBlank()) {
-            runs.add(TextApproximationRun(fallbackText, element))
+            runs.add(TextApproximationRun(bidiVisualText(element, fallbackText), element))
         }
     }
 

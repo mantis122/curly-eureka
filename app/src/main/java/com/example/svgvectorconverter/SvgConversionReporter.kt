@@ -52,7 +52,6 @@ data class SvgConversionReportData(
     val patternTilePathCount: Int = 0,
     val markerDefinitionCount: Int,
     val appliedMarkers: Int,
-    val paintOrderElementsApplied: Int = 0,
     val clipPathCount: Int,
     val clipPathReferenceCount: Int,
     val appliedClipPaths: Int,
@@ -87,6 +86,9 @@ data class SvgConversionReportData(
     val textLetterSpacingAdjustmentsApplied: Int = 0,
     val textWordSpacingAdjustmentsApplied: Int = 0,
     val textDecorationPathsEmitted: Int = 0,
+    val textBidiRunsReordered: Int = 0,
+    val textDirections: List<String> = emptyList(),
+    val textUnicodeBidiModes: List<String> = emptyList(),
     val textPathsConverted: Int = 0,
     val textPathGlyphsEmitted: Int = 0,
     val textFontFamilies: List<String> = emptyList(),
@@ -439,6 +441,9 @@ object SvgConversionReporter {
                     data.textPathMethods.isNotEmpty() ||
                     data.textGlyphRotationsApplied > 0 ||
                     data.textLetterSpacingAdjustmentsApplied > 0 ||
+                    data.textBidiRunsReordered > 0 ||
+                    data.textDirections.isNotEmpty() ||
+                    data.textUnicodeBidiModes.isNotEmpty() ||
                     data.textWordSpacingAdjustmentsApplied > 0 ||
                     data.textDecorationPathsEmitted > 0 ||
                     textLengthAdjustmentCount > 0
@@ -457,6 +462,11 @@ object SvgConversionReporter {
                     }
 
                     appendValues("Writing modes", data.writingModes)
+                    appendValues("Text directions", data.textDirections)
+                    appendValues("unicode-bidi modes", data.textUnicodeBidiModes)
+                    if (data.textBidiRunsReordered > 0) {
+                        appendLine("✓ Bidirectional text runs reordered: ${data.textBidiRunsReordered}")
+                    }
                     appendValues("Text anchors", data.textAnchors)
                     appendValues("Dominant baselines", data.dominantBaselines)
                     appendValues("Alignment baselines", data.alignmentBaselines)
@@ -526,9 +536,6 @@ object SvgConversionReporter {
             if (data.markerDefinitionCount > 0 || data.appliedMarkers > 0) {
                 appendLine("✓ Marker definitions: ${data.markerDefinitionCount}")
                 appendLine("✓ Markers approximated: ${data.appliedMarkers}")
-            }
-            if (data.paintOrderElementsApplied > 0) {
-                appendLine("✓ paint-order elements layered: ${data.paintOrderElementsApplied}")
             }
 
             if (data.clipPathCount > 0) {
