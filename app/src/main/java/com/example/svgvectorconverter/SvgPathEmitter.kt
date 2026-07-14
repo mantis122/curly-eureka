@@ -48,31 +48,6 @@ object SvgPathEmitter {
     }
 
 
-    private enum class PaintLayer { FILL, STROKE, MARKERS }
-
-    private fun resolvedPaintOrder(value: String?): List<PaintLayer>? {
-        val raw = value?.trim()?.lowercase(Locale.US).orEmpty()
-        if (raw.isBlank() || raw == "normal") return null
-
-        val requested = mutableListOf<PaintLayer>()
-        raw.split(Regex("\\s+"))
-            .forEach { token ->
-                val layer = when (token) {
-                    "fill" -> PaintLayer.FILL
-                    "stroke" -> PaintLayer.STROKE
-                    "markers" -> PaintLayer.MARKERS
-                    else -> null
-                }
-                if (layer != null && layer !in requested) requested += layer
-            }
-
-        if (requested.isEmpty()) return null
-        listOf(PaintLayer.FILL, PaintLayer.STROKE, PaintLayer.MARKERS)
-            .filterNot { it in requested }
-            .forEach { requested += it }
-        return requested
-    }
-
     fun appendBasicShapePath(
         output: StringBuilder,
         element: Element,
@@ -175,10 +150,7 @@ object SvgPathEmitter {
         sourceTag: String?
     ) {
         val style = element.getAttribute("style").ifBlank { null }
-        val paintOrder = resolvedPaintOrder(
-            SvgPaintResolver.styleValue(style, "paint-order")
-                ?: element.getAttribute("paint-order").ifBlank { null }
-        )
+        val paintOrder = SvgPaintResolver.resolvedPaintOrder(element)
 
         val rawFill = SvgPaintResolver.styleValue(style, "fill")
             ?: element.getAttribute("fill").ifBlank { inheritedFill ?: "#000000" }
@@ -406,7 +378,7 @@ object SvgPathEmitter {
         output: StringBuilder,
         element: Element,
         style: String?,
-        paintOrder: List<PaintLayer>?,
+        paintOrder: List<SvgPaintResolver.PaintOrderLayer>?,
         fillPathData: String,
         strokePathData: String,
         markerPathData: String,
@@ -453,7 +425,7 @@ object SvgPathEmitter {
 
         paintOrder.forEach { layer ->
             when (layer) {
-                PaintLayer.FILL -> if (fill != "@android:color/transparent") {
+                SvgPaintResolver.PaintOrderLayer.FILL -> if (fill != "@android:color/transparent") {
                     appendPath(
                         output = output, d = fillPathData, fill = fill, stroke = null, strokeWidth = null,
                         strokeLineCap = null, strokeLineJoin = null, strokeMiterLimit = null,
@@ -461,7 +433,7 @@ object SvgPathEmitter {
                         fillGradient = fillGradient, strokeGradient = null, indent = indent
                     )
                 }
-                PaintLayer.STROKE -> if (!stroke.isNullOrBlank()) {
+                SvgPaintResolver.PaintOrderLayer.STROKE -> if (!stroke.isNullOrBlank()) {
                     appendPath(
                         output = output, d = strokePathData, fill = "@android:color/transparent", stroke = stroke,
                         strokeWidth = strokeWidth, strokeLineCap = strokeLineCap, strokeLineJoin = strokeLineJoin,
@@ -469,7 +441,7 @@ object SvgPathEmitter {
                         strokeAlpha = strokeAlpha, fillGradient = null, strokeGradient = strokeGradient, indent = indent
                     )
                 }
-                PaintLayer.MARKERS -> appendMarkersForPath(
+                SvgPaintResolver.PaintOrderLayer.MARKERS -> appendMarkersForPath(
                     output = output, element = element, style = style, pathData = markerPathData,
                     inheritedStroke = stroke, inheritedStrokeWidth = strokeWidth,
                     inheritedFillAlpha = fillAlpha, inheritedStrokeAlpha = strokeAlpha, indent = indent

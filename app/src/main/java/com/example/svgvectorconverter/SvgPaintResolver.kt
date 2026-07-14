@@ -8,6 +8,60 @@ import java.io.StringReader
 import java.util.Locale
 
 object SvgPaintResolver {
+    enum class PaintOrderLayer { FILL, STROKE, MARKERS }
+
+    /**
+     * Resolves SVG paint-order for an element, including inheritance from
+     * enclosing elements. A null result represents the SVG default order
+     * (fill, stroke, markers).
+     */
+    fun resolvedPaintOrder(element: Element): List<PaintOrderLayer>? {
+        var current: Node? = element
+
+        while (current != null && current.nodeType == Node.ELEMENT_NODE) {
+            val currentElement = current as Element
+            val style = currentElement.getAttribute("style").ifBlank { null }
+            val authoredValue = styleValue(style, "paint-order")
+                ?: currentElement.getAttribute("paint-order").ifBlank { null }
+
+            if (authoredValue != null) {
+                return normalizePaintOrder(authoredValue)
+            }
+
+            current = current.parentNode
+        }
+
+        return null
+    }
+
+    fun normalizePaintOrder(value: String?): List<PaintOrderLayer>? {
+        val raw = value?.trim()?.lowercase(Locale.US).orEmpty()
+        if (raw.isBlank() || raw == "normal") return null
+
+        val requested = mutableListOf<PaintOrderLayer>()
+        raw.split(Regex("\\s+"))
+            .forEach { token ->
+                val layer = when (token) {
+                    "fill" -> PaintOrderLayer.FILL
+                    "stroke" -> PaintOrderLayer.STROKE
+                    "markers" -> PaintOrderLayer.MARKERS
+                    else -> null
+                }
+                if (layer != null && layer !in requested) requested += layer
+            }
+
+        if (requested.isEmpty()) return null
+
+        listOf(
+            PaintOrderLayer.FILL,
+            PaintOrderLayer.STROKE,
+            PaintOrderLayer.MARKERS
+        ).filterNot { it in requested }
+            .forEach { requested += it }
+
+        return requested
+    }
+
     private var activeGradientFallbackColors: Map<String, String> = emptyMap()
     private var activeGradientDefinitions: Map<String, SvgVectorGradient> = emptyMap()
     private var activePatternFallbackColors: Map<String, String> = emptyMap()
