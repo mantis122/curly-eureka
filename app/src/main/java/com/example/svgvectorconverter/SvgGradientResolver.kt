@@ -40,11 +40,20 @@ data class SvgObjectBounds(
 object SvgGradientResolver {
     private const val MAX_INHERITANCE_DEPTH = 24
 
+    private data class GradientStopTemplate(
+        val offset: String,
+        val colorText: String,
+        val opacity: Float,
+        val usesCurrentColor: Boolean,
+        val stopColorOverride: String? = null
+    )
+
     private data class ResolvedGradientSpec(
         val id: String,
         val sourceType: String,
         val attributes: Map<String, String>,
-        val stops: List<SvgGradientStop>,
+        val stops: List<GradientStopTemplate>,
+        val currentColor: String,
         val inheritedFrom: String? = null
     )
 
@@ -224,12 +233,14 @@ object SvgGradientResolver {
 
         val localStops = localStopsForGradient(element)
         val mergedStops = if (localStops.isNotEmpty()) localStops else base?.stops.orEmpty()
+        val currentColor = resolvedGradientCurrentColor(element, base?.currentColor)
 
         val resolved = ResolvedGradientSpec(
             id = id,
             sourceType = localType,
             attributes = mergedAttributes,
             stops = mergedStops,
+            currentColor = currentColor,
             inheritedFrom = href
         )
 
@@ -242,7 +253,16 @@ object SvgGradientResolver {
         viewportWidth: Float,
         viewportHeight: Float
     ): SvgVectorGradient? {
-        val stops = spec.stops
+        val stops = spec.stops.mapNotNull { template ->
+            val sourceColor = if (template.usesCurrentColor) {
+                template.stopColorOverride ?: spec.currentColor
+            } else {
+                template.colorText
+            }
+            androidColorWithAlpha(sourceColor, template.opacity)?.let { color ->
+                SvgGradientStop(offset = template.offset, color = color)
+            }
+        }
         if (stops.isEmpty()) return null
 
         val fallback = averageStopColor(stops.map { it.color }) ?: stops.first().color
@@ -354,10 +374,13 @@ object SvgGradientResolver {
 
     private data class ParsedGradientStop(
         val offset: Float?,
-        val color: String
+        val colorText: String,
+        val opacity: Float,
+        val usesCurrentColor: Boolean,
+        val stopColorOverride: String?
     )
 
-    private fun localStopsForGradient(element: Element): List<SvgGradientStop> {
+    private fun localStopsForGradient(element: Element): List<GradientStopTemplate> {
         val parsedStops = mutableListOf<ParsedGradientStop>()
         val children = element.childNodes
 
@@ -373,13 +396,19 @@ object SvgGradientResolver {
             val declaredColor = SvgPaintResolver.styleValue(style, "stop-color")
                 ?: stop.getAttribute("stop-color").ifBlank { null }
                 ?: "black"
-            val colorText = if (declaredColor.equals("currentColor", ignoreCase = true)) {
-                SvgPaintResolver.resolvedCurrentColorForElement(stop)
-            } else {
-                declaredColor.trim()
-            }
+            val usesCurrentColor = declaredColor.equals("currentColor", ignoreCase = true)
+            val colorText = declaredColor.trim()
 
             if (colorText.isBlank() || colorText.equals("none", ignoreCase = true)) continue
+
+            // A color declared directly on the stop remains attached to that stop. Otherwise,
+            // currentColor is resolved later against the final gradient in an href chain, so a
+            // referencing gradient can recolor inherited currentColor stops.
+            val stopColorOverride = if (usesCurrentColor) {
+                declaredColorOnElement(stop)?.let { SvgPaintResolver.normalizedAndroidColor(it) }
+            } else {
+                null
+            }
 
             val stopOpacityText = stop.getAttribute("stop-opacity").ifBlank {
                 SvgPaintResolver.styleValue(style, "stop-opacity") ?: "1"
@@ -389,7 +418,8 @@ object SvgGradientResolver {
             }
             val stopOpacity = SvgPaintResolver.parseSvgAlpha(stopOpacityText) ?: 1f
             val localOpacity = SvgPaintResolver.parseSvgAlpha(opacityText) ?: 1f
-            val color = androidColorWithAlpha(colorText, stopOpacity * localOpacity) ?: continue
+            val combinedOpacity = stopOpacity * localOpacity
+            if (!usesCurrentColor && androidColorWithAlpha(colorText, combinedOpacity) == null) continue
             val offsetText = stop.getAttribute("offset").ifBlank {
                 SvgPaintResolver.styleValue(style, "offset") ?: ""
             }
@@ -397,7 +427,10 @@ object SvgGradientResolver {
             parsedStops.add(
                 ParsedGradientStop(
                     offset = parseOffsetOrNull(offsetText),
-                    color = color
+                    colorText = colorText,
+                    opacity = combinedOpacity,
+                    usesCurrentColor = usesCurrentColor,
+                    stopColorOverride = stopColorOverride
                 )
             )
         }
@@ -405,10 +438,19 @@ object SvgGradientResolver {
         return normalizeGradientStops(parsedStops)
     }
 
-    private fun normalizeGradientStops(stops: List<ParsedGradientStop>): List<SvgGradientStop> {
+    private fun normalizeGradientStops(stops: List<ParsedGradientStop>): List<GradientStopTemplate> {
         if (stops.isEmpty()) return emptyList()
         if (stops.size == 1) {
-            return listOf(SvgGradientStop(offset = format(stops.first().offset ?: 0f), color = stops.first().color))
+            val stop = stops.first()
+            return listOf(
+                GradientStopTemplate(
+                    offset = format(stop.offset ?: 0f),
+                    colorText = stop.colorText,
+                    opacity = stop.opacity,
+                    usesCurrentColor = stop.usesCurrentColor,
+                    stopColorOverride = stop.stopColorOverride
+                )
+            )
         }
 
         val offsets = MutableList<Float?>(stops.size) { index -> stops[index].offset?.coerceIn(0f, 1f) }
@@ -444,8 +486,37 @@ object SvgGradientResolver {
         return stops.mapIndexed { index, stop ->
             val adjustedOffset = (offsets[index] ?: 0f).coerceIn(0f, 1f).coerceAtLeast(previous)
             previous = adjustedOffset
-            SvgGradientStop(offset = format(adjustedOffset), color = stop.color)
+            GradientStopTemplate(
+                offset = format(adjustedOffset),
+                colorText = stop.colorText,
+                opacity = stop.opacity,
+                usesCurrentColor = stop.usesCurrentColor,
+                stopColorOverride = stop.stopColorOverride
+            )
         }
+    }
+
+
+    private fun resolvedGradientCurrentColor(element: Element, inheritedHrefColor: String?): String {
+        var node: Node? = element
+        while (node != null && node.nodeType == Node.ELEMENT_NODE) {
+            val current = node as Element
+            declaredColorOnElement(current)?.let { declared ->
+                if (!declared.equals("inherit", ignoreCase = true) &&
+                    !declared.equals("currentColor", ignoreCase = true)
+                ) {
+                    SvgPaintResolver.normalizedAndroidColor(declared)?.let { return it }
+                }
+            }
+            node = current.parentNode
+        }
+        return inheritedHrefColor ?: "#000000"
+    }
+
+    private fun declaredColorOnElement(element: Element): String? {
+        val style = element.getAttribute("style").ifBlank { null }
+        return SvgPaintResolver.styleValue(style, "color")
+            ?: element.getAttribute("color").trim().takeIf { it.isNotBlank() }
     }
 
     private fun gradientHrefId(element: Element): String? {
