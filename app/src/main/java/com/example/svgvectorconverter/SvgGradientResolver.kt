@@ -370,9 +370,14 @@ object SvgGradientResolver {
             if (tag != "stop") continue
 
             val style = stop.getAttribute("style").ifBlank { null }
-            val colorText = stop.getAttribute("stop-color").ifBlank {
-                SvgPaintResolver.styleValue(style, "stop-color") ?: ""
-            }.trim()
+            val declaredColor = SvgPaintResolver.styleValue(style, "stop-color")
+                ?: stop.getAttribute("stop-color").ifBlank { null }
+                ?: "black"
+            val colorText = if (declaredColor.equals("currentColor", ignoreCase = true)) {
+                SvgPaintResolver.resolvedCurrentColorForElement(stop)
+            } else {
+                declaredColor.trim()
+            }
 
             if (colorText.isBlank() || colorText.equals("none", ignoreCase = true)) continue
 
