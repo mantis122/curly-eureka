@@ -281,8 +281,22 @@ object SvgPathEmitter {
         val markerPathData = transformedPathData
         val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
         val objectBounds = approximatePathBounds(effectivePathData)
-        val fillGradient = if (sourceTag == "line") null else SvgPaintResolver.gradientForPaint(resolvedRawFill, objectBounds)
-        val strokeGradient = SvgPaintResolver.gradientForPaint(resolvedRawStroke, objectBounds)
+        val fillGradient = if (sourceTag == "line") {
+            null
+        } else {
+            SvgGradientResolver.resolveContextPaints(
+                gradient = SvgPaintResolver.gradientForPaint(resolvedRawFill, objectBounds),
+                currentColor = currentColor,
+                contextFill = resolvedRawFill,
+                contextStroke = resolvedRawStroke
+            )
+        }
+        val strokeGradient = SvgGradientResolver.resolveContextPaints(
+            gradient = SvgPaintResolver.gradientForPaint(resolvedRawStroke, objectBounds),
+            currentColor = currentColor,
+            contextFill = resolvedRawFill,
+            contextStroke = resolvedRawStroke
+        )
         val pathNeedsGroup = effectiveTransform != null || hasClipPath
 
         val directFilterValue = SvgPaintResolver.styleValue(style, "filter")
@@ -652,8 +666,22 @@ object SvgPathEmitter {
             val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
 
             val objectBounds = approximatePathBounds(effectivePathData)
-            val fillGradient = if (tagName == "line") null else SvgPaintResolver.gradientForPaint(resolvedRawFill, objectBounds)
-            val strokeGradient = SvgPaintResolver.gradientForPaint(resolvedRawStroke, objectBounds)
+            val fillGradient = if (tagName == "line") {
+                null
+            } else {
+                SvgGradientResolver.resolveContextPaints(
+                    gradient = SvgPaintResolver.gradientForPaint(resolvedRawFill, objectBounds),
+                    currentColor = currentColor,
+                    contextFill = resolvedRawFill,
+                    contextStroke = resolvedRawStroke
+                )
+            }
+            val strokeGradient = SvgGradientResolver.resolveContextPaints(
+                gradient = SvgPaintResolver.gradientForPaint(resolvedRawStroke, objectBounds),
+                currentColor = currentColor,
+                contextFill = resolvedRawFill,
+                contextStroke = resolvedRawStroke
+            )
 
             val fillColor = if (tagName == "line") {
                 "@android:color/transparent"

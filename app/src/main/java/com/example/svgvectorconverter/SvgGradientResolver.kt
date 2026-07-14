@@ -10,7 +10,9 @@ import kotlin.math.hypot
 
 data class SvgGradientStop(
     val offset: String,
-    val color: String
+    val color: String,
+    val sourcePaint: String? = null,
+    val opacity: Float = 1f
 )
 
 data class SvgVectorGradient(
@@ -199,6 +201,53 @@ object SvgGradientResolver {
         return kotlin.math.abs(first) < 0.0001f && kotlin.math.abs(last - 1f) < 0.0001f
     }
 
+
+    fun resolveContextPaints(
+        gradient: SvgVectorGradient?,
+        currentColor: String?,
+        contextFill: String?,
+        contextStroke: String?
+    ): SvgVectorGradient? {
+        if (gradient == null) return null
+
+        fun usableContextPaint(value: String?): String? {
+            val raw = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
+            if (gradientIdFromPaint(raw) != null) return null
+            val resolved = SvgPaintResolver.resolveSpecialPaint(
+                raw,
+                currentColor,
+                null,
+                null
+            ) ?: return null
+            return SvgPaintResolver.normalizedAndroidColor(resolved)
+        }
+
+        val resolvedCurrentColor = SvgPaintResolver.normalizedAndroidColor(currentColor) ?: "#000000"
+        val resolvedContextFill = usableContextPaint(contextFill)
+        val resolvedContextStroke = usableContextPaint(contextStroke)
+
+        val stops = gradient.stops.map { stop ->
+            val token = stop.sourcePaint?.trim()
+            if (token.isNullOrBlank()) return@map stop
+
+            val source = when {
+                token.equals("currentColor", ignoreCase = true) -> resolvedCurrentColor
+                token.equals("context-fill", ignoreCase = true) ->
+                    resolvedContextFill ?: resolvedCurrentColor
+                token.equals("context-stroke", ignoreCase = true) ->
+                    resolvedContextStroke ?: resolvedCurrentColor
+                else -> stop.color
+            }
+
+            stop.copy(color = androidColorWithAlpha(source, stop.opacity) ?: stop.color)
+        }
+
+        val fallback = averageStopColor(stops.map { it.color })
+            ?: stops.firstOrNull()?.color
+            ?: gradient.fallbackColor
+        return gradient.copy(stops = stops, fallbackColor = fallback)
+    }
+
     fun transformedGradientCount(definitions: Map<String, SvgVectorGradient>): Int {
         return definitions.values.count { it.hadGradientTransform }
     }
@@ -254,13 +303,23 @@ object SvgGradientResolver {
         viewportHeight: Float
     ): SvgVectorGradient? {
         val stops = spec.stops.mapNotNull { template ->
-            val sourceColor = if (template.usesCurrentColor) {
-                template.stopColorOverride ?: spec.currentColor
-            } else {
-                template.colorText
+            val usesContextPaint = template.colorText.equals("context-fill", ignoreCase = true) ||
+                template.colorText.equals("context-stroke", ignoreCase = true)
+            val sourceColor = when {
+                template.usesCurrentColor -> template.stopColorOverride ?: spec.currentColor
+                usesContextPaint -> spec.currentColor
+                else -> template.colorText
             }
             androidColorWithAlpha(sourceColor, template.opacity)?.let { color ->
-                SvgGradientStop(offset = template.offset, color = color)
+                SvgGradientStop(
+                    offset = template.offset,
+                    color = color,
+                    sourcePaint = template.colorText.takeIf {
+                        it.equals("context-fill", ignoreCase = true) ||
+                            it.equals("context-stroke", ignoreCase = true)
+                    },
+                    opacity = template.opacity
+                )
             }
         }
         if (stops.isEmpty()) return null
@@ -397,6 +456,8 @@ object SvgGradientResolver {
                 ?: stop.getAttribute("stop-color").ifBlank { null }
                 ?: "black"
             val usesCurrentColor = declaredColor.equals("currentColor", ignoreCase = true)
+            val usesContextPaint = declaredColor.equals("context-fill", ignoreCase = true) ||
+                declaredColor.equals("context-stroke", ignoreCase = true)
             val colorText = declaredColor.trim()
 
             if (colorText.isBlank() || colorText.equals("none", ignoreCase = true)) continue
@@ -419,7 +480,9 @@ object SvgGradientResolver {
             val stopOpacity = SvgPaintResolver.parseSvgAlpha(stopOpacityText) ?: 1f
             val localOpacity = SvgPaintResolver.parseSvgAlpha(opacityText) ?: 1f
             val combinedOpacity = stopOpacity * localOpacity
-            if (!usesCurrentColor && androidColorWithAlpha(colorText, combinedOpacity) == null) continue
+            if (!usesCurrentColor && !usesContextPaint &&
+                androidColorWithAlpha(colorText, combinedOpacity) == null
+            ) continue
             val offsetText = stop.getAttribute("offset").ifBlank {
                 SvgPaintResolver.styleValue(style, "offset") ?: ""
             }
