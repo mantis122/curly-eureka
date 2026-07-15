@@ -1483,15 +1483,37 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
     val isDrawableElement = tagName == "path" || tagName == "rect" || tagName == "circle" ||
         tagName == "ellipse" || tagName == "line" || tagName == "polyline" || tagName == "polygon"
     val hasNonScalingStroke = currentVectorEffect.trim().equals("non-scaling-stroke", ignoreCase = true)
+
+    // A drawable's own transform participates in the effective scale just as its
+    // ancestor transforms do. Path/basic-shape emission applies this transform
+    // later; we only use its linear scale here to compensate strokeWidth.
+    val drawableTransformValue = if (isDrawableElement) {
+        element.getAttribute("transform")
+            .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
+    } else {
+        ""
+    }
+    val drawableTransformMatrix = if (drawableTransformValue.isNotBlank()) {
+        SvgTransformParser.combineTransformListToMatrix(
+            SvgTransformParser.parseTransformList(drawableTransformValue),
+            currentTransformOrigin
+        )
+    } else {
+        null
+    }
+    val drawableScaleEstimate = scaleEstimateFromTransformMatrix(drawableTransformMatrix)
+    val effectiveStrokeScaleX = inheritedScaleX * drawableScaleEstimate.scaleX
+    val effectiveStrokeScaleY = inheritedScaleY * drawableScaleEstimate.scaleY
+
     val strokeWidthForEmission = if (isDrawableElement && hasNonScalingStroke) {
         val (compensatedStrokeWidth, didCompensate) = compensateNonScalingStrokeWidth(
             currentStrokeWidth,
-            inheritedScaleX,
-            inheritedScaleY
+            effectiveStrokeScaleX,
+            effectiveStrokeScaleY
         )
         recordNonScalingStroke(
             didCompensate = didCompensate,
-            isUncertain = didCompensate && isNonUniformScale(inheritedScaleX, inheritedScaleY)
+            isUncertain = didCompensate && isNonUniformScale(effectiveStrokeScaleX, effectiveStrokeScaleY)
         )
         compensatedStrokeWidth
     } else {
