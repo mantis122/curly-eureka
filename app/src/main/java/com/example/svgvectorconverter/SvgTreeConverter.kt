@@ -238,15 +238,40 @@ private data class ScaleEstimate(
 private fun scaleEstimateFromTransformMatrix(matrix: AffineTransform?): ScaleEstimate {
     if (matrix == null) return ScaleEstimate()
 
-    // Estimate geometric scale from the matrix columns. This keeps non-scaling
-    // stroke compensation working through nested transforms, <use> placement,
-    // rotation+scale, and transforms that are flattened into child pathData.
-    val xScale = kotlin.math.sqrt(matrix.a * matrix.a + matrix.b * matrix.b)
-        .takeIf { it > 0.0001f } ?: 1f
-    val yScale = kotlin.math.sqrt(matrix.c * matrix.c + matrix.d * matrix.d)
-        .takeIf { it > 0.0001f } ?: 1f
+    // Use the singular values of the 2x2 linear part rather than the lengths
+    // of its columns. Their product is |det(matrix)|, so the compensation in
+    // compensateNonScalingStrokeWidth() becomes:
+    //
+    //     sqrt(scaleX * scaleY) = sqrt(|a*d - b*c|)
+    //
+    // This is area-preserving for arbitrary affine transforms. In particular,
+    // a pure skew has determinant 1 and therefore does not incorrectly change
+    // the approximated non-scaling stroke width. Equal singular values identify
+    // a similarity transform (uniform scale + rotation/reflection), which remains
+    // exact; unequal values correctly trigger the existing approximation warning.
+    val a = matrix.a
+    val b = matrix.b
+    val c = matrix.c
+    val d = matrix.d
 
-    return ScaleEstimate(xScale, yScale)
+    val trace = a * a + b * b + c * c + d * d
+    val determinant = a * d - b * c
+    val discriminant = kotlin.math.max(0f, trace * trace - 4f * determinant * determinant)
+    val root = kotlin.math.sqrt(discriminant)
+
+    val largestEigenvalue = kotlin.math.max(0f, (trace + root) / 2f)
+    val smallestEigenvalue = kotlin.math.max(0f, (trace - root) / 2f)
+
+    val majorScale = kotlin.math.sqrt(largestEigenvalue)
+    val minorScale = kotlin.math.sqrt(smallestEigenvalue)
+
+    if (majorScale <= 0.0001f || minorScale <= 0.0001f) {
+        // A singular/near-singular transform has no stable inverse stroke scale.
+        // Preserve the previous safe fallback instead of emitting an extreme value.
+        return ScaleEstimate()
+    }
+
+    return ScaleEstimate(majorScale, minorScale)
 }
 
 private fun scaleEstimateFromTransformList(
