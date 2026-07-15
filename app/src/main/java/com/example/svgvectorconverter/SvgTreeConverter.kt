@@ -32,6 +32,7 @@ private var activeDisplayNoneElementsSkipped = 0
 private var activeVisibilityHiddenElementsSkipped = 0
 private var activeNestedSvgViewports = 0
 private var activeNestedSvgViewportClips = 0
+private var activeNestedSvgPercentageViewports = 0
 
 val appliedClipPaths: Int get() = activeAppliedClipPaths
 val appliedMasks: Int get() = activeAppliedMasks
@@ -77,6 +78,7 @@ val visibilityHiddenElementsSkipped: Int get() = activeVisibilityHiddenElementsS
 val hiddenDrawableElementsSkipped: Int get() = activeDisplayNoneElementsSkipped + activeVisibilityHiddenElementsSkipped
 val nestedSvgViewports: Int get() = activeNestedSvgViewports
 val nestedSvgViewportClips: Int get() = activeNestedSvgViewportClips
+val nestedSvgPercentageViewports: Int get() = activeNestedSvgPercentageViewports
 
 private lateinit var appendElementPathCallback: (
     StringBuilder, Element, String,
@@ -170,6 +172,7 @@ fun resetStats(
     activeVisibilityHiddenElementsSkipped = 0
     activeNestedSvgViewports = 0
     activeNestedSvgViewportClips = 0
+    activeNestedSvgPercentageViewports = 0
     SvgTextConverter.resetStats()
     SvgPathEmitter.resetStats()
 }
@@ -351,12 +354,41 @@ private fun parsePreserveAspectRatio(element: Element): PreserveAspectRatio {
     return PreserveAspectRatio(alignX, alignY, scaleMode)
 }
 
-private fun nestedSvgViewport(element: Element): NestedSvgViewport {
+private fun isPercentageLength(element: Element, name: String): Boolean =
+    element.getAttribute(name).trim().endsWith("%")
+
+private fun resolveViewportLength(
+    element: Element,
+    name: String,
+    percentageBasis: Float?
+): Float? {
+    val raw = element.getAttribute(name).trim()
+    if (raw.isBlank()) return null
+
+    if (raw.endsWith("%")) {
+        val percent = raw.dropLast(1).trim().toFloatOrNull() ?: return null
+        val basis = percentageBasis ?: return null
+        return basis * percent / 100f
+    }
+
+    return floatAttrCallback(element, name)
+}
+
+private fun nestedSvgViewport(
+    element: Element,
+    parentViewportWidth: Float?,
+    parentViewportHeight: Float?
+): NestedSvgViewport {
     val viewBox = elementViewBox(element)
-    val x = floatAttrCallback(element, "x") ?: 0f
-    val y = floatAttrCallback(element, "y") ?: 0f
-    val width = floatAttrCallback(element, "width") ?: viewBox?.width
-    val height = floatAttrCallback(element, "height") ?: viewBox?.height
+    val usesPercentage = listOf("x", "y", "width", "height")
+        .any { isPercentageLength(element, it) }
+    if (usesPercentage) activeNestedSvgPercentageViewports++
+
+    val x = resolveViewportLength(element, "x", parentViewportWidth) ?: 0f
+    val y = resolveViewportLength(element, "y", parentViewportHeight) ?: 0f
+    val width = resolveViewportLength(element, "width", parentViewportWidth) ?: viewBox?.width
+    val height = resolveViewportLength(element, "height", parentViewportHeight) ?: viewBox?.height
+
     return NestedSvgViewport(
         x = x,
         y = y,
@@ -365,6 +397,15 @@ private fun nestedSvgViewport(element: Element): NestedSvgViewport {
         viewBox = viewBox,
         preserveAspectRatio = parsePreserveAspectRatio(element)
     )
+}
+
+private fun rootViewportDimensions(root: Element): Pair<Float?, Float?> {
+    val viewBox = elementViewBox(root)
+    if (viewBox != null) return viewBox.width to viewBox.height
+
+    val width = resolveViewportLength(root, "width", null)
+    val height = resolveViewportLength(root, "height", null)
+    return width to height
 }
 
 private fun nestedSvgViewBoxTransform(viewport: NestedSvgViewport): AffineTransform? {
@@ -1016,12 +1057,15 @@ fun appendConvertedSvgTree(
 
         val root = document.documentElement
         val definitions = collectSvgDefinitions(root)
+        val (rootViewportWidth, rootViewportHeight) = rootViewportDimensions(root)
 
         walkSvgNode(
             output = output,
             node = root,
             indent = "    ",
-            definitions = definitions
+            definitions = definitions,
+            parentViewportWidth = rootViewportWidth,
+            parentViewportHeight = rootViewportHeight
         )
     } catch (e: Exception) {
         // Fallback for imperfect SVG/XML files
@@ -1091,7 +1135,9 @@ private fun appendChildrenWithClipGrouping(
     inheritedScaleX: Float = 1f,
     inheritedScaleY: Float = 1f,
     inheritedVectorEffect: String? = null,
-    inheritedVisibility: String? = null
+    inheritedVisibility: String? = null,
+    parentViewportWidth: Float? = null,
+    parentViewportHeight: Float? = null
 ) {
     val children = parent.childNodes
     var i = 0
@@ -1131,7 +1177,9 @@ private fun appendChildrenWithClipGrouping(
                     inheritedScaleX,
                     inheritedScaleY,
                     inheritedVectorEffect,
-                    inheritedVisibility
+                    inheritedVisibility,
+                    parentViewportWidth,
+                    parentViewportHeight
                 )
 
                 i++
@@ -1161,7 +1209,9 @@ private fun appendChildrenWithClipGrouping(
                 inheritedScaleX,
                 inheritedScaleY,
                 inheritedVectorEffect,
-                inheritedVisibility
+                inheritedVisibility,
+                parentViewportWidth,
+                parentViewportHeight
             )
             i++
         }
@@ -1343,7 +1393,9 @@ private fun walkSvgNode(
     inheritedScaleX: Float = 1f,
     inheritedScaleY: Float = 1f,
     inheritedVectorEffect: String? = null,
-    inheritedVisibility: String? = null
+    inheritedVisibility: String? = null,
+    parentViewportWidth: Float? = null,
+    parentViewportHeight: Float? = null
 ) {
     if (node.nodeType != Node.ELEMENT_NODE) return
 
@@ -1439,13 +1491,14 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                     currentStrokeLineCap, currentStrokeLineJoin, currentStrokeMiterLimit,
                     currentFillRule, currentOpacity, currentFillOpacity, currentStrokeOpacity,
                     currentClipPath, definitions, useDepth, activeClipPathId,
-                    inheritedScaleX, inheritedScaleY, currentVectorEffect, currentVisibility
+                    inheritedScaleX, inheritedScaleY, currentVectorEffect, currentVisibility,
+                    parentViewportWidth, parentViewportHeight
                 )
                 return
             }
 
             activeNestedSvgViewports++
-            val viewport = nestedSvgViewport(element)
+            val viewport = nestedSvgViewport(element, parentViewportWidth, parentViewportHeight)
             val overflow = overflowValue(element, style).trim().lowercase()
             val shouldClip = overflow == "hidden" || overflow == "scroll" || overflow == "auto"
 
@@ -1490,7 +1543,9 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                     currentStrokeLineCap, currentStrokeLineJoin, currentStrokeMiterLimit,
                     currentFillRule, currentOpacity, currentFillOpacity, currentStrokeOpacity,
                     currentClipPath, definitions, useDepth, activeClipPathId,
-                    childScaleX, childScaleY, currentVectorEffect, currentVisibility
+                    childScaleX, childScaleY, currentVectorEffect, currentVisibility,
+                    viewport.viewBox?.width ?: viewport.width,
+                    viewport.viewBox?.height ?: viewport.height
                 )
             } finally {
                 if (flattenViewBox) SvgPathEmitter.popFlattenTransform()
@@ -1532,7 +1587,9 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 inheritedScaleX,
                 inheritedScaleY,
                 inheritedVectorEffect,
-                currentVisibility
+                currentVisibility,
+                parentViewportWidth,
+                parentViewportHeight
             )
         }
 
@@ -1558,7 +1615,9 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 inheritedScaleX,
                 inheritedScaleY,
                 inheritedVectorEffect,
-                currentVisibility
+                currentVisibility,
+                parentViewportWidth,
+                parentViewportHeight
             )
         }
 
@@ -1625,7 +1684,9 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                         childScaleX,
                         childScaleY,
                         currentVectorEffect,
-                        currentVisibility
+                        currentVisibility,
+                        parentViewportWidth,
+                        parentViewportHeight
                     )
                 } finally {
                     if (flattenGroupMatrix) {
@@ -1660,7 +1721,9 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                     inheritedScaleX,
                     inheritedScaleY,
                     currentVectorEffect,
-                    currentVisibility
+                    currentVisibility,
+                    parentViewportWidth,
+                    parentViewportHeight
                 )
             }
         }
@@ -1775,7 +1838,9 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 inheritedScaleX,
                 inheritedScaleY,
                 currentVectorEffect,
-                currentVisibility
+                currentVisibility,
+                parentViewportWidth,
+                parentViewportHeight
             )
         }
     }
@@ -1867,7 +1932,9 @@ private fun appendUseElement(
     inheritedScaleX: Float = 1f,
     inheritedScaleY: Float = 1f,
     inheritedVectorEffect: String? = null,
-    inheritedVisibility: String? = null
+    inheritedVisibility: String? = null,
+    parentViewportWidth: Float? = null,
+    parentViewportHeight: Float? = null
 ) {
     if (useDepth >= 20) {
         activeUnresolvedUseReferences++
@@ -2035,7 +2102,9 @@ private fun appendUseElement(
         childScaleX,
         childScaleY,
         useVectorEffect,
-        inheritedVisibility
+        inheritedVisibility,
+        parentViewportWidth,
+        parentViewportHeight
     )
 
     SvgTransformParser.closeGroups(output, childIndent, groupCount)

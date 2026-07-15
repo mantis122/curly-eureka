@@ -221,6 +221,7 @@ object SvgToVectorConverter {
                 visibilityHiddenElementsSkipped = SvgTreeConverter.visibilityHiddenElementsSkipped,
                 nestedSvgViewportCount = SvgTreeConverter.nestedSvgViewports,
                 nestedSvgViewportClipCount = SvgTreeConverter.nestedSvgViewportClips,
+                nestedSvgPercentageViewportCount = SvgTreeConverter.nestedSvgPercentageViewports,
                 filterDefinitionCount = filterDefinitionCount,
                 filterReferenceCount = filterReferenceCount,
                 textElementCount = textElementCount,

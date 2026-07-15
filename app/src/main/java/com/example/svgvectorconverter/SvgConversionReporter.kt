@@ -67,6 +67,7 @@ data class SvgConversionReportData(
     val visibilityHiddenElementsSkipped: Int = 0,
     val nestedSvgViewportCount: Int = 0,
     val nestedSvgViewportClipCount: Int = 0,
+    val nestedSvgPercentageViewportCount: Int = 0,
     val filterDefinitionCount: Int,
     val filterReferenceCount: Int,
     val textElementCount: Int,
@@ -567,6 +568,7 @@ object SvgConversionReporter {
 
             if (data.nestedSvgViewportCount > 0) {
                 appendLine("✓ Nested SVG viewports processed: ${data.nestedSvgViewportCount}")
+                appendLine("✓ Percentage-based nested viewports: ${data.nestedSvgPercentageViewportCount}")
                 appendLine("✓ Nested viewport clips applied: ${data.nestedSvgViewportClipCount}")
             }
 
