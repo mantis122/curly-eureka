@@ -6,6 +6,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.xml.sax.InputSource
 import java.io.StringReader
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 object SvgTreeConverter {
 private var activeClipPathData: Map<String, String> = emptyMap()
@@ -200,10 +201,17 @@ private fun compensateNonScalingStrokeWidth(
     val numeric = raw.toFloatOrNull() ?: return Pair(strokeWidth, false)
     if (numeric <= 0f) return Pair(strokeWidth, false)
 
-    val averageScale = ((abs(scaleX) + abs(scaleY)) / 2f).takeIf { it > 0.0001f } ?: return Pair(strokeWidth, false)
-    if (nearEqual(averageScale, 1f)) return Pair(strokeWidth, true)
+    // Android VectorDrawable exposes only one strokeWidth, so non-uniform
+    // scaling cannot be represented exactly. Use the geometric mean of the
+    // accumulated X/Y scales as the least-biased area-preserving estimate.
+    // This reduces to exact uniform-scale compensation when |scaleX| == |scaleY|.
+    val effectiveScale = sqrt(abs(scaleX * scaleY))
+        .takeIf { it > 0.0001f }
+        ?: return Pair(strokeWidth, false)
 
-    return Pair(formatNumber(numeric / averageScale), true)
+    if (nearEqual(effectiveScale, 1f)) return Pair(strokeWidth, true)
+
+    return Pair(formatNumber(numeric / effectiveScale), true)
 }
 
 private fun isNonUniformScale(scaleX: Float, scaleY: Float): Boolean {

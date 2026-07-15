@@ -556,10 +556,14 @@ object SvgConversionReporter {
             }
 
             if (data.nonScalingStrokesDetected > 0) {
+                val exactNonScalingStrokes = maxOf(
+                    0,
+                    data.nonScalingStrokesCompensated - data.nonScalingStrokesUncertain
+                )
                 appendLine("✓ Non-scaling strokes detected: ${data.nonScalingStrokesDetected}")
-                appendLine("✓ Non-scaling strokes compensated: ${data.nonScalingStrokesCompensated}")
+                appendLine("✓ Non-scaling strokes compensated exactly: $exactNonScalingStrokes")
                 if (data.nonScalingStrokesUncertain > 0) {
-                    appendLine("⚠ Non-uniform scale compensations approximated: ${data.nonScalingStrokesUncertain}")
+                    appendLine("⚠ Non-scaling strokes approximated for non-uniform scaling: ${data.nonScalingStrokesUncertain}")
                 }
             }
 
