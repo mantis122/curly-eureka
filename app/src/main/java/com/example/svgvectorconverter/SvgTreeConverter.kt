@@ -30,6 +30,8 @@ private var activeTextHorizontalKerningPairs = 0
 private var activeTextVerticalKerningPairs = 0
 private var activeDisplayNoneElementsSkipped = 0
 private var activeVisibilityHiddenElementsSkipped = 0
+private var activeNestedSvgViewports = 0
+private var activeNestedSvgViewportClips = 0
 
 val appliedClipPaths: Int get() = activeAppliedClipPaths
 val appliedMasks: Int get() = activeAppliedMasks
@@ -73,6 +75,8 @@ val textFontWeights: List<String> get() = SvgTextConverter.textFontWeights
 val displayNoneElementsSkipped: Int get() = activeDisplayNoneElementsSkipped
 val visibilityHiddenElementsSkipped: Int get() = activeVisibilityHiddenElementsSkipped
 val hiddenDrawableElementsSkipped: Int get() = activeDisplayNoneElementsSkipped + activeVisibilityHiddenElementsSkipped
+val nestedSvgViewports: Int get() = activeNestedSvgViewports
+val nestedSvgViewportClips: Int get() = activeNestedSvgViewportClips
 
 private lateinit var appendElementPathCallback: (
     StringBuilder, Element, String,
@@ -164,6 +168,8 @@ fun resetStats(
     activeTextVerticalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.verticalKerningPairs.size }
     activeDisplayNoneElementsSkipped = 0
     activeVisibilityHiddenElementsSkipped = 0
+    activeNestedSvgViewports = 0
+    activeNestedSvgViewportClips = 0
     SvgTextConverter.resetStats()
     SvgPathEmitter.resetStats()
 }
@@ -266,6 +272,63 @@ private fun recordDisplayNoneSubtree(element: Element): Boolean {
 
 private fun recordVisibilityHiddenDrawable() {
     activeVisibilityHiddenElementsSkipped++
+}
+
+
+private fun overflowValue(element: Element, style: String?): String {
+    return SvgPaintResolver.styleValue(style, "overflow")
+        ?: element.getAttribute("overflow").trim().ifBlank { "visible" }
+}
+
+private fun appendViewportClip(
+    output: StringBuilder,
+    width: Float,
+    height: Float,
+    indent: String
+) {
+    val w = formatNumber(width.coerceAtLeast(0f))
+    val h = formatNumber(height.coerceAtLeast(0f))
+    output.appendLine("${indent}<clip-path")
+    output.appendLine("${indent}    android:pathData=\"M 0,0 L $w,0 L $w,$h L 0,$h Z\"")
+    output.appendLine("${indent}/>")
+    activeNestedSvgViewportClips++
+}
+
+private data class NestedSvgViewport(
+    val x: Float,
+    val y: Float,
+    val width: Float?,
+    val height: Float?,
+    val viewBox: SvgViewBox?
+)
+
+private fun nestedSvgViewport(element: Element): NestedSvgViewport {
+    val viewBox = elementViewBox(element)
+    val x = floatAttrCallback(element, "x") ?: 0f
+    val y = floatAttrCallback(element, "y") ?: 0f
+    val width = floatAttrCallback(element, "width") ?: viewBox?.width
+    val height = floatAttrCallback(element, "height") ?: viewBox?.height
+    return NestedSvgViewport(x, y, width, height, viewBox)
+}
+
+private fun nestedSvgViewBoxTransform(viewport: NestedSvgViewport): AffineTransform? {
+    val viewBox = viewport.viewBox ?: return null
+    val width = viewport.width ?: return null
+    val height = viewport.height ?: return null
+    if (width <= 0f || height <= 0f || viewBox.width == 0f || viewBox.height == 0f) return null
+
+    // Stage 1 uses direct viewport fitting. preserveAspectRatio refinement can
+    // be added later without changing the viewport/clip structure.
+    val sx = width / viewBox.width
+    val sy = height / viewBox.height
+    return AffineTransform(
+        a = sx,
+        b = 0f,
+        c = 0f,
+        d = sy,
+        e = -viewBox.minX * sx,
+        f = -viewBox.minY * sy
+    )
 }
 
 private fun effectiveVectorEffect(element: Element, style: String?, inheritedVectorEffect: String?): String {
@@ -1279,6 +1342,78 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
     }
 
     when (tagName) {
+        "svg" -> {
+            val isRootSvg = element === element.ownerDocument.documentElement
+            if (isRootSvg) {
+                appendChildrenWithClipGrouping(
+                    output, element, indent, currentFill, currentStroke, currentStrokeWidth,
+                    currentStrokeLineCap, currentStrokeLineJoin, currentStrokeMiterLimit,
+                    currentFillRule, currentOpacity, currentFillOpacity, currentStrokeOpacity,
+                    currentClipPath, definitions, useDepth, activeClipPathId,
+                    inheritedScaleX, inheritedScaleY, currentVectorEffect, currentVisibility
+                )
+                return
+            }
+
+            activeNestedSvgViewports++
+            val viewport = nestedSvgViewport(element)
+            val overflow = overflowValue(element, style).trim().lowercase()
+            val shouldClip = overflow == "hidden" || overflow == "scroll" || overflow == "auto"
+
+            var currentIndent = indent
+            var openedGroups = 0
+
+            if (!nearEqual(viewport.x, 0f) || !nearEqual(viewport.y, 0f)) {
+                output.appendLine("${currentIndent}<group")
+                output.appendLine("${currentIndent}    android:translateX=\"${formatNumber(viewport.x)}\"")
+                output.appendLine("${currentIndent}    android:translateY=\"${formatNumber(viewport.y)}\"")
+                output.appendLine("${currentIndent}>")
+                currentIndent += "    "
+                openedGroups++
+            }
+
+            if (shouldClip && viewport.width != null && viewport.height != null && viewport.width > 0f && viewport.height > 0f) {
+                output.appendLine("${currentIndent}<group>")
+                appendViewportClip(output, viewport.width, viewport.height, currentIndent + "    ")
+                currentIndent += "    "
+                openedGroups++
+            }
+
+            val viewBoxMatrix = nestedSvgViewBoxTransform(viewport)
+            val viewBoxGroup = viewBoxMatrix?.toAndroidGroupTransform()
+            val flattenViewBox = viewBoxMatrix != null && viewBoxGroup == null
+            val scaleEstimate = scaleEstimateFromTransformMatrix(viewBoxMatrix)
+            val childScaleX = inheritedScaleX * scaleEstimate.scaleX
+            val childScaleY = inheritedScaleY * scaleEstimate.scaleY
+
+            if (viewBoxGroup != null) {
+                SvgTransformParser.appendCombinedTransformGroupStart(output, viewBoxGroup, currentIndent)
+                currentIndent += "    "
+                openedGroups++
+            } else if (flattenViewBox && viewBoxMatrix != null) {
+                output.appendLine("${currentIndent}<!-- nested <svg> viewBox transform flattened into child pathData -->")
+                SvgPathEmitter.pushFlattenTransform(viewBoxMatrix)
+            }
+
+            try {
+                appendChildrenWithClipGrouping(
+                    output, element, currentIndent, currentFill, currentStroke, currentStrokeWidth,
+                    currentStrokeLineCap, currentStrokeLineJoin, currentStrokeMiterLimit,
+                    currentFillRule, currentOpacity, currentFillOpacity, currentStrokeOpacity,
+                    currentClipPath, definitions, useDepth, activeClipPathId,
+                    childScaleX, childScaleY, currentVectorEffect, currentVisibility
+                )
+            } finally {
+                if (flattenViewBox) SvgPathEmitter.popFlattenTransform()
+            }
+
+            repeat(openedGroups) {
+                currentIndent = currentIndent.dropLast(4)
+                output.appendLine("${currentIndent}</group>")
+            }
+            output.appendLine()
+        }
+
         "defs" -> {
             // Definitions are not drawn directly. They are expanded when a <use> references them.
             return

@@ -65,6 +65,8 @@ data class SvgConversionReportData(
     val nonScalingStrokesUncertain: Int,
     val displayNoneElementsSkipped: Int = 0,
     val visibilityHiddenElementsSkipped: Int = 0,
+    val nestedSvgViewportCount: Int = 0,
+    val nestedSvgViewportClipCount: Int = 0,
     val filterDefinitionCount: Int,
     val filterReferenceCount: Int,
     val textElementCount: Int,
@@ -561,6 +563,11 @@ object SvgConversionReporter {
                 appendLine("✓ Hidden drawable elements skipped: ${data.displayNoneElementsSkipped + data.visibilityHiddenElementsSkipped}")
                 appendLine("  • display=\"none\": ${data.displayNoneElementsSkipped}")
                 appendLine("  • visibility=\"hidden/collapse\": ${data.visibilityHiddenElementsSkipped}")
+            }
+
+            if (data.nestedSvgViewportCount > 0) {
+                appendLine("✓ Nested SVG viewports processed: ${data.nestedSvgViewportCount}")
+                appendLine("✓ Nested viewport clips applied: ${data.nestedSvgViewportClipCount}")
             }
 
             if (data.nonScalingStrokesDetected > 0) {

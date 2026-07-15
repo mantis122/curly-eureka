@@ -219,6 +219,8 @@ object SvgToVectorConverter {
                 nonScalingStrokesUncertain = SvgTreeConverter.nonScalingStrokesUncertain,
                 displayNoneElementsSkipped = SvgTreeConverter.displayNoneElementsSkipped,
                 visibilityHiddenElementsSkipped = SvgTreeConverter.visibilityHiddenElementsSkipped,
+                nestedSvgViewportCount = SvgTreeConverter.nestedSvgViewports,
+                nestedSvgViewportClipCount = SvgTreeConverter.nestedSvgViewportClips,
                 filterDefinitionCount = filterDefinitionCount,
                 filterReferenceCount = filterReferenceCount,
                 textElementCount = textElementCount,
