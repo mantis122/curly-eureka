@@ -63,6 +63,8 @@ data class SvgConversionReportData(
     val nonScalingStrokesDetected: Int,
     val nonScalingStrokesCompensated: Int,
     val nonScalingStrokesUncertain: Int,
+    val displayNoneElementsSkipped: Int = 0,
+    val visibilityHiddenElementsSkipped: Int = 0,
     val filterDefinitionCount: Int,
     val filterReferenceCount: Int,
     val textElementCount: Int,
@@ -553,6 +555,12 @@ object SvgConversionReporter {
             if (data.dashedStrokesDetected > 0) {
                 appendLine("✓ Dashed strokes detected: ${data.dashedStrokesDetected}")
                 appendLine("✓ Dashed strokes approximated: ${data.dashedStrokesApproximated}")
+            }
+
+            if (data.displayNoneElementsSkipped > 0 || data.visibilityHiddenElementsSkipped > 0) {
+                appendLine("✓ Hidden drawable elements skipped: ${data.displayNoneElementsSkipped + data.visibilityHiddenElementsSkipped}")
+                appendLine("  • display=\"none\": ${data.displayNoneElementsSkipped}")
+                appendLine("  • visibility=\"hidden/collapse\": ${data.visibilityHiddenElementsSkipped}")
             }
 
             if (data.nonScalingStrokesDetected > 0) {

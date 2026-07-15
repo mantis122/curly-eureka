@@ -130,8 +130,11 @@ object SvgToVectorConverter {
             0,
             visibleUseReferenceCount - unresolvedUseReferences
         )
-        val visibleDrawableElementCount =
-            drawableValidPathCount + visibleBasicShapeCount + resolvedVisibleUseReferenceCount
+        val visibleDrawableElementCount = maxOf(
+            0,
+            drawableValidPathCount + visibleBasicShapeCount + resolvedVisibleUseReferenceCount -
+                SvgTreeConverter.hiddenDrawableElementsSkipped
+        )
         val emptyPathCount = countAllPaths(svgWithCssClassStyles) - countValidPaths(svgWithCssClassStyles)
 
         val filterDefinitionCount = countFilterDefinitions(svgForTransformStats)
@@ -214,6 +217,8 @@ object SvgToVectorConverter {
                 nonScalingStrokesDetected = SvgTreeConverter.nonScalingStrokesDetected,
                 nonScalingStrokesCompensated = SvgTreeConverter.nonScalingStrokesCompensated,
                 nonScalingStrokesUncertain = SvgTreeConverter.nonScalingStrokesUncertain,
+                displayNoneElementsSkipped = SvgTreeConverter.displayNoneElementsSkipped,
+                visibilityHiddenElementsSkipped = SvgTreeConverter.visibilityHiddenElementsSkipped,
                 filterDefinitionCount = filterDefinitionCount,
                 filterReferenceCount = filterReferenceCount,
                 textElementCount = textElementCount,

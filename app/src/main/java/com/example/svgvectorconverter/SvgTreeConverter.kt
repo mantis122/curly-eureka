@@ -28,6 +28,8 @@ private var activePatternTileExpansions = 0
 private var activePatternTilePathsEmitted = 0
 private var activeTextHorizontalKerningPairs = 0
 private var activeTextVerticalKerningPairs = 0
+private var activeDisplayNoneElementsSkipped = 0
+private var activeVisibilityHiddenElementsSkipped = 0
 
 val appliedClipPaths: Int get() = activeAppliedClipPaths
 val appliedMasks: Int get() = activeAppliedMasks
@@ -68,6 +70,9 @@ val textPathsConverted: Int get() = SvgTextConverter.textPathsConverted
 val textPathGlyphsEmitted: Int get() = SvgTextConverter.textPathGlyphsEmitted
 val textFontFamilies: List<String> get() = SvgTextConverter.textFontFamilies
 val textFontWeights: List<String> get() = SvgTextConverter.textFontWeights
+val displayNoneElementsSkipped: Int get() = activeDisplayNoneElementsSkipped
+val visibilityHiddenElementsSkipped: Int get() = activeVisibilityHiddenElementsSkipped
+val hiddenDrawableElementsSkipped: Int get() = activeDisplayNoneElementsSkipped + activeVisibilityHiddenElementsSkipped
 
 private lateinit var appendElementPathCallback: (
     StringBuilder, Element, String,
@@ -157,6 +162,8 @@ fun resetStats(
     activePatternTilePathsEmitted = 0
     activeTextHorizontalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.horizontalKerningPairs.size }
     activeTextVerticalKerningPairs = activeSvgFontDefinitions.values.sumOf { it.verticalKerningPairs.size }
+    activeDisplayNoneElementsSkipped = 0
+    activeVisibilityHiddenElementsSkipped = 0
     SvgTextConverter.resetStats()
     SvgPathEmitter.resetStats()
 }
@@ -186,6 +193,63 @@ fun recordNonScalingStroke(didCompensate: Boolean, isUncertain: Boolean = false)
     }
 }
 
+
+
+private fun directDisplayValue(element: Element): String =
+    element.getAttribute("display").trim().lowercase()
+
+private fun directVisibilityValue(element: Element): String =
+    element.getAttribute("visibility").trim().lowercase()
+
+private fun isDirectlyDisplayNone(element: Element): Boolean =
+    directDisplayValue(element) == "none"
+
+private fun isDirectlyVisibilityHidden(element: Element): Boolean {
+    val value = directVisibilityValue(element)
+    return value == "hidden" || value == "collapse"
+}
+
+private fun countDrawableElementsInSubtree(element: Element): Int {
+    var count = 0
+
+    fun visit(node: Node) {
+        if (node.nodeType != Node.ELEMENT_NODE) return
+        val current = node as Element
+        val tag = current.tagName.substringAfter(":").lowercase()
+
+        if (tag == "defs" || tag == "symbol" || tag == "clippath" ||
+            tag == "mask" || tag == "marker" || tag == "pattern" ||
+            tag == "lineargradient" || tag == "radialgradient" || tag == "filter") {
+            return
+        }
+
+        if (tag == "path" || tag == "rect" || tag == "circle" ||
+            tag == "ellipse" || tag == "line" || tag == "polyline" ||
+            tag == "polygon" || tag == "text" || tag == "use") {
+            count++
+            if (tag == "text" || tag == "use") return
+        }
+
+        val children = current.childNodes
+        for (i in 0 until children.length) visit(children.item(i))
+    }
+
+    visit(element)
+    return count
+}
+
+private fun recordDirectlyHiddenSubtree(element: Element): Boolean {
+    val skipped = countDrawableElementsInSubtree(element)
+    if (isDirectlyDisplayNone(element)) {
+        activeDisplayNoneElementsSkipped += skipped
+        return true
+    }
+    if (isDirectlyVisibilityHidden(element)) {
+        activeVisibilityHiddenElementsSkipped += skipped
+        return true
+    }
+    return false
+}
 
 private fun effectiveVectorEffect(element: Element, style: String?, inheritedVectorEffect: String?): String {
     return SvgPaintResolver.styleValue(style, "vector-effect")
@@ -823,6 +887,7 @@ private fun childClipPathId(node: Node, inheritedClipPath: String?): String? {
     if (node.nodeType != Node.ELEMENT_NODE) return null
 
     val element = node as Element
+    if (isDirectlyDisplayNone(element) || isDirectlyVisibilityHidden(element)) return null
     val style = element.getAttribute("style").ifBlank { null }
     val clipPathValue = effectiveClipOrMaskValue(element, style, inheritedClipPath)
 
@@ -1104,6 +1169,7 @@ private fun walkSvgNode(
     if (node.nodeType != Node.ELEMENT_NODE) return
 
     val element = node as Element
+    if (recordDirectlyHiddenSubtree(element)) return
 val style = element.getAttribute("style").ifBlank { null }
 
 val currentFill = SvgPaintResolver.styleValue(style, "fill")
