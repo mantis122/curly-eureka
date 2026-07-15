@@ -294,13 +294,62 @@ private fun appendViewportClip(
     activeNestedSvgViewportClips++
 }
 
+private enum class AspectRatioAlignX { MIN, MID, MAX }
+private enum class AspectRatioAlignY { MIN, MID, MAX }
+private enum class AspectRatioScaleMode { MEET, SLICE, NONE }
+
+private data class PreserveAspectRatio(
+    val alignX: AspectRatioAlignX = AspectRatioAlignX.MID,
+    val alignY: AspectRatioAlignY = AspectRatioAlignY.MID,
+    val scaleMode: AspectRatioScaleMode = AspectRatioScaleMode.MEET
+)
+
 private data class NestedSvgViewport(
     val x: Float,
     val y: Float,
     val width: Float?,
     val height: Float?,
-    val viewBox: SvgViewBox?
+    val viewBox: SvgViewBox?,
+    val preserveAspectRatio: PreserveAspectRatio
 )
+
+private fun parsePreserveAspectRatio(element: Element): PreserveAspectRatio {
+    val tokens = element.getAttribute("preserveAspectRatio")
+        .trim()
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .toMutableList()
+
+    // SVG allows an optional leading "defer" token. It matters only when an
+    // external referenced resource supplies its own value, so it can be ignored
+    // for a directly rendered nested <svg> viewport.
+    if (tokens.firstOrNull()?.equals("defer", ignoreCase = true) == true) {
+        tokens.removeAt(0)
+    }
+
+    val alignToken = tokens.firstOrNull()?.lowercase().orEmpty()
+    if (alignToken == "none") {
+        return PreserveAspectRatio(scaleMode = AspectRatioScaleMode.NONE)
+    }
+
+    val alignX = when {
+        alignToken.startsWith("xmin") -> AspectRatioAlignX.MIN
+        alignToken.startsWith("xmax") -> AspectRatioAlignX.MAX
+        else -> AspectRatioAlignX.MID
+    }
+    val alignY = when {
+        alignToken.endsWith("ymin") -> AspectRatioAlignY.MIN
+        alignToken.endsWith("ymax") -> AspectRatioAlignY.MAX
+        else -> AspectRatioAlignY.MID
+    }
+    val scaleMode = if (tokens.drop(1).any { it.equals("slice", ignoreCase = true) }) {
+        AspectRatioScaleMode.SLICE
+    } else {
+        AspectRatioScaleMode.MEET
+    }
+
+    return PreserveAspectRatio(alignX, alignY, scaleMode)
+}
 
 private fun nestedSvgViewport(element: Element): NestedSvgViewport {
     val viewBox = elementViewBox(element)
@@ -308,7 +357,14 @@ private fun nestedSvgViewport(element: Element): NestedSvgViewport {
     val y = floatAttrCallback(element, "y") ?: 0f
     val width = floatAttrCallback(element, "width") ?: viewBox?.width
     val height = floatAttrCallback(element, "height") ?: viewBox?.height
-    return NestedSvgViewport(x, y, width, height, viewBox)
+    return NestedSvgViewport(
+        x = x,
+        y = y,
+        width = width,
+        height = height,
+        viewBox = viewBox,
+        preserveAspectRatio = parsePreserveAspectRatio(element)
+    )
 }
 
 private fun nestedSvgViewBoxTransform(viewport: NestedSvgViewport): AffineTransform? {
@@ -317,17 +373,50 @@ private fun nestedSvgViewBoxTransform(viewport: NestedSvgViewport): AffineTransf
     val height = viewport.height ?: return null
     if (width <= 0f || height <= 0f || viewBox.width == 0f || viewBox.height == 0f) return null
 
-    // Stage 1 uses direct viewport fitting. preserveAspectRatio refinement can
-    // be added later without changing the viewport/clip structure.
-    val sx = width / viewBox.width
-    val sy = height / viewBox.height
+    val rawScaleX = width / viewBox.width
+    val rawScaleY = height / viewBox.height
+    val aspectRatio = viewport.preserveAspectRatio
+
+    if (aspectRatio.scaleMode == AspectRatioScaleMode.NONE) {
+        return AffineTransform(
+            a = rawScaleX,
+            b = 0f,
+            c = 0f,
+            d = rawScaleY,
+            e = -viewBox.minX * rawScaleX,
+            f = -viewBox.minY * rawScaleY
+        )
+    }
+
+    val uniformScale = when (aspectRatio.scaleMode) {
+        AspectRatioScaleMode.SLICE -> maxOf(rawScaleX, rawScaleY)
+        AspectRatioScaleMode.MEET -> minOf(rawScaleX, rawScaleY)
+        AspectRatioScaleMode.NONE -> error("Handled above")
+    }
+
+    val renderedWidth = viewBox.width * uniformScale
+    val renderedHeight = viewBox.height * uniformScale
+    val remainingX = width - renderedWidth
+    val remainingY = height - renderedHeight
+
+    val alignOffsetX = when (aspectRatio.alignX) {
+        AspectRatioAlignX.MIN -> 0f
+        AspectRatioAlignX.MID -> remainingX / 2f
+        AspectRatioAlignX.MAX -> remainingX
+    }
+    val alignOffsetY = when (aspectRatio.alignY) {
+        AspectRatioAlignY.MIN -> 0f
+        AspectRatioAlignY.MID -> remainingY / 2f
+        AspectRatioAlignY.MAX -> remainingY
+    }
+
     return AffineTransform(
-        a = sx,
+        a = uniformScale,
         b = 0f,
         c = 0f,
-        d = sy,
-        e = -viewBox.minX * sx,
-        f = -viewBox.minY * sy
+        d = uniformScale,
+        e = alignOffsetX - viewBox.minX * uniformScale,
+        f = alignOffsetY - viewBox.minY * uniformScale
     )
 }
 
