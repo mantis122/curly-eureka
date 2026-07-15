@@ -68,6 +68,11 @@ data class SvgConversionReportData(
     val nestedSvgViewportCount: Int = 0,
     val nestedSvgViewportClipCount: Int = 0,
     val nestedSvgPercentageViewportCount: Int = 0,
+    val nestedSvgOverflowHiddenCount: Int = 0,
+    val nestedSvgOverflowVisibleCount: Int = 0,
+    val nestedSvgOverflowAutoCount: Int = 0,
+    val nestedSvgOverflowScrollCount: Int = 0,
+    val nestedSvgOverflowUnsupportedCount: Int = 0,
     val filterDefinitionCount: Int,
     val filterReferenceCount: Int,
     val textElementCount: Int,
@@ -570,6 +575,16 @@ object SvgConversionReporter {
                 appendLine("✓ Nested SVG viewports processed: ${data.nestedSvgViewportCount}")
                 appendLine("✓ Percentage-based nested viewports: ${data.nestedSvgPercentageViewportCount}")
                 appendLine("✓ Nested viewport clips applied: ${data.nestedSvgViewportClipCount}")
+                appendLine("✓ Nested viewport overflow=\"hidden\": ${data.nestedSvgOverflowHiddenCount}")
+                appendLine("✓ Nested viewport overflow=\"visible\": ${data.nestedSvgOverflowVisibleCount}")
+                if (data.nestedSvgOverflowAutoCount > 0 || data.nestedSvgOverflowScrollCount > 0) {
+                    appendLine("⚠ Nested viewport overflow auto/scroll approximated by clipping: ${data.nestedSvgOverflowAutoCount + data.nestedSvgOverflowScrollCount}")
+                    appendLine("  • overflow=\"auto\": ${data.nestedSvgOverflowAutoCount}")
+                    appendLine("  • overflow=\"scroll\": ${data.nestedSvgOverflowScrollCount}")
+                }
+                if (data.nestedSvgOverflowUnsupportedCount > 0) {
+                    appendLine("⚠ Unsupported nested viewport overflow values treated as visible: ${data.nestedSvgOverflowUnsupportedCount}")
+                }
             }
 
             if (data.nonScalingStrokesDetected > 0) {
@@ -660,7 +675,10 @@ object SvgConversionReporter {
                 data.imageStats.imageElementCount > 0 ||
                 maxOf(0, data.textElementCount - data.textElementsApproximated - data.textElementsConvertedToPaths) > 0 ||
                 data.tspanElementCount > 0 ||
-                maxOf(0, data.textPathElementCount - data.textPathsConverted) > 0
+                maxOf(0, data.textPathElementCount - data.textPathsConverted) > 0 ||
+                data.nestedSvgOverflowAutoCount > 0 ||
+                data.nestedSvgOverflowScrollCount > 0 ||
+                data.nestedSvgOverflowUnsupportedCount > 0
             ) {
                 appendLine()
                 appendLine("────────────────────")
@@ -682,6 +700,14 @@ object SvgConversionReporter {
 
                 if (data.nonScalingStrokesUncertain > 0) {
                     appendLine("⚠ Non-scaling stroke compensation used average scale for non-uniform transforms: ${data.nonScalingStrokesUncertain}")
+                }
+
+                if (data.nestedSvgOverflowAutoCount > 0 || data.nestedSvgOverflowScrollCount > 0) {
+                    appendLine("⚠ Nested <svg> overflow=\"auto/scroll\" approximated using viewport clipping: ${data.nestedSvgOverflowAutoCount + data.nestedSvgOverflowScrollCount}")
+                }
+
+                if (data.nestedSvgOverflowUnsupportedCount > 0) {
+                    appendLine("⚠ Unsupported nested <svg> overflow values treated as visible: ${data.nestedSvgOverflowUnsupportedCount}")
                 }
 
                 if (data.cssExternalImportCount > 0) {

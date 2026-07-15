@@ -180,7 +180,9 @@ object SvgToVectorConverter {
             (if (unapproximatedDashedStrokes > 0) 1 else 0) +
             (if (SvgTreeConverter.nonScalingStrokesUncertain > 0) 1 else 0) +
             (if (cssExternalImportCount > 0) 1 else 0) +
-            (if (imageStats.imageElementCount > 0) 1 else 0)
+            (if (imageStats.imageElementCount > 0) 1 else 0) +
+            (if (SvgTreeConverter.nestedSvgOverflowApproximated > 0) 1 else 0) +
+            (if (SvgTreeConverter.nestedSvgOverflowUnsupported > 0) 1 else 0)
 
         val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
 
@@ -222,6 +224,11 @@ object SvgToVectorConverter {
                 nestedSvgViewportCount = SvgTreeConverter.nestedSvgViewports,
                 nestedSvgViewportClipCount = SvgTreeConverter.nestedSvgViewportClips,
                 nestedSvgPercentageViewportCount = SvgTreeConverter.nestedSvgPercentageViewports,
+                nestedSvgOverflowHiddenCount = SvgTreeConverter.nestedSvgOverflowHidden,
+                nestedSvgOverflowVisibleCount = SvgTreeConverter.nestedSvgOverflowVisible,
+                nestedSvgOverflowAutoCount = SvgTreeConverter.nestedSvgOverflowAuto,
+                nestedSvgOverflowScrollCount = SvgTreeConverter.nestedSvgOverflowScroll,
+                nestedSvgOverflowUnsupportedCount = SvgTreeConverter.nestedSvgOverflowUnsupported,
                 filterDefinitionCount = filterDefinitionCount,
                 filterReferenceCount = filterReferenceCount,
                 textElementCount = textElementCount,

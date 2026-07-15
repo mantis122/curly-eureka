@@ -33,6 +33,11 @@ private var activeVisibilityHiddenElementsSkipped = 0
 private var activeNestedSvgViewports = 0
 private var activeNestedSvgViewportClips = 0
 private var activeNestedSvgPercentageViewports = 0
+private var activeNestedSvgOverflowHidden = 0
+private var activeNestedSvgOverflowVisible = 0
+private var activeNestedSvgOverflowAuto = 0
+private var activeNestedSvgOverflowScroll = 0
+private var activeNestedSvgOverflowUnsupported = 0
 
 val appliedClipPaths: Int get() = activeAppliedClipPaths
 val appliedMasks: Int get() = activeAppliedMasks
@@ -79,6 +84,12 @@ val hiddenDrawableElementsSkipped: Int get() = activeDisplayNoneElementsSkipped 
 val nestedSvgViewports: Int get() = activeNestedSvgViewports
 val nestedSvgViewportClips: Int get() = activeNestedSvgViewportClips
 val nestedSvgPercentageViewports: Int get() = activeNestedSvgPercentageViewports
+val nestedSvgOverflowHidden: Int get() = activeNestedSvgOverflowHidden
+val nestedSvgOverflowVisible: Int get() = activeNestedSvgOverflowVisible
+val nestedSvgOverflowAuto: Int get() = activeNestedSvgOverflowAuto
+val nestedSvgOverflowScroll: Int get() = activeNestedSvgOverflowScroll
+val nestedSvgOverflowUnsupported: Int get() = activeNestedSvgOverflowUnsupported
+val nestedSvgOverflowApproximated: Int get() = activeNestedSvgOverflowAuto + activeNestedSvgOverflowScroll
 
 private lateinit var appendElementPathCallback: (
     StringBuilder, Element, String,
@@ -173,6 +184,11 @@ fun resetStats(
     activeNestedSvgViewports = 0
     activeNestedSvgViewportClips = 0
     activeNestedSvgPercentageViewports = 0
+    activeNestedSvgOverflowHidden = 0
+    activeNestedSvgOverflowVisible = 0
+    activeNestedSvgOverflowAuto = 0
+    activeNestedSvgOverflowScroll = 0
+    activeNestedSvgOverflowUnsupported = 0
     SvgTextConverter.resetStats()
     SvgPathEmitter.resetStats()
 }
@@ -1499,7 +1515,30 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
 
             activeNestedSvgViewports++
             val viewport = nestedSvgViewport(element, parentViewportWidth, parentViewportHeight)
-            val overflow = overflowValue(element, style).trim().lowercase()
+            val rawOverflow = overflowValue(element, style).trim().lowercase()
+            val overflow = when (rawOverflow) {
+                "hidden" -> {
+                    activeNestedSvgOverflowHidden++
+                    "hidden"
+                }
+                "auto" -> {
+                    activeNestedSvgOverflowAuto++
+                    "auto"
+                }
+                "scroll" -> {
+                    activeNestedSvgOverflowScroll++
+                    "scroll"
+                }
+                "visible", "inherit", "initial", "unset", "" -> {
+                    activeNestedSvgOverflowVisible++
+                    "visible"
+                }
+                else -> {
+                    activeNestedSvgOverflowUnsupported++
+                    activeNestedSvgOverflowVisible++
+                    "visible"
+                }
+            }
             val shouldClip = overflow == "hidden" || overflow == "scroll" || overflow == "auto"
 
             var currentIndent = indent
