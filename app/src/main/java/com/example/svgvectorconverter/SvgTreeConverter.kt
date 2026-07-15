@@ -39,6 +39,25 @@ private var activeNestedSvgOverflowAuto = 0
 private var activeNestedSvgOverflowScroll = 0
 private var activeNestedSvgOverflowUnsupported = 0
 
+// Complete affine transform from the current node to the root viewport.
+// This must include transforms represented as Android groups as well as
+// transforms flattened into pathData, because both affect non-scaling strokes.
+private val effectiveTransformStack = mutableListOf(AffineTransform.identity())
+
+private fun currentEffectiveTransform(): AffineTransform =
+    effectiveTransformStack.lastOrNull() ?: AffineTransform.identity()
+
+private fun pushEffectiveTransform(local: AffineTransform?) {
+    val parent = currentEffectiveTransform()
+    effectiveTransformStack.add(if (local == null) parent else parent.multiply(local))
+}
+
+private fun popEffectiveTransform() {
+    if (effectiveTransformStack.size > 1) {
+        effectiveTransformStack.removeAt(effectiveTransformStack.lastIndex)
+    }
+}
+
 val appliedClipPaths: Int get() = activeAppliedClipPaths
 val appliedMasks: Int get() = activeAppliedMasks
 val maskPathCount: Int get() = activeMaskPathData.size
@@ -189,6 +208,8 @@ fun resetStats(
     activeNestedSvgOverflowAuto = 0
     activeNestedSvgOverflowScroll = 0
     activeNestedSvgOverflowUnsupported = 0
+    effectiveTransformStack.clear()
+    effectiveTransformStack.add(AffineTransform.identity())
     SvgTextConverter.resetStats()
     SvgPathEmitter.resetStats()
 }
@@ -1484,9 +1505,10 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
         tagName == "ellipse" || tagName == "line" || tagName == "polyline" || tagName == "polygon"
     val hasNonScalingStroke = currentVectorEffect.trim().equals("non-scaling-stroke", ignoreCase = true)
 
-    // A drawable's own transform participates in the effective scale just as its
-    // ancestor transforms do. Path/basic-shape emission applies this transform
-    // later; we only use its linear scale here to compensate strokeWidth.
+    // Build one complete matrix for all ancestors plus the drawable's own
+    // transform. Multiplying scale estimates level by level is incorrect when
+    // rotations, skews, non-uniform scales, nested viewBoxes, or <use> placement
+    // are combined. Singular values must be measured from the final matrix.
     val drawableTransformValue = if (isDrawableElement) {
         element.getAttribute("transform")
             .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
@@ -1501,9 +1523,12 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
     } else {
         null
     }
-    val drawableScaleEstimate = scaleEstimateFromTransformMatrix(drawableTransformMatrix)
-    val effectiveStrokeScaleX = inheritedScaleX * drawableScaleEstimate.scaleX
-    val effectiveStrokeScaleY = inheritedScaleY * drawableScaleEstimate.scaleY
+    val completeDrawableTransform = drawableTransformMatrix?.let {
+        currentEffectiveTransform().multiply(it)
+    } ?: currentEffectiveTransform()
+    val drawableScaleEstimate = scaleEstimateFromTransformMatrix(completeDrawableTransform)
+    val effectiveStrokeScaleX = drawableScaleEstimate.scaleX
+    val effectiveStrokeScaleY = drawableScaleEstimate.scaleY
 
     val strokeWidthForEmission = if (isDrawableElement && hasNonScalingStroke) {
         val (compensatedStrokeWidth, didCompensate) = compensateNonScalingStrokeWidth(
@@ -1598,6 +1623,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 SvgPathEmitter.pushFlattenTransform(viewBoxMatrix)
             }
 
+            pushEffectiveTransform(viewBoxMatrix)
             try {
                 appendChildrenWithClipGrouping(
                     output, element, currentIndent, currentFill, currentStroke, currentStrokeWidth,
@@ -1609,6 +1635,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                     viewport.viewBox?.height ?: viewport.height
                 )
             } finally {
+                popEffectiveTransform()
                 if (flattenViewBox) SvgPathEmitter.popFlattenTransform()
             }
 
@@ -1723,6 +1750,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                     SvgPathEmitter.pushFlattenTransform(groupMatrix)
                 }
 
+                pushEffectiveTransform(groupMatrix)
                 try {
                     appendChildrenWithClipGrouping(
                         output,
@@ -1750,6 +1778,7 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                         parentViewportHeight
                     )
                 } finally {
+                    popEffectiveTransform()
                     if (flattenGroupMatrix) {
                         SvgPathEmitter.popFlattenTransform()
                     }
@@ -2121,7 +2150,8 @@ private fun appendUseElement(
         placementTransforms.add(ParsedTransform.Scale(symbolScaleX, symbolScaleY))
     }
 
-    val placementScaleEstimate = scaleEstimateFromTransformList(placementTransforms, transformOrigin)
+    val placementMatrix = SvgTransformParser.combineTransformListToMatrix(placementTransforms, transformOrigin)
+    val placementScaleEstimate = scaleEstimateFromTransformMatrix(placementMatrix)
 
     val opened = SvgTransformParser.appendTransformGroupsStart(
         output,
@@ -2142,7 +2172,9 @@ private fun appendUseElement(
         output.appendLine("${childIndent}<!-- expanded from <use href=\"#$id\"> -->")
     }
 
-    walkSvgNode(
+    pushEffectiveTransform(placementMatrix)
+    try {
+        walkSvgNode(
         output,
         referencedForUse,
         childIndent,
@@ -2166,7 +2198,10 @@ private fun appendUseElement(
         inheritedVisibility,
         parentViewportWidth,
         parentViewportHeight
-    )
+        )
+    } finally {
+        popEffectiveTransform()
+    }
 
     SvgTransformParser.closeGroups(output, childIndent, groupCount)
     output.appendLine()
