@@ -415,8 +415,10 @@ object SvgDashApproximator {
     ): String {
         if (points.size < 2 || pattern.isEmpty()) return ""
 
+        val epsilon = 0.000001f
+        val segmentEpsilon = 0.0001f
         val totalPatternLength = pattern.sum()
-        if (totalPatternLength <= 0f) return ""
+        if (totalPatternLength <= epsilon) return ""
 
         val cap = strokeLineCap?.trim()?.lowercase(Locale.US).orEmpty()
         val preserveZeroLengthDash = cap == "round" || cap == "square"
@@ -428,6 +430,8 @@ object SvgDashApproximator {
         var drawingSubpath = false
         var lastDrawX = Float.NaN
         var lastDrawY = Float.NaN
+        var lastZeroDashX = Float.NaN
+        var lastZeroDashY = Float.NaN
 
         fun samePoint(x1: Float, y1: Float, x2: Float, y2: Float): Boolean {
             return kotlin.math.abs(x1 - x2) <= 0.0005f &&
@@ -436,87 +440,106 @@ object SvgDashApproximator {
 
         fun appendZeroLengthDash(x: Float, y: Float) {
             if (!preserveZeroLengthDash) return
+
+            // Adjacent zero-length "on" entries can resolve to the same path
+            // position. Emitting the same degenerate subpath repeatedly does
+            // not change the result and can greatly inflate the output.
+            if (samePoint(lastZeroDashX, lastZeroDashY, x, y)) return
+
             commands += "M ${formatDashNumber(x)},${formatDashNumber(y)} L ${formatDashNumber(x)},${formatDashNumber(y)}"
+            lastZeroDashX = x
+            lastZeroDashY = y
             drawingSubpath = false
         }
 
-        fun advancePastZeroEntries(x: Float, y: Float) {
-            var guard = 0
-            while (remainingInPattern <= 0.000001f && guard < pattern.size * 3) {
+        /**
+         * Advances through zero-length entries without consuming path length.
+         * Returns false only when a complete pattern cycle contains no usable
+         * positive entry after floating-point transform compensation.
+         */
+        fun advancePastZeroEntries(x: Float, y: Float): Boolean {
+            var visited = 0
+            while (remainingInPattern <= epsilon && visited <= pattern.size) {
                 if (drawDash) appendZeroLengthDash(x, y)
                 patternIndex = (patternIndex + 1) % pattern.size
                 drawDash = patternIndex % 2 == 0
                 remainingInPattern = pattern[patternIndex]
                 if (!drawDash) drawingSubpath = false
-                guard++
+                visited++
             }
+            return remainingInPattern > epsilon
         }
 
-        fun resetPatternAtSubpathStart(x: Float, y: Float) {
+        fun resetPatternAtSubpathStart(x: Float, y: Float): Boolean {
             patternIndex = 0
             drawDash = true
             drawingSubpath = false
             lastDrawX = Float.NaN
             lastDrawY = Float.NaN
+            lastZeroDashX = Float.NaN
+            lastZeroDashY = Float.NaN
 
             // Positive SVG offsets shift the pattern backwards along the path.
             var offset = positiveModulo(-dashOffset, totalPatternLength)
             remainingInPattern = pattern[patternIndex]
 
-            var guard = 0
-            while (offset > 0.000001f && guard < pattern.size * 4) {
-                advancePastZeroEntries(x, y)
-                if (remainingInPattern <= 0.000001f) break
+            var visited = 0
+            while (offset > epsilon && visited <= pattern.size * 2) {
+                if (!advancePastZeroEntries(x, y)) return false
                 if (offset < remainingInPattern) {
                     remainingInPattern -= offset
                     offset = 0f
                 } else {
                     offset -= remainingInPattern
                     remainingInPattern = 0f
-                    advancePastZeroEntries(x, y)
                 }
-                guard++
+                visited++
             }
-            advancePastZeroEntries(x, y)
+            return advancePastZeroEntries(x, y)
         }
 
         fun appendVisibleSegment(x1: Float, y1: Float, x2: Float, y2: Float) {
             if (!drawingSubpath || !samePoint(lastDrawX, lastDrawY, x1, y1)) {
                 commands += "M ${formatDashNumber(x1)},${formatDashNumber(y1)} L ${formatDashNumber(x2)},${formatDashNumber(y2)}"
             } else {
+                // Keep a dash continuous across an original geometry vertex.
+                // Android can then apply strokeLineJoin/strokeMiterLimit at the
+                // corner instead of treating both sides as independently capped.
                 commands[commands.lastIndex] =
                     commands.last() + " L ${formatDashNumber(x2)},${formatDashNumber(y2)}"
             }
             drawingSubpath = true
             lastDrawX = x2
             lastDrawY = y2
+            lastZeroDashX = Float.NaN
+            lastZeroDashY = Float.NaN
         }
 
-        resetPatternAtSubpathStart(points.first().x, points.first().y)
+        if (!resetPatternAtSubpathStart(points.first().x, points.first().y)) return ""
 
         for (i in 0 until points.lastIndex) {
             val from = points[i]
             val to = points[i + 1]
 
             if (to.startsNewSubpath) {
-                resetPatternAtSubpathStart(to.x, to.y)
+                if (!resetPatternAtSubpathStart(to.x, to.y)) return commands.joinToString(" ")
                 continue
             }
 
             val dx = to.x - from.x
             val dy = to.y - from.y
             val length = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
-            if (length <= 0.0001f) continue
+            if (length <= segmentEpsilon) continue
 
             var walked = 0f
-            while (walked < length - 0.0001f) {
-                advancePastZeroEntries(
-                    from.x + dx * (walked / length),
-                    from.y + dy * (walked / length)
-                )
-                if (remainingInPattern <= 0.000001f) break
+            while (walked < length - segmentEpsilon) {
+                val currentX = from.x + dx * (walked / length)
+                val currentY = from.y + dy * (walked / length)
+                if (!advancePastZeroEntries(currentX, currentY)) break
 
                 val step = minOf(remainingInPattern, length - walked)
+                if (step <= epsilon) break
+
                 val startRatio = walked / length
                 val endRatio = (walked + step) / length
                 val x1 = from.x + dx * startRatio
@@ -524,15 +547,16 @@ object SvgDashApproximator {
                 val x2 = from.x + dx * endRatio
                 val y2 = from.y + dy * endRatio
 
-                if (drawDash && step > 0.0001f) {
+                if (drawDash && step > segmentEpsilon) {
                     appendVisibleSegment(x1, y1, x2, y2)
                 }
 
                 walked += step
                 remainingInPattern -= step
 
-                if (remainingInPattern <= 0.0001f) {
+                if (remainingInPattern <= segmentEpsilon) {
                     if (drawDash) drawingSubpath = false
+                    remainingInPattern = 0f
                     advancePastZeroEntries(x2, y2)
                 }
             }
