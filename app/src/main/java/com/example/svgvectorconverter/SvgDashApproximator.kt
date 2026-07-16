@@ -20,7 +20,12 @@ object SvgDashApproximator {
             ?.toFloatOrNull()
     }
 
-    private data class DashPoint(val x: Float, val y: Float, val startsNewSubpath: Boolean = false)
+    private data class DashPoint(
+        val x: Float,
+        val y: Float,
+        val startsNewSubpath: Boolean = false,
+        val isSourceVertex: Boolean = true
+    )
 
     private sealed class DashArrayParseResult {
         data object None : DashArrayParseResult()
@@ -165,7 +170,7 @@ object SvgDashApproximator {
      */
     private fun sampledPathDashPoints(pathData: String): List<DashPoint>? {
         val measured = SvgPathSampler.measure(pathData, curveSteps = 32) ?: return null
-        val subpaths = measured.flattenedSubpaths()
+        val subpaths = measured.flattenedSubpathsWithVertices()
         if (subpaths.isEmpty()) return null
 
         val result = mutableListOf<DashPoint>()
@@ -173,9 +178,10 @@ object SvgDashApproximator {
             subpath.forEachIndexed { pointIndex, point ->
                 result.add(
                     DashPoint(
-                        x = point.x,
-                        y = point.y,
-                        startsNewSubpath = subpathIndex > 0 && pointIndex == 0
+                        x = point.point.x,
+                        y = point.point.y,
+                        startsNewSubpath = subpathIndex > 0 && pointIndex == 0,
+                        isSourceVertex = point.isSourceVertex
                     )
                 )
             }
@@ -290,7 +296,7 @@ object SvgDashApproximator {
         commandRegex.findAll(pathData).forEach { match ->
             val x = match.groupValues.getOrNull(2)?.toFloatOrNull()
             val y = match.groupValues.getOrNull(3)?.toFloatOrNull()
-            if (x != null && y != null) points.add(DashPoint(x, y))
+            if (x != null && y != null) points.add(DashPoint(x, y, isSourceVertex = true))
         }
         return points
     }
@@ -320,7 +326,7 @@ object SvgDashApproximator {
         fun isCommandToken(index: Int): Boolean = index < tokens.size && tokens[index].length == 1 && tokens[index][0].isLetter()
         fun readFloat(): Float? = tokens.getOrNull(i)?.toFloatOrNull()?.also { i++ }
         fun addPoint(x: Float, y: Float, startsNewSubpath: Boolean = false) {
-            points.add(DashPoint(x, y, startsNewSubpath))
+            points.add(DashPoint(x, y, startsNewSubpath, isSourceVertex = true))
             currentX = x
             currentY = y
             hasCurrentPoint = true
@@ -498,13 +504,24 @@ object SvgDashApproximator {
             return advancePastZeroEntries(x, y)
         }
 
-        fun appendVisibleSegment(x1: Float, y1: Float, x2: Float, y2: Float) {
+        fun appendVisibleSegment(
+            x1: Float,
+            y1: Float,
+            x2: Float,
+            y2: Float,
+            startsAtSourceVertex: Boolean
+        ) {
             if (!drawingSubpath || !samePoint(lastDrawX, lastDrawY, x1, y1)) {
                 commands += "M ${formatDashNumber(x1)},${formatDashNumber(y1)} L ${formatDashNumber(x2)},${formatDashNumber(y2)}"
             } else {
-                // Keep a dash continuous across an original geometry vertex.
-                // Android can then apply strokeLineJoin/strokeMiterLimit at the
-                // corner instead of treating both sides as independently capped.
+                // A visible dash is still active at this boundary. When the
+                // boundary is an original SVG vertex, retaining the same subpath
+                // is what lets Android apply strokeLineJoin/strokeMiterLimit.
+                // Flattening points on curves are also retained continuously so
+                // they approximate one smooth stroked curve rather than many caps.
+                if (startsAtSourceVertex) {
+                    // Intentionally no M command here: this boundary must be a join.
+                }
                 commands[commands.lastIndex] =
                     commands.last() + " L ${formatDashNumber(x2)},${formatDashNumber(y2)}"
             }
@@ -548,13 +565,19 @@ object SvgDashApproximator {
                 val y2 = from.y + dy * endRatio
 
                 if (drawDash && step > segmentEpsilon) {
-                    appendVisibleSegment(x1, y1, x2, y2)
+                    appendVisibleSegment(
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        startsAtSourceVertex = from.isSourceVertex && walked <= segmentEpsilon
+                    )
                 }
 
                 walked += step
                 remainingInPattern -= step
 
-                if (remainingInPattern <= segmentEpsilon) {
+                if (remainingInPattern <= epsilon) {
                     if (drawDash) drawingSubpath = false
                     remainingInPattern = 0f
                     advancePastZeroEntries(x2, y2)

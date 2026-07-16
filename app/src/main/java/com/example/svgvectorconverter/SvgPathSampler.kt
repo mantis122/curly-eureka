@@ -7,7 +7,13 @@ internal object SvgPathSampler {
     data class Sample(val x: Float, val y: Float, val angleDegrees: Float)
 
     internal data class Point(val x: Float, val y: Float)
-    internal data class Segment(val from: Point, val to: Point, val start: Float, val length: Float)
+    internal data class Segment(
+        val from: Point,
+        val to: Point,
+        val start: Float,
+        val length: Float,
+        val endsAtSourceVertex: Boolean = false
+    )
 
     class MeasuredPath internal constructor(
         private val segments: List<Segment>,
@@ -36,11 +42,16 @@ internal object SvgPathSampler {
          * A new list is started whenever the next segment does not begin at
          * the previous segment's end point (which corresponds to an SVG move).
          */
-        internal fun flattenedSubpaths(): List<List<Point>> {
+        internal data class FlattenedPoint(
+            val point: Point,
+            val isSourceVertex: Boolean
+        )
+
+        internal fun flattenedSubpathsWithVertices(): List<List<FlattenedPoint>> {
             if (segments.isEmpty()) return emptyList()
 
-            val result = mutableListOf<MutableList<Point>>()
-            var currentSubpath: MutableList<Point>? = null
+            val result = mutableListOf<MutableList<FlattenedPoint>>()
+            var currentSubpath: MutableList<FlattenedPoint>? = null
             var previousEnd: Point? = null
 
             fun samePoint(a: Point?, b: Point): Boolean {
@@ -50,26 +61,34 @@ internal object SvgPathSampler {
 
             for (segment in segments) {
                 if (currentSubpath == null || !samePoint(previousEnd, segment.from)) {
-                    currentSubpath = mutableListOf(segment.from)
+                    currentSubpath = mutableListOf(FlattenedPoint(segment.from, true))
                     result.add(currentSubpath)
-                } else if (!samePoint(currentSubpath.lastOrNull(), segment.from)) {
-                    currentSubpath.add(segment.from)
+                } else if (!samePoint(currentSubpath.lastOrNull()?.point, segment.from)) {
+                    currentSubpath.add(FlattenedPoint(segment.from, false))
                 }
 
-                if (!samePoint(currentSubpath.lastOrNull(), segment.to)) {
-                    currentSubpath.add(segment.to)
+                val last = currentSubpath.lastOrNull()
+                if (!samePoint(last?.point, segment.to)) {
+                    currentSubpath.add(FlattenedPoint(segment.to, segment.endsAtSourceVertex))
+                } else if (segment.endsAtSourceVertex && last != null && !last.isSourceVertex) {
+                    currentSubpath[currentSubpath.lastIndex] = last.copy(isSourceVertex = true)
                 }
                 previousEnd = segment.to
             }
 
             return result.filter { it.size >= 2 }
         }
+
+        internal fun flattenedSubpaths(): List<List<Point>> {
+            return flattenedSubpathsWithVertices().map { subpath -> subpath.map { it.point } }
+        }
+
     }
 
     fun measure(pathData: String, curveSteps: Int = 24): MeasuredPath? {
         val tokens = tokenize(pathData)
         if (tokens.isEmpty()) return null
-        val points = mutableListOf<Pair<Point, Point>>()
+        val points = mutableListOf<Triple<Point, Point, Boolean>>()
         var index = 0
         var command: Char? = null
         var current = Point(0f, 0f)
@@ -81,8 +100,10 @@ internal object SvgPathSampler {
 
         fun hasNumber(): Boolean = index < tokens.size && !isCommand(tokens[index])
         fun read(): Float? = tokens.getOrNull(index++)?.toFloatOrNull()
-        fun addLine(to: Point) {
-            if (hypot((to.x-current.x).toDouble(), (to.y-current.y).toDouble()) > 0.0001) points.add(current to to)
+        fun addLine(to: Point, endsAtSourceVertex: Boolean = true) {
+            if (hypot((to.x-current.x).toDouble(), (to.y-current.y).toDouble()) > 0.0001) {
+                points.add(Triple(current, to, endsAtSourceVertex))
+            }
             current = to
         }
         fun cubic(p0: Point, p1: Point, p2: Point, p3: Point) {
@@ -94,7 +115,7 @@ internal object SvgPathSampler {
                     u*u*u*p0.x + 3f*u*u*t*p1.x + 3f*u*t*t*p2.x + t*t*t*p3.x,
                     u*u*u*p0.y + 3f*u*u*t*p1.y + 3f*u*t*t*p2.y + t*t*t*p3.y
                 )
-                if (hypot((p.x-prev.x).toDouble(), (p.y-prev.y).toDouble()) > 0.0001) points.add(prev to p)
+                if (hypot((p.x-prev.x).toDouble(), (p.y-prev.y).toDouble()) > 0.0001) points.add(Triple(prev, p, step == curveSteps))
                 prev = p
             }
             current = p3
@@ -105,7 +126,7 @@ internal object SvgPathSampler {
                 val t = step.toFloat()/curveSteps
                 val u = 1f-t
                 val p = Point(u*u*p0.x + 2f*u*t*p1.x + t*t*p2.x, u*u*p0.y + 2f*u*t*p1.y + t*t*p2.y)
-                if (hypot((p.x-prev.x).toDouble(), (p.y-prev.y).toDouble()) > 0.0001) points.add(prev to p)
+                if (hypot((p.x-prev.x).toDouble(), (p.y-prev.y).toDouble()) > 0.0001) points.add(Triple(prev, p, step == curveSteps))
                 prev = p
             }
             current = p2
@@ -155,7 +176,7 @@ internal object SvgPathSampler {
                     val large=(read()?:return null)!=0f;val sweep=(read()?:return null)!=0f;val xr=read()?:return null;val yr=read()?:return null
                     val end=Point(if(absolute)xr else current.x+xr,if(absolute)yr else current.y+yr)
                     val arc=sampleArc(current,end,rx,ry,rotation,large,sweep,curveSteps)
-                    for(p in arc) addLine(p)
+                    for((arcIndex,p) in arc.withIndex()) addLine(p, endsAtSourceVertex = arcIndex == arc.lastIndex)
                     lastCubic=null;lastQuad=null;previousCommand='A'
                 }
                 'Z' -> {
@@ -167,9 +188,9 @@ internal object SvgPathSampler {
             }
         }
         var walked=0f
-        val segments=points.map { (from,to) ->
+        val segments=points.map { (from,to,endsAtSourceVertex) ->
             val len=hypot((to.x-from.x).toDouble(),(to.y-from.y).toDouble()).toFloat()
-            Segment(from,to,walked,len).also { walked+=len }
+            Segment(from,to,walked,len,endsAtSourceVertex).also { walked+=len }
         }.filter { it.length>0.0001f }
         return if(segments.isEmpty()) null else MeasuredPath(segments,walked,closed)
     }
