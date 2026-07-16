@@ -178,6 +178,8 @@ object SvgToVectorConverter {
             (if (SvgTransformParser.unsupportedMatrixTransforms > 0) 1 else 0) +
             (if (unresolvedUseReferences > 0) 1 else 0) +
             (if (unapproximatedDashedStrokes > 0) 1 else 0) +
+            (if (SvgTreeConverter.invalidDashArrays > 0) 1 else 0) +
+            (if (SvgTreeConverter.invalidDashOffsetFallbacks > 0) 1 else 0) +
             (if (SvgTreeConverter.nonScalingStrokesUncertain > 0) 1 else 0) +
             (if (cssExternalImportCount > 0) 1 else 0) +
             (if (imageStats.imageElementCount > 0) 1 else 0) +
@@ -216,6 +218,10 @@ object SvgToVectorConverter {
                 appliedMasks = SvgTreeConverter.appliedMasks,
                 dashedStrokesDetected = SvgTreeConverter.dashedStrokesDetected,
                 dashedStrokesApproximated = SvgTreeConverter.dashedStrokesApproximated,
+                invalidDashArrays = SvgTreeConverter.invalidDashArrays,
+                dashSolidFallbacks = SvgTreeConverter.dashSolidFallbacks,
+                oddDashListsDuplicated = SvgTreeConverter.oddDashListsDuplicated,
+                invalidDashOffsetFallbacks = SvgTreeConverter.invalidDashOffsetFallbacks,
                 nonScalingStrokesDetected = SvgTreeConverter.nonScalingStrokesDetected,
                 nonScalingStrokesCompensated = SvgTreeConverter.nonScalingStrokesCompensated,
                 nonScalingStrokesUncertain = SvgTreeConverter.nonScalingStrokesUncertain,

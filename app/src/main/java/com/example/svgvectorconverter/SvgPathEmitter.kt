@@ -856,6 +856,12 @@ object SvgPathEmitter {
 
     private data class DashPoint(val x: Float, val y: Float, val startsNewSubpath: Boolean = false)
 
+    private sealed class DashArrayParseResult {
+        data object None : DashArrayParseResult()
+        data class Valid(val pattern: List<Float>, val duplicatedOddList: Boolean) : DashArrayParseResult()
+        data object Invalid : DashArrayParseResult()
+    }
+
     private fun dashedStrokePathData(
         element: Element,
         style: String?,
@@ -864,73 +870,94 @@ object SvgPathEmitter {
         stroke: String?
     ): String? {
         if (sourceTag !in setOf("line", "polyline", "polygon", "rect", "circle", "ellipse", "path")) return null
-        if (stroke.isNullOrBlank()) return null
+        if (stroke.isNullOrBlank() || stroke.equals("none", ignoreCase = true)) return null
 
-        val dashArrayValue = SvgPaintResolver.styleValue(style, "stroke-dasharray")
-            ?: element.getAttribute("stroke-dasharray").ifBlank { null }
-            ?: return null
-
-        if (!isActiveDashArray(dashArrayValue)) return null
-
-        val dashPattern = parseDashArray(dashArrayValue)
-        if (dashPattern == null) {
-            SvgTreeConverter.recordDashedStroke(didApproximate = false)
-            return null
-        }
-
-        val dashOffset = parseLengthList(
-            SvgPaintResolver.styleValue(style, "stroke-dashoffset")
-                ?: element.getAttribute("stroke-dashoffset").ifBlank { null }
-                ?: "0"
-        ).firstOrNull() ?: 0f
-
-        val dashPoints = dashApproximationPoints(element, sourceTag, pathData)
-        if (dashPoints.size < 2) {
-            SvgTreeConverter.recordDashedStroke(didApproximate = false)
-            return null
-        }
-
-        val dashed = buildDashedPath(dashPoints, dashPattern, dashOffset)
-        if (dashed.isBlank()) {
-            SvgTreeConverter.recordDashedStroke(didApproximate = false)
-            return null
-        }
-
-        SvgTreeConverter.recordDashedStroke(didApproximate = true)
-        return dashed
-    }
-
-    private fun isActiveDashArray(value: String?): Boolean {
-        val raw = value?.trim().orEmpty()
-        return raw.isNotBlank() && !raw.equals("none", ignoreCase = true)
-    }
-
-    private fun parseDashArray(value: String?): List<Float>? {
-        val raw = value?.trim().orEmpty()
-        if (raw.isBlank() || raw.equals("none", ignoreCase = true)) return null
-
-        val values = parseLengthList(raw)
-            .filter { it > 0f }
-
-        if (values.isEmpty()) return null
-
-        return if (values.size % 2 == 0) values else values + values
-    }
-
-    private fun parseLengthList(value: String?): List<Float> {
-        val raw = value?.trim().orEmpty()
-        if (raw.isBlank()) return emptyList()
-
-        return raw
-            .replace(",", " ")
-            .split(Regex("\\s+"))
-            .mapNotNull { token ->
-                token
-                    .trim()
-                    .removeSuffix("px")
-                    .removeSuffix("dp")
-                    .toFloatOrNull()
+        val dashArrayValue = inheritedStyleOrAttribute(element, style, "stroke-dasharray") ?: return null
+        when (val parsed = parseDashArrayStrict(dashArrayValue)) {
+            DashArrayParseResult.None -> return null
+            DashArrayParseResult.Invalid -> {
+                SvgTreeConverter.recordDashedStrokeInvalid(solidFallback = true)
+                return null
             }
+            is DashArrayParseResult.Valid -> {
+                if (parsed.duplicatedOddList) SvgTreeConverter.recordOddDashListDuplicated()
+
+                val dashOffsetValue = inheritedStyleOrAttribute(element, style, "stroke-dashoffset")
+                val dashOffset = when (val parsedOffset = parseSingleLengthStrict(dashOffsetValue ?: "0")) {
+                    null -> {
+                        SvgTreeConverter.recordInvalidDashOffsetFallback()
+                        0f
+                    }
+                    else -> parsedOffset
+                }
+
+                val dashPoints = dashApproximationPoints(element, sourceTag, pathData)
+                if (dashPoints.size < 2) {
+                    SvgTreeConverter.recordDashedStroke(didApproximate = false)
+                    return null
+                }
+
+                val dashed = buildDashedPath(dashPoints, parsed.pattern, dashOffset)
+                if (dashed.isBlank()) {
+                    SvgTreeConverter.recordDashedStroke(didApproximate = false)
+                    return null
+                }
+
+                SvgTreeConverter.recordDashedStroke(didApproximate = true)
+                return dashed
+            }
+        }
+    }
+
+    private fun inheritedStyleOrAttribute(element: Element, directStyle: String?, property: String): String? {
+        SvgPaintResolver.styleValue(directStyle, property)?.let { return it }
+        element.getAttribute(property).trim().takeIf { it.isNotBlank() }?.let { return it }
+
+        var parent = element.parentNode
+        while (parent is Element) {
+            val parentStyle = parent.getAttribute("style").ifBlank { null }
+            SvgPaintResolver.styleValue(parentStyle, property)?.let { return it }
+            parent.getAttribute(property).trim().takeIf { it.isNotBlank() }?.let { return it }
+            parent = parent.parentNode
+        }
+        return null
+    }
+
+    private fun parseDashArrayStrict(value: String?): DashArrayParseResult {
+        val raw = value?.trim().orEmpty()
+        if (raw.isBlank() || raw.equals("none", ignoreCase = true)) return DashArrayParseResult.None
+
+        val tokens = raw.replace(",", " ").split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (tokens.isEmpty()) return DashArrayParseResult.Invalid
+
+        val values = mutableListOf<Float>()
+        for (token in tokens) {
+            val number = parseSupportedLengthToken(token) ?: return DashArrayParseResult.Invalid
+            if (!number.isFinite() || number < 0f) return DashArrayParseResult.Invalid
+            values += number
+        }
+
+        if (values.all { it == 0f }) return DashArrayParseResult.None
+        val odd = values.size % 2 != 0
+        return DashArrayParseResult.Valid(if (odd) values + values else values, odd)
+    }
+
+    private fun parseSingleLengthStrict(value: String?): Float? {
+        val raw = value?.trim().orEmpty()
+        if (raw.isBlank()) return 0f
+        if (raw.contains(',') || raw.split(Regex("\\s+")).size != 1) return null
+        return parseSupportedLengthToken(raw)?.takeIf { it.isFinite() }
+    }
+
+    private fun parseSupportedLengthToken(token: String): Float? {
+        val trimmed = token.trim()
+        if (trimmed.endsWith("%")) return null
+        val numeric = when {
+            trimmed.endsWith("px", ignoreCase = true) -> trimmed.dropLast(2)
+            trimmed.endsWith("dp", ignoreCase = true) -> trimmed.dropLast(2)
+            else -> trimmed
+        }
+        return numeric.toFloatOrNull()
     }
 
     private fun dashApproximationPoints(element: Element, sourceTag: String?, pathData: String): List<DashPoint> {
@@ -1166,9 +1193,11 @@ object SvgPathEmitter {
         var patternIndex = 0
         var distanceIntoPattern = positiveModulo(dashOffset, totalPatternLength)
 
-        while (distanceIntoPattern >= pattern[patternIndex]) {
-            distanceIntoPattern -= pattern[patternIndex]
+        var guard = 0
+        while ((pattern[patternIndex] <= 0.000001f || distanceIntoPattern >= pattern[patternIndex]) && guard < pattern.size * 2) {
+            if (pattern[patternIndex] > 0.000001f) distanceIntoPattern -= pattern[patternIndex]
             patternIndex = (patternIndex + 1) % pattern.size
+            guard++
         }
 
         var drawDash = patternIndex % 2 == 0
@@ -1200,9 +1229,13 @@ object SvgPathEmitter {
                 walked += step
                 remainingInPattern -= step
                 if (remainingInPattern <= 0.0001f) {
-                    patternIndex = (patternIndex + 1) % pattern.size
-                    drawDash = patternIndex % 2 == 0
-                    remainingInPattern = pattern[patternIndex]
+                    var advanceGuard = 0
+                    do {
+                        patternIndex = (patternIndex + 1) % pattern.size
+                        drawDash = patternIndex % 2 == 0
+                        remainingInPattern = pattern[patternIndex]
+                        advanceGuard++
+                    } while (remainingInPattern <= 0.000001f && advanceGuard < pattern.size * 2)
                 }
             }
         }

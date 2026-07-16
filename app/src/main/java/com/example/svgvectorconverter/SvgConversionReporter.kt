@@ -60,6 +60,10 @@ data class SvgConversionReportData(
     val appliedMasks: Int,
     val dashedStrokesDetected: Int,
     val dashedStrokesApproximated: Int,
+    val invalidDashArrays: Int = 0,
+    val dashSolidFallbacks: Int = 0,
+    val oddDashListsDuplicated: Int = 0,
+    val invalidDashOffsetFallbacks: Int = 0,
     val nonScalingStrokesDetected: Int,
     val nonScalingStrokesCompensated: Int,
     val nonScalingStrokesUncertain: Int,
@@ -563,6 +567,16 @@ object SvgConversionReporter {
             if (data.dashedStrokesDetected > 0) {
                 appendLine("✓ Dashed strokes detected: ${data.dashedStrokesDetected}")
                 appendLine("✓ Dashed strokes approximated: ${data.dashedStrokesApproximated}")
+                if (data.oddDashListsDuplicated > 0) {
+                    appendLine("✓ Odd dash lists duplicated per SVG rules: ${data.oddDashListsDuplicated}")
+                }
+                if (data.invalidDashOffsetFallbacks > 0) {
+                    appendLine("⚠ Invalid dash offsets replaced with 0: ${data.invalidDashOffsetFallbacks}")
+                }
+                if (data.invalidDashArrays > 0) {
+                    appendLine("⚠ Invalid dash arrays detected: ${data.invalidDashArrays}")
+                    appendLine("✓ Solid-stroke fallbacks used: ${data.dashSolidFallbacks}")
+                }
             }
 
             if (data.displayNoneElementsSkipped > 0 || data.visibilityHiddenElementsSkipped > 0) {

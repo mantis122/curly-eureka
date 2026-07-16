@@ -19,6 +19,10 @@ private var activeMarkerDefinitions: Map<String, MarkerDefinition> = emptyMap()
 private var activeAppliedMarkers = 0
 private var activeDashedStrokesDetected = 0
 private var activeDashedStrokesApproximated = 0
+private var activeInvalidDashArrays = 0
+private var activeDashSolidFallbacks = 0
+private var activeOddDashListsDuplicated = 0
+private var activeInvalidDashOffsetFallbacks = 0
 private var activeNonScalingStrokesDetected = 0
 private var activeNonScalingStrokesCompensated = 0
 private var activeNonScalingStrokesUncertain = 0
@@ -66,6 +70,10 @@ val unresolvedUseReferences: Int get() = activeUnresolvedUseReferences
 val appliedMarkers: Int get() = activeAppliedMarkers
 val dashedStrokesDetected: Int get() = activeDashedStrokesDetected
 val dashedStrokesApproximated: Int get() = activeDashedStrokesApproximated
+val invalidDashArrays: Int get() = activeInvalidDashArrays
+val dashSolidFallbacks: Int get() = activeDashSolidFallbacks
+val oddDashListsDuplicated: Int get() = activeOddDashListsDuplicated
+val invalidDashOffsetFallbacks: Int get() = activeInvalidDashOffsetFallbacks
 val nonScalingStrokesDetected: Int get() = activeNonScalingStrokesDetected
 val nonScalingStrokesCompensated: Int get() = activeNonScalingStrokesCompensated
 val nonScalingStrokesUncertain: Int get() = activeNonScalingStrokesUncertain
@@ -191,6 +199,10 @@ fun resetStats(
     activeAppliedMarkers = 0
     activeDashedStrokesDetected = 0
     activeDashedStrokesApproximated = 0
+    activeInvalidDashArrays = 0
+    activeDashSolidFallbacks = 0
+    activeOddDashListsDuplicated = 0
+    activeInvalidDashOffsetFallbacks = 0
     activeNonScalingStrokesDetected = 0
     activeNonScalingStrokesCompensated = 0
     activeNonScalingStrokesUncertain = 0
@@ -227,6 +239,20 @@ fun recordDashedStroke(didApproximate: Boolean) {
     if (didApproximate) {
         activeDashedStrokesApproximated++
     }
+}
+
+fun recordDashedStrokeInvalid(solidFallback: Boolean) {
+    activeDashedStrokesDetected++
+    activeInvalidDashArrays++
+    if (solidFallback) activeDashSolidFallbacks++
+}
+
+fun recordOddDashListDuplicated() {
+    activeOddDashListsDuplicated++
+}
+
+fun recordInvalidDashOffsetFallback() {
+    activeInvalidDashOffsetFallbacks++
 }
 
 fun recordNonScalingStroke(didCompensate: Boolean, isUncertain: Boolean = false) {
