@@ -33,7 +33,8 @@ object SvgDashApproximator {
         style: String?,
         sourceTag: String?,
         pathData: String,
-        stroke: String?
+        stroke: String?,
+        strokeLineCap: String?
     ): String? {
         if (sourceTag !in setOf("line", "polyline", "polygon", "rect", "circle", "ellipse", "path")) return null
         if (stroke.isNullOrBlank() || stroke.equals("none", ignoreCase = true)) return null
@@ -73,7 +74,12 @@ object SvgDashApproximator {
                     return null
                 }
 
-                val dashed = buildDashedPath(dashPoints, effectivePattern, effectiveDashOffset)
+                val dashed = buildDashedPath(
+                    points = dashPoints,
+                    pattern = effectivePattern,
+                    dashOffset = effectiveDashOffset,
+                    strokeLineCap = strokeLineCap
+                )
                 if (dashed.isBlank()) {
                     SvgDashContext.recordDashedStroke(didApproximate = false)
                     return null
@@ -389,32 +395,114 @@ object SvgDashApproximator {
         return tokenRegex.findAll(pathData).map { it.value }.toList()
     }
 
-    private fun buildDashedPath(points: List<DashPoint>, pattern: List<Float>, dashOffset: Float): String {
+    /**
+     * Builds one compound VectorDrawable path from the sampled geometry.
+     *
+     * A visible dash that crosses an original segment boundary remains one
+     * continuous M/L/L... subpath, allowing Android's stroke-linejoin and
+     * stroke-miterlimit to apply at that corner. A gap always starts a new M.
+     *
+     * SVG restarts the dash pattern for each independently moved subpath.
+     * Zero-length "on" entries are retained for round/square caps as degenerate
+     * subpaths, which allows cap-only dots/squares where the renderer supports
+     * zero-length stroked segments. Butt-capped zero-length dashes are invisible.
+     */
+    private fun buildDashedPath(
+        points: List<DashPoint>,
+        pattern: List<Float>,
+        dashOffset: Float,
+        strokeLineCap: String?
+    ): String {
         if (points.size < 2 || pattern.isEmpty()) return ""
 
         val totalPatternLength = pattern.sum()
         if (totalPatternLength <= 0f) return ""
 
-        var patternIndex = 0
-        // Positive SVG dash offsets shift the pattern backwards along the path.
-        // Modulo normalization also handles negative and very large offsets.
-        var distanceIntoPattern = positiveModulo(-dashOffset, totalPatternLength)
+        val cap = strokeLineCap?.trim()?.lowercase(Locale.US).orEmpty()
+        val preserveZeroLengthDash = cap == "round" || cap == "square"
+        val commands = mutableListOf<String>()
 
-        var guard = 0
-        while ((pattern[patternIndex] <= 0.000001f || distanceIntoPattern >= pattern[patternIndex]) && guard < pattern.size * 2) {
-            if (pattern[patternIndex] > 0.000001f) distanceIntoPattern -= pattern[patternIndex]
-            patternIndex = (patternIndex + 1) % pattern.size
-            guard++
+        var patternIndex = 0
+        var drawDash = true
+        var remainingInPattern = 0f
+        var drawingSubpath = false
+        var lastDrawX = Float.NaN
+        var lastDrawY = Float.NaN
+
+        fun samePoint(x1: Float, y1: Float, x2: Float, y2: Float): Boolean {
+            return kotlin.math.abs(x1 - x2) <= 0.0005f &&
+                kotlin.math.abs(y1 - y2) <= 0.0005f
         }
 
-        var drawDash = patternIndex % 2 == 0
-        var remainingInPattern = pattern[patternIndex] - distanceIntoPattern
-        val segments = mutableListOf<String>()
+        fun appendZeroLengthDash(x: Float, y: Float) {
+            if (!preserveZeroLengthDash) return
+            commands += "M ${formatDashNumber(x)},${formatDashNumber(y)} L ${formatDashNumber(x)},${formatDashNumber(y)}"
+            drawingSubpath = false
+        }
+
+        fun advancePastZeroEntries(x: Float, y: Float) {
+            var guard = 0
+            while (remainingInPattern <= 0.000001f && guard < pattern.size * 3) {
+                if (drawDash) appendZeroLengthDash(x, y)
+                patternIndex = (patternIndex + 1) % pattern.size
+                drawDash = patternIndex % 2 == 0
+                remainingInPattern = pattern[patternIndex]
+                if (!drawDash) drawingSubpath = false
+                guard++
+            }
+        }
+
+        fun resetPatternAtSubpathStart(x: Float, y: Float) {
+            patternIndex = 0
+            drawDash = true
+            drawingSubpath = false
+            lastDrawX = Float.NaN
+            lastDrawY = Float.NaN
+
+            // Positive SVG offsets shift the pattern backwards along the path.
+            var offset = positiveModulo(-dashOffset, totalPatternLength)
+            remainingInPattern = pattern[patternIndex]
+
+            var guard = 0
+            while (offset > 0.000001f && guard < pattern.size * 4) {
+                advancePastZeroEntries(x, y)
+                if (remainingInPattern <= 0.000001f) break
+                if (offset < remainingInPattern) {
+                    remainingInPattern -= offset
+                    offset = 0f
+                } else {
+                    offset -= remainingInPattern
+                    remainingInPattern = 0f
+                    advancePastZeroEntries(x, y)
+                }
+                guard++
+            }
+            advancePastZeroEntries(x, y)
+        }
+
+        fun appendVisibleSegment(x1: Float, y1: Float, x2: Float, y2: Float) {
+            if (!drawingSubpath || !samePoint(lastDrawX, lastDrawY, x1, y1)) {
+                commands += "M ${formatDashNumber(x1)},${formatDashNumber(y1)} L ${formatDashNumber(x2)},${formatDashNumber(y2)}"
+            } else {
+                commands[commands.lastIndex] =
+                    commands.last() + " L ${formatDashNumber(x2)},${formatDashNumber(y2)}"
+            }
+            drawingSubpath = true
+            lastDrawX = x2
+            lastDrawY = y2
+        }
+
+        resetPatternAtSubpathStart(points.first().x, points.first().y)
 
         for (i in 0 until points.lastIndex) {
             val from = points[i]
             val to = points[i + 1]
-            if (to.startsNewSubpath) continue
+
+            if (to.startsNewSubpath) {
+                resetPatternAtSubpathStart(to.x, to.y)
+                continue
+            }
+
             val dx = to.x - from.x
             val dy = to.y - from.y
             val length = kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
@@ -422,32 +510,35 @@ object SvgDashApproximator {
 
             var walked = 0f
             while (walked < length - 0.0001f) {
+                advancePastZeroEntries(
+                    from.x + dx * (walked / length),
+                    from.y + dy * (walked / length)
+                )
+                if (remainingInPattern <= 0.000001f) break
+
                 val step = minOf(remainingInPattern, length - walked)
+                val startRatio = walked / length
+                val endRatio = (walked + step) / length
+                val x1 = from.x + dx * startRatio
+                val y1 = from.y + dy * startRatio
+                val x2 = from.x + dx * endRatio
+                val y2 = from.y + dy * endRatio
+
                 if (drawDash && step > 0.0001f) {
-                    val startRatio = walked / length
-                    val endRatio = (walked + step) / length
-                    val x1 = from.x + dx * startRatio
-                    val y1 = from.y + dy * startRatio
-                    val x2 = from.x + dx * endRatio
-                    val y2 = from.y + dy * endRatio
-                    segments.add("M ${formatDashNumber(x1)},${formatDashNumber(y1)} L ${formatDashNumber(x2)},${formatDashNumber(y2)}")
+                    appendVisibleSegment(x1, y1, x2, y2)
                 }
 
                 walked += step
                 remainingInPattern -= step
+
                 if (remainingInPattern <= 0.0001f) {
-                    var advanceGuard = 0
-                    do {
-                        patternIndex = (patternIndex + 1) % pattern.size
-                        drawDash = patternIndex % 2 == 0
-                        remainingInPattern = pattern[patternIndex]
-                        advanceGuard++
-                    } while (remainingInPattern <= 0.000001f && advanceGuard < pattern.size * 2)
+                    if (drawDash) drawingSubpath = false
+                    advancePastZeroEntries(x2, y2)
                 }
             }
         }
 
-        return segments.joinToString(" ")
+        return commands.joinToString(" ")
     }
 
     private fun positiveModulo(value: Float, modulo: Float): Float {

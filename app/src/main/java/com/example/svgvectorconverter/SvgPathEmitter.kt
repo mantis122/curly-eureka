@@ -292,7 +292,8 @@ object SvgPathEmitter {
             style = style,
             sourceTag = sourceTag,
             pathData = transformedPathData,
-            stroke = stroke
+            stroke = stroke,
+            strokeLineCap = strokeLineCap
         )
         val effectivePathData = dashedPathData ?: transformedPathData
         val markerPathData = transformedPathData
@@ -848,14 +849,16 @@ object SvgPathEmitter {
         style: String?,
         sourceTag: String?,
         pathData: String,
-        stroke: String?
+        stroke: String?,
+        strokeLineCap: String?
     ): String? {
         return SvgDashApproximator.approximateStroke(
             element = element,
             style = style,
             sourceTag = sourceTag,
             pathData = pathData,
-            stroke = stroke
+            stroke = stroke,
+            strokeLineCap = strokeLineCap
         )
     }
 
