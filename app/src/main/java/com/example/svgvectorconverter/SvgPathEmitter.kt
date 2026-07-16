@@ -1058,6 +1058,12 @@ object SvgPathEmitter {
             ?.takeIf { it.isNotBlank() }
     }
 
+    private fun tokenizePathData(pathData: String): List<String> {
+        val tokenRegex =
+            Regex("""[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""")
+        return tokenRegex.findAll(pathData).map { it.value }.toList()
+    }
+
     private fun extractMarkerPoints(pathData: String): List<Pair<Float, Float>> {
         val tokens = tokenizePathData(pathData)
         if (tokens.isEmpty()) return emptyList()
