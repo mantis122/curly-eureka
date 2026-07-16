@@ -23,6 +23,9 @@ private var activeInvalidDashArrays = 0
 private var activeDashSolidFallbacks = 0
 private var activeOddDashListsDuplicated = 0
 private var activeInvalidDashOffsetFallbacks = 0
+private var activeDashOffsetsNormalized = 0
+private var activeDashTransformExactCompensations = 0
+private var activeDashTransformApproximateCompensations = 0
 private var activeNonScalingStrokesDetected = 0
 private var activeNonScalingStrokesCompensated = 0
 private var activeNonScalingStrokesUncertain = 0
@@ -74,6 +77,9 @@ val invalidDashArrays: Int get() = activeInvalidDashArrays
 val dashSolidFallbacks: Int get() = activeDashSolidFallbacks
 val oddDashListsDuplicated: Int get() = activeOddDashListsDuplicated
 val invalidDashOffsetFallbacks: Int get() = activeInvalidDashOffsetFallbacks
+val dashOffsetsNormalized: Int get() = activeDashOffsetsNormalized
+val dashTransformExactCompensations: Int get() = activeDashTransformExactCompensations
+val dashTransformApproximateCompensations: Int get() = activeDashTransformApproximateCompensations
 val nonScalingStrokesDetected: Int get() = activeNonScalingStrokesDetected
 val nonScalingStrokesCompensated: Int get() = activeNonScalingStrokesCompensated
 val nonScalingStrokesUncertain: Int get() = activeNonScalingStrokesUncertain
@@ -203,6 +209,9 @@ fun resetStats(
     activeDashSolidFallbacks = 0
     activeOddDashListsDuplicated = 0
     activeInvalidDashOffsetFallbacks = 0
+    activeDashOffsetsNormalized = 0
+    activeDashTransformExactCompensations = 0
+    activeDashTransformApproximateCompensations = 0
     activeNonScalingStrokesDetected = 0
     activeNonScalingStrokesCompensated = 0
     activeNonScalingStrokesUncertain = 0
@@ -253,6 +262,15 @@ fun recordOddDashListDuplicated() {
 
 fun recordInvalidDashOffsetFallback() {
     activeInvalidDashOffsetFallbacks++
+}
+
+fun recordDashOffsetNormalized() {
+    activeDashOffsetsNormalized++
+}
+
+fun recordDashTransformCompensation(approximate: Boolean) {
+    if (approximate) activeDashTransformApproximateCompensations++
+    else activeDashTransformExactCompensations++
 }
 
 fun recordNonScalingStroke(didCompensate: Boolean, isUncertain: Boolean = false) {
@@ -620,18 +638,21 @@ private fun scaleEstimateFromTransformList(
     )
 }
 
-private fun emitWithForcedStrokeWidth(strokeWidth: String?, block: () -> Unit) {
+private fun emitWithStrokeAndDashContext(
+    strokeWidth: String?,
+    compensateDashes: Boolean,
+    dashScale: Float,
+    dashApproximate: Boolean,
+    block: () -> Unit
+) {
     val forcedStrokeWidth = strokeWidth?.trim()?.takeIf { it.isNotBlank() }
-    if (forcedStrokeWidth == null) {
-        block()
-        return
-    }
-
-    SvgPathEmitter.pushForcedStrokeWidth(forcedStrokeWidth)
+    if (forcedStrokeWidth != null) SvgPathEmitter.pushForcedStrokeWidth(forcedStrokeWidth)
+    SvgPathEmitter.pushDashTransformCompensation(compensateDashes, dashScale, dashApproximate)
     try {
         block()
     } finally {
-        SvgPathEmitter.popForcedStrokeWidth()
+        SvgPathEmitter.popDashTransformCompensation()
+        if (forcedStrokeWidth != null) SvgPathEmitter.popForcedStrokeWidth()
     }
 }
 
@@ -1571,6 +1592,10 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
         currentStrokeWidth
     }
 
+    val dashCompensationScale = kotlin.math.sqrt(kotlin.math.abs(effectiveStrokeScaleX * effectiveStrokeScaleY))
+        .takeIf { it.isFinite() && it > 0.0001f } ?: 1f
+    val dashTransformIsApproximate = isNonUniformScale(effectiveStrokeScaleX, effectiveStrokeScaleY)
+
     when (tagName) {
         "svg" -> {
             val isRootSvg = element === element.ownerDocument.documentElement
@@ -1884,7 +1909,10 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
             if (sourcePathData.isNotBlank() && appendPatternFillApproximation(output, sourcePathData, currentFill, currentOpacity, currentFillOpacity, indent)) {
                 return
             }
-            emitWithForcedStrokeWidth(strokeWidthForEmission) {
+            emitWithStrokeAndDashContext(
+                strokeWidthForEmission, hasNonScalingStroke,
+                dashCompensationScale, dashTransformIsApproximate
+            ) {
                 appendElementPathCallback(
                     output,
                     element,
@@ -1910,7 +1938,10 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
             if (!sourcePathData.isNullOrBlank() && tagName != "line" && appendPatternFillApproximation(output, sourcePathData, currentFill, currentOpacity, currentFillOpacity, indent)) {
                 return
             }
-            emitWithForcedStrokeWidth(strokeWidthForEmission) {
+            emitWithStrokeAndDashContext(
+                strokeWidthForEmission, hasNonScalingStroke,
+                dashCompensationScale, dashTransformIsApproximate
+            ) {
                 appendBasicShapePathCallback(
                     output,
                     element,

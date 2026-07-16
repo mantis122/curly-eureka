@@ -13,6 +13,8 @@ object SvgPathEmitter {
 
     private val flattenTransformStack = mutableListOf<AffineTransform>()
     private val forcedStrokeWidthStack = mutableListOf<String?>()
+    private data class DashTransformCompensation(val enabled: Boolean, val scale: Float, val approximate: Boolean)
+    private val dashTransformCompensationStack = mutableListOf<DashTransformCompensation>()
 
     internal fun pushFlattenTransform(matrix: AffineTransform) {
         flattenTransformStack.add(matrix)
@@ -46,6 +48,21 @@ object SvgPathEmitter {
     private fun currentForcedStrokeWidth(): String? {
         return forcedStrokeWidthStack.lastOrNull()?.takeIf { it.isNotBlank() }
     }
+
+    internal fun pushDashTransformCompensation(enabled: Boolean, scale: Float, approximate: Boolean) {
+        val safeScale = if (scale.isFinite() && scale > 0.0001f) scale else 1f
+        dashTransformCompensationStack.add(DashTransformCompensation(enabled, safeScale, approximate))
+    }
+
+    internal fun popDashTransformCompensation() {
+        if (dashTransformCompensationStack.isNotEmpty()) {
+            dashTransformCompensationStack.removeAt(dashTransformCompensationStack.lastIndex)
+        }
+    }
+
+    private fun currentDashTransformCompensation(): DashTransformCompensation =
+        dashTransformCompensationStack.lastOrNull()
+            ?: DashTransformCompensation(enabled = false, scale = 1f, approximate = false)
 
     fun appendBasicShapePath(
         output: StringBuilder,
@@ -883,12 +900,22 @@ object SvgPathEmitter {
                 if (parsed.duplicatedOddList) SvgTreeConverter.recordOddDashListDuplicated()
 
                 val dashOffsetValue = inheritedStyleOrAttribute(element, style, "stroke-dashoffset")
-                val dashOffset = when (val parsedOffset = parseSingleLengthStrict(dashOffsetValue ?: "0")) {
+                val rawDashOffset = when (val parsedOffset = parseSingleLengthStrict(dashOffsetValue ?: "0")) {
                     null -> {
                         SvgTreeConverter.recordInvalidDashOffsetFallback()
                         0f
                     }
                     else -> parsedOffset
+                }
+
+                val dashCompensation = currentDashTransformCompensation()
+                val effectivePattern = if (dashCompensation.enabled) {
+                    parsed.pattern.map { it / dashCompensation.scale }
+                } else parsed.pattern
+                val effectiveDashOffset = rawDashOffset / if (dashCompensation.enabled) dashCompensation.scale else 1f
+                val patternLength = effectivePattern.sum()
+                if (patternLength > 0.0001f && (effectiveDashOffset < 0f || kotlin.math.abs(effectiveDashOffset) >= patternLength)) {
+                    SvgTreeConverter.recordDashOffsetNormalized()
                 }
 
                 val dashPoints = dashApproximationPoints(element, sourceTag, pathData)
@@ -897,12 +924,15 @@ object SvgPathEmitter {
                     return null
                 }
 
-                val dashed = buildDashedPath(dashPoints, parsed.pattern, dashOffset)
+                val dashed = buildDashedPath(dashPoints, effectivePattern, effectiveDashOffset)
                 if (dashed.isBlank()) {
                     SvgTreeConverter.recordDashedStroke(didApproximate = false)
                     return null
                 }
 
+                if (dashCompensation.enabled) {
+                    SvgTreeConverter.recordDashTransformCompensation(dashCompensation.approximate)
+                }
                 SvgTreeConverter.recordDashedStroke(didApproximate = true)
                 return dashed
             }
@@ -1217,7 +1247,9 @@ object SvgPathEmitter {
         if (totalPatternLength <= 0f) return ""
 
         var patternIndex = 0
-        var distanceIntoPattern = positiveModulo(dashOffset, totalPatternLength)
+        // Positive SVG dash offsets shift the pattern backwards along the path.
+        // Modulo normalization also handles negative and very large offsets.
+        var distanceIntoPattern = positiveModulo(-dashOffset, totalPatternLength)
 
         var guard = 0
         while ((pattern[patternIndex] <= 0.000001f || distanceIntoPattern >= pattern[patternIndex]) && guard < pattern.size * 2) {

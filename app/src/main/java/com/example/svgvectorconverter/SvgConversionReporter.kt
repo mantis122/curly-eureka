@@ -64,6 +64,9 @@ data class SvgConversionReportData(
     val dashSolidFallbacks: Int = 0,
     val oddDashListsDuplicated: Int = 0,
     val invalidDashOffsetFallbacks: Int = 0,
+    val dashOffsetsNormalized: Int = 0,
+    val dashTransformExactCompensations: Int = 0,
+    val dashTransformApproximateCompensations: Int = 0,
     val nonScalingStrokesDetected: Int,
     val nonScalingStrokesCompensated: Int,
     val nonScalingStrokesUncertain: Int,
@@ -575,6 +578,15 @@ object SvgConversionReporter {
                 if (data.invalidDashOffsetFallbacks > 0) {
                     appendLine("⚠ Invalid dash offsets replaced with 0: ${data.invalidDashOffsetFallbacks}")
                 }
+                if (data.dashOffsetsNormalized > 0) {
+                    appendLine("✓ Negative/large dash offsets normalized: ${data.dashOffsetsNormalized}")
+                }
+                if (data.dashTransformExactCompensations > 0) {
+                    appendLine("✓ Non-scaling dash transforms compensated exactly: ${data.dashTransformExactCompensations}")
+                }
+                if (data.dashTransformApproximateCompensations > 0) {
+                    appendLine("⚠ Non-scaling dash transforms approximated: ${data.dashTransformApproximateCompensations}")
+                }
                 if (data.invalidDashArrays > 0) {
                     appendLine("⚠ Invalid dash arrays detected: ${data.invalidDashArrays}")
                     appendLine("✓ Solid-stroke fallbacks used: ${data.dashSolidFallbacks}")
@@ -686,6 +698,7 @@ object SvgConversionReporter {
                 data.unsupportedMatrixTransforms > 0 ||
                 data.unresolvedUseReferences > 0 ||
                 unapproximatedDashedStrokes > 0 ||
+                data.dashTransformApproximateCompensations > 0 ||
                 data.nonScalingStrokesUncertain > 0 ||
                 data.cssExternalImportCount > 0 ||
                 data.imageStats.imageElementCount > 0 ||
@@ -712,6 +725,9 @@ object SvgConversionReporter {
 
                 if (unapproximatedDashedStrokes > 0) {
                     appendLine("⚠ Dashed strokes could not be approximated: $unapproximatedDashedStrokes")
+                }
+                if (data.dashTransformApproximateCompensations > 0) {
+                    appendLine("⚠ Non-scaling dashed strokes under non-uniform transforms use geometric-mean compensation: ${data.dashTransformApproximateCompensations}")
                 }
 
                 if (data.nonScalingStrokesUncertain > 0) {
@@ -842,6 +858,7 @@ object SvgConversionReporter {
             unapproximatedDashedStrokes > 0 -> unsupported.add("Dashed strokes")
         }
 
+        if (data.dashTransformApproximateCompensations > 0) approximated.add("Non-scaling dash transforms")
         if (data.nonScalingStrokesUncertain > 0) approximated.add("Non-scaling strokes under non-uniform transforms")
 
         if (data.cssExternalImportCount > 0) ignored.add("External CSS @import")
