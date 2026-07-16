@@ -11,29 +11,6 @@ import java.util.Locale
  * Reporting remains centralized in [SvgTreeConverter].
  */
 object SvgDashApproximator {
-    private data class DashTransformCompensation(
-        val enabled: Boolean,
-        val scale: Float,
-        val approximate: Boolean
-    )
-
-    private val transformCompensationStack = mutableListOf<DashTransformCompensation>()
-
-    internal fun pushTransformCompensation(enabled: Boolean, scale: Float, approximate: Boolean) {
-        val safeScale = if (scale.isFinite() && scale > 0.0001f) scale else 1f
-        transformCompensationStack.add(DashTransformCompensation(enabled, safeScale, approximate))
-    }
-
-    internal fun popTransformCompensation() {
-        if (transformCompensationStack.isNotEmpty()) {
-            transformCompensationStack.removeAt(transformCompensationStack.lastIndex)
-        }
-    }
-
-    private fun currentDashTransformCompensation(): DashTransformCompensation =
-        transformCompensationStack.lastOrNull()
-            ?: DashTransformCompensation(enabled = false, scale = 1f, approximate = false)
-
     private fun floatAttr(element: Element, name: String): Float? {
         return element.getAttribute(name)
             .replace("px", "")
@@ -65,47 +42,47 @@ object SvgDashApproximator {
         when (val parsed = parseDashArrayStrict(dashArrayValue)) {
             DashArrayParseResult.None -> return null
             DashArrayParseResult.Invalid -> {
-                SvgTreeConverter.recordDashedStrokeInvalid(solidFallback = true)
+                SvgDashContext.recordDashedStrokeInvalid(solidFallback = true)
                 return null
             }
             is DashArrayParseResult.Valid -> {
-                if (parsed.duplicatedOddList) SvgTreeConverter.recordOddDashListDuplicated()
+                if (parsed.duplicatedOddList) SvgDashContext.recordOddDashListDuplicated()
 
                 val dashOffsetValue = inheritedStyleOrAttribute(element, style, "stroke-dashoffset")
                 val rawDashOffset = when (val parsedOffset = parseSingleLengthStrict(dashOffsetValue ?: "0")) {
                     null -> {
-                        SvgTreeConverter.recordInvalidDashOffsetFallback()
+                        SvgDashContext.recordInvalidDashOffsetFallback()
                         0f
                     }
                     else -> parsedOffset
                 }
 
-                val dashCompensation = currentDashTransformCompensation()
+                val dashCompensation = SvgDashContext.currentTransformCompensation()
                 val effectivePattern = if (dashCompensation.enabled) {
                     parsed.pattern.map { it / dashCompensation.scale }
                 } else parsed.pattern
                 val effectiveDashOffset = rawDashOffset / if (dashCompensation.enabled) dashCompensation.scale else 1f
                 val patternLength = effectivePattern.sum()
                 if (patternLength > 0.0001f && (effectiveDashOffset < 0f || kotlin.math.abs(effectiveDashOffset) >= patternLength)) {
-                    SvgTreeConverter.recordDashOffsetNormalized()
+                    SvgDashContext.recordDashOffsetNormalized()
                 }
 
                 val dashPoints = dashApproximationPoints(element, sourceTag, pathData)
                 if (dashPoints.size < 2) {
-                    SvgTreeConverter.recordDashedStroke(didApproximate = false)
+                    SvgDashContext.recordDashedStroke(didApproximate = false)
                     return null
                 }
 
                 val dashed = buildDashedPath(dashPoints, effectivePattern, effectiveDashOffset)
                 if (dashed.isBlank()) {
-                    SvgTreeConverter.recordDashedStroke(didApproximate = false)
+                    SvgDashContext.recordDashedStroke(didApproximate = false)
                     return null
                 }
 
                 if (dashCompensation.enabled) {
-                    SvgTreeConverter.recordDashTransformCompensation(dashCompensation.approximate)
+                    SvgDashContext.recordDashTransformCompensation(dashCompensation.approximate)
                 }
-                SvgTreeConverter.recordDashedStroke(didApproximate = true)
+                SvgDashContext.recordDashedStroke(didApproximate = true)
                 return dashed
             }
         }
