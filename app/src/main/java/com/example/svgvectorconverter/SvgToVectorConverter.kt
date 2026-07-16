@@ -116,12 +116,14 @@ object SvgToVectorConverter {
         }
 
         val basicShapeBreakdown = countDrawableBasicShapeBreakdown(drawableSvgForStats)
+        val visibleLineCount = countDrawableLines(drawableSvgForStats)
         val visibleBasicShapeCount = basicShapeBreakdown.rectangles +
             basicShapeBreakdown.roundedRectangles +
             basicShapeBreakdown.circles +
             basicShapeBreakdown.ellipses +
             basicShapeBreakdown.polygons +
-            basicShapeBreakdown.polylines
+            basicShapeBreakdown.polylines +
+            visibleLineCount
         val definitionDrawableElementCount = countDefinitionDrawableElements(svgWithCssClassStyles)
         val drawableValidPathCount = countDrawableValidPaths(drawableSvgForStats)
         val unresolvedUseReferences = SvgTreeConverter.unresolvedUseReferences
@@ -633,6 +635,34 @@ paintUrlRefs
                 polygons = Regex("""<\s*polygon\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count(),
                 polylines = Regex("""<\s*polyline\b[^>]*>""", RegexOption.IGNORE_CASE).findAll(svg).count()
             )
+        }
+    }
+
+    private fun countDrawableLines(svg: String): Int {
+        var lines = 0
+
+        fun countElement(element: Element) {
+            val tag = element.tagName.substringAfter(":").lowercase()
+
+            if (tag == "line" && SvgShapeConverters.basicShapeToPathData(element, tag) != null) {
+                lines++
+            }
+
+            val children = element.childNodes
+            for (i in 0 until children.length) {
+                val child = children.item(i)
+                if (child.nodeType == Node.ELEMENT_NODE) countElement(child as Element)
+            }
+        }
+
+        return try {
+            val document = newDocument(svg)
+            countElement(document.documentElement)
+            lines
+        } catch (_: Exception) {
+            Regex("""<\s*line\b[^>]*>""", RegexOption.IGNORE_CASE)
+                .findAll(svg)
+                .count()
         }
     }
 
