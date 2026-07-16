@@ -28,6 +28,42 @@ internal object SvgPathSampler {
             val angle = Math.toDegrees(atan2((segment.to.y - segment.from.y).toDouble(), (segment.to.x - segment.from.x).toDouble())).toFloat()
             return Sample(x, y, angle)
         }
+
+
+        /**
+         * Returns the flattened geometry as separate, ordered SVG subpaths.
+         * Curves and arcs are already represented by short line segments.
+         * A new list is started whenever the next segment does not begin at
+         * the previous segment's end point (which corresponds to an SVG move).
+         */
+        internal fun flattenedSubpaths(): List<List<Point>> {
+            if (segments.isEmpty()) return emptyList()
+
+            val result = mutableListOf<MutableList<Point>>()
+            var currentSubpath: MutableList<Point>? = null
+            var previousEnd: Point? = null
+
+            fun samePoint(a: Point?, b: Point): Boolean {
+                if (a == null) return false
+                return abs(a.x - b.x) <= 0.0001f && abs(a.y - b.y) <= 0.0001f
+            }
+
+            for (segment in segments) {
+                if (currentSubpath == null || !samePoint(previousEnd, segment.from)) {
+                    currentSubpath = mutableListOf(segment.from)
+                    result.add(currentSubpath)
+                } else if (!samePoint(currentSubpath.lastOrNull(), segment.from)) {
+                    currentSubpath.add(segment.from)
+                }
+
+                if (!samePoint(currentSubpath.lastOrNull(), segment.to)) {
+                    currentSubpath.add(segment.to)
+                }
+                previousEnd = segment.to
+            }
+
+            return result.filter { it.size >= 2 }
+        }
     }
 
     fun measure(pathData: String, curveSteps: Int = 24): MeasuredPath? {

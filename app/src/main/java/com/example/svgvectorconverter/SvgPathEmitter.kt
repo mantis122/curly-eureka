@@ -967,9 +967,35 @@ object SvgPathEmitter {
             "rect" -> rectDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
             "circle" -> circleDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
             "ellipse" -> ellipseDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
-            "path" -> straightPathDashPoints(pathData) ?: emptyList()
+            "path" -> sampledPathDashPoints(pathData) ?: straightPathDashPoints(pathData) ?: emptyList()
             else -> emptyList()
         }
+    }
+
+    /**
+     * Stage 2 dashed-stroke support for complete SVG path geometry.
+     * SvgPathSampler flattens L/H/V, C/S, Q/T, A and Z commands while this
+     * adapter preserves move-separated subpaths so the dash pattern does not
+     * accidentally bridge across an SVG M command.
+     */
+    private fun sampledPathDashPoints(pathData: String): List<DashPoint>? {
+        val measured = SvgPathSampler.measure(pathData, curveSteps = 32) ?: return null
+        val subpaths = measured.flattenedSubpaths()
+        if (subpaths.isEmpty()) return null
+
+        val result = mutableListOf<DashPoint>()
+        subpaths.forEachIndexed { subpathIndex, subpath ->
+            subpath.forEachIndexed { pointIndex, point ->
+                result.add(
+                    DashPoint(
+                        x = point.x,
+                        y = point.y,
+                        startsNewSubpath = subpathIndex > 0 && pointIndex == 0
+                    )
+                )
+            }
+        }
+        return result.takeIf { it.size >= 2 }
     }
 
     private fun rectDashPoints(element: Element): List<DashPoint>? {
