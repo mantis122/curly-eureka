@@ -13,8 +13,6 @@ object SvgPathEmitter {
 
     private val flattenTransformStack = mutableListOf<AffineTransform>()
     private val forcedStrokeWidthStack = mutableListOf<String?>()
-    private data class DashTransformCompensation(val enabled: Boolean, val scale: Float, val approximate: Boolean)
-    private val dashTransformCompensationStack = mutableListOf<DashTransformCompensation>()
 
     internal fun pushFlattenTransform(matrix: AffineTransform) {
         flattenTransformStack.add(matrix)
@@ -48,21 +46,6 @@ object SvgPathEmitter {
     private fun currentForcedStrokeWidth(): String? {
         return forcedStrokeWidthStack.lastOrNull()?.takeIf { it.isNotBlank() }
     }
-
-    internal fun pushDashTransformCompensation(enabled: Boolean, scale: Float, approximate: Boolean) {
-        val safeScale = if (scale.isFinite() && scale > 0.0001f) scale else 1f
-        dashTransformCompensationStack.add(DashTransformCompensation(enabled, safeScale, approximate))
-    }
-
-    internal fun popDashTransformCompensation() {
-        if (dashTransformCompensationStack.isNotEmpty()) {
-            dashTransformCompensationStack.removeAt(dashTransformCompensationStack.lastIndex)
-        }
-    }
-
-    private fun currentDashTransformCompensation(): DashTransformCompensation =
-        dashTransformCompensationStack.lastOrNull()
-            ?: DashTransformCompensation(enabled = false, scale = 1f, approximate = false)
 
     fun appendBasicShapePath(
         output: StringBuilder,
@@ -298,22 +281,8 @@ object SvgPathEmitter {
         val markerPathData = transformedPathData
         val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
         val objectBounds = approximatePathBounds(effectivePathData)
-        val fillGradient = if (sourceTag == "line") {
-            null
-        } else {
-            SvgGradientResolver.resolveContextPaints(
-                gradient = SvgPaintResolver.gradientForPaint(resolvedRawFill, objectBounds),
-                currentColor = currentColor,
-                contextFill = resolvedRawFill,
-                contextStroke = resolvedRawStroke
-            )
-        }
-        val strokeGradient = SvgGradientResolver.resolveContextPaints(
-            gradient = SvgPaintResolver.gradientForPaint(resolvedRawStroke, objectBounds),
-            currentColor = currentColor,
-            contextFill = resolvedRawFill,
-            contextStroke = resolvedRawStroke
-        )
+        val fillGradient = if (sourceTag == "line") null else SvgPaintResolver.gradientForPaint(resolvedRawFill, objectBounds)
+        val strokeGradient = SvgPaintResolver.gradientForPaint(resolvedRawStroke, objectBounds)
         val pathNeedsGroup = effectiveTransform != null || hasClipPath
 
         val directFilterValue = SvgPaintResolver.styleValue(style, "filter")
@@ -683,22 +652,8 @@ object SvgPathEmitter {
             val effectiveTransform = if (flattenedPathData != null) null else combinedTransform
 
             val objectBounds = approximatePathBounds(effectivePathData)
-            val fillGradient = if (tagName == "line") {
-                null
-            } else {
-                SvgGradientResolver.resolveContextPaints(
-                    gradient = SvgPaintResolver.gradientForPaint(resolvedRawFill, objectBounds),
-                    currentColor = currentColor,
-                    contextFill = resolvedRawFill,
-                    contextStroke = resolvedRawStroke
-                )
-            }
-            val strokeGradient = SvgGradientResolver.resolveContextPaints(
-                gradient = SvgPaintResolver.gradientForPaint(resolvedRawStroke, objectBounds),
-                currentColor = currentColor,
-                contextFill = resolvedRawFill,
-                contextStroke = resolvedRawStroke
-            )
+            val fillGradient = if (tagName == "line") null else SvgPaintResolver.gradientForPaint(resolvedRawFill, objectBounds)
+            val strokeGradient = SvgPaintResolver.gradientForPaint(resolvedRawStroke, objectBounds)
 
             val fillColor = if (tagName == "line") {
                 "@android:color/transparent"
@@ -873,12 +828,6 @@ object SvgPathEmitter {
 
     private data class DashPoint(val x: Float, val y: Float, val startsNewSubpath: Boolean = false)
 
-    private sealed class DashArrayParseResult {
-        data object None : DashArrayParseResult()
-        data class Valid(val pattern: List<Float>, val duplicatedOddList: Boolean) : DashArrayParseResult()
-        data object Invalid : DashArrayParseResult()
-    }
-
     private fun dashedStrokePathData(
         element: Element,
         style: String?,
@@ -887,107 +836,73 @@ object SvgPathEmitter {
         stroke: String?
     ): String? {
         if (sourceTag !in setOf("line", "polyline", "polygon", "rect", "circle", "ellipse", "path")) return null
-        if (stroke.isNullOrBlank() || stroke.equals("none", ignoreCase = true)) return null
+        if (stroke.isNullOrBlank()) return null
 
-        val dashArrayValue = inheritedStyleOrAttribute(element, style, "stroke-dasharray") ?: return null
-        when (val parsed = parseDashArrayStrict(dashArrayValue)) {
-            DashArrayParseResult.None -> return null
-            DashArrayParseResult.Invalid -> {
-                SvgTreeConverter.recordDashedStrokeInvalid(solidFallback = true)
-                return null
-            }
-            is DashArrayParseResult.Valid -> {
-                if (parsed.duplicatedOddList) SvgTreeConverter.recordOddDashListDuplicated()
+        val dashArrayValue = SvgPaintResolver.styleValue(style, "stroke-dasharray")
+            ?: element.getAttribute("stroke-dasharray").ifBlank { null }
+            ?: return null
 
-                val dashOffsetValue = inheritedStyleOrAttribute(element, style, "stroke-dashoffset")
-                val rawDashOffset = when (val parsedOffset = parseSingleLengthStrict(dashOffsetValue ?: "0")) {
-                    null -> {
-                        SvgTreeConverter.recordInvalidDashOffsetFallback()
-                        0f
-                    }
-                    else -> parsedOffset
-                }
+        if (!isActiveDashArray(dashArrayValue)) return null
 
-                val dashCompensation = currentDashTransformCompensation()
-                val effectivePattern = if (dashCompensation.enabled) {
-                    parsed.pattern.map { it / dashCompensation.scale }
-                } else parsed.pattern
-                val effectiveDashOffset = rawDashOffset / if (dashCompensation.enabled) dashCompensation.scale else 1f
-                val patternLength = effectivePattern.sum()
-                if (patternLength > 0.0001f && (effectiveDashOffset < 0f || kotlin.math.abs(effectiveDashOffset) >= patternLength)) {
-                    SvgTreeConverter.recordDashOffsetNormalized()
-                }
-
-                val dashPoints = dashApproximationPoints(element, sourceTag, pathData)
-                if (dashPoints.size < 2) {
-                    SvgTreeConverter.recordDashedStroke(didApproximate = false)
-                    return null
-                }
-
-                val dashed = buildDashedPath(dashPoints, effectivePattern, effectiveDashOffset)
-                if (dashed.isBlank()) {
-                    SvgTreeConverter.recordDashedStroke(didApproximate = false)
-                    return null
-                }
-
-                if (dashCompensation.enabled) {
-                    SvgTreeConverter.recordDashTransformCompensation(dashCompensation.approximate)
-                }
-                SvgTreeConverter.recordDashedStroke(didApproximate = true)
-                return dashed
-            }
+        val dashPattern = parseDashArray(dashArrayValue)
+        if (dashPattern == null) {
+            SvgTreeConverter.recordDashedStroke(didApproximate = false)
+            return null
         }
+
+        val dashOffset = parseLengthList(
+            SvgPaintResolver.styleValue(style, "stroke-dashoffset")
+                ?: element.getAttribute("stroke-dashoffset").ifBlank { null }
+                ?: "0"
+        ).firstOrNull() ?: 0f
+
+        val dashPoints = dashApproximationPoints(element, sourceTag, pathData)
+        if (dashPoints.size < 2) {
+            SvgTreeConverter.recordDashedStroke(didApproximate = false)
+            return null
+        }
+
+        val dashed = buildDashedPath(dashPoints, dashPattern, dashOffset)
+        if (dashed.isBlank()) {
+            SvgTreeConverter.recordDashedStroke(didApproximate = false)
+            return null
+        }
+
+        SvgTreeConverter.recordDashedStroke(didApproximate = true)
+        return dashed
     }
 
-    private fun inheritedStyleOrAttribute(element: Element, directStyle: String?, property: String): String? {
-        SvgPaintResolver.styleValue(directStyle, property)?.let { return it }
-        element.getAttribute(property).trim().takeIf { it.isNotBlank() }?.let { return it }
-
-        var parent = element.parentNode
-        while (parent is Element) {
-            val parentStyle = parent.getAttribute("style").ifBlank { null }
-            SvgPaintResolver.styleValue(parentStyle, property)?.let { return it }
-            parent.getAttribute(property).trim().takeIf { it.isNotBlank() }?.let { return it }
-            parent = parent.parentNode
-        }
-        return null
-    }
-
-    private fun parseDashArrayStrict(value: String?): DashArrayParseResult {
+    private fun isActiveDashArray(value: String?): Boolean {
         val raw = value?.trim().orEmpty()
-        if (raw.isBlank() || raw.equals("none", ignoreCase = true)) return DashArrayParseResult.None
-
-        val tokens = raw.replace(",", " ").split(Regex("\\s+")).filter { it.isNotBlank() }
-        if (tokens.isEmpty()) return DashArrayParseResult.Invalid
-
-        val values = mutableListOf<Float>()
-        for (token in tokens) {
-            val number = parseSupportedLengthToken(token) ?: return DashArrayParseResult.Invalid
-            if (!number.isFinite() || number < 0f) return DashArrayParseResult.Invalid
-            values += number
-        }
-
-        if (values.all { it == 0f }) return DashArrayParseResult.None
-        val odd = values.size % 2 != 0
-        return DashArrayParseResult.Valid(if (odd) values + values else values, odd)
+        return raw.isNotBlank() && !raw.equals("none", ignoreCase = true)
     }
 
-    private fun parseSingleLengthStrict(value: String?): Float? {
+    private fun parseDashArray(value: String?): List<Float>? {
         val raw = value?.trim().orEmpty()
-        if (raw.isBlank()) return 0f
-        if (raw.contains(',') || raw.split(Regex("\\s+")).size != 1) return null
-        return parseSupportedLengthToken(raw)?.takeIf { it.isFinite() }
+        if (raw.isBlank() || raw.equals("none", ignoreCase = true)) return null
+
+        val values = parseLengthList(raw)
+            .filter { it > 0f }
+
+        if (values.isEmpty()) return null
+
+        return if (values.size % 2 == 0) values else values + values
     }
 
-    private fun parseSupportedLengthToken(token: String): Float? {
-        val trimmed = token.trim()
-        if (trimmed.endsWith("%")) return null
-        val numeric = when {
-            trimmed.endsWith("px", ignoreCase = true) -> trimmed.dropLast(2)
-            trimmed.endsWith("dp", ignoreCase = true) -> trimmed.dropLast(2)
-            else -> trimmed
-        }
-        return numeric.toFloatOrNull()
+    private fun parseLengthList(value: String?): List<Float> {
+        val raw = value?.trim().orEmpty()
+        if (raw.isBlank()) return emptyList()
+
+        return raw
+            .replace(",", " ")
+            .split(Regex("\\s+"))
+            .mapNotNull { token ->
+                token
+                    .trim()
+                    .removeSuffix("px")
+                    .removeSuffix("dp")
+                    .toFloatOrNull()
+            }
     }
 
     private fun dashApproximationPoints(element: Element, sourceTag: String?, pathData: String): List<DashPoint> {
@@ -997,35 +912,9 @@ object SvgPathEmitter {
             "rect" -> rectDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
             "circle" -> circleDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
             "ellipse" -> ellipseDashPoints(element) ?: closeDashPolygon(extractLinePoints(pathData))
-            "path" -> sampledPathDashPoints(pathData) ?: straightPathDashPoints(pathData) ?: emptyList()
+            "path" -> straightPathDashPoints(pathData) ?: emptyList()
             else -> emptyList()
         }
-    }
-
-    /**
-     * Stage 2 dashed-stroke support for complete SVG path geometry.
-     * SvgPathSampler flattens L/H/V, C/S, Q/T, A and Z commands while this
-     * adapter preserves move-separated subpaths so the dash pattern does not
-     * accidentally bridge across an SVG M command.
-     */
-    private fun sampledPathDashPoints(pathData: String): List<DashPoint>? {
-        val measured = SvgPathSampler.measure(pathData, curveSteps = 32) ?: return null
-        val subpaths = measured.flattenedSubpaths()
-        if (subpaths.isEmpty()) return null
-
-        val result = mutableListOf<DashPoint>()
-        subpaths.forEachIndexed { subpathIndex, subpath ->
-            subpath.forEachIndexed { pointIndex, point ->
-                result.add(
-                    DashPoint(
-                        x = point.x,
-                        y = point.y,
-                        startsNewSubpath = subpathIndex > 0 && pointIndex == 0
-                    )
-                )
-            }
-        }
-        return result.takeIf { it.size >= 2 }
     }
 
     private fun rectDashPoints(element: Element): List<DashPoint>? {
@@ -1247,15 +1136,11 @@ object SvgPathEmitter {
         if (totalPatternLength <= 0f) return ""
 
         var patternIndex = 0
-        // Positive SVG dash offsets shift the pattern backwards along the path.
-        // Modulo normalization also handles negative and very large offsets.
-        var distanceIntoPattern = positiveModulo(-dashOffset, totalPatternLength)
+        var distanceIntoPattern = positiveModulo(dashOffset, totalPatternLength)
 
-        var guard = 0
-        while ((pattern[patternIndex] <= 0.000001f || distanceIntoPattern >= pattern[patternIndex]) && guard < pattern.size * 2) {
-            if (pattern[patternIndex] > 0.000001f) distanceIntoPattern -= pattern[patternIndex]
+        while (distanceIntoPattern >= pattern[patternIndex]) {
+            distanceIntoPattern -= pattern[patternIndex]
             patternIndex = (patternIndex + 1) % pattern.size
-            guard++
         }
 
         var drawDash = patternIndex % 2 == 0
@@ -1287,13 +1172,9 @@ object SvgPathEmitter {
                 walked += step
                 remainingInPattern -= step
                 if (remainingInPattern <= 0.0001f) {
-                    var advanceGuard = 0
-                    do {
-                        patternIndex = (patternIndex + 1) % pattern.size
-                        drawDash = patternIndex % 2 == 0
-                        remainingInPattern = pattern[patternIndex]
-                        advanceGuard++
-                    } while (remainingInPattern <= 0.000001f && advanceGuard < pattern.size * 2)
+                    patternIndex = (patternIndex + 1) % pattern.size
+                    drawDash = patternIndex % 2 == 0
+                    remainingInPattern = pattern[patternIndex]
                 }
             }
         }
