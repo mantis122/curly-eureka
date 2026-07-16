@@ -322,8 +322,10 @@ object SvgConversionReporter {
 
 
     fun buildReport(data: SvgConversionReportData): String {
+        val aggregateWarningCount = aggregateWarningCount(data)
+
         val summaryTitle =
-            if (data.warningCount == 0)
+            if (aggregateWarningCount == 0)
                 "🟢 Conversion Successful"
             else
                 "🟡 Conversion Completed With Warnings"
@@ -335,10 +337,10 @@ object SvgConversionReporter {
             appendLine(summaryTitle)
             appendLine("${data.convertedPathCount} drawable $drawablePathWord created")
 
-            if (data.warningCount == 0)
+            if (aggregateWarningCount == 0)
                 appendLine("No warnings detected")
             else
-                appendLine("${data.warningCount} warning(s) detected")
+                appendLine("$aggregateWarningCount warning(s) detected")
 
             appendLine()
             appendLine("Converted in ${data.elapsedMs} ms")
@@ -744,6 +746,25 @@ object SvgConversionReporter {
                 }
             }
         }
+    }
+
+
+    /**
+     * Returns the number shown in the report summary.
+     *
+     * An invalid dash array produces one user-facing conversion warning:
+     * the dashed stroke could not be approximated and a solid fallback was
+     * used. The converter's raw warning count may also include the internal
+     * invalid-array diagnostic, so remove that duplicate from the aggregate.
+     */
+    private fun aggregateWarningCount(data: SvgConversionReportData): Int {
+        val unapproximatedDashedStrokes =
+            maxOf(0, data.dashedStrokesDetected - data.dashedStrokesApproximated)
+
+        val duplicatedInvalidDashWarnings =
+            minOf(data.invalidDashArrays, unapproximatedDashedStrokes)
+
+        return maxOf(0, data.warningCount - duplicatedInvalidDashWarnings)
     }
 
 
