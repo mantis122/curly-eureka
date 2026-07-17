@@ -173,10 +173,7 @@ object SvgPathEmitter {
         val rawStroke = SvgPaintResolver.styleValue(style, "stroke")
             ?: element.getAttribute("stroke").ifBlank { inheritedStroke ?: "" }
 
-        val currentColor = SvgPaintResolver.resolvedCurrentColor(
-            SvgPaintResolver.styleValue(style, "color")
-                ?: element.getAttribute("color").ifBlank { null }
-        )
+        val currentColor = SvgPaintResolver.resolvedCurrentColorForElement(element)
         val resolvedRawFill = SvgPaintResolver.resolveSpecialPaint(
             rawFill,
             currentColor,

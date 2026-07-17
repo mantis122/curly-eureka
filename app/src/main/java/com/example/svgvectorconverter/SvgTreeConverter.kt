@@ -2029,11 +2029,26 @@ private fun explicitUsePaintValue(element: Element, style: String?, name: String
 
 private fun cloneReferencedElementWithUsePaintOverrides(
     referenced: Element,
-    paintOverrides: Map<String, String>
+    paintOverrides: Map<String, String>,
+    inheritedCurrentColor: String?
 ): Element {
-    if (paintOverrides.isEmpty()) return referenced
-
     val clone = referenced.cloneNode(true) as Element
+
+    // A referenced tree is detached from the <use> element's DOM ancestry. Preserve
+    // the computed color inherited by the <use> on the cloned instance root so that
+    // descendants using currentColor resolve against the instance context. An explicit
+    // color on the referenced root still wins over this inherited value.
+    val rootStyle = clone.getAttribute("style").ifBlank { null }
+    val rootHasExplicitColor =
+        SvgPaintResolver.styleValue(rootStyle, "color") != null ||
+            clone.getAttribute("color").isNotBlank()
+
+    if (!rootHasExplicitColor && !inheritedCurrentColor.isNullOrBlank()) {
+        clone.setAttribute("color", inheritedCurrentColor)
+    }
+
+    if (paintOverrides.isEmpty()) return clone
+
     val overrideStyle = paintOverrides.entries.joinToString("; ") { (name, value) ->
         "$name: $value"
     }
@@ -2168,7 +2183,12 @@ private fun appendUseElement(
         }
     }
 
-    val referencedForUse = cloneReferencedElementWithUsePaintOverrides(referenced, usePaintOverrides)
+    val useCurrentColor = SvgPaintResolver.resolvedCurrentColorForElement(element)
+    val referencedForUse = cloneReferencedElementWithUsePaintOverrides(
+        referenced = referenced,
+        paintOverrides = usePaintOverrides,
+        inheritedCurrentColor = useCurrentColor
+    )
 
     val transform = element.getAttribute("transform")
         .ifBlank { SvgPaintResolver.styleValue(style, "transform") ?: "" }
