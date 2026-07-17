@@ -511,8 +511,20 @@ object SvgDashApproximator {
             y2: Float,
             startsAtSourceVertex: Boolean
         ) {
+            val startX = formatDashNumber(x1)
+            val startY = formatDashNumber(y1)
+            val endX = formatDashNumber(x2)
+            val endY = formatDashNumber(y2)
+
+            // Coordinates are exported at three decimal places. A mathematically
+            // tiny segment can therefore collapse to the same serialized point.
+            // Skip it here so ordinary dash geometry never emits M x,y L x,y.
+            // Intentional cap-only zero-length dashes are still emitted exclusively
+            // by appendZeroLengthDash() for round and square line caps.
+            if (startX == endX && startY == endY) return
+
             if (!drawingSubpath || !samePoint(lastDrawX, lastDrawY, x1, y1)) {
-                commands += "M ${formatDashNumber(x1)},${formatDashNumber(y1)} L ${formatDashNumber(x2)},${formatDashNumber(y2)}"
+                commands += "M $startX,$startY L $endX,$endY"
             } else {
                 // A visible dash is still active at this boundary. When the
                 // boundary is an original SVG vertex, retaining the same subpath
@@ -522,8 +534,15 @@ object SvgDashApproximator {
                 if (startsAtSourceVertex) {
                     // Intentionally no M command here: this boundary must be a join.
                 }
-                commands[commands.lastIndex] =
-                    commands.last() + " L ${formatDashNumber(x2)},${formatDashNumber(y2)}"
+
+                // Avoid appending a second L command that serializes to the same
+                // endpoint as the preceding one. This removes L x,y L x,y noise
+                // without changing subpath boundaries or corner joins.
+                val lastX = formatDashNumber(lastDrawX)
+                val lastY = formatDashNumber(lastDrawY)
+                if (lastX != endX || lastY != endY) {
+                    commands[commands.lastIndex] = commands.last() + " L $endX,$endY"
+                }
             }
             drawingSubpath = true
             lastDrawX = x2
