@@ -220,15 +220,69 @@ private fun resolvedWordSpacing(element: Element, fontSize: Float): Float {
 }
 
 private fun resolvedTextDecorations(element: Element): Set<String> {
-    val raw = inheritedTextStyleValue(element, "text-decoration")
+    // SVG/CSS may express decoration lines through either the shorthand
+    // `text-decoration` or the longhand `text-decoration-line`.
+    val raw = (
+        inheritedTextStyleValue(element, "text-decoration-line")
+            ?: inheritedTextStyleValue(element, "text-decoration")
+        )
         ?.trim()
         ?.lowercase()
         .orEmpty()
-    if (raw.isBlank() || raw == "none" || raw == "initial" || raw == "unset") return emptySet()
+
+    if (raw.isBlank() || raw == "none" || raw == "initial" || raw == "unset") {
+        return emptySet()
+    }
+
     return raw.split(Regex("""[\s,]+"""))
         .map { it.trim() }
         .filter { it == "underline" || it == "overline" || it == "line-through" }
         .toSet()
+}
+
+private fun decorationDashPattern(
+    element: Element,
+    fallbackFontSize: Float,
+    style: String
+): List<Float> {
+    val raw = inheritedTextStyleValue(element, "stroke-dasharray")
+        ?.trim()
+        ?.lowercase()
+        .orEmpty()
+
+    if (raw.isNotBlank() && raw != "none") {
+        val parsed = Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""")
+            .findAll(raw)
+            .mapNotNull { it.value.toFloatOrNull() }
+            .map { it.coerceAtLeast(0f) }
+            .filter { it > 0f }
+            .toList()
+
+        if (parsed.isNotEmpty()) {
+            // SVG repeats an odd-length dash list to make its length even.
+            return if (parsed.size % 2 == 1) parsed + parsed else parsed
+        }
+    }
+
+    return when (style) {
+        "dashed" -> listOf(fallbackFontSize * 0.38f, fallbackFontSize * 0.24f)
+        "dotted" -> listOf(
+            (fallbackFontSize * 0.08f).coerceAtLeast(1f),
+            fallbackFontSize * 0.20f
+        )
+        else -> emptyList()
+    }
+}
+
+private fun decorationDashOffset(element: Element): Float {
+    val raw = inheritedTextStyleValue(element, "stroke-dashoffset")
+        ?.trim()
+        .orEmpty()
+    return Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""")
+        .find(raw)
+        ?.value
+        ?.toFloatOrNull()
+        ?: 0f
 }
 
 
@@ -1437,8 +1491,14 @@ private fun appendAndroidTextPathOutlines(
             val style = (inheritedTextStyleValue(textPath, "text-decoration-style")
                 ?: inheritedTextStyleValue(rootText, "text-decoration-style")
                 ?: "solid").lowercase()
-            val dash = if (style == "dashed") fontSize * 0.38f else Float.POSITIVE_INFINITY
-            val gap = if (style == "dashed") fontSize * 0.24f else 0f
+            val dashPattern = decorationDashPattern(textPath, fontSize, style).ifEmpty {
+                decorationDashPattern(rootText, fontSize, style)
+            }
+            val dashOffset = (
+                inheritedTextStyleValue(textPath, "stroke-dashoffset")
+                    ?.let { decorationDashOffset(textPath) }
+                    ?: decorationDashOffset(rootText)
+                )
             val spanEnd = cursor
 
             fun decorationOffset(kind: String): Float = when (kind) {
@@ -1450,26 +1510,51 @@ private fun appendAndroidTextPathOutlines(
             for (kind in decorations) {
                 val offset = decorationOffset(kind)
                 val out = StringBuilder()
-                var d = spanStart
                 var hasSegment = false
-                while (d < spanEnd) {
-                    val end = minOf(spanEnd, if (dash.isFinite()) d + dash else spanEnd)
-                    val a = measured.sample(d, wrapClosed = measured.isClosed)
+
+                fun shifted(sample: SvgPathSampler.Sample): Pair<Float, Float> {
+                    val r = Math.toRadians(sample.angleDegrees.toDouble())
+                    val nx = -kotlin.math.sin(r).toFloat()
+                    val ny = kotlin.math.cos(r).toFloat()
+                    return Pair(sample.x + nx * offset, sample.y + ny * offset)
+                }
+
+                fun appendDecorationSegment(start: Float, end: Float) {
+                    if (end <= start) return
+                    val a = measured.sample(start, wrapClosed = measured.isClosed)
                     val b = measured.sample(end, wrapClosed = measured.isClosed)
                     if (a != null && b != null) {
-                        fun shifted(sample: SvgPathSampler.Sample): Pair<Float, Float> {
-                            val r = Math.toRadians(sample.angleDegrees.toDouble())
-                            val nx = -kotlin.math.sin(r).toFloat()
-                            val ny = kotlin.math.cos(r).toFloat()
-                            return Pair(sample.x + nx * offset, sample.y + ny * offset)
-                        }
                         val (ax, ay) = shifted(a)
                         val (bx, by) = shifted(b)
                         out.append("M ").append(formatNumber(ax)).append(',').append(formatNumber(ay))
                             .append(" L ").append(formatNumber(bx)).append(',').append(formatNumber(by)).append(' ')
                         hasSegment = true
                     }
-                    d = if (dash.isFinite()) end + gap else spanEnd
+                }
+
+                if (dashPattern.isEmpty()) {
+                    appendDecorationSegment(spanStart, spanEnd)
+                } else {
+                    val cycleLength = dashPattern.sum().coerceAtLeast(0.0001f)
+                    var phase = ((dashOffset % cycleLength) + cycleLength) % cycleLength
+                    var patternIndex = 0
+                    while (phase >= dashPattern[patternIndex] && dashPattern[patternIndex] > 0f) {
+                        phase -= dashPattern[patternIndex]
+                        patternIndex = (patternIndex + 1) % dashPattern.size
+                    }
+
+                    var d = spanStart
+                    var remaining = dashPattern[patternIndex] - phase
+                    var draw = patternIndex % 2 == 0
+
+                    while (d < spanEnd) {
+                        val end = minOf(spanEnd, d + remaining)
+                        if (draw) appendDecorationSegment(d, end)
+                        d = end
+                        patternIndex = (patternIndex + 1) % dashPattern.size
+                        remaining = dashPattern[patternIndex]
+                        draw = patternIndex % 2 == 0
+                    }
                 }
                 if (hasSegment) {
                     var decorationData = SvgPathEmitter.applyCurrentFlattenTransform(out.toString().trim())
