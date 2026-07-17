@@ -143,6 +143,12 @@ data class SvgConversionReportData(
     val pathDataCharactersAfter: Int = 0,
     val pathDataRepeatedCommandsRemoved: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
+    val emptyPathDataRemoved: Int = 0,
+    val moveOnlyPathsRemoved: Int = 0,
+    val invisiblePathsRemoved: Int = 0,
+    val emptyGroupsRemoved: Int = 0,
+    val optimizedXmlCharactersBefore: Int = 0,
+    val optimizedXmlCharactersAfter: Int = 0,
     val elapsedMs: Long
 )
 
@@ -389,9 +395,28 @@ object SvgConversionReporter {
             } else {
                 0.0
             }
-            appendLine("✓ Characters removed: $pathCharactersSaved (${String.format(java.util.Locale.US, "%.1f", pathReductionPercent)}%)")
-            appendLine("✓ Numeric values normalized: ${data.pathDataNumbersNormalized}")
-            appendLine("✓ Repeated commands removed: ${data.pathDataRepeatedCommandsRemoved}")
+            appendLine("✓ Path data reduced by $pathCharactersSaved characters (${String.format(java.util.Locale.US, "%.1f", pathReductionPercent)}%)")
+
+            val xmlCharactersSaved = (data.optimizedXmlCharactersBefore - data.optimizedXmlCharactersAfter).coerceAtLeast(0)
+            val xmlReductionPercent = if (data.optimizedXmlCharactersBefore > 0) {
+                xmlCharactersSaved * 100.0 / data.optimizedXmlCharactersBefore.toDouble()
+            } else {
+                0.0
+            }
+            appendLine("✓ XML reduction: ${String.format(java.util.Locale.US, "%.1f", xmlReductionPercent)}% ($xmlCharactersSaved characters)")
+
+            if (data.pathDataNumbersNormalized > 0)
+                appendLine("✓ Numeric values normalized: ${data.pathDataNumbersNormalized}")
+            if (data.pathDataRepeatedCommandsRemoved > 0)
+                appendLine("✓ Repeated commands removed: ${data.pathDataRepeatedCommandsRemoved}")
+            if (data.emptyPathDataRemoved > 0)
+                appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")
+            if (data.moveOnlyPathsRemoved > 0)
+                appendLine("✓ Move-only paths removed: ${data.moveOnlyPathsRemoved}")
+            if (data.invisiblePathsRemoved > 0)
+                appendLine("✓ Fully transparent paths removed: ${data.invisiblePathsRemoved}")
+            if (data.emptyGroupsRemoved > 0)
+                appendLine("✓ Empty groups removed: ${data.emptyGroupsRemoved}")
             appendLine()
 
             appendLine("────────────────────")

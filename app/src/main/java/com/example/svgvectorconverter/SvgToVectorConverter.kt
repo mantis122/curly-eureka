@@ -307,6 +307,12 @@ object SvgToVectorConverter {
                 pathDataCharactersAfter = pathOptimizationStats.charactersAfter,
                 pathDataRepeatedCommandsRemoved = pathOptimizationStats.repeatedCommandsRemoved,
                 pathDataNumbersNormalized = pathOptimizationStats.numbersNormalized,
+                emptyPathDataRemoved = pathOptimizationStats.emptyPathDataRemoved,
+                moveOnlyPathsRemoved = pathOptimizationStats.moveOnlyPathsRemoved,
+                invisiblePathsRemoved = pathOptimizationStats.invisiblePathsRemoved,
+                emptyGroupsRemoved = pathOptimizationStats.emptyGroupsRemoved,
+                optimizedXmlCharactersBefore = pathOptimizationStats.xmlCharactersBefore,
+                optimizedXmlCharactersAfter = pathOptimizationStats.xmlCharactersAfter,
                 elapsedMs = elapsedMs
             )
         )
