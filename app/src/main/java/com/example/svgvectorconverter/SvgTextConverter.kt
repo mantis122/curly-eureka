@@ -10,6 +10,7 @@ import org.w3c.dom.Node
 import kotlin.math.abs
 import java.util.Collections
 import java.util.IdentityHashMap
+import java.text.Bidi
 
 object SvgTextConverter {
     private var activeTextElementsApproximated = 0
@@ -29,6 +30,9 @@ object SvgTextConverter {
     private var activeTextWordSpacingAdjustmentsApplied = 0
     private var activeTextDecorationPathsEmitted = 0
     private var activeTextPaintOrderElementsApplied = 0
+    private var activeTextBidiRunsReordered = 0
+    private val activeTextDirections = linkedSetOf<String>()
+    private val activeTextUnicodeBidiModes = linkedSetOf<String>()
     private val activePaintOrderedTextElements = Collections.newSetFromMap(IdentityHashMap<Element, Boolean>())
     private var activeTextPathsConverted = 0
     private var activeTextPathGlyphsEmitted = 0
@@ -54,6 +58,9 @@ object SvgTextConverter {
     val textWordSpacingAdjustmentsApplied: Int get() = activeTextWordSpacingAdjustmentsApplied
     val textDecorationPathsEmitted: Int get() = activeTextDecorationPathsEmitted
     val textPaintOrderElementsApplied: Int get() = activeTextPaintOrderElementsApplied
+    val textBidiRunsReordered: Int get() = activeTextBidiRunsReordered
+    val textDirections: List<String> get() = activeTextDirections.toList()
+    val textUnicodeBidiModes: List<String> get() = activeTextUnicodeBidiModes.toList()
     val textPathsConverted: Int get() = activeTextPathsConverted
     val textPathGlyphsEmitted: Int get() = activeTextPathGlyphsEmitted
     val textFontFamilies: List<String> get() = activeTextFontFamilies.toList()
@@ -77,6 +84,9 @@ object SvgTextConverter {
         activeTextWordSpacingAdjustmentsApplied = 0
         activeTextDecorationPathsEmitted = 0
         activeTextPaintOrderElementsApplied = 0
+        activeTextBidiRunsReordered = 0
+        activeTextDirections.clear()
+        activeTextUnicodeBidiModes.clear()
         activePaintOrderedTextElements.clear()
         activeTextPathsConverted = 0
         activeTextPathGlyphsEmitted = 0
@@ -218,84 +228,57 @@ private data class TextDecorationSpec(
     val lineCap: String
 )
 
-private fun resolvedTextDecorationSpec(element: Element, fontSize: Float, fallbackColor: String): TextDecorationSpec {
+private fun resolvedTextDecorations(element: Element): Set<String> {
+    val lineRaw = inheritedTextStyleValue(element, "text-decoration-line")
+        ?.trim()?.lowercase().orEmpty()
+    val shorthandRaw = inheritedTextStyleValue(element, "text-decoration")
+        ?.trim()?.lowercase().orEmpty()
+    val raw = listOf(lineRaw, shorthandRaw).joinToString(" ")
+    if (raw.isBlank() || raw == "none" || raw == "initial" || raw == "unset") return emptySet()
+    return raw.split(Regex("""[\s,]+"""))
+        .map { it.trim() }
+        .filter { it == "underline" || it == "overline" || it == "line-through" }
+        .toSet()
+}
+
+private fun resolvedTextDecorationSpec(element: Element, fontSize: Float): TextDecorationSpec? {
+    val lines = resolvedTextDecorations(element)
+    if (lines.isEmpty()) return null
+
     val shorthand = inheritedTextStyleValue(element, "text-decoration")
-        ?.trim()
-        ?.lowercase()
-        .orEmpty()
-    val explicitLines = inheritedTextStyleValue(element, "text-decoration-line")
-        ?.trim()
-        ?.lowercase()
-        .orEmpty()
+        ?.trim()?.lowercase().orEmpty()
+    val tokens = shorthand.split(Regex("""[\s,]+""")).filter { it.isNotBlank() }
 
-    val sourceForLines = explicitLines.ifBlank { shorthand }
-    val lines = if (sourceForLines.isBlank() || sourceForLines == "none" || sourceForLines == "initial" || sourceForLines == "unset") {
-        emptySet()
-    } else {
-        sourceForLines.split(Regex("""[\s,]+"""))
-            .map { it.trim() }
-            .filter { it == "underline" || it == "overline" || it == "line-through" }
-            .toSet()
-    }
+    val style = inheritedTextStyleValue(element, "text-decoration-style")
+        ?.trim()?.lowercase()
+        ?: tokens.firstOrNull { it in setOf("solid", "double", "dotted", "dashed", "wavy") }
+        ?: "solid"
 
-    val explicitStyle = inheritedTextStyleValue(element, "text-decoration-style")
+    val colorRaw = inheritedTextStyleValue(element, "text-decoration-color")
         ?.trim()
-        ?.lowercase()
-        .orEmpty()
-    val style = explicitStyle.ifBlank {
-        shorthand.split(Regex("""[\s,]+"""))
-            .firstOrNull { it in setOf("solid", "double", "dotted", "dashed", "wavy") }
-            ?: "solid"
-    }
-
-    val explicitColor = inheritedTextStyleValue(element, "text-decoration-color")
-        ?.trim()
-        .orEmpty()
-    val shorthandColor = shorthand.split(Regex("""[\s,]+"""))
-        .firstOrNull { token ->
-            token == "currentcolor" || token.startsWith("#") || token.startsWith("rgb(") || token.startsWith("rgba(") ||
-                token.matches(Regex("""[a-z]+""")) && token !in setOf(
-                    "underline", "overline", "line-through", "solid", "double", "dotted", "dashed", "wavy", "none"
-                )
+        ?: tokens.firstOrNull { token ->
+            token !in setOf("underline", "overline", "line-through", "none", "solid", "double", "dotted", "dashed", "wavy")
         }
+        ?: "currentColor"
+    val currentColor = inheritedTextStyleValue(element, "color")?.trim().orEmpty().ifBlank { "#000000" }
+    val color = if (colorRaw.equals("currentColor", ignoreCase = true)) currentColor else colorRaw
+
+    val authoredDashArray = inheritedTextStyleValue(element, "stroke-dasharray")
+        ?.let { raw -> Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""")
+            .findAll(raw).mapNotNull { it.value.toFloatOrNull() }.filter { it > 0f }.toList() }
         .orEmpty()
-    val rawColor = explicitColor.ifBlank { shorthandColor }.ifBlank { "currentColor" }
-    val inheritedColor = inheritedTextStyleValue(element, "color")
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-        ?: fallbackColor
-    val resolvedColor = if (rawColor.equals("currentColor", ignoreCase = true)) inheritedColor else rawColor
-
-    fun parseDashArray(raw: String?): List<Float> {
-        val value = raw?.trim()?.lowercase().orEmpty()
-        if (value.isBlank() || value == "none") return emptyList()
-        val values = Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""")
-            .findAll(value)
-            .mapNotNull { it.value.toFloatOrNull() }
-            .map { it.coerceAtLeast(0f) }
-            .filter { it > 0.0001f }
-            .toList()
-        if (values.isEmpty()) return emptyList()
-        return if (values.size % 2 == 1) values + values else values
-    }
-
-    val authoredDashArray = parseDashArray(inheritedTextStyleValue(element, "stroke-dasharray"))
     val dashArray = when {
-        authoredDashArray.isNotEmpty() -> authoredDashArray
+        authoredDashArray.isNotEmpty() -> if (authoredDashArray.size % 2 == 1) authoredDashArray + authoredDashArray else authoredDashArray
         style == "dashed" -> listOf(fontSize * 0.30f, fontSize * 0.18f)
-        style == "dotted" -> listOf(fontSize * 0.06f, fontSize * 0.14f)
+        style == "dotted" -> listOf(fontSize * 0.08f, fontSize * 0.14f)
         else -> emptyList()
     }
     val dashOffset = inheritedTextStyleValue(element, "stroke-dashoffset")
-        ?.let { textLengthValue(it, fontSize) }
+        ?.let { Regex("""[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?""").find(it)?.value?.toFloatOrNull() }
         ?: 0f
-    val lineCap = inheritedTextStyleValue(element, "stroke-linecap")
-        ?.trim()
-        ?.lowercase()
-        ?.takeIf { it == "round" || it == "square" || it == "butt" }
-        ?: "butt"
+    val lineCap = inheritedTextStyleValue(element, "stroke-linecap")?.trim()?.lowercase() ?: "butt"
 
-    return TextDecorationSpec(lines, style, resolvedColor, dashArray, dashOffset, lineCap)
+    return TextDecorationSpec(lines, style, color, dashArray, dashOffset, lineCap)
 }
 
 
@@ -343,11 +326,74 @@ private fun resolvedBaselineShift(element: Element, fontSize: Float, stopAt: Ele
     return shift
 }
 
+private fun normalizedDirection(element: Element): String {
+    val value = inheritedTextStyleValue(element, "direction")
+        ?.trim()
+        ?.lowercase()
+    val direction = if (value == "rtl") "rtl" else "ltr"
+    activeTextDirections.add(direction)
+    return direction
+}
+
+private fun normalizedUnicodeBidi(element: Element): String {
+    val value = inheritedTextStyleValue(element, "unicode-bidi")
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it in setOf("normal", "embed", "bidi-override", "isolate", "isolate-override", "plaintext") }
+        ?: "normal"
+    activeTextUnicodeBidiModes.add(value)
+    return value
+}
+
+private fun reverseCodePoints(value: String): String = codePointStrings(value).asReversed().joinToString("")
+
+private fun bidiVisualText(element: Element, text: String): String {
+    if (text.isBlank()) return text
+    val direction = normalizedDirection(element)
+    val mode = normalizedUnicodeBidi(element)
+
+    val reordered = if (mode == "bidi-override" || mode == "isolate-override") {
+        if (direction == "rtl") reverseCodePoints(text) else text
+    } else {
+        val baseFlag = when {
+            mode == "plaintext" && direction == "rtl" -> Bidi.DIRECTION_DEFAULT_RIGHT_TO_LEFT
+            mode == "plaintext" -> Bidi.DIRECTION_DEFAULT_LEFT_TO_RIGHT
+            direction == "rtl" -> Bidi.DIRECTION_RIGHT_TO_LEFT
+            else -> Bidi.DIRECTION_LEFT_TO_RIGHT
+        }
+        val bidi = Bidi(text, baseFlag)
+        if (!bidi.isMixed && !bidi.isRightToLeft) {
+            text
+        } else {
+            val count = bidi.runCount
+            val levels = ByteArray(count) { bidi.getRunLevel(it).toByte() }
+            val order = Array<Any>(count) { it }
+            Bidi.reorderVisually(levels, 0, order, 0, count)
+            buildString {
+                for (item in order) {
+                    val index = item as Int
+                    val part = text.substring(bidi.getRunStart(index), bidi.getRunLimit(index))
+                    append(if ((bidi.getRunLevel(index) and 1) != 0) reverseCodePoints(part) else part)
+                }
+            }
+        }
+    }
+
+    if (reordered != text) activeTextBidiRunsReordered++
+    return reordered
+}
+
 private fun normalizedTextAnchor(element: Element): String {
-    return inheritedTextStyleValue(element, "text-anchor")
+    val declared = inheritedTextStyleValue(element, "text-anchor")
         ?.lowercase()
         ?.takeIf { it == "start" || it == "middle" || it == "end" }
         ?: "start"
+    if (normalizedDirection(element) != "rtl") return declared
+    return when (declared) {
+        "start" -> "end"
+        "end" -> "start"
+        else -> declared
+    }
 }
 
 private fun isVerticalWritingMode(element: Element): Boolean {
@@ -505,7 +551,7 @@ private fun textApproximationRuns(element: Element): List<TextApproximationRun> 
         fun flushPendingText() {
             val text = normalizeTextWhitespace(pendingText.toString())
             if (text.isNotBlank()) {
-                runs.add(TextApproximationRun(text, owner))
+                runs.add(TextApproximationRun(bidiVisualText(owner, text), owner))
             }
             pendingText.clear()
         }
@@ -580,7 +626,7 @@ private fun textApproximationRuns(element: Element): List<TextApproximationRun> 
     if (runs.isEmpty()) {
         val fallbackText = textContentForApproximation(element)
         if (fallbackText.isNotBlank()) {
-            runs.add(TextApproximationRun(fallbackText, element))
+            runs.add(TextApproximationRun(bidiVisualText(element, fallbackText), element))
         }
     }
 
@@ -1308,6 +1354,7 @@ private fun appendAndroidSystemFontOutlines(
         val anchor: String,
         val baseline: String,
         val baselineShift: Float,
+        val decoration: TextDecorationSpec?,
         val vertical: Boolean,
         val explicitX: Float?,
         val explicitY: Float?,
@@ -1345,6 +1392,7 @@ private fun appendAndroidSystemFontOutlines(
             anchor = normalizedTextAnchor(run.element),
             baseline = normalizedDominantBaseline(run.element),
             baselineShift = resolvedBaselineShift(run.element, fontSize, element),
+            decoration = resolvedTextDecorationSpec(run.element, fontSize),
             vertical = vertical,
             // The root <text> x/y values establish the initial cursor and must not be
             // reapplied as run-level positioning. Reapplying root x here would erase
@@ -1403,6 +1451,62 @@ private fun appendAndroidSystemFontOutlines(
         }
     }
 
+    fun emitDecorationPath(item: AndroidRun, x1: Float, y1: Float, x2: Float, y2: Float, thickness: Float) {
+        val spec = item.decoration ?: return
+        val horizontal = abs(y2 - y1) <= abs(x2 - x1)
+        val start = if (horizontal) minOf(x1, x2) else minOf(y1, y2)
+        val end = if (horizontal) maxOf(x1, x2) else maxOf(y1, y2)
+        if (end - start <= 0.0001f) return
+
+        val segments = mutableListOf<Pair<Float, Float>>()
+        if (spec.dashArray.isEmpty()) {
+            segments += start to end
+        } else {
+            val patternLength = spec.dashArray.sum().takeIf { it > 0.0001f } ?: return
+            var phase = ((spec.dashOffset % patternLength) + patternLength) % patternLength
+            var patternIndex = 0
+            while (phase >= spec.dashArray[patternIndex] && spec.dashArray[patternIndex] > 0f) {
+                phase -= spec.dashArray[patternIndex]
+                patternIndex = (patternIndex + 1) % spec.dashArray.size
+            }
+            var cursor = start - phase
+            while (cursor < end) {
+                val length = spec.dashArray[patternIndex]
+                val segStart = maxOf(start, cursor)
+                val segEnd = minOf(end, cursor + length)
+                if (patternIndex % 2 == 0 && segEnd > segStart) segments += segStart to segEnd
+                cursor += length
+                patternIndex = (patternIndex + 1) % spec.dashArray.size
+            }
+        }
+
+        val half = thickness / 2f
+        val path = StringBuilder()
+        for ((a0, b0) in segments) {
+            var a = a0
+            var b = b0
+            if (spec.lineCap == "square") { a -= half; b += half }
+            if (horizontal) {
+                path.append("M ${formatNumber(a)},${formatNumber(y1 - half)} L ${formatNumber(b)},${formatNumber(y1 - half)} L ${formatNumber(b)},${formatNumber(y1 + half)} L ${formatNumber(a)},${formatNumber(y1 + half)} Z ")
+            } else {
+                path.append("M ${formatNumber(x1 - half)},${formatNumber(a)} L ${formatNumber(x1 + half)},${formatNumber(a)} L ${formatNumber(x1 + half)},${formatNumber(b)} L ${formatNumber(x1 - half)},${formatNumber(b)} Z ")
+            }
+        }
+        var pathData = path.toString().trim()
+        if (pathData.isBlank()) return
+        if (elementMatrix != null) pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
+        pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
+        val safeFill = SvgPaintResolver.safeFillColor(spec.color)
+        val alpha = SvgPaintResolver.combineAlpha(item.opacity, item.fillOpacity)
+        output.appendLine("${indent}<!-- converted text decoration (${spec.style}) -->")
+        output.appendLine("${indent}<path")
+        output.appendLine("${indent}    android:pathData=\"${escapeXml(pathData)}\"")
+        output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
+        if (alpha != null) output.appendLine("${indent}    android:fillAlpha=\"$alpha\"")
+        output.appendLine("${indent}/>")
+        activeTextDecorationPathsEmitted++
+    }
+
     for (item in prepared) {
         // A positioned child run (normally a <tspan x="...">) starts a new
         // anchored text chunk. Apply that run's own anchor against its width.
@@ -1420,6 +1524,8 @@ private fun appendAndroidSystemFontOutlines(
         cursorX += item.dx
         cursorY += item.dy
 
+        val decorationStartX = cursorX
+        val decorationStartY = cursorY
         val glyphTexts = if (item.vertical) codePointStrings(item.run.text) else listOf(item.run.text)
         for (glyphText in glyphTexts) {
             val androidPath = Path()
@@ -1464,6 +1570,29 @@ private fun appendAndroidSystemFontOutlines(
             }
 
             if (item.vertical) cursorY += item.fontSize else cursorX += glyphWidth
+        }
+
+        item.decoration?.let { spec ->
+            val thickness = (item.fontSize * 0.06f).coerceAtLeast(1f)
+            if (item.vertical) {
+                val top = minOf(decorationStartY, cursorY)
+                val bottom = maxOf(decorationStartY, cursorY)
+                val baselineX = decorationStartX - item.baselineShift
+                if ("underline" in spec.lines) emitDecorationPath(item, baselineX + item.fontSize * 0.10f, top, baselineX + item.fontSize * 0.10f, bottom, thickness)
+                if ("overline" in spec.lines) emitDecorationPath(item, baselineX - item.fontSize * 0.80f, top, baselineX - item.fontSize * 0.80f, bottom, thickness)
+                if ("line-through" in spec.lines) emitDecorationPath(item, baselineX - item.fontSize * 0.32f, top, baselineX - item.fontSize * 0.32f, bottom, thickness)
+            } else {
+                val left = minOf(decorationStartX, cursorX)
+                val right = maxOf(decorationStartX, cursorX)
+                val baselineY = androidAlphabeticBaselineFor(
+                    requestedBaselineY = decorationStartY - item.baselineShift,
+                    metrics = item.paint.fontMetrics,
+                    baseline = item.baseline
+                )
+                if ("underline" in spec.lines) emitDecorationPath(item, left, baselineY + item.fontSize * 0.10f, right, baselineY + item.fontSize * 0.10f, thickness)
+                if ("overline" in spec.lines) emitDecorationPath(item, left, baselineY - item.fontSize * 0.80f, right, baselineY - item.fontSize * 0.80f, thickness)
+                if ("line-through" in spec.lines) emitDecorationPath(item, left, baselineY - item.fontSize * 0.32f, right, baselineY - item.fontSize * 0.32f, thickness)
+            }
         }
 
         val family = inheritedTextStyleValue(item.run.element, "font-family").orEmpty()
@@ -1524,7 +1653,7 @@ fun appendTextGlyphOutlines(
         val fontWeight: String,
         val letterSpacing: Float,
         val wordSpacing: Float,
-        val decoration: TextDecorationSpec,
+        val decorations: Set<String>,
         val advance: Float,
         val glyphCount: Int,
         val lengthOwner: Element?,
@@ -1583,11 +1712,7 @@ fun appendTextGlyphOutlines(
             fontWeight = fontWeight,
             letterSpacing = letterSpacing,
             wordSpacing = wordSpacing,
-            decoration = resolvedTextDecorationSpec(
-                run.element,
-                fontSize,
-                inheritedTextStyleValue(run.element, "fill") ?: inheritedFill ?: "#000000"
-            ),
+            decorations = resolvedTextDecorations(run.element),
             advance = (SvgFontResolver.textRunAdvance(font, run.text, fontSize, vertical = vertical, glyphNames = run.glyphNames) +
                 letterSpacing * letterSpacingGapCount +
                 wordSpacing * whitespaceGlyphCount).coerceAtLeast(fontSize * 0.15f),
@@ -1786,73 +1911,16 @@ fun appendTextGlyphOutlines(
 
     fun emitDecorationRect(prepared: GlyphTextRun, x1: Float, y1: Float, x2: Float, y2: Float) {
         if (abs(x2 - x1) < 0.0001f || abs(y2 - y1) < 0.0001f) return
-
-        val horizontal = abs(x2 - x1) >= abs(y2 - y1)
-        val start = if (horizontal) minOf(x1, x2) else minOf(y1, y2)
-        val end = if (horizontal) maxOf(x1, x2) else maxOf(y1, y2)
-        val crossStart = if (horizontal) minOf(y1, y2) else minOf(x1, x2)
-        val crossEnd = if (horizontal) maxOf(y1, y2) else maxOf(x1, x2)
-        val thickness = crossEnd - crossStart
-        val dash = prepared.decoration.dashArray
-
-        val segments = mutableListOf<Pair<Float, Float>>()
-        if (dash.isEmpty() || prepared.decoration.style == "solid" || prepared.decoration.style == "double") {
-            segments += start to end
-        } else {
-            val patternLength = dash.sum().takeIf { it > 0.0001f } ?: (end - start)
-            var phase = ((prepared.decoration.dashOffset % patternLength) + patternLength) % patternLength
-            var patternIndex = 0
-            while (phase >= dash[patternIndex] && dash[patternIndex] > 0f) {
-                phase -= dash[patternIndex]
-                patternIndex = (patternIndex + 1) % dash.size
-            }
-            var cursor = start - phase
-            var guard = 0
-            while (cursor < end && guard++ < 10000) {
-                val length = dash[patternIndex]
-                val segStart = maxOf(start, cursor)
-                val segEnd = minOf(end, cursor + length)
-                if (patternIndex % 2 == 0 && segEnd - segStart > 0.0001f) {
-                    segments += segStart to segEnd
-                }
-                cursor += length
-                patternIndex = (patternIndex + 1) % dash.size
-            }
-        }
-
-        if (segments.isEmpty()) return
-        val pathData = buildString {
-            for ((segmentStartRaw, segmentEndRaw) in segments) {
-                var segmentStart = segmentStartRaw
-                var segmentEnd = segmentEndRaw
-                if (prepared.decoration.lineCap == "square") {
-                    segmentStart -= thickness / 2f
-                    segmentEnd += thickness / 2f
-                }
-                if (horizontal) {
-                    append("M ${formatNumber(segmentStart)},${formatNumber(crossStart)} ")
-                    append("L ${formatNumber(segmentEnd)},${formatNumber(crossStart)} ")
-                    append("L ${formatNumber(segmentEnd)},${formatNumber(crossEnd)} ")
-                    append("L ${formatNumber(segmentStart)},${formatNumber(crossEnd)} Z ")
-                } else {
-                    append("M ${formatNumber(crossStart)},${formatNumber(segmentStart)} ")
-                    append("L ${formatNumber(crossEnd)},${formatNumber(segmentStart)} ")
-                    append("L ${formatNumber(crossEnd)},${formatNumber(segmentEnd)} ")
-                    append("L ${formatNumber(crossStart)},${formatNumber(segmentEnd)} Z ")
-                }
-            }
-        }.trim()
-
-        var transformedPathData = pathData
+        var pathData = "M ${formatNumber(x1)},${formatNumber(y1)} L ${formatNumber(x2)},${formatNumber(y1)} L ${formatNumber(x2)},${formatNumber(y2)} L ${formatNumber(x1)},${formatNumber(y2)} Z"
         if (elementMatrix != null) {
-            transformedPathData = SvgPathDataTransformer.applyAffineTransform(transformedPathData, elementMatrix) ?: transformedPathData
+            pathData = SvgPathDataTransformer.applyAffineTransform(pathData, elementMatrix) ?: pathData
         }
-        transformedPathData = SvgPathEmitter.applyCurrentFlattenTransform(transformedPathData)
-        val safeFill = SvgPaintResolver.safeFillColor(prepared.decoration.color)
+        pathData = SvgPathEmitter.applyCurrentFlattenTransform(pathData)
+        val safeFill = SvgPaintResolver.safeFillColor(prepared.fill)
         val fillAlpha = SvgPaintResolver.combineAlpha(prepared.opacity, prepared.fillOpacity)
-        output.appendLine("${indent}<!-- converted text decoration: ${prepared.decoration.style} -->")
+        output.appendLine("${indent}<!-- converted text decoration -->")
         output.appendLine("${indent}<path")
-        output.appendLine("${indent}    android:pathData=\"${escapeXml(transformedPathData)}\"")
+        output.appendLine("${indent}    android:pathData=\"${escapeXml(pathData)}\"")
         output.appendLine("${indent}    android:fillColor=\"$safeFill\"")
         if (fillAlpha != null) output.appendLine("${indent}    android:fillAlpha=\"$fillAlpha\"")
         output.appendLine("${indent}/>")
@@ -2053,7 +2121,7 @@ fun appendTextGlyphOutlines(
             runSourceOffset = sourceEnd
         }
 
-        if (prepared.decoration.lines.isNotEmpty()) {
+        if (prepared.decorations.isNotEmpty()) {
             val thickness = (prepared.fontSize * 0.06f).coerceAtLeast(1f)
             val baselineOffset = embeddedAlphabeticBaselineOffset(
                 font = prepared.font,
@@ -2064,15 +2132,15 @@ fun appendTextGlyphOutlines(
                 val top = minOf(decorationStartY, currentY)
                 val bottom = maxOf(decorationStartY, currentY)
                 val baselineX = decorationStartX + baselineOffset - prepared.baselineShift
-                if ("underline" in prepared.decoration.lines) {
+                if ("underline" in prepared.decorations) {
                     val x = baselineX + prepared.fontSize * 0.10f
                     emitDecorationRect(prepared, x, top, x + thickness, bottom)
                 }
-                if ("overline" in prepared.decoration.lines) {
+                if ("overline" in prepared.decorations) {
                     val x = baselineX - prepared.fontSize * 0.80f
                     emitDecorationRect(prepared, x, top, x + thickness, bottom)
                 }
-                if ("line-through" in prepared.decoration.lines) {
+                if ("line-through" in prepared.decorations) {
                     val x = baselineX - prepared.fontSize * 0.32f
                     emitDecorationRect(prepared, x, top, x + thickness, bottom)
                 }
@@ -2080,15 +2148,15 @@ fun appendTextGlyphOutlines(
                 val left = minOf(decorationStartX, currentX)
                 val right = maxOf(decorationStartX, currentX)
                 val baselineY = decorationStartY + baselineOffset - prepared.baselineShift
-                if ("underline" in prepared.decoration.lines) {
+                if ("underline" in prepared.decorations) {
                     val y = baselineY + prepared.fontSize * 0.10f
                     emitDecorationRect(prepared, left, y, right, y + thickness)
                 }
-                if ("overline" in prepared.decoration.lines) {
+                if ("overline" in prepared.decorations) {
                     val y = baselineY - prepared.fontSize * 0.80f
                     emitDecorationRect(prepared, left, y, right, y + thickness)
                 }
-                if ("line-through" in prepared.decoration.lines) {
+                if ("line-through" in prepared.decorations) {
                     val y = baselineY - prepared.fontSize * 0.32f
                     emitDecorationRect(prepared, left, y, right, y + thickness)
                 }
