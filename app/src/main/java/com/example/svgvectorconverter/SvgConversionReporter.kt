@@ -138,6 +138,11 @@ data class SvgConversionReportData(
     val outputDpSize: Int,
     val viewportWidth: Float,
     val viewportHeight: Float,
+    val pathDataOptimizedCount: Int = 0,
+    val pathDataCharactersBefore: Int = 0,
+    val pathDataCharactersAfter: Int = 0,
+    val pathDataRepeatedCommandsRemoved: Int = 0,
+    val pathDataNumbersNormalized: Int = 0,
     val elapsedMs: Long
 )
 
@@ -372,6 +377,23 @@ object SvgConversionReporter {
             appendLine("✓ Groups created: ${data.generatedGroupCount}")
 
             appendLine()
+            appendLine("────────────────────")
+            appendLine("Output Optimization")
+            appendLine("────────────────────")
+            appendLine()
+            appendLine("✓ Path data optimized: ${data.pathDataOptimizedCount}")
+            appendLine("✓ Path-data characters: ${data.pathDataCharactersBefore} → ${data.pathDataCharactersAfter}")
+            val pathCharactersSaved = (data.pathDataCharactersBefore - data.pathDataCharactersAfter).coerceAtLeast(0)
+            val pathReductionPercent = if (data.pathDataCharactersBefore > 0) {
+                pathCharactersSaved * 100.0 / data.pathDataCharactersBefore.toDouble()
+            } else {
+                0.0
+            }
+            appendLine("✓ Characters removed: $pathCharactersSaved (${String.format(java.util.Locale.US, "%.1f", pathReductionPercent)}%)")
+            appendLine("✓ Numeric values normalized: ${data.pathDataNumbersNormalized}")
+            appendLine("✓ Repeated commands removed: ${data.pathDataRepeatedCommandsRemoved}")
+            appendLine()
+
             appendLine("────────────────────")
             appendLine("Transforms")
             appendLine("────────────────────")

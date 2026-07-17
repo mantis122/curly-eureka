@@ -92,7 +92,10 @@ object SvgToVectorConverter {
         output.appendLine("</vector>")
 
         val rawXml = output.toString().trim().substringBeforeLast("</vector>") + "</vector>"
-        val finalXml = optimizeDuplicateClipPathGroups(rawXml)
+        val clipOptimizedXml = optimizeDuplicateClipPathGroups(rawXml)
+        val pathOptimizationResult = SvgPathDataOptimizer.optimizeVectorXml(clipOptimizedXml)
+        val finalXml = pathOptimizationResult.xml
+        val pathOptimizationStats = pathOptimizationResult.stats
         val finalXmlForStats = stripSvgComments(finalXml)
 
         val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
@@ -299,6 +302,11 @@ object SvgToVectorConverter {
                 outputDpSize = outputDpSize,
                 viewportWidth = viewportWidth,
                 viewportHeight = viewportHeight,
+                pathDataOptimizedCount = pathOptimizationStats.pathCount,
+                pathDataCharactersBefore = pathOptimizationStats.charactersBefore,
+                pathDataCharactersAfter = pathOptimizationStats.charactersAfter,
+                pathDataRepeatedCommandsRemoved = pathOptimizationStats.repeatedCommandsRemoved,
+                pathDataNumbersNormalized = pathOptimizationStats.numbersNormalized,
                 elapsedMs = elapsedMs
             )
         )
