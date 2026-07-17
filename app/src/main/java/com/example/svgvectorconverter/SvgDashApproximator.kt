@@ -466,7 +466,16 @@ object SvgDashApproximator {
         fun advancePastZeroEntries(x: Float, y: Float): Boolean {
             var visited = 0
             while (remainingInPattern <= epsilon && visited <= pattern.size) {
-                if (drawDash) appendZeroLengthDash(x, y)
+                // Only preserve a cap-only dash when the SVG dash-array entry
+                // itself is zero. An ordinary positive dash also reaches zero
+                // after its length has been consumed; treating that exhausted
+                // entry as a zero-length dash produced redundant M x,y L x,y
+                // commands at the end of every visible dash.
+                val currentEntryIsActuallyZero = pattern[patternIndex] <= epsilon
+                if (drawDash && currentEntryIsActuallyZero) {
+                    appendZeroLengthDash(x, y)
+                }
+
                 patternIndex = (patternIndex + 1) % pattern.size
                 drawDash = patternIndex % 2 == 0
                 remainingInPattern = pattern[patternIndex]
