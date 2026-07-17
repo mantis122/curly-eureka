@@ -571,14 +571,15 @@ class MainActivity : ComponentActivity() {
 
         val releaseHighlights = makeText(
             """
-            Version 1.2 Highlights
+            Version 1.3 Highlights
 
-            • Complete vector-path text engine
-            • Embedded SVG font rendering
-            • Advanced text layout and textPath support
-            • Letter spacing, word spacing, and decorations
-            • Paint-order layering
-            • RTL and bidirectional text
+            • Full paint-order support
+            • currentColor and context-fill/context-stroke
+            • Improved gradient inheritance and paint resolution
+            • Dashed stroke conversion and dash offset normalization
+            • Non-scaling stroke and dash compensation
+            • Marker rendering refinements
+            • Cleaner exported paths with geometry cleanup
             """.trimIndent(),
             15f,
             Color.DKGRAY,
