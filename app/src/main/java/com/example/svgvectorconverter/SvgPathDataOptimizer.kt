@@ -141,36 +141,57 @@ internal object SvgPathDataOptimizer {
      * This does not change element order, attributes, or rendering semantics.
      */
     private fun formatVectorXml(xml: String): String {
-        var formatted = xml
+        val sourceLines = xml.replace("\r\n", "\n").replace('\r', '\n').lines()
+        val compacted = mutableListOf<String>()
+        var index = 0
 
-        // Attribute-free groups can be emitted with the closing angle bracket
-        // on a separate line. Keep those tags compact and human-readable.
-        formatted = Regex(
-            """(?m)^([ \t]*)<group[ \t]*\R[ \t]*>[ \t]*$""",
-            RegexOption.IGNORE_CASE
-        ).replace(formatted) { match ->
-            "${match.groupValues[1]}<group>"
+        while (index < sourceLines.size) {
+            val line = sourceLines[index]
+
+            // Safely compact only the exact two-line, attribute-free form:
+            //     <group
+            //     >
+            // Never scan across attributes or child elements.
+            val openingMatch = Regex("""^([ \\t]*)<group[ \\t]*$""", RegexOption.IGNORE_CASE)
+                .matchEntire(line)
+            if (openingMatch != null &&
+                index + 1 < sourceLines.size &&
+                Regex("""^[ \\t]*>[ \\t]*$""").matches(sourceLines[index + 1])
+            ) {
+                compacted += "${openingMatch.groupValues[1]}<group>"
+                index += 2
+                continue
+            }
+
+            compacted += line.trimEnd()
+            index++
         }
 
-        // Remove trailing whitespace without disturbing indentation.
-        formatted = formatted.lines()
-            .joinToString("\n") { it.trimEnd() }
+        var formatted = removeOrphanedConversionComments(compacted.joinToString("\n"))
 
-        // Deleted paths/groups can leave several blank lines and orphaned
-        // conversion comments. Remove comments that no longer introduce an
-        // element, then collapse excessive vertical whitespace.
-        formatted = removeOrphanedConversionComments(formatted)
-        formatted = Regex("""\n[ \t]*\n(?:[ \t]*\n)+""")
+        // Collapse three or more consecutive blank lines to one blank line.
+        formatted = Regex("""\n[ \\t]*\n(?:[ \\t]*\n)+""")
             .replace(formatted, "\n\n")
 
-        // Avoid blank padding immediately inside a group or before its close.
-        formatted = Regex("""(<group(?:\s[^>]*)?>)\n[ \t]*\n""", RegexOption.IGNORE_CASE)
-            .replace(formatted, "$1\n")
-        formatted = Regex("""\n[ \t]*\n([ \t]*</group>)""", RegexOption.IGNORE_CASE)
-            .replace(formatted, "\n$1")
+        // Remove blank padding directly after an opening group and directly
+        // before a closing group using a line-based pass rather than a regex
+        // that can span XML elements.
+        val lines = formatted.lines()
+        val output = mutableListOf<String>()
+        for (line in lines) {
+            if (line.isBlank()) {
+                val previous = output.lastOrNull()?.trim().orEmpty()
+                if (previous == "<group>" || previous.endsWith(">") && previous.startsWith("<group ")) {
+                    continue
+                }
+            }
+            if (line.trimStart().startsWith("</group")) {
+                while (output.lastOrNull()?.isBlank() == true) output.removeAt(output.lastIndex)
+            }
+            output += line
+        }
 
-        // Keep exactly one newline at end of the generated document.
-        return formatted.trimEnd() + "\n"
+        return output.joinToString("\n").trimEnd() + "\n"
     }
 
     private fun removeOrphanedConversionComments(xml: String): String {
@@ -207,29 +228,66 @@ internal object SvgPathDataOptimizer {
         val removedCount: Int
     )
 
+    private data class GroupRange(
+        val start: Int,
+        val openingEnd: Int,
+        val closingStart: Int,
+        val end: Int
+    )
+
     private fun removeEmptyGroups(xml: String): GroupCleanupResult {
         var current = xml
         var totalRemoved = 0
 
         while (true) {
-            var removedThisPass = 0
-            val next = innermostGroupRegex.replace(current) { match ->
-                val body = match.groupValues[1]
-                val meaningfulBody = xmlCommentRegex.replace(body, "").trim()
-                if (meaningfulBody.isEmpty()) {
-                    removedThisPass++
-                    ""
-                } else {
-                    match.value
-                }
+            val ranges = findMatchedGroups(current)
+            val removable = ranges.filter { range ->
+                val body = current.substring(range.openingEnd, range.closingStart)
+                xmlCommentRegex.replace(body, "").trim().isEmpty()
             }
 
-            totalRemoved += removedThisPass
-            current = next
-            if (removedThisPass == 0) break
+            if (removable.isEmpty()) break
+
+            val output = StringBuilder(current)
+            for (range in removable.sortedByDescending { it.start }) {
+                output.delete(range.start, range.end)
+            }
+
+            totalRemoved += removable.size
+            current = output.toString()
         }
 
         return GroupCleanupResult(current, totalRemoved)
+    }
+
+    /**
+     * Finds properly matched VectorDrawable <group>...</group> ranges with a
+     * stack. This prevents a cleanup expression from pairing an outer opening
+     * tag with an inner closing tag or leaving an unmatched </group>.
+     */
+    private fun findMatchedGroups(xml: String): List<GroupRange> {
+        val tagRegex = Regex(
+            """<group\\b(?:\"[^\"]*\"|'[^']*'|[^>])*?>|</group\\s*>""",
+            RegexOption.IGNORE_CASE
+        )
+        val stack = mutableListOf<Pair<Int, Int>>()
+        val ranges = mutableListOf<GroupRange>()
+
+        for (match in tagRegex.findAll(xml)) {
+            if (match.value.startsWith("</", ignoreCase = true)) {
+                val opening = stack.removeLastOrNull() ?: continue
+                ranges += GroupRange(
+                    start = opening.first,
+                    openingEnd = opening.second,
+                    closingStart = match.range.first,
+                    end = match.range.last + 1
+                )
+            } else {
+                stack += match.range.first to (match.range.last + 1)
+            }
+        }
+
+        return ranges
     }
 
     private fun hasDrawableGeometry(pathData: String): Boolean {
