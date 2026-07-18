@@ -1013,6 +1013,7 @@ internal object SvgPathDataOptimizer {
         var subpathX = BigDecimal.ZERO
         var subpathY = BigDecimal.ZERO
         var previousOutputCommand: Char? = null
+        var previousOutputNumber: String? = null
         var shorterForms = 0
         var relativeSelected = 0
         var axisSelected = 0
@@ -1048,6 +1049,7 @@ internal object SvgPathDataOptimizer {
                 originalCommand,
                 originalValues,
                 previousOutputCommand,
+                previousOutputNumber,
                 forceCommand = originalCommand.uppercaseChar() == 'M'
             )
 
@@ -1058,6 +1060,7 @@ internal object SvgPathDataOptimizer {
                         candidate.first,
                         candidate.second,
                         previousOutputCommand,
+                        previousOutputNumber,
                         forceCommand = candidate.first.uppercaseChar() == 'M'
                     )
                     Triple(candidate, encoded, encoded.length)
@@ -1076,6 +1079,7 @@ internal object SvgPathDataOptimizer {
             }
 
             previousOutputCommand = selectedCommand
+            previousOutputNumber = chosen.first.second.lastOrNull()?.let(::formatBigDecimal)
 
             val absolute = absoluteValuesFor(segment, startX, startY)
             when (upper) {
@@ -1214,20 +1218,27 @@ internal object SvgPathDataOptimizer {
         command: Char,
         values: List<BigDecimal>,
         previousCommand: Char?,
+        previousNumber: String?,
         forceCommand: Boolean
     ): String {
         val canOmit = !forceCommand && previousCommand == command && command.uppercaseChar() != 'Z'
-        val prefix = if (canOmit) "" else command.toString()
-        if (values.isEmpty()) return prefix
+        val commandPrefix = if (canOmit) "" else command.toString()
+        if (values.isEmpty()) return commandPrefix
 
         val numbers = values.map(::formatBigDecimal)
+        val boundarySeparator = if (
+            canOmit &&
+            previousNumber != null &&
+            needsNumberSeparator(previousNumber, numbers.first())
+        ) "," else ""
+
         val body = buildString {
             numbers.forEachIndexed { index, number ->
                 if (index > 0 && needsNumberSeparator(numbers[index - 1], number)) append(',')
                 append(number)
             }
         }
-        return prefix + body
+        return commandPrefix + boundarySeparator + body
     }
 
     private fun needsNumberSeparator(previous: String, next: String): Boolean {
