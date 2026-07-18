@@ -504,8 +504,8 @@ internal object SvgPathDataOptimizer {
         val secondAttributes = canonicalPathAttributes(second)
         if (firstAttributes != secondAttributes) return null
 
-        val firstBounds = simpleLinearPathBounds(firstPathData) ?: return null
-        val secondBounds = simpleLinearPathBounds(secondPathData) ?: return null
+        val firstBounds = compatiblePathBounds(firstPathData) ?: return null
+        val secondBounds = compatiblePathBounds(secondPathData) ?: return null
         val strokeExpansion = sharedStrokeExpansion(firstAttributes)
 
         if (!firstBounds.expanded(strokeExpansion)
@@ -547,10 +547,16 @@ internal object SvgPathDataOptimizer {
     }
 
     /**
-     * Returns conservative bounds for absolute or relative line-only path data.
-     * Curves and arcs are rejected in this first pass.
+     * Returns conservative bounds for paths composed of:
+     * M/L/H/V/Z plus cubic and quadratic Bézier commands C/S/Q/T.
+     *
+     * Bézier bounds use the control-point hull. A Bézier curve is always
+     * contained by that hull, so these bounds may be larger than necessary but
+     * are safe for proving that two rendered paths are disjoint.
+     *
+     * Arc commands remain unsupported until A6.2.
      */
-    private fun simpleLinearPathBounds(pathData: String): Bounds? {
+    private fun compatiblePathBounds(pathData: String): Bounds? {
         val tokens = tokenRegex.findAll(pathData).map { it.value }.toList()
         if (tokens.isEmpty()) return null
 
@@ -560,6 +566,12 @@ internal object SvgPathDataOptimizer {
         var currentY = 0.0
         var subpathX = 0.0
         var subpathY = 0.0
+        var previousCommand: Char? = null
+        var previousCubicControlX = 0.0
+        var previousCubicControlY = 0.0
+        var previousQuadraticControlX = 0.0
+        var previousQuadraticControlY = 0.0
+
         var minX = Double.POSITIVE_INFINITY
         var minY = Double.POSITIVE_INFINITY
         var maxX = Double.NEGATIVE_INFINITY
@@ -574,6 +586,25 @@ internal object SvgPathDataOptimizer {
             hasPoint = true
         }
 
+        fun hasNumbers(count: Int): Boolean {
+            if (index + count > tokens.size) return false
+            for (offset in 0 until count) {
+                if (isCommand(tokens[index + offset])) return false
+            }
+            return true
+        }
+
+        fun number(): Double? {
+            if (index >= tokens.size || isCommand(tokens[index])) return null
+            return tokens[index++].toDoubleOrNull()
+        }
+
+        fun absoluteX(value: Double, relative: Boolean): Double =
+            if (relative) currentX + value else value
+
+        fun absoluteY(value: Double, relative: Boolean): Double =
+            if (relative) currentY + value else value
+
         while (index < tokens.size) {
             if (isCommand(tokens[index])) {
                 command = tokens[index][0]
@@ -581,49 +612,182 @@ internal object SvgPathDataOptimizer {
             }
 
             val active = command ?: return null
-            when (active.lowercaseChar()) {
-                'm', 'l' -> {
-                    if (index + 1 >= tokens.size || isCommand(tokens[index]) || isCommand(tokens[index + 1])) {
-                        return null
-                    }
-                    var x = tokens[index].toDoubleOrNull() ?: return null
-                    var y = tokens[index + 1].toDoubleOrNull() ?: return null
-                    index += 2
-                    if (active.isLowerCase()) {
-                        x += currentX
-                        y += currentY
-                    }
+            val lower = active.lowercaseChar()
+            val relative = active.isLowerCase()
+
+            when (lower) {
+                'm' -> {
+                    if (!hasNumbers(2)) return null
+                    val rawX = number() ?: return null
+                    val rawY = number() ?: return null
+                    val x = absoluteX(rawX, relative)
+                    val y = absoluteY(rawY, relative)
                     currentX = x
                     currentY = y
+                    subpathX = x
+                    subpathY = y
                     include(x, y)
-                    if (active.lowercaseChar() == 'm') {
-                        subpathX = x
-                        subpathY = y
-                        command = if (active.isLowerCase()) 'l' else 'L'
-                    }
+                    previousCommand = active
+                    command = if (relative) 'l' else 'L'
                 }
+
+                'l' -> {
+                    if (!hasNumbers(2)) return null
+                    val rawX = number() ?: return null
+                    val rawY = number() ?: return null
+                    include(currentX, currentY)
+                    currentX = absoluteX(rawX, relative)
+                    currentY = absoluteY(rawY, relative)
+                    include(currentX, currentY)
+                    previousCommand = active
+                }
+
                 'h' -> {
-                    if (index >= tokens.size || isCommand(tokens[index])) return null
-                    var x = tokens[index].toDoubleOrNull() ?: return null
-                    index++
-                    if (active.isLowerCase()) x += currentX
-                    currentX = x
+                    if (!hasNumbers(1)) return null
+                    val rawX = number() ?: return null
                     include(currentX, currentY)
+                    currentX = absoluteX(rawX, relative)
+                    include(currentX, currentY)
+                    previousCommand = active
                 }
+
                 'v' -> {
-                    if (index >= tokens.size || isCommand(tokens[index])) return null
-                    var y = tokens[index].toDoubleOrNull() ?: return null
-                    index++
-                    if (active.isLowerCase()) y += currentY
-                    currentY = y
+                    if (!hasNumbers(1)) return null
+                    val rawY = number() ?: return null
                     include(currentX, currentY)
+                    currentY = absoluteY(rawY, relative)
+                    include(currentX, currentY)
+                    previousCommand = active
                 }
+
+                'c' -> {
+                    if (!hasNumbers(6)) return null
+                    val startX = currentX
+                    val startY = currentY
+                    val rawX1 = number() ?: return null
+                    val rawY1 = number() ?: return null
+                    val rawX2 = number() ?: return null
+                    val rawY2 = number() ?: return null
+                    val rawX = number() ?: return null
+                    val rawY = number() ?: return null
+
+                    val x1 = if (relative) startX + rawX1 else rawX1
+                    val y1 = if (relative) startY + rawY1 else rawY1
+                    val x2 = if (relative) startX + rawX2 else rawX2
+                    val y2 = if (relative) startY + rawY2 else rawY2
+                    val x = if (relative) startX + rawX else rawX
+                    val y = if (relative) startY + rawY else rawY
+
+                    include(startX, startY)
+                    include(x1, y1)
+                    include(x2, y2)
+                    include(x, y)
+
+                    currentX = x
+                    currentY = y
+                    previousCubicControlX = x2
+                    previousCubicControlY = y2
+                    previousCommand = active
+                }
+
+                's' -> {
+                    if (!hasNumbers(4)) return null
+                    val startX = currentX
+                    val startY = currentY
+                    val reflectedX =
+                        if (previousCommand != null && previousCommand.lowercaseChar() in charArrayOf('c', 's'))
+                            2.0 * startX - previousCubicControlX
+                        else startX
+                    val reflectedY =
+                        if (previousCommand != null && previousCommand.lowercaseChar() in charArrayOf('c', 's'))
+                            2.0 * startY - previousCubicControlY
+                        else startY
+
+                    val rawX2 = number() ?: return null
+                    val rawY2 = number() ?: return null
+                    val rawX = number() ?: return null
+                    val rawY = number() ?: return null
+                    val x2 = if (relative) startX + rawX2 else rawX2
+                    val y2 = if (relative) startY + rawY2 else rawY2
+                    val x = if (relative) startX + rawX else rawX
+                    val y = if (relative) startY + rawY else rawY
+
+                    include(startX, startY)
+                    include(reflectedX, reflectedY)
+                    include(x2, y2)
+                    include(x, y)
+
+                    currentX = x
+                    currentY = y
+                    previousCubicControlX = x2
+                    previousCubicControlY = y2
+                    previousCommand = active
+                }
+
+                'q' -> {
+                    if (!hasNumbers(4)) return null
+                    val startX = currentX
+                    val startY = currentY
+                    val rawX1 = number() ?: return null
+                    val rawY1 = number() ?: return null
+                    val rawX = number() ?: return null
+                    val rawY = number() ?: return null
+                    val x1 = if (relative) startX + rawX1 else rawX1
+                    val y1 = if (relative) startY + rawY1 else rawY1
+                    val x = if (relative) startX + rawX else rawX
+                    val y = if (relative) startY + rawY else rawY
+
+                    include(startX, startY)
+                    include(x1, y1)
+                    include(x, y)
+
+                    currentX = x
+                    currentY = y
+                    previousQuadraticControlX = x1
+                    previousQuadraticControlY = y1
+                    previousCommand = active
+                }
+
+                't' -> {
+                    if (!hasNumbers(2)) return null
+                    val startX = currentX
+                    val startY = currentY
+                    val reflectedX =
+                        if (previousCommand != null && previousCommand.lowercaseChar() in charArrayOf('q', 't'))
+                            2.0 * startX - previousQuadraticControlX
+                        else startX
+                    val reflectedY =
+                        if (previousCommand != null && previousCommand.lowercaseChar() in charArrayOf('q', 't'))
+                            2.0 * startY - previousQuadraticControlY
+                        else startY
+                    val rawX = number() ?: return null
+                    val rawY = number() ?: return null
+                    val x = if (relative) startX + rawX else rawX
+                    val y = if (relative) startY + rawY else rawY
+
+                    include(startX, startY)
+                    include(reflectedX, reflectedY)
+                    include(x, y)
+
+                    currentX = x
+                    currentY = y
+                    previousQuadraticControlX = reflectedX
+                    previousQuadraticControlY = reflectedY
+                    previousCommand = active
+                }
+
                 'z' -> {
+                    include(currentX, currentY)
+                    include(subpathX, subpathY)
                     currentX = subpathX
                     currentY = subpathY
-                    include(currentX, currentY)
+                    previousCommand = active
                     command = null
                 }
+
+                // Elliptical arcs are deliberately deferred to A6.2.
+                'a' -> return null
+
                 else -> return null
             }
         }
