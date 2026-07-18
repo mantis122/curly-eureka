@@ -22,6 +22,7 @@ internal object SvgPathDataOptimizer {
         val moveOnlyPathsRemoved: Int = 0,
         val invisiblePathsRemoved: Int = 0,
         val emptyGroupsRemoved: Int = 0,
+        val redundantGroupsFlattened: Int = 0,
         val xmlCharactersBefore: Int = 0,
         val xmlCharactersAfter: Int = 0
     ) {
@@ -113,7 +114,8 @@ internal object SvgPathDataOptimizer {
         }
 
         val groupCleanup = removeEmptyGroups(pathsPrunedXml)
-        val finalXml = formatVectorXml(groupCleanup.xml)
+        val groupFlattening = flattenRedundantGroups(groupCleanup.xml)
+        val finalXml = formatVectorXml(groupFlattening.xml)
         val charactersAfter = pathDataAttributeRegex.findAll(finalXml)
             .sumOf { it.groupValues[1].length }
 
@@ -129,6 +131,7 @@ internal object SvgPathDataOptimizer {
                 moveOnlyPathsRemoved = moveOnlyPathsRemoved,
                 invisiblePathsRemoved = invisiblePathsRemoved,
                 emptyGroupsRemoved = groupCleanup.removedCount,
+                redundantGroupsFlattened = groupFlattening.flattenedCount,
                 xmlCharactersBefore = xml.length,
                 xmlCharactersAfter = finalXml.length
             )
@@ -152,11 +155,11 @@ internal object SvgPathDataOptimizer {
             //     <group
             //     >
             // Never scan across attributes or child elements.
-            val openingMatch = Regex("""^([ \\t]*)<group[ \\t]*$""", RegexOption.IGNORE_CASE)
+            val openingMatch = Regex("""^([ \t]*)<group[ \t]*$""", RegexOption.IGNORE_CASE)
                 .matchEntire(line)
             if (openingMatch != null &&
                 index + 1 < sourceLines.size &&
-                Regex("""^[ \\t]*>[ \\t]*$""").matches(sourceLines[index + 1])
+                Regex("""^[ \t]*>[ \t]*$""").matches(sourceLines[index + 1])
             ) {
                 compacted += "${openingMatch.groupValues[1]}<group>"
                 index += 2
@@ -170,7 +173,7 @@ internal object SvgPathDataOptimizer {
         var formatted = removeOrphanedConversionComments(compacted.joinToString("\n"))
 
         // Collapse three or more consecutive blank lines to one blank line.
-        formatted = Regex("""\n[ \\t]*\n(?:[ \\t]*\n)+""")
+        formatted = Regex("""\n[ \t]*\n(?:[ \t]*\n)+""")
             .replace(formatted, "\n\n")
 
         // Remove blank padding directly after an opening group and directly
@@ -267,7 +270,7 @@ internal object SvgPathDataOptimizer {
      */
     private fun findMatchedGroups(xml: String): List<GroupRange> {
         val tagRegex = Regex(
-            """<group\\b(?:\"[^\"]*\"|'[^']*'|[^>])*?>|</group\\s*>""",
+            """<group\b(?:"[^"]*"|'[^']*'|[^>])*?>|</group\s*>""",
             RegexOption.IGNORE_CASE
         )
         val stack = mutableListOf<Pair<Int, Int>>()
@@ -288,6 +291,73 @@ internal object SvgPathDataOptimizer {
         }
 
         return ranges
+    }
+
+    private data class GroupFlatteningResult(
+        val xml: String,
+        val flattenedCount: Int
+    )
+
+    /**
+     * Removes semantically redundant VectorDrawable groups.
+     *
+     * A group is flattened only when:
+     * - its opening tag has no attributes; and
+     * - its complete body contains no <clip-path> element.
+     *
+     * The clip-path restriction is deliberately conservative. A clip path
+     * affects following siblings within its group, so moving that body into a
+     * parent could expand the clipping scope and change rendering.
+     */
+    private fun flattenRedundantGroups(xml: String): GroupFlatteningResult {
+        var current = xml
+        var totalFlattened = 0
+
+        while (true) {
+            val candidate = findMatchedGroups(current)
+                .sortedBy { it.end - it.start }
+                .firstOrNull { range ->
+                    val openingTag = current.substring(range.start, range.openingEnd)
+                    val body = current.substring(range.openingEnd, range.closingStart)
+                    isAttributeFreeGroup(openingTag) &&
+                        !Regex("""<clip-path\b""", RegexOption.IGNORE_CASE)
+                            .containsMatchIn(body)
+                } ?: break
+
+            val body = current.substring(candidate.openingEnd, candidate.closingStart)
+            val replacement = removeOneIndentLevel(body)
+            current = buildString(current.length) {
+                append(current, 0, candidate.start)
+                append(replacement)
+                append(current, candidate.end, current.length)
+            }
+            totalFlattened++
+        }
+
+        return GroupFlatteningResult(current, totalFlattened)
+    }
+
+    private fun isAttributeFreeGroup(openingTag: String): Boolean {
+        return Regex("""<group\s*>""", RegexOption.IGNORE_CASE)
+            .matches(openingTag.trim())
+    }
+
+    private fun removeOneIndentLevel(body: String): String {
+        val normalized = body.replace("\r\n", "\n").replace('\r', '\n')
+        val lines = normalized.lines().toMutableList()
+        if (lines.firstOrNull()?.isBlank() == true) lines.removeAt(0)
+        if (lines.lastOrNull()?.isBlank() == true) lines.removeAt(lines.lastIndex)
+
+        val nonBlank = lines.filter { it.isNotBlank() }
+        val commonIndent = nonBlank.minOfOrNull { line ->
+            line.indexOfFirst { !it.isWhitespace() }.let { if (it < 0) 0 else it }
+        } ?: 0
+
+        val dedented = lines.joinToString("\n") { line ->
+            if (line.isBlank()) "" else line.drop(commonIndent)
+        }
+
+        return if (dedented.isEmpty()) "" else "\n$dedented\n"
     }
 
     private fun hasDrawableGeometry(pathData: String): Boolean {

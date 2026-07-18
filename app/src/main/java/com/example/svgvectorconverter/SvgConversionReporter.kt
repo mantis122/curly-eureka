@@ -147,6 +147,7 @@ data class SvgConversionReportData(
     val moveOnlyPathsRemoved: Int = 0,
     val invisiblePathsRemoved: Int = 0,
     val emptyGroupsRemoved: Int = 0,
+    val redundantGroupsFlattened: Int = 0,
     val optimizedXmlCharactersBefore: Int = 0,
     val optimizedXmlCharactersAfter: Int = 0,
     val elapsedMs: Long
@@ -417,6 +418,8 @@ object SvgConversionReporter {
                 appendLine("✓ Fully transparent paths removed: ${data.invisiblePathsRemoved}")
             if (data.emptyGroupsRemoved > 0)
                 appendLine("✓ Empty groups removed: ${data.emptyGroupsRemoved}")
+            if (data.redundantGroupsFlattened > 0)
+                appendLine("✓ Redundant groups flattened: ${data.redundantGroupsFlattened}")
             appendLine()
 
             appendLine("────────────────────")
