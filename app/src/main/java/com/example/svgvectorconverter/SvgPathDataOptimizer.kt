@@ -74,13 +74,11 @@ internal object SvgPathDataOptimizer {
         RegexOption.IGNORE_CASE
     )
     private val adjacentSimplePathRegex = Regex(
-        """(<path(?:"[^"]*"|'[^']*'|[^>])*?/\s*>)([\s
-]*(?:<!--[\s\S]*?-->[\s
-]*)*)(<path(?:"[^"]*"|'[^']*'|[^>])*?/\s*>)""",
+        """(<path\b(?:"[^"]*"|'[^']*'|[^>])*?/\s*>)([\s\n]*(?:<!--[\s\S]*?-->[\s\n]*)*)(<path\b(?:"[^"]*"|'[^']*'|[^>])*?/\s*>)""",
         RegexOption.IGNORE_CASE
     )
     private val androidAttributeRegex = Regex(
-        """android:([A-Za-z0-9_]+)\s*=\s*(["'])(.*?)""",
+        """\bandroid:([A-Za-z0-9_]+)\s*=\s*(["'])(.*?)\2""",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
@@ -539,7 +537,7 @@ internal object SvgPathDataOptimizer {
 
     private fun replacePathData(element: String, newPathData: String): String {
         val regex = Regex(
-            """(android:pathData\s*=\s*)(["'])(.*?)""",
+            """(\bandroid:pathData\s*=\s*)(["'])(.*?)\2""",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
         )
         val match = regex.find(element) ?: return element
