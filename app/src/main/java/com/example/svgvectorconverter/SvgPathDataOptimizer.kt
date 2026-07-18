@@ -68,6 +68,10 @@ internal object SvgPathDataOptimizer {
         RegexOption.IGNORE_CASE
     )
     private val xmlCommentRegex = Regex("""<!--[\s\S]*?-->""")
+    private val androidColorAttributeRegex = Regex(
+        """(android:(?:fillColor|strokeColor)\s*=\s*)(["'])(#[0-9a-fA-F]{3,4})\2""",
+        RegexOption.IGNORE_CASE
+    )
 
     fun optimizeVectorXml(xml: String): Result {
         var pathCount = 0
@@ -87,11 +91,13 @@ internal object SvgPathDataOptimizer {
             "android:pathData=\"${optimized.pathData}\""
         }
 
+        val colorNormalizedXml = normalizeAndroidColorAttributes(syntaxOptimizedXml)
+
         var emptyPathDataRemoved = 0
         var moveOnlyPathsRemoved = 0
         var invisiblePathsRemoved = 0
 
-        val pathsPrunedXml = pathElementRegex.replace(syntaxOptimizedXml) { match ->
+        val pathsPrunedXml = pathElementRegex.replace(colorNormalizedXml) { match ->
             val element = match.value
             val pathData = attributeValue(element, "android:pathData")
 
@@ -138,6 +144,47 @@ internal object SvgPathDataOptimizer {
         )
     }
 
+
+    /**
+     * Expands CSS/SVG shorthand hex colors into Android-compatible forms.
+     *
+     * #RGB  -> #RRGGBB
+     * #RGBA -> #AARRGGBB
+     *
+     * SVG/CSS places alpha last in #RGBA, while Android places alpha first.
+     */
+    private fun normalizeAndroidColorAttributes(xml: String): String {
+        return androidColorAttributeRegex.replace(xml) { match ->
+            val prefix = match.groupValues[1]
+            val quote = match.groupValues[2]
+            val raw = match.groupValues[3]
+            val hex = raw.substring(1)
+
+            val normalized = when (hex.length) {
+                3 -> buildString(7) {
+                    append('#')
+                    for (digit in hex) {
+                        append(digit)
+                        append(digit)
+                    }
+                }
+                4 -> buildString(9) {
+                    append('#')
+                    append(hex[3])
+                    append(hex[3])
+                    append(hex[0])
+                    append(hex[0])
+                    append(hex[1])
+                    append(hex[1])
+                    append(hex[2])
+                    append(hex[2])
+                }
+                else -> raw
+            }.uppercase()
+
+            "$prefix$quote$normalized$quote"
+        }
+    }
 
     /**
      * Applies presentation-only XML cleanup after all structural optimization.

@@ -342,10 +342,43 @@ object VectorPreviewRenderer {
 
     private fun parsePreviewColorOrNull(value: String?): Int? {
         val raw = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val normalized = normalizePreviewHexColor(raw)
         return try {
-            Color.parseColor(raw)
+            Color.parseColor(normalized)
         } catch (_: Exception) {
             null
+        }
+    }
+
+    /**
+     * Defensive support for SVG/CSS shorthand colors in preview input.
+     * Saved VectorDrawable XML is normalized separately by SvgPathDataOptimizer.
+     */
+    private fun normalizePreviewHexColor(raw: String): String {
+        if (!raw.startsWith('#')) return raw
+        val hex = raw.substring(1)
+        if (!hex.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) return raw
+
+        return when (hex.length) {
+            3 -> buildString(7) {
+                append('#')
+                for (digit in hex) {
+                    append(digit)
+                    append(digit)
+                }
+            }
+            4 -> buildString(9) {
+                append('#')
+                append(hex[3])
+                append(hex[3])
+                append(hex[0])
+                append(hex[0])
+                append(hex[1])
+                append(hex[1])
+                append(hex[2])
+                append(hex[2])
+            }
+            else -> raw
         }
     }
 
