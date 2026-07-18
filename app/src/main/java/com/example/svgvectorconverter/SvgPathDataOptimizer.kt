@@ -113,7 +113,7 @@ internal object SvgPathDataOptimizer {
         }
 
         val groupCleanup = removeEmptyGroups(pathsPrunedXml)
-        val finalXml = groupCleanup.xml
+        val finalXml = formatVectorXml(groupCleanup.xml)
         val charactersAfter = pathDataAttributeRegex.findAll(finalXml)
             .sumOf { it.groupValues[1].length }
 
@@ -133,6 +133,73 @@ internal object SvgPathDataOptimizer {
                 xmlCharactersAfter = finalXml.length
             )
         )
+    }
+
+
+    /**
+     * Applies presentation-only XML cleanup after all structural optimization.
+     * This does not change element order, attributes, or rendering semantics.
+     */
+    private fun formatVectorXml(xml: String): String {
+        var formatted = xml
+
+        // Attribute-free groups can be emitted with the closing angle bracket
+        // on a separate line. Keep those tags compact and human-readable.
+        formatted = Regex(
+            """(?m)^([ \t]*)<group[ \t]*\R[ \t]*>[ \t]*$""",
+            RegexOption.IGNORE_CASE
+        ).replace(formatted) { match ->
+            "${match.groupValues[1]}<group>"
+        }
+
+        // Remove trailing whitespace without disturbing indentation.
+        formatted = formatted.lines()
+            .joinToString("\n") { it.trimEnd() }
+
+        // Deleted paths/groups can leave several blank lines and orphaned
+        // conversion comments. Remove comments that no longer introduce an
+        // element, then collapse excessive vertical whitespace.
+        formatted = removeOrphanedConversionComments(formatted)
+        formatted = Regex("""\n[ \t]*\n(?:[ \t]*\n)+""")
+            .replace(formatted, "\n\n")
+
+        // Avoid blank padding immediately inside a group or before its close.
+        formatted = Regex("""(<group(?:\s[^>]*)?>)\n[ \t]*\n""", RegexOption.IGNORE_CASE)
+            .replace(formatted, "$1\n")
+        formatted = Regex("""\n[ \t]*\n([ \t]*</group>)""", RegexOption.IGNORE_CASE)
+            .replace(formatted, "\n$1")
+
+        // Keep exactly one newline at end of the generated document.
+        return formatted.trimEnd() + "\n"
+    }
+
+    private fun removeOrphanedConversionComments(xml: String): String {
+        val lines = xml.lines()
+        val output = mutableListOf<String>()
+        var index = 0
+
+        while (index < lines.size) {
+            val line = lines[index]
+            if (line.trimStart().startsWith("<!-- converted from ") ||
+                line.trimStart().startsWith("<!-- converted text ") ||
+                line.trimStart().startsWith("<!-- approximated marker ")
+            ) {
+                var next = index + 1
+                while (next < lines.size && lines[next].isBlank()) next++
+                val nextTrimmed = lines.getOrNull(next)?.trimStart().orEmpty()
+                if (!nextTrimmed.startsWith("<path") &&
+                    !nextTrimmed.startsWith("<group") &&
+                    !nextTrimmed.startsWith("<clip-path")
+                ) {
+                    index++
+                    continue
+                }
+            }
+            output += line
+            index++
+        }
+
+        return output.joinToString("\n")
     }
 
     private data class GroupCleanupResult(

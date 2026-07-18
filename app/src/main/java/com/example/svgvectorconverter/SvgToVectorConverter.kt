@@ -781,8 +781,7 @@ paintUrlRefs
                 val secondBody = match.groupValues[5].trim()
 
                 buildString {
-                    appendLine("${indent}<group")
-                    appendLine("${indent}>")
+                    appendLine("${indent}<group>")
                     appendLine(reindentBlock(clipPath, "$indent    "))
                     if (firstBody.isNotBlank()) appendLine(firstBody)
                     if (secondBody.isNotBlank()) appendLine(secondBody)
