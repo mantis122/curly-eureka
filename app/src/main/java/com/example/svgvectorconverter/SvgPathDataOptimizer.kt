@@ -1,5 +1,7 @@
 package com.example.svgvectorconverter
 
+import java.math.BigDecimal
+
 /**
  * Performs conservative cleanup of emitted VectorDrawable XML.
  *
@@ -24,6 +26,9 @@ internal object SvgPathDataOptimizer {
         val emptyGroupsRemoved: Int = 0,
         val redundantGroupsFlattened: Int = 0,
         val compatiblePathsMerged: Int = 0,
+        val shorterCommandFormsSelected: Int = 0,
+        val relativeCommandsSelected: Int = 0,
+        val axisCommandsSelected: Int = 0,
         val xmlCharactersBefore: Int = 0,
         val xmlCharactersAfter: Int = 0
     ) {
@@ -87,6 +92,9 @@ internal object SvgPathDataOptimizer {
         var charactersBefore = 0
         var repeatedCommandsRemoved = 0
         var numbersNormalized = 0
+        var shorterCommandFormsSelected = 0
+        var relativeCommandsSelected = 0
+        var axisCommandsSelected = 0
 
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
             val original = match.groupValues[1]
@@ -96,6 +104,9 @@ internal object SvgPathDataOptimizer {
             charactersBefore += original.length
             repeatedCommandsRemoved += optimized.repeatedCommandsRemoved
             numbersNormalized += optimized.numbersNormalized
+            shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
+            relativeCommandsSelected += optimized.relativeCommandsSelected
+            axisCommandsSelected += optimized.axisCommandsSelected
 
             "android:pathData=\"${optimized.pathData}\""
         }
@@ -149,6 +160,9 @@ internal object SvgPathDataOptimizer {
                 emptyGroupsRemoved = groupCleanup.removedCount,
                 redundantGroupsFlattened = groupFlattening.flattenedCount,
                 compatiblePathsMerged = pathMerging.mergedCount,
+                shorterCommandFormsSelected = shorterCommandFormsSelected,
+                relativeCommandsSelected = relativeCommandsSelected,
+                axisCommandsSelected = axisCommandsSelected,
                 xmlCharactersBefore = xml.length,
                 xmlCharactersAfter = finalXml.length
             )
@@ -893,13 +907,16 @@ internal object SvgPathDataOptimizer {
     private data class PathResult(
         val pathData: String,
         val repeatedCommandsRemoved: Int,
-        val numbersNormalized: Int
+        val numbersNormalized: Int,
+        val shorterCommandFormsSelected: Int = 0,
+        val relativeCommandsSelected: Int = 0,
+        val axisCommandsSelected: Int = 0
     )
 
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return PathResult(pathData.trim(), 0, 0)
+            return PathResult(pathData.trim(), 0, 0, 0, 0, 0)
         }
 
         // If tokenization skipped anything other than legal separators, preserve the
@@ -907,12 +924,12 @@ internal object SvgPathDataOptimizer {
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return PathResult(pathData, 0, 0)
+                return PathResult(pathData, 0, 0, 0, 0, 0)
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return PathResult(pathData, 0, 0)
+            return PathResult(pathData, 0, 0, 0, 0, 0)
         }
 
         val output = StringBuilder(pathData.length)
@@ -948,11 +965,281 @@ internal object SvgPathDataOptimizer {
             }
         }
 
+        val commandOptimization = shortenPathCommands(output.toString())
+
         return PathResult(
-            pathData = output.toString(),
+            pathData = commandOptimization.pathData,
             repeatedCommandsRemoved = repeatedCommandsRemoved,
-            numbersNormalized = numbersNormalized
+            numbersNormalized = numbersNormalized,
+            shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
+            relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
+            axisCommandsSelected = commandOptimization.axisCommandsSelected
         )
+    }
+
+
+    private data class CommandOptimizationResult(
+        val pathData: String,
+        val shorterFormsSelected: Int,
+        val relativeCommandsSelected: Int,
+        val axisCommandsSelected: Int
+    )
+
+    private data class ParsedSegment(
+        val command: Char,
+        val values: List<BigDecimal>
+    )
+
+    /**
+     * Chooses a shorter, geometry-equivalent spelling for each path segment.
+     *
+     * This pass never rounds coordinates. Decimal arithmetic uses BigDecimal,
+     * so switching between absolute and relative forms preserves the exact
+     * values represented by the normalized input tokens.
+     *
+     * It may:
+     * - switch between absolute and relative command forms;
+     * - replace horizontal/vertical line segments with H/V or h/v;
+     * - retain the original normalized form whenever no candidate is shorter.
+     */
+    private fun shortenPathCommands(pathData: String): CommandOptimizationResult {
+        val segments = parseNormalizedSegments(pathData)
+            ?: return CommandOptimizationResult(pathData, 0, 0, 0)
+        if (segments.isEmpty()) return CommandOptimizationResult(pathData, 0, 0, 0)
+
+        val output = StringBuilder(pathData.length)
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+        var previousOutputCommand: Char? = null
+        var shorterForms = 0
+        var relativeSelected = 0
+        var axisSelected = 0
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val startX = currentX
+            val startY = currentY
+
+            val candidates = mutableListOf<Pair<Char, List<BigDecimal>>>()
+            candidates += upper to absoluteValuesFor(segment, startX, startY)
+            if (upper != 'Z') {
+                candidates += upper.lowercaseChar() to relativeValuesFor(segment, startX, startY)
+            }
+
+            if (upper == 'L') {
+                val absolute = absoluteValuesFor(segment, startX, startY)
+                val endX = absolute[0]
+                val endY = absolute[1]
+                if (endY.compareTo(startY) == 0) {
+                    candidates += 'H' to listOf(endX)
+                    candidates += 'h' to listOf(endX.subtract(startX))
+                }
+                if (endX.compareTo(startX) == 0) {
+                    candidates += 'V' to listOf(endY)
+                    candidates += 'v' to listOf(endY.subtract(startY))
+                }
+            }
+
+            val originalCommand = segment.command
+            val originalValues = segment.values
+            val originalEncoded = encodeSegment(
+                originalCommand,
+                originalValues,
+                previousOutputCommand,
+                forceCommand = originalCommand.uppercaseChar() == 'M'
+            )
+
+            val chosen = candidates
+                .distinctBy { it.first to it.second }
+                .map { candidate ->
+                    val encoded = encodeSegment(
+                        candidate.first,
+                        candidate.second,
+                        previousOutputCommand,
+                        forceCommand = candidate.first.uppercaseChar() == 'M'
+                    )
+                    Triple(candidate, encoded, encoded.length)
+                }
+                .minWithOrNull(compareBy<Triple<Pair<Char, List<BigDecimal>>, String, Int>> { it.third }
+                    .thenBy { if (it.first.first == originalCommand) 0 else 1 })
+                ?: return CommandOptimizationResult(pathData, 0, 0, 0)
+
+            val selectedCommand = chosen.first.first
+            output.append(chosen.second)
+
+            if (chosen.second.length < originalEncoded.length || selectedCommand != originalCommand) {
+                if (chosen.second.length < originalEncoded.length) shorterForms++
+                if (selectedCommand.isLowerCase() && selectedCommand.uppercaseChar() != 'Z') relativeSelected++
+                if (selectedCommand.uppercaseChar() in charArrayOf('H', 'V')) axisSelected++
+            }
+
+            previousOutputCommand = selectedCommand
+
+            val absolute = absoluteValuesFor(segment, startX, startY)
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
+                    if (upper == 'M') {
+                        subpathX = currentX
+                        subpathY = currentY
+                    }
+                }
+                'H' -> currentX = absolute[0]
+                'V' -> currentY = absolute[0]
+                'C', 'S', 'Q' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
+                }
+                'A' -> {
+                    currentX = absolute[5]
+                    currentY = absolute[6]
+                }
+                'Z' -> {
+                    currentX = subpathX
+                    currentY = subpathY
+                }
+            }
+        }
+
+        val optimized = output.toString()
+        return if (optimized.length <= pathData.length) {
+            CommandOptimizationResult(optimized, shorterForms, relativeSelected, axisSelected)
+        } else {
+            CommandOptimizationResult(pathData, 0, 0, 0)
+        }
+    }
+
+    private fun parseNormalizedSegments(pathData: String): List<ParsedSegment>? {
+        val tokens = tokenRegex.findAll(pathData).map { it.value }.toList()
+        if (tokens.isEmpty()) return emptyList()
+
+        val counts = mapOf(
+            'M' to 2, 'L' to 2, 'H' to 1, 'V' to 1,
+            'C' to 6, 'S' to 4, 'Q' to 4, 'T' to 2,
+            'A' to 7, 'Z' to 0
+        )
+        val result = mutableListOf<ParsedSegment>()
+        var index = 0
+        var active: Char? = null
+        var firstMovePair = true
+
+        while (index < tokens.size) {
+            if (isCommand(tokens[index])) {
+                active = tokens[index][0]
+                index++
+                firstMovePair = true
+                if (active.uppercaseChar() == 'Z') {
+                    result += ParsedSegment(active, emptyList())
+                    active = null
+                    continue
+                }
+            }
+
+            val command = active ?: return null
+            val count = counts[command.uppercaseChar()] ?: return null
+            if (index + count > tokens.size) return null
+            if ((0 until count).any { isCommand(tokens[index + it]) }) return null
+
+            val values = (0 until count).map {
+                tokens[index + it].toBigDecimalOrNull() ?: return null
+            }
+            index += count
+
+            val emittedCommand = if (command.uppercaseChar() == 'M' && !firstMovePair) {
+                if (command.isLowerCase()) 'l' else 'L'
+            } else command
+            result += ParsedSegment(emittedCommand, values)
+            firstMovePair = false
+
+            if (index < tokens.size && isCommand(tokens[index])) continue
+            if (count == 0) active = null
+        }
+        return result
+    }
+
+    private fun absoluteValuesFor(
+        segment: ParsedSegment,
+        startX: BigDecimal,
+        startY: BigDecimal
+    ): List<BigDecimal> {
+        if (segment.command.isUpperCase() || segment.command.uppercaseChar() == 'Z') return segment.values
+        val v = segment.values
+        return when (segment.command.uppercaseChar()) {
+            'M', 'L', 'T' -> listOf(startX.add(v[0]), startY.add(v[1]))
+            'H' -> listOf(startX.add(v[0]))
+            'V' -> listOf(startY.add(v[0]))
+            'C' -> listOf(
+                startX.add(v[0]), startY.add(v[1]),
+                startX.add(v[2]), startY.add(v[3]),
+                startX.add(v[4]), startY.add(v[5])
+            )
+            'S', 'Q' -> listOf(
+                startX.add(v[0]), startY.add(v[1]),
+                startX.add(v[2]), startY.add(v[3])
+            )
+            'A' -> listOf(v[0], v[1], v[2], v[3], v[4], startX.add(v[5]), startY.add(v[6]))
+            else -> v
+        }
+    }
+
+    private fun relativeValuesFor(
+        segment: ParsedSegment,
+        startX: BigDecimal,
+        startY: BigDecimal
+    ): List<BigDecimal> {
+        if (segment.command.isLowerCase()) return segment.values
+        val v = segment.values
+        return when (segment.command.uppercaseChar()) {
+            'M', 'L', 'T' -> listOf(v[0].subtract(startX), v[1].subtract(startY))
+            'H' -> listOf(v[0].subtract(startX))
+            'V' -> listOf(v[0].subtract(startY))
+            'C' -> listOf(
+                v[0].subtract(startX), v[1].subtract(startY),
+                v[2].subtract(startX), v[3].subtract(startY),
+                v[4].subtract(startX), v[5].subtract(startY)
+            )
+            'S', 'Q' -> listOf(
+                v[0].subtract(startX), v[1].subtract(startY),
+                v[2].subtract(startX), v[3].subtract(startY)
+            )
+            'A' -> listOf(v[0], v[1], v[2], v[3], v[4], v[5].subtract(startX), v[6].subtract(startY))
+            else -> v
+        }
+    }
+
+    private fun encodeSegment(
+        command: Char,
+        values: List<BigDecimal>,
+        previousCommand: Char?,
+        forceCommand: Boolean
+    ): String {
+        val canOmit = !forceCommand && previousCommand == command && command.uppercaseChar() != 'Z'
+        val prefix = if (canOmit) "" else command.toString()
+        if (values.isEmpty()) return prefix
+
+        val numbers = values.map(::formatBigDecimal)
+        val body = buildString {
+            numbers.forEachIndexed { index, number ->
+                if (index > 0 && needsNumberSeparator(numbers[index - 1], number)) append(',')
+                append(number)
+            }
+        }
+        return prefix + body
+    }
+
+    private fun needsNumberSeparator(previous: String, next: String): Boolean {
+        if (next.startsWith('-')) return false
+        if (next.startsWith('+')) return false
+        return true
+    }
+
+    private fun formatBigDecimal(value: BigDecimal): String {
+        val normalized = value.stripTrailingZeros()
+        val plain = normalized.toPlainString()
+        return normalizeNumber(plain)
     }
 
     private fun containsOnlySeparators(value: String): Boolean {

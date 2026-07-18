@@ -149,6 +149,9 @@ data class SvgConversionReportData(
     val emptyGroupsRemoved: Int = 0,
     val redundantGroupsFlattened: Int = 0,
     val compatiblePathsMerged: Int = 0,
+    val shorterCommandFormsSelected: Int = 0,
+    val relativeCommandsSelected: Int = 0,
+    val axisCommandsSelected: Int = 0,
     val optimizedXmlCharactersBefore: Int = 0,
     val optimizedXmlCharactersAfter: Int = 0,
     val elapsedMs: Long
@@ -423,6 +426,12 @@ object SvgConversionReporter {
                 appendLine("✓ Redundant groups flattened: ${data.redundantGroupsFlattened}")
             if (data.compatiblePathsMerged > 0)
                 appendLine("✓ Compatible adjacent paths merged: ${data.compatiblePathsMerged}")
+            if (data.shorterCommandFormsSelected > 0)
+                appendLine("✓ Shorter command forms selected: ${data.shorterCommandFormsSelected}")
+            if (data.relativeCommandsSelected > 0)
+                appendLine("✓ Relative commands selected: ${data.relativeCommandsSelected}")
+            if (data.axisCommandsSelected > 0)
+                appendLine("✓ Horizontal/vertical commands selected: ${data.axisCommandsSelected}")
             appendLine()
 
             appendLine("────────────────────")
