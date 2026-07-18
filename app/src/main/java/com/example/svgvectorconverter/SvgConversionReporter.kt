@@ -149,6 +149,7 @@ data class SvgConversionReportData(
     val emptyGroupsRemoved: Int = 0,
     val redundantGroupsFlattened: Int = 0,
     val compatiblePathsMerged: Int = 0,
+    val exactDuplicatePathsRemoved: Int = 0,
     val shorterCommandFormsSelected: Int = 0,
     val relativeCommandsSelected: Int = 0,
     val axisCommandsSelected: Int = 0,
@@ -424,6 +425,8 @@ object SvgConversionReporter {
                 appendLine("✓ Empty groups removed: ${data.emptyGroupsRemoved}")
             if (data.redundantGroupsFlattened > 0)
                 appendLine("✓ Redundant groups flattened: ${data.redundantGroupsFlattened}")
+            if (data.exactDuplicatePathsRemoved > 0)
+                appendLine("✓ Exact duplicate paths removed: ${data.exactDuplicatePathsRemoved}")
             if (data.compatiblePathsMerged > 0)
                 appendLine("✓ Compatible adjacent paths merged: ${data.compatiblePathsMerged}")
             if (data.shorterCommandFormsSelected > 0)

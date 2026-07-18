@@ -26,6 +26,7 @@ internal object SvgPathDataOptimizer {
         val emptyGroupsRemoved: Int = 0,
         val redundantGroupsFlattened: Int = 0,
         val compatiblePathsMerged: Int = 0,
+        val exactDuplicatePathsRemoved: Int = 0,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
@@ -141,7 +142,8 @@ internal object SvgPathDataOptimizer {
 
         val groupCleanup = removeEmptyGroups(pathsPrunedXml)
         val groupFlattening = flattenRedundantGroups(groupCleanup.xml)
-        val pathMerging = mergeCompatibleAdjacentPaths(groupFlattening.xml)
+        val duplicateRemoval = removeExactAdjacentDuplicatePaths(groupFlattening.xml)
+        val pathMerging = mergeCompatibleAdjacentPaths(duplicateRemoval.xml)
         val finalXml = formatVectorXml(pathMerging.xml)
         val charactersAfter = pathDataAttributeRegex.findAll(finalXml)
             .sumOf { it.groupValues[1].length }
@@ -160,6 +162,7 @@ internal object SvgPathDataOptimizer {
                 emptyGroupsRemoved = groupCleanup.removedCount,
                 redundantGroupsFlattened = groupFlattening.flattenedCount,
                 compatiblePathsMerged = pathMerging.mergedCount,
+                exactDuplicatePathsRemoved = duplicateRemoval.removedCount,
                 shorterCommandFormsSelected = shorterCommandFormsSelected,
                 relativeCommandsSelected = relativeCommandsSelected,
                 axisCommandsSelected = axisCommandsSelected,
@@ -437,6 +440,104 @@ internal object SvgPathDataOptimizer {
         val xml: String,
         val mergedCount: Int
     )
+
+
+    private data class DuplicateRemovalResult(
+        val xml: String,
+        val removedCount: Int
+    )
+
+    /**
+     * Removes only adjacent path elements that are exact rendered duplicates.
+     *
+     * This pass is deliberately conservative:
+     * - both paths must be self-closing and contain no nested aapt paint;
+     * - optimized pathData must be byte-for-byte identical;
+     * - every Android rendering attribute must be identical;
+     * - trim-path attributes are rejected; and
+     * - all paints that can draw must be fully opaque.
+     *
+     * Requiring adjacency keeps the paths in the same immediate XML/group
+     * context and avoids crossing clip, group, or ordering boundaries.
+     */
+    private fun removeExactAdjacentDuplicatePaths(xml: String): DuplicateRemovalResult {
+        var current = xml
+        var totalRemoved = 0
+
+        while (true) {
+            var removedThisPass = false
+            val replaced = adjacentSimplePathRegex.replace(current) { match ->
+                if (removedThisPass) return@replace match.value
+
+                val first = match.groupValues[1]
+                val separator = match.groupValues[2]
+                val second = match.groupValues[3]
+
+                if (!areSafeExactDuplicates(first, second)) {
+                    match.value
+                } else {
+                    removedThisPass = true
+                    totalRemoved++
+                    // Keep comments between the paths above the surviving path.
+                    separator + first
+                }
+            }
+
+            if (!removedThisPass) break
+            current = replaced
+        }
+
+        return DuplicateRemovalResult(current, totalRemoved)
+    }
+
+    private fun areSafeExactDuplicates(first: String, second: String): Boolean {
+        if (first.contains("<aapt:attr", ignoreCase = true) ||
+            second.contains("<aapt:attr", ignoreCase = true)
+        ) return false
+
+        val firstPathData = attributeValue(first, "android:pathData")?.trim() ?: return false
+        val secondPathData = attributeValue(second, "android:pathData")?.trim() ?: return false
+        if (firstPathData != secondPathData) return false
+
+        val firstAttributes = canonicalPathAttributes(first)
+        val secondAttributes = canonicalPathAttributes(second)
+        if (firstAttributes != secondAttributes) return false
+
+        if (firstAttributes.keys.any { it.startsWith("trimpath") }) return false
+
+        return hasOnlyFullyOpaquePaint(firstAttributes)
+    }
+
+    private fun hasOnlyFullyOpaquePaint(attributes: Map<String, String>): Boolean {
+        fun alphaIsOne(name: String): Boolean {
+            val raw = attributes[name] ?: return true
+            return raw.toDoubleOrNull()?.let { kotlin.math.abs(it - 1.0) <= 1e-9 } == true
+        }
+
+        fun colorIsOpaque(raw: String?): Boolean {
+            if (raw == null || isTransparentColor(raw)) return false
+            val value = raw.trim()
+            if (!value.startsWith("#")) return false
+            val hex = value.substring(1)
+            return when (hex.length) {
+                6 -> true
+                8 -> hex.substring(0, 2).equals("FF", ignoreCase = true)
+                else -> false
+            }
+        }
+
+        val fill = attributes["fillcolor"]
+        val stroke = attributes["strokecolor"]
+        val fillDraws = fill != null && !isTransparentColor(fill)
+        val strokeDraws = stroke != null && !isTransparentColor(stroke) &&
+            ((attributes["strokewidth"]?.toDoubleOrNull() ?: 0.0) > 0.0)
+
+        if (!fillDraws && !strokeDraws) return false
+        if (!alphaIsOne("fillalpha") || !alphaIsOne("strokealpha")) return false
+        if (fillDraws && !colorIsOpaque(fill)) return false
+        if (strokeDraws && !colorIsOpaque(stroke)) return false
+        return true
+    }
 
     private data class Bounds(
         val minX: Double,
