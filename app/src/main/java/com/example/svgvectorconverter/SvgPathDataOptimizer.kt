@@ -23,6 +23,7 @@ internal object SvgPathDataOptimizer {
         val invisiblePathsRemoved: Int = 0,
         val emptyGroupsRemoved: Int = 0,
         val redundantGroupsFlattened: Int = 0,
+        val compatiblePathsMerged: Int = 0,
         val xmlCharactersBefore: Int = 0,
         val xmlCharactersAfter: Int = 0
     ) {
@@ -71,6 +72,16 @@ internal object SvgPathDataOptimizer {
     private val androidColorAttributeRegex = Regex(
         """(android:(?:fillColor|strokeColor)\s*=\s*)(["'])(#[0-9a-fA-F]{3,4})\2""",
         RegexOption.IGNORE_CASE
+    )
+    private val adjacentSimplePathRegex = Regex(
+        """(<path(?:"[^"]*"|'[^']*'|[^>])*?/\s*>)([\s
+]*(?:<!--[\s\S]*?-->[\s
+]*)*)(<path(?:"[^"]*"|'[^']*'|[^>])*?/\s*>)""",
+        RegexOption.IGNORE_CASE
+    )
+    private val androidAttributeRegex = Regex(
+        """android:([A-Za-z0-9_]+)\s*=\s*(["'])(.*?)""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
     fun optimizeVectorXml(xml: String): Result {
@@ -121,7 +132,8 @@ internal object SvgPathDataOptimizer {
 
         val groupCleanup = removeEmptyGroups(pathsPrunedXml)
         val groupFlattening = flattenRedundantGroups(groupCleanup.xml)
-        val finalXml = formatVectorXml(groupFlattening.xml)
+        val pathMerging = mergeCompatibleAdjacentPaths(groupFlattening.xml)
+        val finalXml = formatVectorXml(pathMerging.xml)
         val charactersAfter = pathDataAttributeRegex.findAll(finalXml)
             .sumOf { it.groupValues[1].length }
 
@@ -138,6 +150,7 @@ internal object SvgPathDataOptimizer {
                 invisiblePathsRemoved = invisiblePathsRemoved,
                 emptyGroupsRemoved = groupCleanup.removedCount,
                 redundantGroupsFlattened = groupFlattening.flattenedCount,
+                compatiblePathsMerged = pathMerging.mergedCount,
                 xmlCharactersBefore = xml.length,
                 xmlCharactersAfter = finalXml.length
             )
@@ -405,6 +418,219 @@ internal object SvgPathDataOptimizer {
         }
 
         return if (dedented.isEmpty()) "" else "\n$dedented\n"
+    }
+
+
+    private data class PathMergingResult(
+        val xml: String,
+        val mergedCount: Int
+    )
+
+    private data class Bounds(
+        val minX: Double,
+        val minY: Double,
+        val maxX: Double,
+        val maxY: Double
+    ) {
+        fun expanded(amount: Double): Bounds = Bounds(
+            minX - amount,
+            minY - amount,
+            maxX + amount,
+            maxY + amount
+        )
+
+        fun isStrictlyDisjointFrom(other: Bounds): Boolean {
+            val epsilon = 1e-9
+            return maxX < other.minX - epsilon ||
+                other.maxX < minX - epsilon ||
+                maxY < other.minY - epsilon ||
+                other.maxY < minY - epsilon
+        }
+    }
+
+    /**
+     * Conservatively merges adjacent VectorDrawable paths by concatenating their
+     * pathData values. A merge is allowed only when:
+     * - both elements are self-closing paths with no nested aapt paint;
+     * - every Android rendering attribute except pathData is identical;
+     * - both pathData values use only M/L/H/V/Z commands; and
+     * - their stroke-expanded bounds are provably disjoint.
+     *
+     * The disjointness requirement avoids changes to fill winding, even-odd
+     * behavior, alpha compositing, and overlapping stroke coverage.
+     */
+    private fun mergeCompatibleAdjacentPaths(xml: String): PathMergingResult {
+        var current = xml
+        var totalMerged = 0
+
+        while (true) {
+            var mergedThisPass = false
+            val replaced = adjacentSimplePathRegex.replace(current) { match ->
+                if (mergedThisPass) return@replace match.value
+
+                val first = match.groupValues[1]
+                val separator = match.groupValues[2]
+                val second = match.groupValues[3]
+                val merged = mergePathElements(first, second)
+
+                if (merged == null) {
+                    match.value
+                } else {
+                    mergedThisPass = true
+                    totalMerged++
+                    // Preserve comments associated with the second element above
+                    // the merged element. Conversion comments are later cleaned up
+                    // if they become orphaned.
+                    separator + merged
+                }
+            }
+
+            if (!mergedThisPass) break
+            current = replaced
+        }
+
+        return PathMergingResult(current, totalMerged)
+    }
+
+    private fun mergePathElements(first: String, second: String): String? {
+        if (first.contains("<aapt:attr", ignoreCase = true) ||
+            second.contains("<aapt:attr", ignoreCase = true)
+        ) {
+            return null
+        }
+
+        val firstPathData = attributeValue(first, "android:pathData") ?: return null
+        val secondPathData = attributeValue(second, "android:pathData") ?: return null
+
+        val firstAttributes = canonicalPathAttributes(first)
+        val secondAttributes = canonicalPathAttributes(second)
+        if (firstAttributes != secondAttributes) return null
+
+        val firstBounds = simpleLinearPathBounds(firstPathData) ?: return null
+        val secondBounds = simpleLinearPathBounds(secondPathData) ?: return null
+        val strokeExpansion = sharedStrokeExpansion(firstAttributes)
+
+        if (!firstBounds.expanded(strokeExpansion)
+                .isStrictlyDisjointFrom(secondBounds.expanded(strokeExpansion))
+        ) {
+            return null
+        }
+
+        val combinedPathData = firstPathData.trim() + secondPathData.trim()
+        return replacePathData(first, combinedPathData)
+    }
+
+    private fun canonicalPathAttributes(element: String): Map<String, String> {
+        return androidAttributeRegex.findAll(element)
+            .associate { match ->
+                match.groupValues[1].lowercase() to match.groupValues[3].trim()
+            }
+            .filterKeys { it != "pathdata" }
+    }
+
+    private fun sharedStrokeExpansion(attributes: Map<String, String>): Double {
+        val strokeColor = attributes["strokecolor"] ?: return 0.0
+        if (isTransparentColor(strokeColor)) return 0.0
+        val strokeAlpha = attributes["strokealpha"]?.toDoubleOrNull() ?: 1.0
+        if (strokeAlpha <= 0.0) return 0.0
+        val strokeWidth = attributes["strokewidth"]?.toDoubleOrNull() ?: 0.0
+        return (strokeWidth.coerceAtLeast(0.0) / 2.0)
+    }
+
+    private fun replacePathData(element: String, newPathData: String): String {
+        val regex = Regex(
+            """(android:pathData\s*=\s*)(["'])(.*?)""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        )
+        val match = regex.find(element) ?: return element
+        val replacement =
+            "${match.groupValues[1]}${match.groupValues[2]}$newPathData${match.groupValues[2]}"
+        return element.replaceRange(match.range, replacement)
+    }
+
+    /**
+     * Returns conservative bounds for absolute or relative line-only path data.
+     * Curves and arcs are rejected in this first pass.
+     */
+    private fun simpleLinearPathBounds(pathData: String): Bounds? {
+        val tokens = tokenRegex.findAll(pathData).map { it.value }.toList()
+        if (tokens.isEmpty()) return null
+
+        var index = 0
+        var command: Char? = null
+        var currentX = 0.0
+        var currentY = 0.0
+        var subpathX = 0.0
+        var subpathY = 0.0
+        var minX = Double.POSITIVE_INFINITY
+        var minY = Double.POSITIVE_INFINITY
+        var maxX = Double.NEGATIVE_INFINITY
+        var maxY = Double.NEGATIVE_INFINITY
+        var hasPoint = false
+
+        fun include(x: Double, y: Double) {
+            minX = minOf(minX, x)
+            minY = minOf(minY, y)
+            maxX = maxOf(maxX, x)
+            maxY = maxOf(maxY, y)
+            hasPoint = true
+        }
+
+        while (index < tokens.size) {
+            if (isCommand(tokens[index])) {
+                command = tokens[index][0]
+                index++
+            }
+
+            val active = command ?: return null
+            when (active.lowercaseChar()) {
+                'm', 'l' -> {
+                    if (index + 1 >= tokens.size || isCommand(tokens[index]) || isCommand(tokens[index + 1])) {
+                        return null
+                    }
+                    var x = tokens[index].toDoubleOrNull() ?: return null
+                    var y = tokens[index + 1].toDoubleOrNull() ?: return null
+                    index += 2
+                    if (active.isLowerCase()) {
+                        x += currentX
+                        y += currentY
+                    }
+                    currentX = x
+                    currentY = y
+                    include(x, y)
+                    if (active.lowercaseChar() == 'm') {
+                        subpathX = x
+                        subpathY = y
+                        command = if (active.isLowerCase()) 'l' else 'L'
+                    }
+                }
+                'h' -> {
+                    if (index >= tokens.size || isCommand(tokens[index])) return null
+                    var x = tokens[index].toDoubleOrNull() ?: return null
+                    index++
+                    if (active.isLowerCase()) x += currentX
+                    currentX = x
+                    include(currentX, currentY)
+                }
+                'v' -> {
+                    if (index >= tokens.size || isCommand(tokens[index])) return null
+                    var y = tokens[index].toDoubleOrNull() ?: return null
+                    index++
+                    if (active.isLowerCase()) y += currentY
+                    currentY = y
+                    include(currentX, currentY)
+                }
+                'z' -> {
+                    currentX = subpathX
+                    currentY = subpathY
+                    include(currentX, currentY)
+                    command = null
+                }
+                else -> return null
+            }
+        }
+
+        return if (hasPoint) Bounds(minX, minY, maxX, maxY) else null
     }
 
     private fun hasDrawableGeometry(pathData: String): Boolean {
