@@ -554,7 +554,8 @@ internal object SvgPathDataOptimizer {
      * - scaleX and scaleY are equal, finite numeric values greater than zero;
      * - the effective scale is not 1;
      * - its body contains only comments, whitespace, and direct self-closing paths;
-     * - it contains no nested group, clip-path, or nested aapt paint; and
+     * - the current candidate contains no nested group, clip-path, or nested aapt
+     *   paint; eligible nested groups are processed from the inside out; and
      * - every explicit strokeWidth is numeric.
      *
      * Coordinates are scaled around the VectorDrawable pivot and then translated,
@@ -572,16 +573,9 @@ internal object SvgPathDataOptimizer {
             val matchedGroups = findMatchedGroups(current)
             val candidate = matchedGroups
                 .asSequence()
-                // A9.1 intentionally handles only top-level scale groups. A group
-                // nested inside another group must remain untouched so that nested
-                // transform composition can be handled by a later dedicated pass.
-                .filterNot { range ->
-                    matchedGroups.any { ancestor ->
-                        ancestor !== range &&
-                            ancestor.start < range.start &&
-                            ancestor.end > range.end
-                    }
-                }
+                // A9.2 processes eligible nested positive uniform-scale groups from
+                // the inside out. The smallest candidate is flattened first; after
+                // that, an eligible parent can be reconsidered on the next loop.
                 .sortedBy { it.end - it.start }
                 .firstOrNull { range ->
                     val openingTag = current.substring(range.start, range.openingEnd)
