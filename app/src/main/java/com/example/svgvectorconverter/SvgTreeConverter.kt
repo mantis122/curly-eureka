@@ -1195,7 +1195,8 @@ private fun childClipPathId(
     // Container <g> elements must emit their own clip path from the "g" branch
     // in walkSvgNode(), after opening the group's transform wrapper. Pre-grouping
     // them here would place the clip outside that transform.
-    if (element.tagName.substringAfter(':').equals("g", ignoreCase = true)) {
+    val localTagName = element.localName ?: element.tagName.substringAfter(':')
+    if (localTagName.equals("g", ignoreCase = true)) {
         return null
     }
 
@@ -1236,6 +1237,51 @@ private fun appendChildrenWithClipGrouping(
 
     while (i < children.length) {
         val child = children.item(i)
+
+        // A container <g> must always be processed by its own walkSvgNode()
+        // branch. That branch knows the group's transform and can emit:
+        //
+        //     transform group
+        //         clip group
+        //             drawable children
+        //
+        // Letting this sibling-grouping helper pre-wrap the <g> would reverse
+        // that order and leave the clip path outside the transform.
+        val childElement = child as? Element
+        val childLocalName = childElement
+            ?.let { it.localName ?: it.tagName.substringAfter(':') }
+            ?.lowercase()
+
+        if (childLocalName == "g") {
+            walkSvgNode(
+                output,
+                child,
+                indent,
+                inheritedFill,
+                inheritedStroke,
+                inheritedStrokeWidth,
+                inheritedStrokeLineCap,
+                inheritedStrokeLineJoin,
+                inheritedStrokeMiterLimit,
+                inheritedFillRule,
+                inheritedOpacity,
+                inheritedFillOpacity,
+                inheritedStrokeOpacity,
+                inheritedClipPath,
+                definitions,
+                useDepth,
+                activeClipPathId,
+                inheritedScaleX,
+                inheritedScaleY,
+                inheritedVectorEffect,
+                inheritedVisibility,
+                parentViewportWidth,
+                parentViewportHeight
+            )
+            i++
+            continue
+        }
+
         val clipId = childClipPathId(child, inheritedClipPath, inheritedVisibility)
 
         if (clipId != null && clipId != activeClipPathId) {
