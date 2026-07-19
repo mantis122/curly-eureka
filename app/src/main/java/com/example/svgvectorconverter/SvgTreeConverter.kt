@@ -1191,6 +1191,14 @@ private fun childClipPathId(
     if (isDirectlyDisplayNone(element) ||
         isVisibilityHidden(effectiveVisibility(element, inheritedVisibility))
     ) return null
+
+    // Container <g> elements must emit their own clip path from the "g" branch
+    // in walkSvgNode(), after opening the group's transform wrapper. Pre-grouping
+    // them here would place the clip outside that transform.
+    if (element.tagName.substringAfter(':').equals("g", ignoreCase = true)) {
+        return null
+    }
+
     val style = element.getAttribute("style").ifBlank { null }
     val clipPathValue = effectiveClipOrMaskValue(element, style, inheritedClipPath)
 
