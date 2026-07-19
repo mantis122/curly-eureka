@@ -152,6 +152,7 @@ data class SvgConversionReportData(
     val exactDuplicatePathsRemoved: Int = 0,
     val translatedGroupsFlattened: Int = 0,
     val translatedPaths: Int = 0,
+    val identityTransformAttributesRemoved: Int = 0,
     val shorterCommandFormsSelected: Int = 0,
     val relativeCommandsSelected: Int = 0,
     val axisCommandsSelected: Int = 0,
@@ -433,6 +434,8 @@ object SvgConversionReporter {
                 appendLine("✓ Translation groups flattened: ${data.translatedGroupsFlattened}")
             if (data.translatedPaths > 0)
                 appendLine("✓ Paths translated into coordinates: ${data.translatedPaths}")
+            if (data.identityTransformAttributesRemoved > 0)
+                appendLine("✓ Identity transform attributes removed: ${data.identityTransformAttributesRemoved}")
             if (data.compatiblePathsMerged > 0)
                 appendLine("✓ Compatible adjacent paths merged: ${data.compatiblePathsMerged}")
             if (data.shorterCommandFormsSelected > 0)

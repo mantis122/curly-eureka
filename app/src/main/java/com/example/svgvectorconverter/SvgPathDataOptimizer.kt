@@ -29,6 +29,7 @@ internal object SvgPathDataOptimizer {
         val exactDuplicatePathsRemoved: Int = 0,
         val translatedGroupsFlattened: Int = 0,
         val translatedPaths: Int = 0,
+        val identityTransformAttributesRemoved: Int = 0,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
@@ -143,7 +144,8 @@ internal object SvgPathDataOptimizer {
         }
 
         val groupCleanup = removeEmptyGroups(pathsPrunedXml)
-        val groupFlattening = flattenRedundantGroups(groupCleanup.xml)
+        val identityCleanup = removeIdentityGroupTransformAttributes(groupCleanup.xml)
+        val groupFlattening = flattenRedundantGroups(identityCleanup.xml)
         val translationFlattening = flattenTranslationOnlyGroups(groupFlattening.xml)
         val duplicateRemoval = removeExactAdjacentDuplicatePaths(translationFlattening.xml)
         val pathMerging = mergeCompatibleAdjacentPaths(duplicateRemoval.xml)
@@ -168,6 +170,7 @@ internal object SvgPathDataOptimizer {
                 exactDuplicatePathsRemoved = duplicateRemoval.removedCount,
                 translatedGroupsFlattened = translationFlattening.flattenedGroups,
                 translatedPaths = translationFlattening.translatedPaths,
+                identityTransformAttributesRemoved = identityCleanup.removedAttributes,
                 shorterCommandFormsSelected = shorterCommandFormsSelected,
                 relativeCommandsSelected = relativeCommandsSelected,
                 axisCommandsSelected = axisCommandsSelected,
@@ -304,6 +307,85 @@ internal object SvgPathDataOptimizer {
         }
 
         return output.joinToString("\n")
+    }
+
+
+    private data class IdentityGroupCleanupResult(
+        val xml: String,
+        val removedAttributes: Int
+    )
+
+    /**
+     * Removes identity transform attributes from VectorDrawable groups.
+     *
+     * Safe identity values are:
+     * - translateX/translateY = 0
+     * - scaleX/scaleY = 1
+     * - rotation = 0
+     * - pivotX/pivotY when the group has no effective scale or rotation
+     *
+     * Unknown attributes and non-numeric resource values are preserved. Once an
+     * identity-only group becomes attribute-free, the normal redundant-group pass
+     * may safely promote its children, subject to the existing clip-path guard.
+     */
+    private fun removeIdentityGroupTransformAttributes(xml: String): IdentityGroupCleanupResult {
+        val groupOpeningRegex = Regex(
+            """<group\b(?:\"[^\"]*\"|'[^']*'|[^>])*?>""",
+            RegexOption.IGNORE_CASE
+        )
+        var removed = 0
+
+        val cleaned = groupOpeningRegex.replace(xml) { match ->
+            val tag = match.value
+            val attrs = androidAttributeRegex.findAll(tag).toList()
+            if (attrs.isEmpty()) return@replace tag
+
+            fun numeric(name: String, default: BigDecimal): BigDecimal? {
+                val attr = attrs.firstOrNull { it.groupValues[1].equals(name, true) }
+                    ?: return default
+                return attr.groupValues[3].trim().toBigDecimalOrNull()
+            }
+
+            val scaleX = numeric("scaleX", BigDecimal.ONE)
+            val scaleY = numeric("scaleY", BigDecimal.ONE)
+            val rotation = numeric("rotation", BigDecimal.ZERO)
+            val pivotIsIrrelevant =
+                scaleX != null && scaleY != null && rotation != null &&
+                    scaleX.compareTo(BigDecimal.ONE) == 0 &&
+                    scaleY.compareTo(BigDecimal.ONE) == 0 &&
+                    rotation.compareTo(BigDecimal.ZERO) == 0
+
+            val removable = attrs.filter { attr ->
+                val name = attr.groupValues[1].lowercase()
+                val value = attr.groupValues[3].trim().toBigDecimalOrNull()
+                    ?: return@filter false
+                when (name) {
+                    "translatex", "translatey", "rotation" ->
+                        value.compareTo(BigDecimal.ZERO) == 0
+                    "scalex", "scaley" ->
+                        value.compareTo(BigDecimal.ONE) == 0
+                    "pivotx", "pivoty" -> pivotIsIrrelevant
+                    else -> false
+                }
+            }
+
+            if (removable.isEmpty()) return@replace tag
+
+            val out = StringBuilder(tag)
+            for (attr in removable.sortedByDescending { it.range.first }) {
+                var start = attr.range.first
+                var end = attr.range.last + 1
+                while (start > 0 && out[start - 1].isWhitespace()) start--
+                out.delete(start, end)
+                removed++
+            }
+
+            out.toString()
+                .replace(Regex("""\s+>"""), ">")
+                .replace(Regex("""<group\s*>""", RegexOption.IGNORE_CASE), "<group>")
+        }
+
+        return IdentityGroupCleanupResult(cleaned, removed)
     }
 
     private data class GroupCleanupResult(
