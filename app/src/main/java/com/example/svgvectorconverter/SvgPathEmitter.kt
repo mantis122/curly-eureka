@@ -307,15 +307,20 @@ object SvgPathEmitter {
             var currentIndent = indent
             var openedGroupCount = 0
 
-            if (hasClipPath) {
-                output.appendLine("${currentIndent}<group>")
-                SvgTreeConverter.appendClipPath(output, clipPathId, currentIndent + "    ")
+            // A clip path attached to a transformed SVG element lives in the
+            // element's local coordinate space. Therefore the Android transform
+            // group must wrap both the clip-path and the drawable path. Emitting
+            // the clip outside the transform leaves it unscaled and can clip the
+            // transformed geometry away entirely.
+            if (effectiveTransform != null) {
+                SvgTransformParser.appendCombinedTransformGroupStart(output, effectiveTransform, currentIndent)
                 currentIndent += "    "
                 openedGroupCount++
             }
 
-            if (effectiveTransform != null) {
-                SvgTransformParser.appendCombinedTransformGroupStart(output, effectiveTransform, currentIndent)
+            if (hasClipPath) {
+                output.appendLine("${currentIndent}<group>")
+                SvgTreeConverter.appendClipPath(output, clipPathId, currentIndent + "    ")
                 currentIndent += "    "
                 openedGroupCount++
             }
@@ -679,15 +684,20 @@ object SvgPathEmitter {
             var currentIndent = indent
             var openedGroupCount = 0
 
-            if (hasClipPath) {
-                output.appendLine("${currentIndent}<group>")
-                SvgTreeConverter.appendClipPath(output, clipPathId, currentIndent + "    ")
+            // A clip path attached to a transformed SVG element lives in the
+            // element's local coordinate space. Therefore the Android transform
+            // group must wrap both the clip-path and the drawable path. Emitting
+            // the clip outside the transform leaves it unscaled and can clip the
+            // transformed geometry away entirely.
+            if (effectiveTransform != null) {
+                SvgTransformParser.appendCombinedTransformGroupStart(output, effectiveTransform, currentIndent)
                 currentIndent += "    "
                 openedGroupCount++
             }
 
-            if (effectiveTransform != null) {
-                SvgTransformParser.appendCombinedTransformGroupStart(output, effectiveTransform, currentIndent)
+            if (hasClipPath) {
+                output.appendLine("${currentIndent}<group>")
+                SvgTreeConverter.appendClipPath(output, clipPathId, currentIndent + "    ")
                 currentIndent += "    "
                 openedGroupCount++
             }
