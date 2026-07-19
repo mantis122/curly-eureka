@@ -569,7 +569,19 @@ internal object SvgPathDataOptimizer {
         var strokeWidthsScaled = 0
 
         while (true) {
-            val candidate = findMatchedGroups(current)
+            val matchedGroups = findMatchedGroups(current)
+            val candidate = matchedGroups
+                .asSequence()
+                // A9.1 intentionally handles only top-level scale groups. A group
+                // nested inside another group must remain untouched so that nested
+                // transform composition can be handled by a later dedicated pass.
+                .filterNot { range ->
+                    matchedGroups.any { ancestor ->
+                        ancestor !== range &&
+                            ancestor.start < range.start &&
+                            ancestor.end > range.end
+                    }
+                }
                 .sortedBy { it.end - it.start }
                 .firstOrNull { range ->
                     val openingTag = current.substring(range.start, range.openingEnd)
