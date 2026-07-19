@@ -1773,13 +1773,6 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 var currentIndent = indent
                 var openedGroupCount = 0
 
-                if (hasClipPath) {
-                    output.appendLine("${currentIndent}<group>")
-                    appendClipPath(output, groupClipPathId, currentIndent + "    ")
-                    currentIndent += "    "
-                    openedGroupCount++
-                }
-
                 val groupMatrix = SvgTransformParser.combineTransformListToMatrix(transforms, currentTransformOrigin)
                 val combinedTransform = groupMatrix?.toAndroidGroupTransform(
                     preferredPivotX = currentTransformOrigin?.x,
@@ -1790,8 +1783,20 @@ val currentTransformOrigin = SvgTransformParser.parseTransformOrigin(
                 val childScaleX = inheritedScaleX * groupScaleEstimate.scaleX
                 val childScaleY = inheritedScaleY * groupScaleEstimate.scaleY
 
+                // The SVG group's transform applies to both its clip path and its drawable
+                // children. Therefore, when the transform can be represented as an Android
+                // <group>, that transform group must wrap the clip group rather than sit
+                // inside it. Otherwise the clip remains in the untransformed coordinate
+                // space while only the drawable geometry is transformed.
                 if (combinedTransform != null) {
                     SvgTransformParser.appendCombinedTransformGroupStart(output, combinedTransform, currentIndent)
+                    currentIndent += "    "
+                    openedGroupCount++
+                }
+
+                if (hasClipPath) {
+                    output.appendLine("${currentIndent}<group>")
+                    appendClipPath(output, groupClipPathId, currentIndent + "    ")
                     currentIndent += "    "
                     openedGroupCount++
                 }
