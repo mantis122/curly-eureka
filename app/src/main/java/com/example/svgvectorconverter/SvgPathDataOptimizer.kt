@@ -27,6 +27,8 @@ internal object SvgPathDataOptimizer {
         val redundantGroupsFlattened: Int = 0,
         val compatiblePathsMerged: Int = 0,
         val exactDuplicatePathsRemoved: Int = 0,
+        val translatedGroupsFlattened: Int = 0,
+        val translatedPaths: Int = 0,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
@@ -142,7 +144,8 @@ internal object SvgPathDataOptimizer {
 
         val groupCleanup = removeEmptyGroups(pathsPrunedXml)
         val groupFlattening = flattenRedundantGroups(groupCleanup.xml)
-        val duplicateRemoval = removeExactAdjacentDuplicatePaths(groupFlattening.xml)
+        val translationFlattening = flattenTranslationOnlyGroups(groupFlattening.xml)
+        val duplicateRemoval = removeExactAdjacentDuplicatePaths(translationFlattening.xml)
         val pathMerging = mergeCompatibleAdjacentPaths(duplicateRemoval.xml)
         val finalXml = formatVectorXml(pathMerging.xml)
         val charactersAfter = pathDataAttributeRegex.findAll(finalXml)
@@ -163,6 +166,8 @@ internal object SvgPathDataOptimizer {
                 redundantGroupsFlattened = groupFlattening.flattenedCount,
                 compatiblePathsMerged = pathMerging.mergedCount,
                 exactDuplicatePathsRemoved = duplicateRemoval.removedCount,
+                translatedGroupsFlattened = translationFlattening.flattenedGroups,
+                translatedPaths = translationFlattening.translatedPaths,
                 shorterCommandFormsSelected = shorterCommandFormsSelected,
                 relativeCommandsSelected = relativeCommandsSelected,
                 axisCommandsSelected = axisCommandsSelected,
@@ -433,6 +438,195 @@ internal object SvgPathDataOptimizer {
         }
 
         return if (dedented.isEmpty()) "" else "\n$dedented\n"
+    }
+
+
+    private data class TranslationFlatteningResult(
+        val xml: String,
+        val flattenedGroups: Int,
+        val translatedPaths: Int
+    )
+
+    /**
+     * Flattens a deliberately narrow class of translation-only groups.
+     *
+     * A group is eligible only when:
+     * - its only attributes are android:translateX and/or android:translateY;
+     * - at least one translation component is non-zero;
+     * - its body contains only comments, whitespace, and direct self-closing paths;
+     * - it contains no nested group, clip-path, or nested aapt paint.
+     *
+     * The translation is baked into every path coordinate, then the wrapper is
+     * removed. Rejecting nested paint keeps viewport-space gradient semantics
+     * unchanged. This is intentionally conservative for the first A7 pass.
+     */
+    private fun flattenTranslationOnlyGroups(xml: String): TranslationFlatteningResult {
+        var current = xml
+        var groupsFlattened = 0
+        var pathsTranslated = 0
+
+        while (true) {
+            val candidate = findMatchedGroups(current)
+                .sortedBy { it.end - it.start }
+                .firstOrNull { range ->
+                    val openingTag = current.substring(range.start, range.openingEnd)
+                    val body = current.substring(range.openingEnd, range.closingStart)
+                    translationForGroup(openingTag) != null && isDirectSimplePathBody(body)
+                } ?: break
+
+            val openingTag = current.substring(candidate.start, candidate.openingEnd)
+            val (dx, dy) = translationForGroup(openingTag) ?: break
+            val body = current.substring(candidate.openingEnd, candidate.closingStart)
+            var translatedCount = 0
+            var failed = false
+
+            val translatedBody = pathElementRegex.replace(body) { match ->
+                if (failed) return@replace match.value
+                val element = match.value
+                if (!element.trimEnd().endsWith("/>") || element.contains("<aapt:attr", true)) {
+                    failed = true
+                    return@replace element
+                }
+                val pathData = attributeValue(element, "android:pathData")
+                if (pathData == null) {
+                    failed = true
+                    return@replace element
+                }
+                val translated = translatePathData(pathData, dx, dy)
+                if (translated == null) {
+                    failed = true
+                    element
+                } else {
+                    translatedCount++
+                    replacePathData(element, translated)
+                }
+            }
+
+            if (failed || translatedCount == 0) {
+                // No later pass can make this same candidate eligible, so stop
+                // rather than risking an endless retry loop.
+                break
+            }
+
+            val replacement = removeOneIndentLevel(translatedBody)
+            current = buildString(current.length) {
+                append(current, 0, candidate.start)
+                append(replacement)
+                append(current, candidate.end, current.length)
+            }
+            groupsFlattened++
+            pathsTranslated += translatedCount
+        }
+
+        return TranslationFlatteningResult(current, groupsFlattened, pathsTranslated)
+    }
+
+    private fun translationForGroup(openingTag: String): Pair<BigDecimal, BigDecimal>? {
+        val trimmed = openingTag.trim()
+        if (!trimmed.startsWith("<group", ignoreCase = true) || !trimmed.endsWith('>')) return null
+
+        val attributes = androidAttributeRegex.findAll(openingTag).toList()
+        val names = attributes.map { it.groupValues[1].lowercase() }
+        if (names.any { it != "translatex" && it != "translatey" }) return null
+
+        // Reject unknown/non-Android attributes as well. The text remaining after
+        // removing the element name and recognized attributes must be empty.
+        var remainder = openingTag
+            .replace(Regex("""^\s*<group\b""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex(""">\s*$"""), "")
+        remainder = androidAttributeRegex.replace(remainder, "")
+        if (remainder.isNotBlank()) return null
+
+        val dx = attributes.firstOrNull { it.groupValues[1].equals("translateX", true) }
+            ?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val dy = attributes.firstOrNull { it.groupValues[1].equals("translateY", true) }
+            ?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        if (dx.compareTo(BigDecimal.ZERO) == 0 && dy.compareTo(BigDecimal.ZERO) == 0) return null
+        return dx to dy
+    }
+
+    private fun isDirectSimplePathBody(body: String): Boolean {
+        if (Regex("""<(?:group|clip-path)\b""", RegexOption.IGNORE_CASE).containsMatchIn(body)) return false
+        if (body.contains("<aapt:attr", ignoreCase = true)) return false
+
+        val withoutComments = xmlCommentRegex.replace(body, "")
+        val withoutPaths = pathElementRegex.replace(withoutComments) { match ->
+            if (match.value.trimEnd().endsWith("/>")) "" else match.value
+        }
+        return withoutPaths.isBlank() && pathElementRegex.containsMatchIn(body)
+    }
+
+    private fun translatePathData(
+        pathData: String,
+        dx: BigDecimal,
+        dy: BigDecimal
+    ): String? {
+        val segments = parseNormalizedSegments(pathData) ?: return null
+        if (segments.isEmpty()) return null
+
+        val output = StringBuilder(pathData.length + 16)
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val absolute = absoluteValuesFor(segment, currentX, currentY)
+            val translated = when (upper) {
+                'M', 'L', 'T' -> listOf(absolute[0].add(dx), absolute[1].add(dy))
+                'H' -> listOf(absolute[0].add(dx))
+                'V' -> listOf(absolute[0].add(dy))
+                'C' -> listOf(
+                    absolute[0].add(dx), absolute[1].add(dy),
+                    absolute[2].add(dx), absolute[3].add(dy),
+                    absolute[4].add(dx), absolute[5].add(dy)
+                )
+                'S', 'Q' -> listOf(
+                    absolute[0].add(dx), absolute[1].add(dy),
+                    absolute[2].add(dx), absolute[3].add(dy)
+                )
+                'A' -> listOf(
+                    absolute[0], absolute[1], absolute[2], absolute[3], absolute[4],
+                    absolute[5].add(dx), absolute[6].add(dy)
+                )
+                'Z' -> emptyList()
+                else -> return null
+            }
+
+            output.append(upper)
+            translated.forEachIndexed { index, value ->
+                if (index > 0) output.append(',')
+                output.append(formatBigDecimal(value))
+            }
+
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
+                    if (upper == 'M') {
+                        subpathX = currentX
+                        subpathY = currentY
+                    }
+                }
+                'H' -> currentX = absolute[0]
+                'V' -> currentY = absolute[0]
+                'C', 'S', 'Q' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
+                }
+                'A' -> {
+                    currentX = absolute[5]
+                    currentY = absolute[6]
+                }
+                'Z' -> {
+                    currentX = subpathX
+                    currentY = subpathY
+                }
+            }
+        }
+
+        return optimizePathData(output.toString()).pathData
     }
 
 

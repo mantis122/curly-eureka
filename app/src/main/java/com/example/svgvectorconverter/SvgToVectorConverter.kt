@@ -314,6 +314,8 @@ object SvgToVectorConverter {
                 redundantGroupsFlattened = pathOptimizationStats.redundantGroupsFlattened,
                 compatiblePathsMerged = pathOptimizationStats.compatiblePathsMerged,
                 exactDuplicatePathsRemoved = pathOptimizationStats.exactDuplicatePathsRemoved,
+                translatedGroupsFlattened = pathOptimizationStats.translatedGroupsFlattened,
+                translatedPaths = pathOptimizationStats.translatedPaths,
                 shorterCommandFormsSelected = pathOptimizationStats.shorterCommandFormsSelected,
                 relativeCommandsSelected = pathOptimizationStats.relativeCommandsSelected,
                 axisCommandsSelected = pathOptimizationStats.axisCommandsSelected,
