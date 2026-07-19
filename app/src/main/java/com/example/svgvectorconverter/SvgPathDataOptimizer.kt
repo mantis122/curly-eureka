@@ -540,22 +540,26 @@ internal object SvgPathDataOptimizer {
     private data class UniformScale(
         val factor: BigDecimal,
         val pivotX: BigDecimal,
-        val pivotY: BigDecimal
+        val pivotY: BigDecimal,
+        val translateX: BigDecimal,
+        val translateY: BigDecimal
     )
 
     /**
      * Flattens a deliberately narrow class of uniform positive-scale groups.
      *
      * A group is eligible only when:
-     * - its only attributes are scaleX/scaleY and optional pivotX/pivotY;
+     * - its only attributes are scaleX/scaleY plus optional pivotX/pivotY and
+     *   translateX/translateY;
      * - scaleX and scaleY are equal, finite numeric values greater than zero;
      * - the effective scale is not 1;
      * - its body contains only comments, whitespace, and direct self-closing paths;
      * - it contains no nested group, clip-path, or nested aapt paint; and
      * - every explicit strokeWidth is numeric.
      *
-     * Coordinates are scaled around the VectorDrawable pivot and numeric stroke
-     * widths are multiplied by the same factor. Positive uniform scale preserves
+     * Coordinates are scaled around the VectorDrawable pivot and then translated,
+     * matching VectorDrawable group-transform semantics. Numeric stroke widths are
+     * multiplied by the scale factor. Positive uniform scale preserves
      * arc sweep direction, stroke joins/caps, and path winding.
      */
     private fun flattenUniformPositiveScaleGroups(xml: String): ScaleFlatteningResult {
@@ -600,7 +604,9 @@ internal object SvgPathDataOptimizer {
                     pathData = pathData,
                     factor = scale.factor,
                     pivotX = scale.pivotX,
-                    pivotY = scale.pivotY
+                    pivotY = scale.pivotY,
+                    translateX = scale.translateX,
+                    translateY = scale.translateY
                 )
                 if (scaledPathData == null) {
                     failed = true
@@ -653,11 +659,14 @@ internal object SvgPathDataOptimizer {
         if (!trimmed.startsWith("<group", ignoreCase = true) || !trimmed.endsWith('>')) return null
 
         val attributes = androidAttributeRegex.findAll(openingTag).toList()
-        val allowed = setOf("scalex", "scaley", "pivotx", "pivoty")
+        val allowed = setOf(
+            "scalex", "scaley", "pivotx", "pivoty", "translatex", "translatey"
+        )
         val names = attributes.map { it.groupValues[1].lowercase() }
         if (names.any { it !in allowed }) return null
         if (names.count { it == "scalex" } > 1 || names.count { it == "scaley" } > 1 ||
-            names.count { it == "pivotx" } > 1 || names.count { it == "pivoty" } > 1
+            names.count { it == "pivotx" } > 1 || names.count { it == "pivoty" } > 1 ||
+            names.count { it == "translatex" } > 1 || names.count { it == "translatey" } > 1
         ) return null
 
         var remainder = openingTag
@@ -677,8 +686,12 @@ internal object SvgPathDataOptimizer {
             ?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
         val pivotY = attributes.firstOrNull { it.groupValues[1].equals("pivotY", true) }
             ?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val translateX = attributes.firstOrNull { it.groupValues[1].equals("translateX", true) }
+            ?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val translateY = attributes.firstOrNull { it.groupValues[1].equals("translateY", true) }
+            ?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
 
-        return UniformScale(scaleX, pivotX, pivotY)
+        return UniformScale(scaleX, pivotX, pivotY, translateX, translateY)
     }
 
     private fun allExplicitStrokeWidthsAreNumeric(body: String): Boolean {
@@ -703,15 +716,17 @@ internal object SvgPathDataOptimizer {
         pathData: String,
         factor: BigDecimal,
         pivotX: BigDecimal,
-        pivotY: BigDecimal
+        pivotY: BigDecimal,
+        translateX: BigDecimal,
+        translateY: BigDecimal
     ): String? {
         val segments = parseNormalizedSegments(pathData) ?: return null
         if (segments.isEmpty()) return null
 
         fun scaledX(value: BigDecimal): BigDecimal =
-            pivotX.add(value.subtract(pivotX).multiply(factor))
+            pivotX.add(value.subtract(pivotX).multiply(factor)).add(translateX)
         fun scaledY(value: BigDecimal): BigDecimal =
-            pivotY.add(value.subtract(pivotY).multiply(factor))
+            pivotY.add(value.subtract(pivotY).multiply(factor)).add(translateY)
 
         val output = StringBuilder(pathData.length + 24)
         var currentX = BigDecimal.ZERO
