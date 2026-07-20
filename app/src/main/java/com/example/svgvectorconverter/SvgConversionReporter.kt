@@ -156,7 +156,6 @@ data class SvgConversionReportData(
     val scaledPaths: Int = 0,
     val scaledStrokeWidths: Int = 0,
     val identityTransformAttributesRemoved: Int = 0,
-    val nestedTransformGroupsComposed: Int = 0,
     val shorterCommandFormsSelected: Int = 0,
     val relativeCommandsSelected: Int = 0,
     val axisCommandsSelected: Int = 0,
@@ -402,13 +401,28 @@ object SvgConversionReporter {
             appendLine()
             appendLine("✓ Path data optimized: ${data.pathDataOptimizedCount}")
             appendLine("✓ Path-data characters: ${data.pathDataCharactersBefore} → ${data.pathDataCharactersAfter}")
-            val pathCharactersSaved = (data.pathDataCharactersBefore - data.pathDataCharactersAfter).coerceAtLeast(0)
-            val pathReductionPercent = if (data.pathDataCharactersBefore > 0) {
-                pathCharactersSaved * 100.0 / data.pathDataCharactersBefore.toDouble()
+            val pathCharacterDelta =
+                data.pathDataCharactersAfter - data.pathDataCharactersBefore
+            val pathChangePercent = if (data.pathDataCharactersBefore > 0) {
+                kotlin.math.abs(pathCharacterDelta) * 100.0 /
+                    data.pathDataCharactersBefore.toDouble()
             } else {
                 0.0
             }
-            appendLine("✓ Path data reduced by $pathCharactersSaved characters (${String.format(java.util.Locale.US, "%.1f", pathReductionPercent)}%)")
+            when {
+                pathCharacterDelta < 0 ->
+                    appendLine(
+                        "✓ Path data reduced by ${-pathCharacterDelta} characters " +
+                            "(${String.format(java.util.Locale.US, "%.1f", pathChangePercent)}%)"
+                    )
+                pathCharacterDelta > 0 ->
+                    appendLine(
+                        "• Path data increased by $pathCharacterDelta characters " +
+                            "(${String.format(java.util.Locale.US, "%.1f", pathChangePercent)}%)"
+                    )
+                else ->
+                    appendLine("✓ Path data size unchanged")
+            }
 
             val xmlCharactersSaved = (data.optimizedXmlCharactersBefore - data.optimizedXmlCharactersAfter).coerceAtLeast(0)
             val xmlReductionPercent = if (data.optimizedXmlCharactersBefore > 0) {
@@ -446,8 +460,6 @@ object SvgConversionReporter {
                 appendLine("✓ Stroke widths scaled: ${data.scaledStrokeWidths}")
             if (data.identityTransformAttributesRemoved > 0)
                 appendLine("✓ Identity transform attributes removed: ${data.identityTransformAttributesRemoved}")
-            if (data.nestedTransformGroupsComposed > 0)
-                appendLine("✓ Nested transform groups composed: ${data.nestedTransformGroupsComposed}")
             if (data.compatiblePathsMerged > 0)
                 appendLine("✓ Compatible adjacent paths merged: ${data.compatiblePathsMerged}")
             if (data.shorterCommandFormsSelected > 0)

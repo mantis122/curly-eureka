@@ -274,6 +274,7 @@ internal object SvgPathDataOptimizer {
         }
 
         var formatted = removeOrphanedConversionComments(compacted.joinToString("\n"))
+        formatted = normalizeGroupFormatting(formatted)
 
         // Collapse three or more consecutive blank lines to one blank line.
         formatted = Regex("""\n[ \t]*\n(?:[ \t]*\n)+""")
@@ -298,6 +299,122 @@ internal object SvgPathDataOptimizer {
         }
 
         return output.joinToString("\n").trimEnd() + "\n"
+    }
+
+
+    /**
+     * Normalizes presentation of emitted <group> blocks without changing XML
+     * structure or attributes.
+     *
+     * This pass:
+     * - aligns group attributes four spaces under the opening tag;
+     * - moves a standalone closing ">" onto the final attribute line;
+     * - indents comments and child elements one level inside the group;
+     * - keeps exactly one blank line between the opening tag and its body.
+     *
+     * Groups are formatted from the inside out until the document is stable so
+     * nested groups retain correct relative indentation.
+     */
+    private fun normalizeGroupFormatting(xml: String): String {
+        var current = xml
+
+        while (true) {
+            val candidate = findMatchedGroups(current)
+                .sortedBy { it.end - it.start }
+                .firstNotNullOfOrNull { range ->
+                    val original = current.substring(range.start, range.end)
+                    val opening = current.substring(range.start, range.openingEnd)
+                    val body = current.substring(range.openingEnd, range.closingStart)
+                    val replacement = formatSingleGroupBlock(opening, body)
+                    if (replacement == original) null else range to replacement
+                } ?: break
+
+            val (range, replacement) = candidate
+            current = buildString(current.length - (range.end - range.start) + replacement.length) {
+                append(current, 0, range.start)
+                append(replacement)
+                append(current, range.end, current.length)
+            }
+        }
+
+        return current
+    }
+
+    private fun formatSingleGroupBlock(
+        openingTag: String,
+        body: String
+    ): String {
+        val lineStart = openingTag.lastIndexOf('\n', openingTag.indexOf("<group"))
+            .let { if (it < 0) 0 else it + 1 }
+        val baseIndent = openingTag.substring(lineStart, openingTag.indexOf("<group"))
+            .takeWhile { it == ' ' || it == '\t' }
+
+        val openingLines = openingTag
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
+            .lines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toMutableList()
+
+        if (openingLines.isEmpty()) return openingTag + body + "</group>"
+
+        val normalizedOpening = if (openingLines.size == 1) {
+            baseIndent + openingLines.single()
+        } else {
+            if (openingLines.last() == ">") {
+                openingLines.removeAt(openingLines.lastIndex)
+                if (openingLines.isNotEmpty()) {
+                    openingLines[openingLines.lastIndex] =
+                        openingLines.last() + ">"
+                }
+            }
+            buildString {
+                append(baseIndent)
+                append(openingLines.first())
+                for (line in openingLines.drop(1)) {
+                    append('\n')
+                    append(baseIndent)
+                    append("    ")
+                    append(line)
+                }
+            }
+        }
+
+        val normalizedBody = body
+            .replace("\r\n", "\n")
+            .replace('\r', '\n')
+            .lines()
+            .dropWhile { it.isBlank() }
+            .dropLastWhile { it.isBlank() }
+
+        if (normalizedBody.isEmpty()) {
+            return "$normalizedOpening\n$baseIndent</group>"
+        }
+
+        val nonBlank = normalizedBody.filter { it.isNotBlank() }
+        val commonIndent = nonBlank.minOfOrNull { line ->
+            line.indexOfFirst { !it.isWhitespace() }
+                .let { if (it < 0) 0 else it }
+        } ?: 0
+        val childIndent = "$baseIndent    "
+
+        val formattedBody = normalizedBody.joinToString("\n") { line ->
+            if (line.isBlank()) {
+                ""
+            } else {
+                childIndent + line.drop(commonIndent)
+            }
+        }
+
+        return buildString {
+            append(normalizedOpening)
+            append("\n\n")
+            append(formattedBody)
+            append('\n')
+            append(baseIndent)
+            append("</group>")
+        }
     }
 
     private fun removeOrphanedConversionComments(xml: String): String {
