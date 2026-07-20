@@ -165,12 +165,16 @@ internal object SvgPathDataOptimizer {
         val scaleFlattening = flattenUniformPositiveScaleGroups(groupFlattening.xml)
         val translationFlattening = flattenTranslationOnlyGroups(scaleFlattening.xml)
         val nearIntegerSnapping = snapNearIntegerPathValues(translationFlattening.xml)
-        val decimalCanonicalization =
-            canonicalizePathDecimalPrecision(nearIntegerSnapping.xml)
         val duplicateRemoval =
-            removeExactAdjacentDuplicatePaths(decimalCanonicalization.xml)
+            removeExactAdjacentDuplicatePaths(nearIntegerSnapping.xml)
         val pathMerging = mergeCompatibleAdjacentPaths(duplicateRemoval.xml)
-        val finalXml = formatVectorXml(pathMerging.xml)
+
+        // A11.2.1: run decimal canonicalization after every geometry-producing
+        // optimization. Earlier passes may create new relative deltas, so this
+        // must be the final path-data mutation before XML formatting.
+        val decimalCanonicalization =
+            canonicalizePathDecimalPrecision(pathMerging.xml)
+        val finalXml = formatVectorXml(decimalCanonicalization.xml)
         val charactersAfter = pathDataAttributeRegex.findAll(finalXml)
             .sumOf { it.groupValues[1].length }
 
@@ -341,12 +345,13 @@ internal object SvgPathDataOptimizer {
                     }
 
                 val canonical = formatBigDecimal(canonicalValue)
-                val originalCanonical = formatBigDecimal(value)
                 rebuilt.append(canonical)
 
-                if (canonical != originalCanonical ||
-                    token.contains('e', ignoreCase = true)
-                ) {
+                // Compare against the actual token spelling, not another
+                // normalized BigDecimal representation. This catches long
+                // fractional values, scientific notation, trailing zeroes,
+                // leading plus signs, and negative zero reliably.
+                if (canonical != token) {
                     changedCount++
                 }
             }
@@ -355,13 +360,15 @@ internal object SvgPathDataOptimizer {
         }
         rebuilt.append(pathData, lastEnd, pathData.length)
 
-        if (changedCount == 0) {
+        val rebuiltPathData = rebuilt.toString()
+        if (changedCount == 0 && rebuiltPathData == pathData) {
             return CanonicalizedPathData(pathData, 0)
         }
 
-        // Reapply the existing lossless command/separator optimizer to the
-        // canonicalized values.
-        val optimized = optimizePathData(rebuilt.toString()).pathData
+        // Reapply the existing lossless command/separator optimizer only to
+        // the rebuilt canonical data. No earlier high-precision spelling is
+        // available to be selected again.
+        val optimized = optimizePathData(rebuiltPathData).pathData
         return CanonicalizedPathData(optimized, changedCount)
     }
 
