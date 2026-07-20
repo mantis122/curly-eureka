@@ -149,8 +149,12 @@ internal object SvgPathDataOptimizer {
 
         val groupCleanup = removeEmptyGroups(pathsPrunedXml)
         val identityCleanup = removeIdentityGroupTransformAttributes(groupCleanup.xml)
-        val transformComposition = composeNestedParentTranslationGroups(identityCleanup.xml)
-        val groupFlattening = flattenRedundantGroups(transformComposition.xml)
+        val translationComposition = composeNestedParentTranslationGroups(identityCleanup.xml)
+        val compatibleComposition =
+            composeNestedCompatibleSamePivotGroups(translationComposition.xml)
+        val postCompositionIdentityCleanup =
+            removeIdentityGroupTransformAttributes(compatibleComposition.xml)
+        val groupFlattening = flattenRedundantGroups(postCompositionIdentityCleanup.xml)
         val scaleFlattening = flattenUniformPositiveScaleGroups(groupFlattening.xml)
         val translationFlattening = flattenTranslationOnlyGroups(scaleFlattening.xml)
         val duplicateRemoval = removeExactAdjacentDuplicatePaths(translationFlattening.xml)
@@ -179,8 +183,12 @@ internal object SvgPathDataOptimizer {
                 scaledGroupsFlattened = scaleFlattening.flattenedGroups,
                 scaledPaths = scaleFlattening.scaledPaths,
                 scaledStrokeWidths = scaleFlattening.scaledStrokeWidths,
-                identityTransformAttributesRemoved = identityCleanup.removedAttributes,
-                nestedTransformGroupsComposed = transformComposition.composedGroups,
+                identityTransformAttributesRemoved =
+                    identityCleanup.removedAttributes +
+                        postCompositionIdentityCleanup.removedAttributes,
+                nestedTransformGroupsComposed =
+                    translationComposition.composedGroups +
+                        compatibleComposition.composedGroups,
                 shorterCommandFormsSelected = shorterCommandFormsSelected,
                 relativeCommandsSelected = relativeCommandsSelected,
                 axisCommandsSelected = axisCommandsSelected,
@@ -498,16 +506,7 @@ internal object SvgPathDataOptimizer {
                     val translation = translationForGroup(outerOpening)
                         ?: return@firstNotNullOfOrNull null
 
-                    val directChildren = groups.filter { child ->
-                        child.start >= outer.openingEnd &&
-                            child.end <= outer.closingStart &&
-                            groups.none { between ->
-                                between.start >= outer.openingEnd &&
-                                    between.end <= outer.closingStart &&
-                                    between.start < child.start &&
-                                    between.end > child.end
-                            }
-                    }
+                    val directChildren = directChildGroups(outer, groups)
                     if (directChildren.size != 1) return@firstNotNullOfOrNull null
 
                     val child = directChildren.single()
@@ -546,6 +545,218 @@ internal object SvgPathDataOptimizer {
 
         return TransformCompositionResult(current, composed)
     }
+
+
+    private data class RotationOnlyTransform(
+        val rotation: BigDecimal,
+        val pivotX: BigDecimal,
+        val pivotY: BigDecimal
+    )
+
+    private data class ScaleOnlyTransform(
+        val scaleX: BigDecimal,
+        val scaleY: BigDecimal,
+        val pivotX: BigDecimal,
+        val pivotY: BigDecimal
+    )
+
+    /**
+     * A10.2: composes nested transform groups when both groups represent the
+     * same kind of transform around the same pivot.
+     *
+     * Supported exact combinations:
+     * - rotation-only parent + rotation-only child: angles are added;
+     * - scale-only parent + scale-only child: X/Y factors are multiplied.
+     *
+     * Both groups must contain only their recognized numeric transform
+     * attributes, and the parent must contain comments/whitespace plus exactly
+     * one direct child group. Translation is deliberately excluded here because
+     * A10.1 already handles translation-only parents and mixed transform order
+     * cannot in general be represented by simply combining attribute values.
+     */
+    private fun composeNestedCompatibleSamePivotGroups(
+        xml: String
+    ): TransformCompositionResult {
+        var current = xml
+        var composed = 0
+
+        while (true) {
+            val groups = findMatchedGroups(current)
+            val candidate = groups
+                .sortedBy { it.end - it.start }
+                .firstNotNullOfOrNull { outer ->
+                    val directChildren = directChildGroups(outer, groups)
+                    if (directChildren.size != 1) return@firstNotNullOfOrNull null
+
+                    val child = directChildren.single()
+                    val beforeChild = current.substring(outer.openingEnd, child.start)
+                    val afterChild = current.substring(child.end, outer.closingStart)
+                    if (!commentsAndWhitespaceOnly(beforeChild) ||
+                        !commentsAndWhitespaceOnly(afterChild)
+                    ) {
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    val outerOpening = current.substring(outer.start, outer.openingEnd)
+                    val childOpening = current.substring(child.start, child.openingEnd)
+
+                    val outerRotation = rotationOnlyForGroup(outerOpening)
+                    val childRotation = rotationOnlyForGroup(childOpening)
+                    if (outerRotation != null &&
+                        childRotation != null &&
+                        samePivot(outerRotation, childRotation)
+                    ) {
+                        val updated = replaceNumericGroupAttribute(
+                            childOpening,
+                            "rotation",
+                            outerRotation.rotation.add(childRotation.rotation)
+                        )
+                        return@firstNotNullOfOrNull Triple(outer, child, updated)
+                    }
+
+                    val outerScale = scaleOnlyForGroup(outerOpening)
+                    val childScale = scaleOnlyForGroup(childOpening)
+                    if (outerScale != null &&
+                        childScale != null &&
+                        samePivot(outerScale, childScale)
+                    ) {
+                        var updated = replaceNumericGroupAttribute(
+                            childOpening,
+                            "scaleX",
+                            outerScale.scaleX.multiply(childScale.scaleX)
+                        )
+                        updated = replaceNumericGroupAttribute(
+                            updated,
+                            "scaleY",
+                            outerScale.scaleY.multiply(childScale.scaleY)
+                        )
+                        return@firstNotNullOfOrNull Triple(outer, child, updated)
+                    }
+
+                    null
+                } ?: break
+
+            val (outer, child, updatedChildOpening) = candidate
+            val childBodyAndClosing = current.substring(child.openingEnd, child.end)
+            val replacement = updatedChildOpening + childBodyAndClosing
+
+            current = buildString(current.length) {
+                append(current, 0, outer.start)
+                append(replacement)
+                append(current, outer.end, current.length)
+            }
+            composed++
+        }
+
+        return TransformCompositionResult(current, composed)
+    }
+
+    private fun directChildGroups(
+        outer: GroupRange,
+        groups: List<GroupRange>
+    ): List<GroupRange> =
+        groups.filter { child ->
+            child.start >= outer.openingEnd &&
+                child.end <= outer.closingStart &&
+                groups.none { between ->
+                    between.start >= outer.openingEnd &&
+                        between.end <= outer.closingStart &&
+                        between.start < child.start &&
+                        between.end > child.end
+                }
+        }
+
+    private fun rotationOnlyForGroup(openingTag: String): RotationOnlyTransform? {
+        val attrs = recognizedNumericGroupAttributes(
+            openingTag,
+            setOf("rotation", "pivotx", "pivoty")
+        ) ?: return null
+
+        val rotation = attrs["rotation"] ?: BigDecimal.ZERO
+        if (rotation.compareTo(BigDecimal.ZERO) == 0) return null
+
+        return RotationOnlyTransform(
+            rotation = rotation,
+            pivotX = attrs["pivotx"] ?: BigDecimal.ZERO,
+            pivotY = attrs["pivoty"] ?: BigDecimal.ZERO
+        )
+    }
+
+    private fun scaleOnlyForGroup(openingTag: String): ScaleOnlyTransform? {
+        val attrs = recognizedNumericGroupAttributes(
+            openingTag,
+            setOf("scalex", "scaley", "pivotx", "pivoty")
+        ) ?: return null
+
+        val scaleX = attrs["scalex"] ?: BigDecimal.ONE
+        val scaleY = attrs["scaley"] ?: BigDecimal.ONE
+        if (scaleX.compareTo(BigDecimal.ONE) == 0 &&
+            scaleY.compareTo(BigDecimal.ONE) == 0
+        ) {
+            return null
+        }
+
+        return ScaleOnlyTransform(
+            scaleX = scaleX,
+            scaleY = scaleY,
+            pivotX = attrs["pivotx"] ?: BigDecimal.ZERO,
+            pivotY = attrs["pivoty"] ?: BigDecimal.ZERO
+        )
+    }
+
+    private fun recognizedNumericGroupAttributes(
+        openingTag: String,
+        allowedNames: Set<String>
+    ): Map<String, BigDecimal>? {
+        val trimmed = openingTag.trim()
+        if (!trimmed.startsWith("<group", ignoreCase = true) ||
+            !trimmed.endsWith('>')
+        ) {
+            return null
+        }
+
+        val attributes = androidAttributeRegex.findAll(openingTag).toList()
+        val names = attributes.map { it.groupValues[1].lowercase() }
+        if (names.any { it !in allowedNames } || names.distinct().size != names.size) {
+            return null
+        }
+
+        var remainder = openingTag
+            .replace(Regex("""^\s*<group\b""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex(""">\s*$"""), "")
+        remainder = androidAttributeRegex.replace(remainder, "")
+        if (remainder.isNotBlank()) return null
+
+        val result = linkedMapOf<String, BigDecimal>()
+        for (attribute in attributes) {
+            val name = attribute.groupValues[1].lowercase()
+            val value = attribute.groupValues[3].trim().toBigDecimalOrNull()
+                ?: return null
+            result[name] = value
+        }
+        return result
+    }
+
+    private fun samePivot(
+        first: RotationOnlyTransform,
+        second: RotationOnlyTransform
+    ): Boolean =
+        first.pivotX.compareTo(second.pivotX) == 0 &&
+            first.pivotY.compareTo(second.pivotY) == 0
+
+    private fun samePivot(
+        first: ScaleOnlyTransform,
+        second: ScaleOnlyTransform
+    ): Boolean =
+        first.pivotX.compareTo(second.pivotX) == 0 &&
+            first.pivotY.compareTo(second.pivotY) == 0
+
+    private fun replaceNumericGroupAttribute(
+        openingTag: String,
+        name: String,
+        value: BigDecimal
+    ): String =
+        setOrInsertGroupAttribute(openingTag, name, value)
 
     private fun commentsAndWhitespaceOnly(text: String): Boolean =
         xmlCommentRegex.replace(text, "").isBlank()
@@ -604,13 +815,35 @@ internal object SvgPathDataOptimizer {
 
         val closingIndex = openingTag.lastIndexOf('>')
         if (closingIndex < 0) return openingTag
-        val lineIndent = openingTag
-            .substringBefore("<group")
-            .substringAfterLast('\n', "")
-        val attributeIndent = "$lineIndent    "
-        val insertion = "\n${attributeIndent}android:$name=\"$formatted\""
-        return openingTag.substring(0, closingIndex) + insertion +
-            openingTag.substring(closingIndex)
+
+        val beforeClosing = openingTag.substring(0, closingIndex)
+        val contentEnd = beforeClosing.indexOfLast { !it.isWhitespace() } + 1
+        val content = beforeClosing.substring(0, contentEnd)
+
+        val attributeIndent = Regex("""\n([ \t]*)android:""")
+            .find(openingTag)
+            ?.groupValues
+            ?.get(1)
+            ?: "    "
+        val closingIndent = Regex("""\n([ \t]*)>\s*$""")
+            .find(openingTag)
+            ?.groupValues
+            ?.get(1)
+            ?: ""
+
+        return buildString(openingTag.length + name.length + formatted.length + 16) {
+            append(content)
+            append('\n')
+            append(attributeIndent)
+            append("android:")
+            append(name)
+            append("=\"")
+            append(formatted)
+            append('"')
+            append('\n')
+            append(closingIndent)
+            append('>')
+        }
     }
 
     private data class GroupFlatteningResult(
