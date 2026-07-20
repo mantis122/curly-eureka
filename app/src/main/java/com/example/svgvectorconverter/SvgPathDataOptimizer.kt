@@ -25,6 +25,7 @@ internal object SvgPathDataOptimizer {
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
+        val translationGroupsPreservedForSize: Int = 0,
         val emptyPathDataRemoved: Int = 0,
         val moveOnlyPathsRemoved: Int = 0,
         val invisiblePathsRemoved: Int = 0,
@@ -200,6 +201,8 @@ internal object SvgPathDataOptimizer {
                 exactDuplicatePathsRemoved = duplicateRemoval.removedCount,
                 translatedGroupsFlattened = translationFlattening.flattenedGroups,
                 translatedPaths = translationFlattening.translatedPaths,
+                translationGroupsPreservedForSize =
+                    translationFlattening.preservedForSize,
                 scaledGroupsFlattened = scaleFlattening.flattenedGroups,
                 scaledPaths = scaleFlattening.scaledPaths,
                 scaledStrokeWidths = scaleFlattening.scaledStrokeWidths,
@@ -1629,7 +1632,8 @@ internal object SvgPathDataOptimizer {
     private data class TranslationFlatteningResult(
         val xml: String,
         val flattenedGroups: Int,
-        val translatedPaths: Int
+        val translatedPaths: Int,
+        val preservedForSize: Int
     )
 
     /**
@@ -1645,66 +1649,142 @@ internal object SvgPathDataOptimizer {
      * removed. Rejecting nested paint keeps viewport-space gradient semantics
      * unchanged. This is intentionally conservative for the first A7 pass.
      */
+    private data class TranslationFlatteningProposal(
+        val range: GroupRange,
+        val replacement: String,
+        val translatedPaths: Int
+    )
+
+    /**
+     * A12.1: cost-aware translation flattening.
+     *
+     * Eligible translation-only groups are still baked exactly as before, but
+     * the wrapper is removed only when the canonicalized replacement is smaller
+     * than the canonicalized group it would replace.
+     *
+     * Cost intentionally ignores indentation and blank-line presentation. This
+     * measures stable XML payload rather than allowing nesting depth or the final
+     * pretty-printer to influence the decision.
+     */
     private fun flattenTranslationOnlyGroups(xml: String): TranslationFlatteningResult {
         var current = xml
         var groupsFlattened = 0
         var pathsTranslated = 0
+        val rejectedGroupSignatures = mutableSetOf<String>()
 
         while (true) {
-            val candidate = findMatchedGroups(current)
+            val proposal = findMatchedGroups(current)
                 .sortedBy { it.end - it.start }
-                .firstOrNull { range ->
+                .firstNotNullOfOrNull { range ->
+                    val originalFragment = current.substring(range.start, range.end)
+                    val signature = stableFragmentSignature(originalFragment)
+                    if (signature in rejectedGroupSignatures) {
+                        return@firstNotNullOfOrNull null
+                    }
+
                     val openingTag = current.substring(range.start, range.openingEnd)
                     val body = current.substring(range.openingEnd, range.closingStart)
-                    translationForGroup(openingTag) != null && isDirectSimplePathBody(body)
-                } ?: break
+                    val translation = translationForGroup(openingTag)
+                        ?: return@firstNotNullOfOrNull null
+                    if (!isDirectSimplePathBody(body)) {
+                        return@firstNotNullOfOrNull null
+                    }
 
-            val openingTag = current.substring(candidate.start, candidate.openingEnd)
-            val (dx, dy) = translationForGroup(openingTag) ?: break
-            val body = current.substring(candidate.openingEnd, candidate.closingStart)
-            var translatedCount = 0
-            var failed = false
+                    val (dx, dy) = translation
+                    var translatedCount = 0
+                    var failed = false
 
-            val translatedBody = pathElementRegex.replace(body) { match ->
-                if (failed) return@replace match.value
-                val element = match.value
-                if (!element.trimEnd().endsWith("/>") || element.contains("<aapt:attr", true)) {
-                    failed = true
-                    return@replace element
+                    val translatedBody = pathElementRegex.replace(body) { match ->
+                        if (failed) return@replace match.value
+                        val element = match.value
+                        if (!element.trimEnd().endsWith("/>") ||
+                            element.contains("<aapt:attr", true)
+                        ) {
+                            failed = true
+                            return@replace element
+                        }
+
+                        val pathData = attributeValue(element, "android:pathData")
+                        if (pathData == null) {
+                            failed = true
+                            return@replace element
+                        }
+
+                        val translated = translatePathData(pathData, dx, dy)
+                        if (translated == null) {
+                            failed = true
+                            element
+                        } else {
+                            translatedCount++
+                            replacePathData(element, translated)
+                        }
+                    }
+
+                    if (failed || translatedCount == 0) {
+                        rejectedGroupSignatures += signature
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    val replacement = removeOneIndentLevel(translatedBody)
+
+                    // Apply the same final numeric canonicalization to both
+                    // alternatives before measuring them.
+                    val canonicalOriginal =
+                        canonicalizePathDecimalPrecision(originalFragment).xml
+                    val canonicalReplacement =
+                        canonicalizePathDecimalPrecision(replacement).xml
+
+                    val originalCost = stableXmlPayloadCost(canonicalOriginal)
+                    val replacementCost = stableXmlPayloadCost(canonicalReplacement)
+
+                    if (replacementCost >= originalCost) {
+                        rejectedGroupSignatures += signature
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    TranslationFlatteningProposal(
+                        range = range,
+                        replacement = replacement,
+                        translatedPaths = translatedCount
+                    )
                 }
-                val pathData = attributeValue(element, "android:pathData")
-                if (pathData == null) {
-                    failed = true
-                    return@replace element
-                }
-                val translated = translatePathData(pathData, dx, dy)
-                if (translated == null) {
-                    failed = true
-                    element
-                } else {
-                    translatedCount++
-                    replacePathData(element, translated)
-                }
+
+            if (proposal == null) {
+                return TranslationFlatteningResult(
+                    xml = current,
+                    flattenedGroups = groupsFlattened,
+                    translatedPaths = pathsTranslated,
+                    preservedForSize = rejectedGroupSignatures.size
+                )
             }
 
-            if (failed || translatedCount == 0) {
-                // No later pass can make this same candidate eligible, so stop
-                // rather than risking an endless retry loop.
-                break
-            }
-
-            val replacement = removeOneIndentLevel(translatedBody)
             current = buildString(current.length) {
-                append(current, 0, candidate.start)
-                append(replacement)
-                append(current, candidate.end, current.length)
+                append(current, 0, proposal.range.start)
+                append(proposal.replacement)
+                append(current, proposal.range.end, current.length)
             }
             groupsFlattened++
-            pathsTranslated += translatedCount
+            pathsTranslated += proposal.translatedPaths
         }
-
-        return TranslationFlatteningResult(current, groupsFlattened, pathsTranslated)
     }
+
+    /**
+     * Stable local serialization cost used for A12 decisions.
+     *
+     * Leading indentation and empty presentation lines are excluded. All tags,
+     * attributes, comments, path data, and non-whitespace text remain counted.
+     */
+    private fun stableXmlPayloadCost(fragment: String): Int =
+        fragment.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .sumOf { it.length + 1 }
+
+    private fun stableFragmentSignature(fragment: String): String =
+        fragment.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString("\n")
 
     private fun translationForGroup(openingTag: String): Pair<BigDecimal, BigDecimal>? {
         val trimmed = openingTag.trim()
