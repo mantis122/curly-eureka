@@ -1,6 +1,8 @@
 package com.example.svgvectorconverter
 
 import java.math.BigDecimal
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Performs conservative cleanup of emitted VectorDrawable XML.
@@ -550,7 +552,9 @@ internal object SvgPathDataOptimizer {
     private data class RotationOnlyTransform(
         val rotation: BigDecimal,
         val pivotX: BigDecimal,
-        val pivotY: BigDecimal
+        val pivotY: BigDecimal,
+        val translateX: BigDecimal,
+        val translateY: BigDecimal
     )
 
     private data class ScaleOnlyTransform(
@@ -565,7 +569,8 @@ internal object SvgPathDataOptimizer {
      * same kind of transform around the same pivot.
      *
      * Supported exact combinations:
-     * - rotation-only parent + rotation-only child: angles are added;
+     * - rotation/translation parent + rotation/translation child: rigid
+     *   transforms are composed and angles are added;
      * - scale-only parent + scale-only child: X/Y factors are multiplied.
      *
      * Both groups must contain only their recognized numeric transform
@@ -602,14 +607,11 @@ internal object SvgPathDataOptimizer {
 
                     val outerRotation = rotationOnlyForGroup(outerOpening)
                     val childRotation = rotationOnlyForGroup(childOpening)
-                    if (outerRotation != null &&
-                        childRotation != null &&
-                        samePivot(outerRotation, childRotation)
-                    ) {
-                        val updated = replaceNumericGroupAttribute(
-                            childOpening,
-                            "rotation",
-                            outerRotation.rotation.add(childRotation.rotation)
+                    if (outerRotation != null && childRotation != null) {
+                        val updated = composeRotationGroupOpenings(
+                            childOpening = childOpening,
+                            outer = outerRotation,
+                            child = childRotation
                         )
                         return@firstNotNullOfOrNull Triple(outer, child, updated)
                     }
@@ -669,7 +671,7 @@ internal object SvgPathDataOptimizer {
     private fun rotationOnlyForGroup(openingTag: String): RotationOnlyTransform? {
         val attrs = recognizedNumericGroupAttributes(
             openingTag,
-            setOf("rotation", "pivotx", "pivoty")
+            setOf("rotation", "pivotx", "pivoty", "translatex", "translatey")
         ) ?: return null
 
         val rotation = attrs["rotation"] ?: BigDecimal.ZERO
@@ -678,7 +680,9 @@ internal object SvgPathDataOptimizer {
         return RotationOnlyTransform(
             rotation = rotation,
             pivotX = attrs["pivotx"] ?: BigDecimal.ZERO,
-            pivotY = attrs["pivoty"] ?: BigDecimal.ZERO
+            pivotY = attrs["pivoty"] ?: BigDecimal.ZERO,
+            translateX = attrs["translatex"] ?: BigDecimal.ZERO,
+            translateY = attrs["translatey"] ?: BigDecimal.ZERO
         )
     }
 
@@ -737,12 +741,67 @@ internal object SvgPathDataOptimizer {
         return result
     }
 
-    private fun samePivot(
-        first: RotationOnlyTransform,
-        second: RotationOnlyTransform
-    ): Boolean =
-        first.pivotX.compareTo(second.pivotX) == 0 &&
-            first.pivotY.compareTo(second.pivotY) == 0
+    /**
+     * Composes two emitted VectorDrawable rigid transforms exactly in emitted
+     * transform order. SVG rotate(cx, cy) is commonly converted to a group with
+     * pivot 0 plus a compensating translation, so checking only the emitted
+     * pivot attributes misses rotations that originally shared a center.
+     *
+     * Each group represents T(translate) * T(pivot) * R * T(-pivot). We convert
+     * both to an origin-pivot rotation plus effective translation, compose the
+     * two rigid transforms, and emit the result on the child group.
+     */
+    private fun composeRotationGroupOpenings(
+        childOpening: String,
+        outer: RotationOnlyTransform,
+        child: RotationOnlyTransform
+    ): String {
+        val outerEffective = effectiveRotationTranslation(outer)
+        val childEffective = effectiveRotationTranslation(child)
+
+        val radians = Math.toRadians(outer.rotation.toDouble())
+        val cosine = cos(radians)
+        val sine = sin(radians)
+        val rotatedChildX =
+            cosine * childEffective.first - sine * childEffective.second
+        val rotatedChildY =
+            sine * childEffective.first + cosine * childEffective.second
+
+        val combinedX = outerEffective.first + rotatedChildX
+        val combinedY = outerEffective.second + rotatedChildY
+        val combinedRotation = outer.rotation.add(child.rotation)
+
+        var updated = childOpening
+        updated = setOrInsertGroupAttribute(updated, "rotation", combinedRotation)
+        updated = setOrInsertGroupAttribute(updated, "pivotX", BigDecimal.ZERO)
+        updated = setOrInsertGroupAttribute(updated, "pivotY", BigDecimal.ZERO)
+        updated = setOrInsertGroupAttribute(updated, "translateX", decimalFromDouble(combinedX))
+        updated = setOrInsertGroupAttribute(updated, "translateY", decimalFromDouble(combinedY))
+        return updated
+    }
+
+    private fun effectiveRotationTranslation(
+        transform: RotationOnlyTransform
+    ): Pair<Double, Double> {
+        val radians = Math.toRadians(transform.rotation.toDouble())
+        val cosine = cos(radians)
+        val sine = sin(radians)
+        val pivotX = transform.pivotX.toDouble()
+        val pivotY = transform.pivotY.toDouble()
+
+        val rotatedPivotX = cosine * pivotX - sine * pivotY
+        val rotatedPivotY = sine * pivotX + cosine * pivotY
+        return Pair(
+            transform.translateX.toDouble() + pivotX - rotatedPivotX,
+            transform.translateY.toDouble() + pivotY - rotatedPivotY
+        )
+    }
+
+    private fun decimalFromDouble(value: Double): BigDecimal {
+        val normalized = if (kotlin.math.abs(value) < 1e-10) 0.0 else value
+        return BigDecimal.valueOf(normalized).setScale(6, java.math.RoundingMode.HALF_UP)
+            .stripTrailingZeros()
+    }
 
     private fun samePivot(
         first: ScaleOnlyTransform,
