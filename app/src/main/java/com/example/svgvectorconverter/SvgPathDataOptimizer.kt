@@ -1,6 +1,7 @@
 package com.example.svgvectorconverter
 
 import java.math.BigDecimal
+import java.math.RoundingMode
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -22,6 +23,7 @@ internal object SvgPathDataOptimizer {
         val charactersAfter: Int = 0,
         val repeatedCommandsRemoved: Int = 0,
         val numbersNormalized: Int = 0,
+        val nearIntegerValuesSnapped: Int = 0,
         val emptyPathDataRemoved: Int = 0,
         val moveOnlyPathsRemoved: Int = 0,
         val invisiblePathsRemoved: Int = 0,
@@ -159,7 +161,8 @@ internal object SvgPathDataOptimizer {
         val groupFlattening = flattenRedundantGroups(postCompositionIdentityCleanup.xml)
         val scaleFlattening = flattenUniformPositiveScaleGroups(groupFlattening.xml)
         val translationFlattening = flattenTranslationOnlyGroups(scaleFlattening.xml)
-        val duplicateRemoval = removeExactAdjacentDuplicatePaths(translationFlattening.xml)
+        val nearIntegerSnapping = snapNearIntegerPathValues(translationFlattening.xml)
+        val duplicateRemoval = removeExactAdjacentDuplicatePaths(nearIntegerSnapping.xml)
         val pathMerging = mergeCompatibleAdjacentPaths(duplicateRemoval.xml)
         val finalXml = formatVectorXml(pathMerging.xml)
         val charactersAfter = pathDataAttributeRegex.findAll(finalXml)
@@ -172,7 +175,8 @@ internal object SvgPathDataOptimizer {
                 charactersBefore = charactersBefore,
                 charactersAfter = charactersAfter,
                 repeatedCommandsRemoved = repeatedCommandsRemoved,
-                numbersNormalized = numbersNormalized,
+                numbersNormalized = numbersNormalized + nearIntegerSnapping.snappedValues,
+                nearIntegerValuesSnapped = nearIntegerSnapping.snappedValues,
                 emptyPathDataRemoved = emptyPathDataRemoved,
                 moveOnlyPathsRemoved = moveOnlyPathsRemoved,
                 invisiblePathsRemoved = invisiblePathsRemoved,
@@ -240,6 +244,108 @@ internal object SvgPathDataOptimizer {
 
             "$prefix$quote$normalized$quote"
         }
+    }
+
+
+    private data class NearIntegerSnappingResult(
+        val xml: String,
+        val snappedValues: Int
+    )
+
+    /**
+     * A11.1: removes floating-point noise from final path coordinates.
+     *
+     * Non-zero integers use a conservative 0.0001 tolerance. Values near zero
+     * use a much tighter 0.000001 tolerance so legitimate tiny coordinates such
+     * as 0.00005 are not erased.
+     *
+     * This pass runs after transform baking and before duplicate removal/path
+     * merging. It touches android:pathData only and preserves the original path
+     * unchanged whenever tokenization is uncertain.
+     */
+    private fun snapNearIntegerPathValues(xml: String): NearIntegerSnappingResult {
+        var snappedValues = 0
+
+        val rewritten = pathDataAttributeRegex.replace(xml) { match ->
+            val original = match.groupValues[1]
+            val snapped = snapNearIntegerPathData(original)
+
+            snappedValues += snapped.snappedValues
+            "android:pathData=\"${snapped.pathData}\""
+        }
+
+        return NearIntegerSnappingResult(
+            xml = rewritten,
+            snappedValues = snappedValues
+        )
+    }
+
+    private data class SnappedPathData(
+        val pathData: String,
+        val snappedValues: Int
+    )
+
+    private fun snapNearIntegerPathData(pathData: String): SnappedPathData {
+        val matches = tokenRegex.findAll(pathData).toList()
+        if (matches.isEmpty()) return SnappedPathData(pathData, 0)
+
+        var cursor = 0
+        for (match in matches) {
+            if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
+                return SnappedPathData(pathData, 0)
+            }
+            cursor = match.range.last + 1
+        }
+        if (!containsOnlySeparators(pathData.substring(cursor))) {
+            return SnappedPathData(pathData, 0)
+        }
+
+        val nonZeroIntegerTolerance = BigDecimal("0.0001")
+        val zeroTolerance = BigDecimal("0.000001")
+        val rebuilt = StringBuilder(pathData.length)
+        var lastEnd = 0
+        var snappedCount = 0
+
+        for (match in matches) {
+            rebuilt.append(pathData, lastEnd, match.range.first)
+            val token = match.value
+
+            if (isCommand(token)) {
+                rebuilt.append(token)
+            } else {
+                val value = token.toBigDecimalOrNull()
+                if (value == null) {
+                    return SnappedPathData(pathData, 0)
+                }
+
+                val nearestInteger = value.setScale(0, RoundingMode.HALF_UP)
+                val distance = value.subtract(nearestInteger).abs()
+                val tolerance = if (nearestInteger.compareTo(BigDecimal.ZERO) == 0) {
+                    zeroTolerance
+                } else {
+                    nonZeroIntegerTolerance
+                }
+
+                if (distance.compareTo(tolerance) <= 0) {
+                    val canonical = formatBigDecimal(nearestInteger)
+                    val normalizedOriginal = normalizeNumber(token)
+                    rebuilt.append(canonical)
+                    if (canonical != normalizedOriginal) snappedCount++
+                } else {
+                    rebuilt.append(token)
+                }
+            }
+
+            lastEnd = match.range.last + 1
+        }
+        rebuilt.append(pathData, lastEnd, pathData.length)
+
+        if (snappedCount == 0) return SnappedPathData(pathData, 0)
+
+        // Re-run the existing lossless syntax optimizer so snapped values receive
+        // the same compact separators and command selection as every other path.
+        val optimized = optimizePathData(rebuilt.toString()).pathData
+        return SnappedPathData(optimized, snappedCount)
     }
 
     /**
