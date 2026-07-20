@@ -418,16 +418,25 @@ internal object SvgPathDataOptimizer {
         for (line in output) {
             val trimmed = line.trim()
             val indentLevel = line.takeWhile { it == ' ' }.length / 4
-            val beginsTopLevelDrawable =
+            val beginsTopLevelComment =
+                indentLevel == 1 && trimmed.startsWith("<!--")
+            val beginsTopLevelElement =
                 indentLevel == 1 &&
                     (trimmed.startsWith("<group") ||
                         trimmed.startsWith("<path") ||
-                        trimmed.startsWith("<clip-path") ||
-                        trimmed.startsWith("<!--"))
-            if (beginsTopLevelDrawable &&
+                        trimmed.startsWith("<clip-path"))
+
+            val previousTrimmed = spaced.lastOrNull()?.trim().orEmpty()
+            val previousWasComment = previousTrimmed.startsWith("<!--")
+
+            // A top-level conversion comment belongs to the drawable that
+            // immediately follows it. Add separation before the comment, but
+            // never insert a blank line between that comment and its element.
+            if ((beginsTopLevelComment || beginsTopLevelElement) &&
+                !previousWasComment &&
                 spaced.isNotEmpty() &&
                 spaced.last().isNotBlank() &&
-                !spaced.last().trim().endsWith("<vector")
+                !previousTrimmed.endsWith("<vector")
             ) {
                 spaced += ""
             }
