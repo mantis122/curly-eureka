@@ -33,6 +33,7 @@ internal object SvgPathDataOptimizer {
         val scaledPaths: Int = 0,
         val scaledStrokeWidths: Int = 0,
         val identityTransformAttributesRemoved: Int = 0,
+        val nestedTransformGroupsComposed: Int = 0,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
@@ -148,7 +149,8 @@ internal object SvgPathDataOptimizer {
 
         val groupCleanup = removeEmptyGroups(pathsPrunedXml)
         val identityCleanup = removeIdentityGroupTransformAttributes(groupCleanup.xml)
-        val groupFlattening = flattenRedundantGroups(identityCleanup.xml)
+        val transformComposition = composeNestedParentTranslationGroups(identityCleanup.xml)
+        val groupFlattening = flattenRedundantGroups(transformComposition.xml)
         val scaleFlattening = flattenUniformPositiveScaleGroups(groupFlattening.xml)
         val translationFlattening = flattenTranslationOnlyGroups(scaleFlattening.xml)
         val duplicateRemoval = removeExactAdjacentDuplicatePaths(translationFlattening.xml)
@@ -178,6 +180,7 @@ internal object SvgPathDataOptimizer {
                 scaledPaths = scaleFlattening.scaledPaths,
                 scaledStrokeWidths = scaleFlattening.scaledStrokeWidths,
                 identityTransformAttributesRemoved = identityCleanup.removedAttributes,
+                nestedTransformGroupsComposed = transformComposition.composedGroups,
                 shorterCommandFormsSelected = shorterCommandFormsSelected,
                 relativeCommandsSelected = relativeCommandsSelected,
                 axisCommandsSelected = axisCommandsSelected,
@@ -460,6 +463,154 @@ internal object SvgPathDataOptimizer {
         }
 
         return ranges
+    }
+
+
+    private data class TransformCompositionResult(
+        val xml: String,
+        val composedGroups: Int
+    )
+
+    /**
+     * A10.1: folds a translation-only parent group into its single direct child
+     * group.
+     *
+     * This is exact for every child transform because VectorDrawable parent
+     * translation is applied after the child's local transform. Adding the parent
+     * translation to the child's translateX/translateY therefore preserves the
+     * complete matrix, including the child's scale, rotation, pivot, and clip.
+     *
+     * The parent is eligible only when:
+     * - its only effective attributes are numeric translateX/translateY;
+     * - its body contains comments/whitespace plus exactly one direct child group;
+     * - it owns no clip-path or drawable sibling.
+     */
+    private fun composeNestedParentTranslationGroups(xml: String): TransformCompositionResult {
+        var current = xml
+        var composed = 0
+
+        while (true) {
+            val groups = findMatchedGroups(current)
+            val candidate = groups
+                .sortedBy { it.end - it.start }
+                .firstNotNullOfOrNull { outer ->
+                    val outerOpening = current.substring(outer.start, outer.openingEnd)
+                    val translation = translationForGroup(outerOpening)
+                        ?: return@firstNotNullOfOrNull null
+
+                    val directChildren = groups.filter { child ->
+                        child.start >= outer.openingEnd &&
+                            child.end <= outer.closingStart &&
+                            groups.none { between ->
+                                between.start >= outer.openingEnd &&
+                                    between.end <= outer.closingStart &&
+                                    between.start < child.start &&
+                                    between.end > child.end
+                            }
+                    }
+                    if (directChildren.size != 1) return@firstNotNullOfOrNull null
+
+                    val child = directChildren.single()
+                    val beforeChild = current.substring(outer.openingEnd, child.start)
+                    val afterChild = current.substring(child.end, outer.closingStart)
+                    if (!commentsAndWhitespaceOnly(beforeChild) ||
+                        !commentsAndWhitespaceOnly(afterChild)
+                    ) {
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    val childOpening = current.substring(child.start, child.openingEnd)
+                    val updatedOpening = addTranslationToGroupOpening(
+                        childOpening,
+                        translation.first,
+                        translation.second
+                    ) ?: return@firstNotNullOfOrNull null
+
+                    Triple(outer, child, updatedOpening)
+                } ?: break
+
+            val (outer, child, updatedChildOpening) = candidate
+            val childBodyAndClosing = current.substring(child.openingEnd, child.end)
+            val replacement = buildString {
+                append(updatedChildOpening)
+                append(childBodyAndClosing)
+            }
+
+            current = buildString(current.length) {
+                append(current, 0, outer.start)
+                append(replacement)
+                append(current, outer.end, current.length)
+            }
+            composed++
+        }
+
+        return TransformCompositionResult(current, composed)
+    }
+
+    private fun commentsAndWhitespaceOnly(text: String): Boolean =
+        xmlCommentRegex.replace(text, "").isBlank()
+
+    private fun addTranslationToGroupOpening(
+        openingTag: String,
+        addX: BigDecimal,
+        addY: BigDecimal
+    ): String? {
+        if (!openingTag.trimStart().startsWith("<group", ignoreCase = true)) return null
+
+        val attributes = androidAttributeRegex.findAll(openingTag).toList()
+        if (attributes.count { it.groupValues[1].equals("translateX", true) } > 1 ||
+            attributes.count { it.groupValues[1].equals("translateY", true) } > 1
+        ) return null
+
+        val existingX = attributes
+            .firstOrNull { it.groupValues[1].equals("translateX", true) }
+            ?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val existingY = attributes
+            .firstOrNull { it.groupValues[1].equals("translateY", true) }
+            ?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+
+        var updated = openingTag
+        updated = setOrInsertGroupAttribute(
+            updated,
+            "translateX",
+            existingX.add(addX)
+        )
+        updated = setOrInsertGroupAttribute(
+            updated,
+            "translateY",
+            existingY.add(addY)
+        )
+        return updated
+    }
+
+    private fun setOrInsertGroupAttribute(
+        openingTag: String,
+        name: String,
+        value: BigDecimal
+    ): String {
+        val existing = Regex(
+            """(android:${Regex.escape(name)}\s*=\s*)(["'])(.*?)\2""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        )
+        val formatted = formatBigDecimal(value)
+        val match = existing.find(openingTag)
+        if (match != null) {
+            val replacement =
+                "${match.groupValues[1]}${match.groupValues[2]}$formatted${match.groupValues[2]}"
+            return openingTag.replaceRange(match.range, replacement)
+        }
+
+        if (value.compareTo(BigDecimal.ZERO) == 0) return openingTag
+
+        val closingIndex = openingTag.lastIndexOf('>')
+        if (closingIndex < 0) return openingTag
+        val lineIndent = openingTag
+            .substringBefore("<group")
+            .substringAfterLast('\n', "")
+        val attributeIndent = "$lineIndent    "
+        val insertion = "\n${attributeIndent}android:$name=\"$formatted\""
+        return openingTag.substring(0, closingIndex) + insertion +
+            openingTag.substring(closingIndex)
     }
 
     private data class GroupFlatteningResult(

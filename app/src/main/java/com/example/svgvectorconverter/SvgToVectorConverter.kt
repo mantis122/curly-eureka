@@ -320,6 +320,7 @@ object SvgToVectorConverter {
                 scaledPaths = pathOptimizationStats.scaledPaths,
                 scaledStrokeWidths = pathOptimizationStats.scaledStrokeWidths,
                 identityTransformAttributesRemoved = pathOptimizationStats.identityTransformAttributesRemoved,
+                nestedTransformGroupsComposed = pathOptimizationStats.nestedTransformGroupsComposed,
                 shorterCommandFormsSelected = pathOptimizationStats.shorterCommandFormsSelected,
                 relativeCommandsSelected = pathOptimizationStats.relativeCommandsSelected,
                 axisCommandsSelected = pathOptimizationStats.axisCommandsSelected,

@@ -156,6 +156,7 @@ data class SvgConversionReportData(
     val scaledPaths: Int = 0,
     val scaledStrokeWidths: Int = 0,
     val identityTransformAttributesRemoved: Int = 0,
+    val nestedTransformGroupsComposed: Int = 0,
     val shorterCommandFormsSelected: Int = 0,
     val relativeCommandsSelected: Int = 0,
     val axisCommandsSelected: Int = 0,
@@ -445,6 +446,8 @@ object SvgConversionReporter {
                 appendLine("✓ Stroke widths scaled: ${data.scaledStrokeWidths}")
             if (data.identityTransformAttributesRemoved > 0)
                 appendLine("✓ Identity transform attributes removed: ${data.identityTransformAttributesRemoved}")
+            if (data.nestedTransformGroupsComposed > 0)
+                appendLine("✓ Nested transform groups composed: ${data.nestedTransformGroupsComposed}")
             if (data.compatiblePathsMerged > 0)
                 appendLine("✓ Compatible adjacent paths merged: ${data.compatiblePathsMerged}")
             if (data.shorterCommandFormsSelected > 0)
