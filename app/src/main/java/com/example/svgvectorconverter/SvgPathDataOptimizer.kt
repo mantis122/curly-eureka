@@ -24,6 +24,7 @@ internal object SvgPathDataOptimizer {
         val repeatedCommandsRemoved: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
+        val decimalValuesCanonicalized: Int = 0,
         val emptyPathDataRemoved: Int = 0,
         val moveOnlyPathsRemoved: Int = 0,
         val invisiblePathsRemoved: Int = 0,
@@ -72,6 +73,8 @@ internal object SvgPathDataOptimizer {
         val xml: String,
         val stats: Stats
     )
+
+    private const val MAX_PATH_DECIMAL_PLACES = 6
 
     private val pathDataAttributeRegex = Regex("""android:pathData\s*=\s*\"([^\"]*)\"""")
     private val tokenRegex = Regex(
@@ -162,7 +165,10 @@ internal object SvgPathDataOptimizer {
         val scaleFlattening = flattenUniformPositiveScaleGroups(groupFlattening.xml)
         val translationFlattening = flattenTranslationOnlyGroups(scaleFlattening.xml)
         val nearIntegerSnapping = snapNearIntegerPathValues(translationFlattening.xml)
-        val duplicateRemoval = removeExactAdjacentDuplicatePaths(nearIntegerSnapping.xml)
+        val decimalCanonicalization =
+            canonicalizePathDecimalPrecision(nearIntegerSnapping.xml)
+        val duplicateRemoval =
+            removeExactAdjacentDuplicatePaths(decimalCanonicalization.xml)
         val pathMerging = mergeCompatibleAdjacentPaths(duplicateRemoval.xml)
         val finalXml = formatVectorXml(pathMerging.xml)
         val charactersAfter = pathDataAttributeRegex.findAll(finalXml)
@@ -175,8 +181,12 @@ internal object SvgPathDataOptimizer {
                 charactersBefore = charactersBefore,
                 charactersAfter = charactersAfter,
                 repeatedCommandsRemoved = repeatedCommandsRemoved,
-                numbersNormalized = numbersNormalized + nearIntegerSnapping.snappedValues,
+                numbersNormalized =
+                    numbersNormalized +
+                        nearIntegerSnapping.snappedValues +
+                        decimalCanonicalization.changedValues,
                 nearIntegerValuesSnapped = nearIntegerSnapping.snappedValues,
+                decimalValuesCanonicalized = decimalCanonicalization.changedValues,
                 emptyPathDataRemoved = emptyPathDataRemoved,
                 moveOnlyPathsRemoved = moveOnlyPathsRemoved,
                 invisiblePathsRemoved = invisiblePathsRemoved,
@@ -246,6 +256,114 @@ internal object SvgPathDataOptimizer {
         }
     }
 
+
+
+    private data class DecimalCanonicalizationResult(
+        val xml: String,
+        val changedValues: Int
+    )
+
+    /**
+     * A11.2: gives final path coordinates a stable decimal representation.
+     *
+     * Values with more than six fractional digits are rounded to six places
+     * using HALF_UP. The maximum coordinate adjustment is therefore 0.0000005.
+     * Scientific notation is expanded to ordinary decimal notation, trailing
+     * zeroes are removed, and negative zero becomes zero.
+     *
+     * This runs after A11.1 so values close to integers are snapped first.
+     * It only examines android:pathData and preserves the original attribute
+     * whenever tokenization is uncertain.
+     */
+    private fun canonicalizePathDecimalPrecision(
+        xml: String
+    ): DecimalCanonicalizationResult {
+        var changedValues = 0
+
+        val rewritten = pathDataAttributeRegex.replace(xml) { match ->
+            val original = match.groupValues[1]
+            val canonicalized = canonicalizePathDecimals(original)
+
+            changedValues += canonicalized.changedValues
+            "android:pathData=\"${canonicalized.pathData}\""
+        }
+
+        return DecimalCanonicalizationResult(
+            xml = rewritten,
+            changedValues = changedValues
+        )
+    }
+
+    private data class CanonicalizedPathData(
+        val pathData: String,
+        val changedValues: Int
+    )
+
+    private fun canonicalizePathDecimals(
+        pathData: String
+    ): CanonicalizedPathData {
+        val matches = tokenRegex.findAll(pathData).toList()
+        if (matches.isEmpty()) return CanonicalizedPathData(pathData, 0)
+
+        var cursor = 0
+        for (match in matches) {
+            if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
+                return CanonicalizedPathData(pathData, 0)
+            }
+            cursor = match.range.last + 1
+        }
+        if (!containsOnlySeparators(pathData.substring(cursor))) {
+            return CanonicalizedPathData(pathData, 0)
+        }
+
+        val rebuilt = StringBuilder(pathData.length)
+        var lastEnd = 0
+        var changedCount = 0
+
+        for (match in matches) {
+            rebuilt.append(pathData, lastEnd, match.range.first)
+            val token = match.value
+
+            if (isCommand(token)) {
+                rebuilt.append(token)
+            } else {
+                val value = token.toBigDecimalOrNull()
+                    ?: return CanonicalizedPathData(pathData, 0)
+
+                val canonicalValue =
+                    if (value.scale().coerceAtLeast(0) > MAX_PATH_DECIMAL_PLACES) {
+                        value.setScale(
+                            MAX_PATH_DECIMAL_PLACES,
+                            RoundingMode.HALF_UP
+                        )
+                    } else {
+                        value
+                    }
+
+                val canonical = formatBigDecimal(canonicalValue)
+                val originalCanonical = formatBigDecimal(value)
+                rebuilt.append(canonical)
+
+                if (canonical != originalCanonical ||
+                    token.contains('e', ignoreCase = true)
+                ) {
+                    changedCount++
+                }
+            }
+
+            lastEnd = match.range.last + 1
+        }
+        rebuilt.append(pathData, lastEnd, pathData.length)
+
+        if (changedCount == 0) {
+            return CanonicalizedPathData(pathData, 0)
+        }
+
+        // Reapply the existing lossless command/separator optimizer to the
+        // canonicalized values.
+        val optimized = optimizePathData(rebuilt.toString()).pathData
+        return CanonicalizedPathData(optimized, changedCount)
+    }
 
     private data class NearIntegerSnappingResult(
         val xml: String,
