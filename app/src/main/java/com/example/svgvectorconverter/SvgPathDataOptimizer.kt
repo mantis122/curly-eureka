@@ -273,93 +273,173 @@ internal object SvgPathDataOptimizer {
             index++
         }
 
-        var formatted = removeOrphanedConversionComments(compacted.joinToString("\n"))
-        formatted = normalizeGroupBodySpacing(formatted)
-
-        // Collapse three or more consecutive blank lines to one blank line.
-        formatted = Regex("""\n[ \t]*\n(?:[ \t]*\n)+""")
-            .replace(formatted, "\n\n")
-
-        // Remove blank padding directly after an opening group and directly
-        // before a closing group using a line-based pass rather than a regex
-        // that can span XML elements.
-        val lines = formatted.lines()
-        val output = mutableListOf<String>()
-        for (line in lines) {
-            if (line.isBlank()) {
-                val previous = output.lastOrNull()?.trim().orEmpty()
-                if (previous == "<group>" || previous.endsWith(">") && previous.startsWith("<group ")) {
-                    continue
-                }
-            }
-            if (line.trimStart().startsWith("</group")) {
-                while (output.lastOrNull()?.isBlank() == true) output.removeAt(output.lastIndex)
-            }
-            output += line
-        }
-
-        return output.joinToString("\n").trimEnd() + "\n"
+        val withoutOrphanedComments =
+            removeOrphanedConversionComments(compacted.joinToString("\n"))
+        return prettyPrintVectorXml(withoutOrphanedComments)
     }
 
 
 
+
     /**
-     * Cosmetic-only group spacing cleanup.
+     * A10.3: presentation-only VectorDrawable pretty printer.
      *
-     * This pass never reparses, rebuilds, or replaces a complete group range.
-     * It only normalizes blank lines around already-emitted group boundaries,
-     * so drawable children and attributes cannot be dropped.
+     * Every non-blank source line is emitted exactly once. The only line merge
+     * performed is attaching a standalone ">" to the preceding final attribute.
+     * The pass never matches or replaces complete element ranges, so it cannot
+     * remove paths, groups, clip paths, gradients, or comments.
      */
-    private fun normalizeGroupBodySpacing(xml: String): String {
-        val lines = xml
+    private fun prettyPrintVectorXml(xml: String): String {
+        val source = xml
             .replace("\r\n", "\n")
             .replace('\r', '\n')
             .lines()
 
         val output = mutableListOf<String>()
-        var insideOpeningGroup = false
+        var depth = 0
+        var openTagDepth = 0
+        var openTagName: String? = null
+        var insideOpeningTag = false
+        var pendingBlankAfterGroupOpen = false
 
-        for (line in lines) {
-            val trimmed = line.trim()
+        fun indent(level: Int): String = "    ".repeat(level.coerceAtLeast(0))
 
-            if (insideOpeningGroup) {
-                output += line.trimEnd()
-                if (trimmed.endsWith(">")) {
-                    insideOpeningGroup = false
+        fun appendBlankIfNeeded() {
+            if (output.isNotEmpty() && output.last().isNotBlank()) {
+                output += ""
+            }
+        }
+
+        fun completeOpeningTag(
+            tagName: String?,
+            selfClosing: Boolean
+        ) {
+            insideOpeningTag = false
+            openTagName = null
+            if (!selfClosing && tagName != null) {
+                depth = openTagDepth + 1
+                pendingBlankAfterGroupOpen =
+                    tagName.equals("group", ignoreCase = true)
+            }
+        }
+
+        for (rawLine in source) {
+            val trimmed = rawLine.trim()
+            if (trimmed.isEmpty()) continue
+
+            if (insideOpeningTag) {
+                when {
+                    trimmed == ">" -> {
+                        if (output.isNotEmpty()) {
+                            output[output.lastIndex] =
+                                output.last().trimEnd() + ">"
+                        } else {
+                            output += indent(openTagDepth) + ">"
+                        }
+                        completeOpeningTag(openTagName, selfClosing = false)
+                    }
+
+                    trimmed == "/>" -> {
+                        output += indent(openTagDepth) + "/>"
+                        completeOpeningTag(openTagName, selfClosing = true)
+                    }
+
+                    else -> {
+                        output += indent(openTagDepth + 1) + trimmed
+                        if (trimmed.endsWith("/>")) {
+                            completeOpeningTag(openTagName, selfClosing = true)
+                        } else if (trimmed.endsWith(">")) {
+                            completeOpeningTag(openTagName, selfClosing = false)
+                        }
+                    }
                 }
                 continue
             }
 
-            if (trimmed == "<group" || trimmed.startsWith("<group ")) {
-                output += line.trimEnd()
-                insideOpeningGroup = !trimmed.endsWith(">")
-                continue
-            }
-
-            if (trimmed.startsWith("</group")) {
+            if (trimmed.startsWith("</")) {
+                depth = (depth - 1).coerceAtLeast(0)
                 while (output.lastOrNull()?.isBlank() == true) {
                     output.removeAt(output.lastIndex)
                 }
-                output += line.trimEnd()
+                output += indent(depth) + trimmed
+                pendingBlankAfterGroupOpen = false
                 continue
             }
 
-            if (line.isBlank()) {
-                val previous = output.lastOrNull()?.trim().orEmpty()
-                if (previous.endsWith(">") &&
-                    (previous == "<group>" || previous.startsWith("android:"))
-                ) {
-                    if (output.lastOrNull()?.isNotBlank() == true) {
-                        output += ""
-                    }
-                    continue
-                }
+            val isCommentOrDeclaration =
+                trimmed.startsWith("<!--") ||
+                    trimmed.startsWith("<?") ||
+                    trimmed.startsWith("<!")
+
+            if (pendingBlankAfterGroupOpen && !isCommentOrDeclaration) {
+                appendBlankIfNeeded()
+                pendingBlankAfterGroupOpen = false
+            } else if (pendingBlankAfterGroupOpen && trimmed.startsWith("<!--")) {
+                appendBlankIfNeeded()
+                pendingBlankAfterGroupOpen = false
             }
 
-            output += line.trimEnd()
+            if (!trimmed.startsWith("<") || isCommentOrDeclaration) {
+                output += indent(depth) + trimmed
+                continue
+            }
+
+            val tagName = Regex("""^<([A-Za-z_][A-Za-z0-9_.:-]*)""")
+                .find(trimmed)
+                ?.groupValues
+                ?.getOrNull(1)
+
+            if (tagName == null) {
+                output += indent(depth) + trimmed
+                continue
+            }
+
+            val completesOnThisLine = trimmed.endsWith(">")
+            val selfClosing = trimmed.endsWith("/>")
+
+            output += indent(depth) + trimmed
+
+            if (completesOnThisLine) {
+                if (!selfClosing) {
+                    depth++
+                    pendingBlankAfterGroupOpen =
+                        tagName.equals("group", ignoreCase = true)
+                }
+            } else {
+                insideOpeningTag = true
+                openTagDepth = depth
+                openTagName = tagName
+            }
         }
 
-        return output.joinToString("\n")
+        // Keep one blank line between top-level drawable siblings while never
+        // adding padding immediately before the root closing tag.
+        val spaced = mutableListOf<String>()
+        for (line in output) {
+            val trimmed = line.trim()
+            val indentLevel = line.takeWhile { it == ' ' }.length / 4
+            val beginsTopLevelDrawable =
+                indentLevel == 1 &&
+                    (trimmed.startsWith("<group") ||
+                        trimmed.startsWith("<path") ||
+                        trimmed.startsWith("<clip-path") ||
+                        trimmed.startsWith("<!--"))
+            if (beginsTopLevelDrawable &&
+                spaced.isNotEmpty() &&
+                spaced.last().isNotBlank() &&
+                !spaced.last().trim().endsWith("<vector")
+            ) {
+                spaced += ""
+            }
+            if (trimmed.startsWith("</vector")) {
+                while (spaced.lastOrNull()?.isBlank() == true) {
+                    spaced.removeAt(spaced.lastIndex)
+                }
+            }
+            spaced += line
+        }
+
+        return spaced.joinToString("\n").trimEnd() + "\n"
     }
 
     private fun removeOrphanedConversionComments(xml: String): String {
