@@ -86,7 +86,7 @@ internal object SvgPathDataOptimizer {
         RegexOption.IGNORE_CASE
     )
     private val adjacentSimplePathRegex = Regex(
-        """(<path\b(?:"[^"]*"|'[^']*'|[^>])*?/\s*>)([\s\n]*(?:<!--[\s\S]*?-->[\s\n]*)*)(<path\b(?:"[^"]*"|'[^']*'|[^>])*?/\s*>)""",
+        """(<path\b[^<>]*?/\s*>)(\s*(?:(?:<!--[\s\S]*?-->)\s*)*)(<path\b[^<>]*?/\s*>)""",
         RegexOption.IGNORE_CASE
     )
     private val androidAttributeRegex = Regex(
