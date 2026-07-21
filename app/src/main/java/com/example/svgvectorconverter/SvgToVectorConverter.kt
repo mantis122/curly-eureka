@@ -307,8 +307,6 @@ object SvgToVectorConverter {
                 pathDataCharactersAfter = pathOptimizationStats.charactersAfter,
                 pathDataRepeatedCommandsRemoved = pathOptimizationStats.repeatedCommandsRemoved,
                 pathDataNumbersNormalized = pathOptimizationStats.numbersNormalized,
-                scaleGroupsPreservedForSize =
-                    pathOptimizationStats.scaleGroupsPreservedForSize,
                 emptyPathDataRemoved = pathOptimizationStats.emptyPathDataRemoved,
                 moveOnlyPathsRemoved = pathOptimizationStats.moveOnlyPathsRemoved,
                 invisiblePathsRemoved = pathOptimizationStats.invisiblePathsRemoved,
@@ -321,6 +319,14 @@ object SvgToVectorConverter {
                 scaledGroupsFlattened = pathOptimizationStats.scaledGroupsFlattened,
                 scaledPaths = pathOptimizationStats.scaledPaths,
                 scaledStrokeWidths = pathOptimizationStats.scaledStrokeWidths,
+                scaleGroupsPreservedForSize =
+                    pathOptimizationStats.scaleGroupsPreservedForSize,
+                nonUniformScaleGroupsFlattened =
+                    pathOptimizationStats.nonUniformScaleGroupsFlattened,
+                nonUniformScaledPaths =
+                    pathOptimizationStats.nonUniformScaledPaths,
+                nonUniformScaleGroupsPreservedForSize =
+                    pathOptimizationStats.nonUniformScaleGroupsPreservedForSize,
                 identityTransformAttributesRemoved = pathOptimizationStats.identityTransformAttributesRemoved,
                 nestedTransformGroupsComposed = pathOptimizationStats.nestedTransformGroupsComposed,
                 shorterCommandFormsSelected = pathOptimizationStats.shorterCommandFormsSelected,

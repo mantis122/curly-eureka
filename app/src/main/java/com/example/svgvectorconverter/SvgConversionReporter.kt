@@ -143,7 +143,6 @@ data class SvgConversionReportData(
     val pathDataCharactersAfter: Int = 0,
     val pathDataRepeatedCommandsRemoved: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
-    val scaleGroupsPreservedForSize: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
     val invisiblePathsRemoved: Int = 0,
@@ -156,6 +155,10 @@ data class SvgConversionReportData(
     val scaledGroupsFlattened: Int = 0,
     val scaledPaths: Int = 0,
     val scaledStrokeWidths: Int = 0,
+    val scaleGroupsPreservedForSize: Int = 0,
+    val nonUniformScaleGroupsFlattened: Int = 0,
+    val nonUniformScaledPaths: Int = 0,
+    val nonUniformScaleGroupsPreservedForSize: Int = 0,
     val identityTransformAttributesRemoved: Int = 0,
     val nestedTransformGroupsComposed: Int = 0,
     val shorterCommandFormsSelected: Int = 0,
@@ -436,11 +439,6 @@ object SvgConversionReporter {
 
             if (data.pathDataNumbersNormalized > 0)
                 appendLine("✓ Numeric values normalized: ${data.pathDataNumbersNormalized}")
-            if (data.scaleGroupsPreservedForSize > 0)
-                appendLine(
-                    "✓ Uniform scale groups preserved for smaller output: " +
-                        data.scaleGroupsPreservedForSize
-                )
             if (data.pathDataRepeatedCommandsRemoved > 0)
                 appendLine("✓ Repeated commands removed: ${data.pathDataRepeatedCommandsRemoved}")
             if (data.emptyPathDataRemoved > 0)
@@ -465,6 +463,26 @@ object SvgConversionReporter {
                 appendLine("✓ Paths scaled into coordinates: ${data.scaledPaths}")
             if (data.scaledStrokeWidths > 0)
                 appendLine("✓ Stroke widths scaled: ${data.scaledStrokeWidths}")
+            if (data.scaleGroupsPreservedForSize > 0)
+                appendLine(
+                    "✓ Uniform scale groups preserved for smaller output: " +
+                        data.scaleGroupsPreservedForSize
+                )
+            if (data.nonUniformScaleGroupsFlattened > 0)
+                appendLine(
+                    "✓ Non-uniform scale groups flattened: " +
+                        data.nonUniformScaleGroupsFlattened
+                )
+            if (data.nonUniformScaledPaths > 0)
+                appendLine(
+                    "✓ Fill-only paths non-uniformly scaled into coordinates: " +
+                        data.nonUniformScaledPaths
+                )
+            if (data.nonUniformScaleGroupsPreservedForSize > 0)
+                appendLine(
+                    "✓ Non-uniform scale groups preserved for smaller output: " +
+                        data.nonUniformScaleGroupsPreservedForSize
+                )
             if (data.identityTransformAttributesRemoved > 0)
                 appendLine("✓ Identity transform attributes removed: ${data.identityTransformAttributesRemoved}")
             if (data.nestedTransformGroupsComposed > 0)

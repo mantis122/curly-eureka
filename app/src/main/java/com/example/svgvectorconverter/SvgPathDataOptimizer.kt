@@ -40,6 +40,9 @@ internal object SvgPathDataOptimizer {
         val scaledPaths: Int = 0,
         val scaledStrokeWidths: Int = 0,
         val scaleGroupsPreservedForSize: Int = 0,
+        val nonUniformScaleGroupsFlattened: Int = 0,
+        val nonUniformScaledPaths: Int = 0,
+        val nonUniformScaleGroupsPreservedForSize: Int = 0,
         val identityTransformAttributesRemoved: Int = 0,
         val nestedTransformGroupsComposed: Int = 0,
         val shorterCommandFormsSelected: Int = 0,
@@ -166,7 +169,10 @@ internal object SvgPathDataOptimizer {
             removeIdentityGroupTransformAttributes(compatibleComposition.xml)
         val groupFlattening = flattenRedundantGroups(postCompositionIdentityCleanup.xml)
         val scaleFlattening = flattenUniformPositiveScaleGroups(groupFlattening.xml)
-        val translationFlattening = flattenTranslationOnlyGroups(scaleFlattening.xml)
+        val nonUniformScaleFlattening =
+            flattenNonUniformPositiveScaleFillOnlyGroups(scaleFlattening.xml)
+        val translationFlattening =
+            flattenTranslationOnlyGroups(nonUniformScaleFlattening.xml)
         val nearIntegerSnapping = snapNearIntegerPathValues(translationFlattening.xml)
         val duplicateRemoval =
             removeExactAdjacentDuplicatePaths(nearIntegerSnapping.xml)
@@ -212,6 +218,12 @@ internal object SvgPathDataOptimizer {
                 scaledStrokeWidths = scaleFlattening.scaledStrokeWidths,
                 scaleGroupsPreservedForSize =
                     scaleFlattening.preservedForSize,
+                nonUniformScaleGroupsFlattened =
+                    nonUniformScaleFlattening.flattenedGroups,
+                nonUniformScaledPaths =
+                    nonUniformScaleFlattening.scaledPaths,
+                nonUniformScaleGroupsPreservedForSize =
+                    nonUniformScaleFlattening.preservedForSize,
                 identityTransformAttributesRemoved =
                     identityCleanup.removedAttributes +
                         postCompositionIdentityCleanup.removedAttributes,
@@ -1670,6 +1682,329 @@ internal object SvgPathDataOptimizer {
                     absolute[2], absolute[3], absolute[4],
                     scaledX(absolute[5]), scaledY(absolute[6])
                 )
+                'Z' -> emptyList()
+                else -> return null
+            }
+
+            output.append(upper)
+            scaled.forEachIndexed { index, value ->
+                if (index > 0) output.append(',')
+                output.append(formatBigDecimal(value))
+            }
+
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
+                    if (upper == 'M') {
+                        subpathX = currentX
+                        subpathY = currentY
+                    }
+                }
+                'H' -> currentX = absolute[0]
+                'V' -> currentY = absolute[0]
+                'C', 'S', 'Q' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
+                }
+                'A' -> {
+                    currentX = absolute[5]
+                    currentY = absolute[6]
+                }
+                'Z' -> {
+                    currentX = subpathX
+                    currentY = subpathY
+                }
+            }
+        }
+
+        return optimizePathData(output.toString()).pathData
+    }
+
+
+    private data class NonUniformScaleFlatteningResult(
+        val xml: String,
+        val flattenedGroups: Int,
+        val scaledPaths: Int,
+        val preservedForSize: Int
+    )
+
+    private data class AxisScale(
+        val scaleX: BigDecimal,
+        val scaleY: BigDecimal,
+        val pivotX: BigDecimal,
+        val pivotY: BigDecimal,
+        val translateX: BigDecimal,
+        val translateY: BigDecimal
+    )
+
+    private data class NonUniformScaleFlatteningProposal(
+        val range: GroupRange,
+        val replacement: String,
+        val scaledPaths: Int
+    )
+
+    /**
+     * A14.2: cost-aware non-uniform positive-scale flattening for fill-only paths.
+     *
+     * This deliberately excludes any path that may have a visible stroke.
+     * Android VectorDrawable has only one strokeWidth value, so baking unequal
+     * X/Y scale into stroked geometry cannot preserve stroke behavior exactly.
+     *
+     * Axis-aligned arc commands are supported. Rotated elliptical arcs are
+     * conservatively rejected because unequal axis scaling changes their
+     * effective radii and rotation non-trivially.
+     */
+    private fun flattenNonUniformPositiveScaleFillOnlyGroups(
+        xml: String
+    ): NonUniformScaleFlatteningResult {
+        var current = xml
+        var groupsFlattened = 0
+        var pathsScaled = 0
+        val rejectedGroupSignatures = mutableSetOf<String>()
+
+        while (true) {
+            val proposal = findMatchedGroups(current)
+                .asSequence()
+                .sortedBy { it.end - it.start }
+                .firstNotNullOfOrNull { range ->
+                    val originalFragment = current.substring(range.start, range.end)
+                    val signature = stableFragmentSignature(originalFragment)
+                    if (signature in rejectedGroupSignatures) {
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    val openingTag = current.substring(range.start, range.openingEnd)
+                    val body = current.substring(range.openingEnd, range.closingStart)
+                    val scale = nonUniformScaleForGroup(openingTag)
+                        ?: return@firstNotNullOfOrNull null
+
+                    if (!isDirectSimplePathBody(body)) {
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    val pathMatches = pathElementRegex.findAll(body).toList()
+                    if (pathMatches.isEmpty() ||
+                        pathMatches.any { !hasDefinitelyNoVisibleStroke(it.value) }
+                    ) {
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    var scaledCount = 0
+                    var failed = false
+                    val scaledBody = pathElementRegex.replace(body) { match ->
+                        if (failed) return@replace match.value
+                        val element = match.value
+                        if (!element.trimEnd().endsWith("/>") ||
+                            element.contains("<aapt:attr", true)
+                        ) {
+                            failed = true
+                            return@replace element
+                        }
+
+                        val pathData = attributeValue(element, "android:pathData")
+                        if (pathData == null) {
+                            failed = true
+                            return@replace element
+                        }
+
+                        val scaledPathData = scalePathDataNonUniform(
+                            pathData = pathData,
+                            scaleX = scale.scaleX,
+                            scaleY = scale.scaleY,
+                            pivotX = scale.pivotX,
+                            pivotY = scale.pivotY,
+                            translateX = scale.translateX,
+                            translateY = scale.translateY
+                        )
+                        if (scaledPathData == null) {
+                            failed = true
+                            return@replace element
+                        }
+
+                        scaledCount++
+                        replacePathData(element, scaledPathData)
+                    }
+
+                    if (failed || scaledCount == 0) {
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    val replacement = removeOneIndentLevel(scaledBody)
+                    val canonicalOriginal =
+                        canonicalizePathDecimalPrecision(originalFragment).xml
+                    val canonicalReplacement =
+                        canonicalizePathDecimalPrecision(replacement).xml
+
+                    val originalCost = stableXmlPayloadCost(canonicalOriginal)
+                    val replacementCost = stableXmlPayloadCost(canonicalReplacement)
+                    val originalPathDataCost =
+                        totalPathDataCharacters(canonicalOriginal)
+                    val replacementPathDataCost =
+                        totalPathDataCharacters(canonicalReplacement)
+                    val pathDataGrowth =
+                        replacementPathDataCost - originalPathDataCost
+                    val allowedPathDataGrowth =
+                        maxOf(8, originalPathDataCost / 10)
+
+                    if (replacementCost >= originalCost ||
+                        pathDataGrowth > allowedPathDataGrowth
+                    ) {
+                        rejectedGroupSignatures += signature
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    NonUniformScaleFlatteningProposal(
+                        range = range,
+                        replacement = replacement,
+                        scaledPaths = scaledCount
+                    )
+                }
+
+            if (proposal == null) {
+                return NonUniformScaleFlatteningResult(
+                    xml = current,
+                    flattenedGroups = groupsFlattened,
+                    scaledPaths = pathsScaled,
+                    preservedForSize = rejectedGroupSignatures.size
+                )
+            }
+
+            current = buildString(current.length) {
+                append(current, 0, proposal.range.start)
+                append(proposal.replacement)
+                append(current, proposal.range.end, current.length)
+            }
+            groupsFlattened++
+            pathsScaled += proposal.scaledPaths
+        }
+    }
+
+    private fun nonUniformScaleForGroup(openingTag: String): AxisScale? {
+        val trimmed = openingTag.trim()
+        if (!trimmed.startsWith("<group", ignoreCase = true) ||
+            !trimmed.endsWith('>')
+        ) return null
+
+        val attributes = androidAttributeRegex.findAll(openingTag).toList()
+        val allowed = setOf(
+            "scalex", "scaley", "pivotx", "pivoty", "translatex", "translatey"
+        )
+        val names = attributes.map { it.groupValues[1].lowercase() }
+        if (names.any { it !in allowed }) return null
+        if (allowed.any { allowedName -> names.count { it == allowedName } > 1 }) {
+            return null
+        }
+
+        var remainder = openingTag
+            .replace(Regex("""^\s*<group\b""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex(""">\s*$"""), "")
+        remainder = androidAttributeRegex.replace(remainder, "")
+        if (remainder.isNotBlank()) return null
+
+        val scaleX = attributes.firstOrNull {
+            it.groupValues[1].equals("scaleX", true)
+        }?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ONE
+        val scaleY = attributes.firstOrNull {
+            it.groupValues[1].equals("scaleY", true)
+        }?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ONE
+
+        if (scaleX.compareTo(BigDecimal.ZERO) <= 0 ||
+            scaleY.compareTo(BigDecimal.ZERO) <= 0 ||
+            scaleX.compareTo(scaleY) == 0
+        ) return null
+
+        val pivotX = attributes.firstOrNull {
+            it.groupValues[1].equals("pivotX", true)
+        }?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val pivotY = attributes.firstOrNull {
+            it.groupValues[1].equals("pivotY", true)
+        }?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val translateX = attributes.firstOrNull {
+            it.groupValues[1].equals("translateX", true)
+        }?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val translateY = attributes.firstOrNull {
+            it.groupValues[1].equals("translateY", true)
+        }?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+
+        return AxisScale(
+            scaleX, scaleY, pivotX, pivotY, translateX, translateY
+        )
+    }
+
+    private fun hasDefinitelyNoVisibleStroke(pathElement: String): Boolean {
+        val strokeColor = attributeValue(pathElement, "android:strokeColor")
+            ?: return true
+
+        if (isTransparentColor(strokeColor)) return true
+
+        val strokeAlpha = attributeValue(pathElement, "android:strokeAlpha")
+            ?.trim()?.toBigDecimalOrNull()
+        if (strokeAlpha != null && strokeAlpha.compareTo(BigDecimal.ZERO) == 0) {
+            return true
+        }
+
+        val strokeWidth = attributeValue(pathElement, "android:strokeWidth")
+            ?.trim()?.toBigDecimalOrNull()
+        if (strokeWidth != null && strokeWidth.compareTo(BigDecimal.ZERO) == 0) {
+            return true
+        }
+
+        return false
+    }
+
+    private fun scalePathDataNonUniform(
+        pathData: String,
+        scaleX: BigDecimal,
+        scaleY: BigDecimal,
+        pivotX: BigDecimal,
+        pivotY: BigDecimal,
+        translateX: BigDecimal,
+        translateY: BigDecimal
+    ): String? {
+        val segments = parseNormalizedSegments(pathData) ?: return null
+        if (segments.isEmpty()) return null
+
+        fun scaledX(value: BigDecimal): BigDecimal =
+            pivotX.add(value.subtract(pivotX).multiply(scaleX)).add(translateX)
+        fun scaledY(value: BigDecimal): BigDecimal =
+            pivotY.add(value.subtract(pivotY).multiply(scaleY)).add(translateY)
+
+        val output = StringBuilder(pathData.length + 24)
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val absolute = absoluteValuesFor(segment, currentX, currentY)
+            val scaled = when (upper) {
+                'M', 'L', 'T' ->
+                    listOf(scaledX(absolute[0]), scaledY(absolute[1]))
+                'H' -> listOf(scaledX(absolute[0]))
+                'V' -> listOf(scaledY(absolute[0]))
+                'C' -> listOf(
+                    scaledX(absolute[0]), scaledY(absolute[1]),
+                    scaledX(absolute[2]), scaledY(absolute[3]),
+                    scaledX(absolute[4]), scaledY(absolute[5])
+                )
+                'S', 'Q' -> listOf(
+                    scaledX(absolute[0]), scaledY(absolute[1]),
+                    scaledX(absolute[2]), scaledY(absolute[3])
+                )
+                'A' -> {
+                    val rotation = absolute[2]
+                        .remainder(BigDecimal("180"))
+                        .stripTrailingZeros()
+                    if (rotation.compareTo(BigDecimal.ZERO) != 0) return null
+                    listOf(
+                        absolute[0].multiply(scaleX),
+                        absolute[1].multiply(scaleY),
+                        absolute[2], absolute[3], absolute[4],
+                        scaledX(absolute[5]), scaledY(absolute[6])
+                    )
+                }
                 'Z' -> emptyList()
                 else -> return null
             }
