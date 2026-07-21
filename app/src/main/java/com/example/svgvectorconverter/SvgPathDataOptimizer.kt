@@ -39,6 +39,7 @@ internal object SvgPathDataOptimizer {
         val scaledGroupsFlattened: Int = 0,
         val scaledPaths: Int = 0,
         val scaledStrokeWidths: Int = 0,
+        val scaleGroupsPreservedForSize: Int = 0,
         val identityTransformAttributesRemoved: Int = 0,
         val nestedTransformGroupsComposed: Int = 0,
         val shorterCommandFormsSelected: Int = 0,
@@ -209,6 +210,8 @@ internal object SvgPathDataOptimizer {
                 scaledGroupsFlattened = scaleFlattening.flattenedGroups,
                 scaledPaths = scaleFlattening.scaledPaths,
                 scaledStrokeWidths = scaleFlattening.scaledStrokeWidths,
+                scaleGroupsPreservedForSize =
+                    scaleFlattening.preservedForSize,
                 identityTransformAttributesRemoved =
                     identityCleanup.removedAttributes +
                         postCompositionIdentityCleanup.removedAttributes,
@@ -1365,7 +1368,8 @@ internal object SvgPathDataOptimizer {
         val xml: String,
         val flattenedGroups: Int,
         val scaledPaths: Int,
-        val scaledStrokeWidths: Int
+        val scaledStrokeWidths: Int,
+        val preservedForSize: Int
     )
 
     private data class UniformScale(
@@ -1394,101 +1398,156 @@ internal object SvgPathDataOptimizer {
      * multiplied by the scale factor. Positive uniform scale preserves
      * arc sweep direction, stroke joins/caps, and path winding.
      */
+    private data class ScaleFlatteningProposal(
+        val range: GroupRange,
+        val replacement: String,
+        val scaledPaths: Int,
+        val scaledStrokeWidths: Int
+    )
+
+    /**
+     * A14.1: cost-aware positive uniform-scale flattening.
+     *
+     * Eligible groups are transformed exactly as before, but the scale wrapper
+     * is removed only when the fully canonicalized baked representation is
+     * strictly smaller than retaining the group.
+     *
+     * The existing geometry and paint safety rules remain unchanged. The local
+     * size comparison ignores indentation and blank presentation lines so that
+     * the final pretty-printer cannot influence the decision.
+     */
     private fun flattenUniformPositiveScaleGroups(xml: String): ScaleFlatteningResult {
         var current = xml
         var groupsFlattened = 0
         var pathsScaled = 0
         var strokeWidthsScaled = 0
+        val rejectedGroupSignatures = mutableSetOf<String>()
 
         while (true) {
-            val matchedGroups = findMatchedGroups(current)
-            val candidate = matchedGroups
+            val proposal = findMatchedGroups(current)
                 .asSequence()
-                // A9.2 processes eligible nested positive uniform-scale groups from
-                // the inside out. The smallest candidate is flattened first; after
-                // that, an eligible parent can be reconsidered on the next loop.
+                // Process eligible nested groups from the inside out. A parent
+                // may become eligible after a child has been flattened.
                 .sortedBy { it.end - it.start }
-                .firstOrNull { range ->
+                .firstNotNullOfOrNull { range ->
+                    val originalFragment = current.substring(range.start, range.end)
+                    val signature = stableFragmentSignature(originalFragment)
+                    if (signature in rejectedGroupSignatures) {
+                        return@firstNotNullOfOrNull null
+                    }
+
                     val openingTag = current.substring(range.start, range.openingEnd)
                     val body = current.substring(range.openingEnd, range.closingStart)
-                    uniformScaleForGroup(openingTag) != null &&
-                        isDirectSimplePathBody(body) &&
-                        allExplicitStrokeWidthsAreNumeric(body)
-                } ?: break
-
-            val openingTag = current.substring(candidate.start, candidate.openingEnd)
-            val scale = uniformScaleForGroup(openingTag) ?: break
-            val body = current.substring(candidate.openingEnd, candidate.closingStart)
-            var scaledCount = 0
-            var strokeCount = 0
-            var failed = false
-
-            val scaledBody = pathElementRegex.replace(body) { match ->
-                if (failed) return@replace match.value
-                val element = match.value
-                if (!element.trimEnd().endsWith("/>") || element.contains("<aapt:attr", true)) {
-                    failed = true
-                    return@replace element
-                }
-
-                val pathData = attributeValue(element, "android:pathData")
-                if (pathData == null) {
-                    failed = true
-                    return@replace element
-                }
-
-                val scaledPathData = scalePathData(
-                    pathData = pathData,
-                    factor = scale.factor,
-                    pivotX = scale.pivotX,
-                    pivotY = scale.pivotY,
-                    translateX = scale.translateX,
-                    translateY = scale.translateY
-                )
-                if (scaledPathData == null) {
-                    failed = true
-                    return@replace element
-                }
-
-                var updated = replacePathData(element, scaledPathData)
-                val strokeWidth = attributeValue(updated, "android:strokeWidth")
-                if (strokeWidth != null) {
-                    val numericWidth = strokeWidth.trim().toBigDecimalOrNull()
-                    if (numericWidth == null) {
-                        failed = true
-                        return@replace element
+                    val scale = uniformScaleForGroup(openingTag)
+                        ?: return@firstNotNullOfOrNull null
+                    if (!isDirectSimplePathBody(body) ||
+                        !allExplicitStrokeWidthsAreNumeric(body)
+                    ) {
+                        return@firstNotNullOfOrNull null
                     }
-                    updated = replaceAndroidAttribute(
-                        updated,
-                        "strokeWidth",
-                        formatBigDecimal(numericWidth.multiply(scale.factor))
+
+                    var scaledCount = 0
+                    var strokeCount = 0
+                    var failed = false
+
+                    val scaledBody = pathElementRegex.replace(body) { match ->
+                        if (failed) return@replace match.value
+                        val element = match.value
+                        if (!element.trimEnd().endsWith("/>") ||
+                            element.contains("<aapt:attr", true)
+                        ) {
+                            failed = true
+                            return@replace element
+                        }
+
+                        val pathData = attributeValue(element, "android:pathData")
+                        if (pathData == null) {
+                            failed = true
+                            return@replace element
+                        }
+
+                        val scaledPathData = scalePathData(
+                            pathData = pathData,
+                            factor = scale.factor,
+                            pivotX = scale.pivotX,
+                            pivotY = scale.pivotY,
+                            translateX = scale.translateX,
+                            translateY = scale.translateY
+                        )
+                        if (scaledPathData == null) {
+                            failed = true
+                            return@replace element
+                        }
+
+                        var updated = replacePathData(element, scaledPathData)
+                        val strokeWidth = attributeValue(updated, "android:strokeWidth")
+                        if (strokeWidth != null) {
+                            val numericWidth = strokeWidth.trim().toBigDecimalOrNull()
+                            if (numericWidth == null) {
+                                failed = true
+                                return@replace element
+                            }
+                            updated = replaceAndroidAttribute(
+                                updated,
+                                "strokeWidth",
+                                formatBigDecimal(numericWidth.multiply(scale.factor))
+                            )
+                            strokeCount++
+                        }
+
+                        scaledCount++
+                        updated
+                    }
+
+                    if (failed || scaledCount == 0) {
+                        rejectedGroupSignatures += signature
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    val replacement = removeOneIndentLevel(scaledBody)
+
+                    // Compare the same final decimal spelling that the complete
+                    // optimization pipeline will emit.
+                    val canonicalOriginal =
+                        canonicalizePathDecimalPrecision(originalFragment).xml
+                    val canonicalReplacement =
+                        canonicalizePathDecimalPrecision(replacement).xml
+
+                    val originalCost = stableXmlPayloadCost(canonicalOriginal)
+                    val replacementCost = stableXmlPayloadCost(canonicalReplacement)
+
+                    if (replacementCost >= originalCost) {
+                        rejectedGroupSignatures += signature
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    ScaleFlatteningProposal(
+                        range = range,
+                        replacement = replacement,
+                        scaledPaths = scaledCount,
+                        scaledStrokeWidths = strokeCount
                     )
-                    strokeCount++
                 }
 
-                scaledCount++
-                updated
+            if (proposal == null) {
+                return ScaleFlatteningResult(
+                    xml = current,
+                    flattenedGroups = groupsFlattened,
+                    scaledPaths = pathsScaled,
+                    scaledStrokeWidths = strokeWidthsScaled,
+                    preservedForSize = rejectedGroupSignatures.size
+                )
             }
 
-            if (failed || scaledCount == 0) break
-
-            val replacement = removeOneIndentLevel(scaledBody)
             current = buildString(current.length) {
-                append(current, 0, candidate.start)
-                append(replacement)
-                append(current, candidate.end, current.length)
+                append(current, 0, proposal.range.start)
+                append(proposal.replacement)
+                append(current, proposal.range.end, current.length)
             }
             groupsFlattened++
-            pathsScaled += scaledCount
-            strokeWidthsScaled += strokeCount
+            pathsScaled += proposal.scaledPaths
+            strokeWidthsScaled += proposal.scaledStrokeWidths
         }
-
-        return ScaleFlatteningResult(
-            xml = current,
-            flattenedGroups = groupsFlattened,
-            scaledPaths = pathsScaled,
-            scaledStrokeWidths = strokeWidthsScaled
-        )
     }
 
     private fun uniformScaleForGroup(openingTag: String): UniformScale? {
