@@ -32,6 +32,7 @@ internal object SvgPathDataOptimizer {
         val emptyGroupsRemoved: Int = 0,
         val redundantGroupsFlattened: Int = 0,
         val compatiblePathsMerged: Int = 0,
+        val compatiblePathMergesPreservedForSize: Int = 0,
         val exactDuplicatePathsRemoved: Int = 0,
         val translatedGroupsFlattened: Int = 0,
         val translatedPaths: Int = 0,
@@ -198,6 +199,8 @@ internal object SvgPathDataOptimizer {
                 emptyGroupsRemoved = groupCleanup.removedCount,
                 redundantGroupsFlattened = groupFlattening.flattenedCount,
                 compatiblePathsMerged = pathMerging.mergedCount,
+                compatiblePathMergesPreservedForSize =
+                    pathMerging.preservedForSize,
                 exactDuplicatePathsRemoved = duplicateRemoval.removedCount,
                 translatedGroupsFlattened = translationFlattening.flattenedGroups,
                 translatedPaths = translationFlattening.translatedPaths,
@@ -1897,7 +1900,8 @@ internal object SvgPathDataOptimizer {
 
     private data class PathMergingResult(
         val xml: String,
-        val mergedCount: Int
+        val mergedCount: Int,
+        val preservedForSize: Int
     )
 
 
@@ -2031,14 +2035,32 @@ internal object SvgPathDataOptimizer {
      * The disjointness requirement avoids changes to fill winding, even-odd
      * behavior, alpha compositing, and overlapping stroke coverage.
      */
+    /**
+     * A13.1: cost-aware compatible adjacent-path merging.
+     *
+     * A geometrically safe merge is now applied only when the canonicalized
+     * merged representation is strictly smaller than the two original path
+     * elements plus their separator.
+     *
+     * The comparison uses the same stable payload metric as A12: indentation
+     * and blank presentation lines are ignored, while tags, attributes,
+     * comments, and path data remain counted.
+     */
     private fun mergeCompatibleAdjacentPaths(xml: String): PathMergingResult {
         var current = xml
         var totalMerged = 0
+        val rejectedSignatures = mutableSetOf<String>()
 
         while (true) {
             var mergedThisPass = false
+
             val replaced = adjacentSimplePathRegex.replace(current) { match ->
                 if (mergedThisPass) return@replace match.value
+
+                val signature = stableFragmentSignature(match.value)
+                if (signature in rejectedSignatures) {
+                    return@replace match.value
+                }
 
                 val first = match.groupValues[1]
                 val separator = match.groupValues[2]
@@ -2046,22 +2068,43 @@ internal object SvgPathDataOptimizer {
                 val merged = mergePathElements(first, second)
 
                 if (merged == null) {
-                    match.value
-                } else {
-                    mergedThisPass = true
-                    totalMerged++
-                    // Preserve comments associated with the second element above
-                    // the merged element. Conversion comments are later cleaned up
-                    // if they become orphaned.
-                    separator + merged
+                    return@replace match.value
                 }
+
+                // Preserve comments associated with the second element above
+                // the merged element, matching the previous behavior.
+                val mergedFragment = separator + merged
+
+                // Canonicalize final numeric spelling before comparing costs.
+                val canonicalOriginal =
+                    canonicalizePathDecimalPrecision(match.value).xml
+                val canonicalMerged =
+                    canonicalizePathDecimalPrecision(mergedFragment).xml
+
+                val originalCost = stableXmlPayloadCost(canonicalOriginal)
+                val mergedCost = stableXmlPayloadCost(canonicalMerged)
+
+                if (mergedCost >= originalCost) {
+                    rejectedSignatures += signature
+                    return@replace match.value
+                }
+
+                mergedThisPass = true
+                totalMerged++
+                mergedFragment
             }
 
-            if (!mergedThisPass) break
+            if (!mergedThisPass) {
+                break
+            }
             current = replaced
         }
 
-        return PathMergingResult(current, totalMerged)
+        return PathMergingResult(
+            xml = current,
+            mergedCount = totalMerged,
+            preservedForSize = rejectedSignatures.size
+        )
     }
 
     private fun mergePathElements(first: String, second: String): String? {
