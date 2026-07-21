@@ -1516,7 +1516,25 @@ internal object SvgPathDataOptimizer {
                     val originalCost = stableXmlPayloadCost(canonicalOriginal)
                     val replacementCost = stableXmlPayloadCost(canonicalReplacement)
 
-                    if (replacementCost >= originalCost) {
+                    // Removing a group can reduce total XML while still causing
+                    // pathData to balloon with repeated decimal coordinates.
+                    // Permit only small path-data growth: up to eight characters
+                    // or ten percent of the original path data, whichever is
+                    // larger. This preserves genuinely compact flattening such
+                    // as 8 -> 9 characters, while rejecting cases such as
+                    // 24 -> 72 or 132 -> 200.
+                    val originalPathDataCost =
+                        totalPathDataCharacters(canonicalOriginal)
+                    val replacementPathDataCost =
+                        totalPathDataCharacters(canonicalReplacement)
+                    val pathDataGrowth =
+                        replacementPathDataCost - originalPathDataCost
+                    val allowedPathDataGrowth =
+                        maxOf(8, originalPathDataCost / 10)
+
+                    if (replacementCost >= originalCost ||
+                        pathDataGrowth > allowedPathDataGrowth
+                    ) {
                         rejectedGroupSignatures += signature
                         return@firstNotNullOfOrNull null
                     }
@@ -1841,6 +1859,16 @@ internal object SvgPathDataOptimizer {
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .sumOf { it.length + 1 }
+
+    /**
+     * Returns the combined character count of every direct pathData value in
+     * a local XML fragment. The caller supplies the canonicalized fragment so
+     * the decision uses the same decimal spelling emitted by the final output.
+     */
+    private fun totalPathDataCharacters(fragment: String): Int =
+        pathElementRegex.findAll(fragment).sumOf { match ->
+            attributeValue(match.value, "android:pathData")?.length ?: 0
+        }
 
     private fun stableFragmentSignature(fragment: String): String =
         fragment.lineSequence()
