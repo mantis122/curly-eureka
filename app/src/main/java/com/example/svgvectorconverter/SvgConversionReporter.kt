@@ -143,6 +143,7 @@ data class SvgConversionReportData(
     val pathDataCharactersAfter: Int = 0,
     val pathDataRepeatedCommandsRemoved: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
+    val scaleGroupsPreservedForSize: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
     val invisiblePathsRemoved: Int = 0,
@@ -435,6 +436,11 @@ object SvgConversionReporter {
 
             if (data.pathDataNumbersNormalized > 0)
                 appendLine("✓ Numeric values normalized: ${data.pathDataNumbersNormalized}")
+            if (data.scaleGroupsPreservedForSize > 0)
+                appendLine(
+                    "✓ Uniform scale groups preserved for smaller output: " +
+                        data.scaleGroupsPreservedForSize
+                )
             if (data.pathDataRepeatedCommandsRemoved > 0)
                 appendLine("✓ Repeated commands removed: ${data.pathDataRepeatedCommandsRemoved}")
             if (data.emptyPathDataRemoved > 0)
