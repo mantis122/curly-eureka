@@ -2,8 +2,10 @@ package com.example.svgvectorconverter
 
 import java.math.BigDecimal
 import java.math.RoundingMode
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Performs conservative cleanup of emitted VectorDrawable XML.
@@ -2892,7 +2894,9 @@ internal object SvgPathDataOptimizer {
      * contained by that hull, so these bounds may be larger than necessary but
      * are safe for proving that two rendered paths are disjoint.
      *
-     * Arc commands remain unsupported until A6.2.
+     * Elliptical arcs are supported with a conservative full-ellipse bound.
+     * The bound is rotation-aware and always contains the rendered arc, though
+     * it may be larger than the swept portion. That preserves merge safety.
      */
     private fun compatiblePathBounds(pathData: String): Bounds? {
         val tokens = tokenRegex.findAll(pathData).map { it.value }.toList()
@@ -3123,8 +3127,46 @@ internal object SvgPathDataOptimizer {
                     command = null
                 }
 
-                // Elliptical arcs are deliberately deferred to A6.2.
-                'a' -> return null
+                'a' -> {
+                    if (!hasNumbers(7)) return null
+                    val startX = currentX
+                    val startY = currentY
+                    val rawRx = number() ?: return null
+                    val rawRy = number() ?: return null
+                    val rotationDegrees = number() ?: return null
+                    val largeArcFlag = number() ?: return null
+                    val sweepFlag = number() ?: return null
+                    val rawX = number() ?: return null
+                    val rawY = number() ?: return null
+                    val x = if (relative) startX + rawX else rawX
+                    val y = if (relative) startY + rawY else rawY
+
+                    if (!largeArcFlag.isArcFlag() || !sweepFlag.isArcFlag()) {
+                        return null
+                    }
+
+                    include(startX, startY)
+                    include(x, y)
+
+                    val arcBounds = conservativeArcBounds(
+                        startX = startX,
+                        startY = startY,
+                        endX = x,
+                        endY = y,
+                        radiusX = rawRx,
+                        radiusY = rawRy,
+                        rotationDegrees = rotationDegrees,
+                        largeArc = largeArcFlag != 0.0,
+                        sweep = sweepFlag != 0.0
+                    ) ?: return null
+
+                    include(arcBounds.minX, arcBounds.minY)
+                    include(arcBounds.maxX, arcBounds.maxY)
+
+                    currentX = x
+                    currentY = y
+                    previousCommand = active
+                }
 
                 else -> return null
             }
@@ -3132,6 +3174,110 @@ internal object SvgPathDataOptimizer {
 
         return if (hasPoint) Bounds(minX, minY, maxX, maxY) else null
     }
+
+
+    /**
+     * A6.2: returns a conservative axis-aligned bound for one SVG elliptical
+     * arc. Rather than solving the swept-angle extrema, this bounds the entire
+     * transformed ellipse. It can reject an otherwise-safe merge, but it can
+     * never approve a merge because the arc was underestimated.
+     */
+    private fun conservativeArcBounds(
+        startX: Double,
+        startY: Double,
+        endX: Double,
+        endY: Double,
+        radiusX: Double,
+        radiusY: Double,
+        rotationDegrees: Double,
+        largeArc: Boolean,
+        sweep: Boolean
+    ): Bounds? {
+        var rx = abs(radiusX)
+        var ry = abs(radiusY)
+
+        // SVG treats a zero-radius arc as a straight line. The caller already
+        // includes both endpoints, so their line bounds are sufficient.
+        if (rx == 0.0 || ry == 0.0 ||
+            (startX == endX && startY == endY)
+        ) {
+            return Bounds(
+                minOf(startX, endX),
+                minOf(startY, endY),
+                maxOf(startX, endX),
+                maxOf(startY, endY)
+            )
+        }
+
+        val phi = Math.toRadians(rotationDegrees % 360.0)
+        val cosPhi = cos(phi)
+        val sinPhi = sin(phi)
+        val dx = (startX - endX) / 2.0
+        val dy = (startY - endY) / 2.0
+        val xPrime = cosPhi * dx + sinPhi * dy
+        val yPrime = -sinPhi * dx + cosPhi * dy
+
+        // SVG 1.1 F.6.6: enlarge radii when the requested ellipse cannot span
+        // the endpoints. This is essential for a bound that contains the arc.
+        val radiiScale =
+            (xPrime * xPrime) / (rx * rx) +
+                (yPrime * yPrime) / (ry * ry)
+        if (radiiScale > 1.0) {
+            val scale = sqrt(radiiScale)
+            rx *= scale
+            ry *= scale
+        }
+
+        val rxSquared = rx * rx
+        val rySquared = ry * ry
+        val xPrimeSquared = xPrime * xPrime
+        val yPrimeSquared = yPrime * yPrime
+        val denominator =
+            rxSquared * yPrimeSquared + rySquared * xPrimeSquared
+
+        if (denominator == 0.0) return null
+
+        val numerator =
+            (rxSquared * rySquared -
+                rxSquared * yPrimeSquared -
+                rySquared * xPrimeSquared).coerceAtLeast(0.0)
+        val sign = if (largeArc == sweep) -1.0 else 1.0
+        val coefficient = sign * sqrt(numerator / denominator)
+        val centerPrimeX = coefficient * (rx * yPrime / ry)
+        val centerPrimeY = coefficient * (-ry * xPrime / rx)
+        val centerX =
+            cosPhi * centerPrimeX - sinPhi * centerPrimeY +
+                (startX + endX) / 2.0
+        val centerY =
+            sinPhi * centerPrimeX + cosPhi * centerPrimeY +
+                (startY + endY) / 2.0
+
+        // Axis-aligned extents of a rotated ellipse. Bounding the entire ellipse
+        // is conservative for either sweep direction and either arc choice.
+        val extentX = sqrt(
+            rxSquared * cosPhi * cosPhi +
+                rySquared * sinPhi * sinPhi
+        )
+        val extentY = sqrt(
+            rxSquared * sinPhi * sinPhi +
+                rySquared * cosPhi * cosPhi
+        )
+
+        if (!centerX.isFinite() || !centerY.isFinite() ||
+            !extentX.isFinite() || !extentY.isFinite()
+        ) {
+            return null
+        }
+
+        return Bounds(
+            centerX - extentX,
+            centerY - extentY,
+            centerX + extentX,
+            centerY + extentY
+        )
+    }
+
+    private fun Double.isArcFlag(): Boolean = this == 0.0 || this == 1.0
 
     private fun hasDrawableGeometry(pathData: String): Boolean {
         val tokens = tokenRegex.findAll(pathData).map { it.value }.toList()
