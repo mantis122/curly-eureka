@@ -159,6 +159,9 @@ data class SvgConversionReportData(
     val nonUniformScaleGroupsFlattened: Int = 0,
     val nonUniformScaledPaths: Int = 0,
     val nonUniformScaleGroupsPreservedForSize: Int = 0,
+    val rotationGroupsFlattened: Int = 0,
+    val rotatedPaths: Int = 0,
+    val rotationGroupsPreservedForSize: Int = 0,
     val identityTransformAttributesRemoved: Int = 0,
     val nestedTransformGroupsComposed: Int = 0,
     val shorterCommandFormsSelected: Int = 0,
@@ -482,6 +485,21 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Non-uniform scale groups preserved for smaller output: " +
                         data.nonUniformScaleGroupsPreservedForSize
+                )
+            if (data.rotationGroupsFlattened > 0)
+                appendLine(
+                    "✓ Rotation groups flattened: " +
+                        data.rotationGroupsFlattened
+                )
+            if (data.rotatedPaths > 0)
+                appendLine(
+                    "✓ Paths rotated into coordinates: " +
+                        data.rotatedPaths
+                )
+            if (data.rotationGroupsPreservedForSize > 0)
+                appendLine(
+                    "✓ Rotation groups preserved for smaller output: " +
+                        data.rotationGroupsPreservedForSize
                 )
             if (data.identityTransformAttributesRemoved > 0)
                 appendLine("✓ Identity transform attributes removed: ${data.identityTransformAttributesRemoved}")

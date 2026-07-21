@@ -43,6 +43,9 @@ internal object SvgPathDataOptimizer {
         val nonUniformScaleGroupsFlattened: Int = 0,
         val nonUniformScaledPaths: Int = 0,
         val nonUniformScaleGroupsPreservedForSize: Int = 0,
+        val rotationGroupsFlattened: Int = 0,
+        val rotatedPaths: Int = 0,
+        val rotationGroupsPreservedForSize: Int = 0,
         val identityTransformAttributesRemoved: Int = 0,
         val nestedTransformGroupsComposed: Int = 0,
         val shorterCommandFormsSelected: Int = 0,
@@ -171,8 +174,10 @@ internal object SvgPathDataOptimizer {
         val scaleFlattening = flattenUniformPositiveScaleGroups(groupFlattening.xml)
         val nonUniformScaleFlattening =
             flattenNonUniformPositiveScaleFillOnlyGroups(scaleFlattening.xml)
+        val rotationFlattening =
+            flattenRotationOnlyGroups(nonUniformScaleFlattening.xml)
         val translationFlattening =
-            flattenTranslationOnlyGroups(nonUniformScaleFlattening.xml)
+            flattenTranslationOnlyGroups(rotationFlattening.xml)
         val nearIntegerSnapping = snapNearIntegerPathValues(translationFlattening.xml)
         val duplicateRemoval =
             removeExactAdjacentDuplicatePaths(nearIntegerSnapping.xml)
@@ -224,6 +229,12 @@ internal object SvgPathDataOptimizer {
                     nonUniformScaleFlattening.scaledPaths,
                 nonUniformScaleGroupsPreservedForSize =
                     nonUniformScaleFlattening.preservedForSize,
+                rotationGroupsFlattened =
+                    rotationFlattening.flattenedGroups,
+                rotatedPaths =
+                    rotationFlattening.rotatedPaths,
+                rotationGroupsPreservedForSize =
+                    rotationFlattening.preservedForSize,
                 identityTransformAttributesRemoved =
                     identityCleanup.removedAttributes +
                         postCompositionIdentityCleanup.removedAttributes,
@@ -2033,6 +2044,294 @@ internal object SvgPathDataOptimizer {
                 'A' -> {
                     currentX = absolute[5]
                     currentY = absolute[6]
+                }
+                'Z' -> {
+                    currentX = subpathX
+                    currentY = subpathY
+                }
+            }
+        }
+
+        return optimizePathData(output.toString()).pathData
+    }
+
+
+    private data class RotationFlatteningResult(
+        val xml: String,
+        val flattenedGroups: Int,
+        val rotatedPaths: Int,
+        val preservedForSize: Int
+    )
+
+    private data class RotationTransform(
+        val degrees: BigDecimal,
+        val pivotX: BigDecimal,
+        val pivotY: BigDecimal,
+        val translateX: BigDecimal,
+        val translateY: BigDecimal
+    )
+
+    private data class RotationFlatteningProposal(
+        val range: GroupRange,
+        val replacement: String,
+        val rotatedPaths: Int
+    )
+
+    /**
+     * A14.3: cost-aware flattening of rotation-only groups.
+     *
+     * Rotation and translation preserve stroke width, so visible strokes remain
+     * eligible. Arc commands are conservatively rejected because rotating an
+     * SVG elliptical arc requires updating its x-axis rotation and can interact
+     * with later path canonicalization in non-obvious ways.
+     */
+    private fun flattenRotationOnlyGroups(xml: String): RotationFlatteningResult {
+        var current = xml
+        var groupsFlattened = 0
+        var pathsRotated = 0
+        val rejectedGroupSignatures = mutableSetOf<String>()
+
+        while (true) {
+            val proposal = findMatchedGroups(current)
+                .asSequence()
+                .sortedBy { it.end - it.start }
+                .firstNotNullOfOrNull { range ->
+                    val originalFragment = current.substring(range.start, range.end)
+                    val signature = stableFragmentSignature(originalFragment)
+                    if (signature in rejectedGroupSignatures) {
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    val openingTag = current.substring(range.start, range.openingEnd)
+                    val body = current.substring(range.openingEnd, range.closingStart)
+                    val transform = rotationTransformForGroup(openingTag)
+                        ?: return@firstNotNullOfOrNull null
+
+                    if (!isDirectSimplePathBody(body)) {
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    val pathMatches = pathElementRegex.findAll(body).toList()
+                    if (pathMatches.isEmpty()) {
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    var rotatedCount = 0
+                    var failed = false
+                    val rotatedBody = pathElementRegex.replace(body) { match ->
+                        if (failed) return@replace match.value
+                        val element = match.value
+                        if (!element.trimEnd().endsWith("/>") ||
+                            element.contains("<aapt:attr", true)
+                        ) {
+                            failed = true
+                            return@replace element
+                        }
+
+                        val pathData = attributeValue(element, "android:pathData")
+                        if (pathData == null) {
+                            failed = true
+                            return@replace element
+                        }
+
+                        val rotatedPathData = rotatePathData(
+                            pathData = pathData,
+                            transform = transform
+                        )
+                        if (rotatedPathData == null) {
+                            failed = true
+                            return@replace element
+                        }
+
+                        rotatedCount++
+                        replacePathData(element, rotatedPathData)
+                    }
+
+                    if (failed || rotatedCount == 0) {
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    val replacement = removeOneIndentLevel(rotatedBody)
+                    val canonicalOriginal =
+                        canonicalizePathDecimalPrecision(originalFragment).xml
+                    val canonicalReplacement =
+                        canonicalizePathDecimalPrecision(replacement).xml
+
+                    val originalCost = stableXmlPayloadCost(canonicalOriginal)
+                    val replacementCost = stableXmlPayloadCost(canonicalReplacement)
+                    val originalPathDataCost =
+                        totalPathDataCharacters(canonicalOriginal)
+                    val replacementPathDataCost =
+                        totalPathDataCharacters(canonicalReplacement)
+                    val pathDataGrowth =
+                        replacementPathDataCost - originalPathDataCost
+                    val allowedPathDataGrowth =
+                        maxOf(8, originalPathDataCost / 10)
+
+                    if (replacementCost >= originalCost ||
+                        pathDataGrowth > allowedPathDataGrowth
+                    ) {
+                        rejectedGroupSignatures += signature
+                        return@firstNotNullOfOrNull null
+                    }
+
+                    RotationFlatteningProposal(
+                        range = range,
+                        replacement = replacement,
+                        rotatedPaths = rotatedCount
+                    )
+                }
+
+            if (proposal == null) {
+                return RotationFlatteningResult(
+                    xml = current,
+                    flattenedGroups = groupsFlattened,
+                    rotatedPaths = pathsRotated,
+                    preservedForSize = rejectedGroupSignatures.size
+                )
+            }
+
+            current = buildString(current.length) {
+                append(current, 0, proposal.range.start)
+                append(proposal.replacement)
+                append(current, proposal.range.end, current.length)
+            }
+            groupsFlattened++
+            pathsRotated += proposal.rotatedPaths
+        }
+    }
+
+    private fun rotationTransformForGroup(openingTag: String): RotationTransform? {
+        val trimmed = openingTag.trim()
+        if (!trimmed.startsWith("<group", ignoreCase = true) ||
+            !trimmed.endsWith('>')
+        ) return null
+
+        val attributes = androidAttributeRegex.findAll(openingTag).toList()
+        val allowed = setOf(
+            "rotation", "pivotx", "pivoty", "translatex", "translatey"
+        )
+        val names = attributes.map { it.groupValues[1].lowercase() }
+        if (names.any { it !in allowed }) return null
+        if (allowed.any { name -> names.count { it == name } > 1 }) return null
+
+        var remainder = openingTag
+            .replace(Regex("""^\s*<group\b""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex(""">\s*$"""), "")
+        remainder = androidAttributeRegex.replace(remainder, "")
+        if (remainder.isNotBlank()) return null
+
+        val degrees = attributes.firstOrNull {
+            it.groupValues[1].equals("rotation", true)
+        }?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: return null
+
+        val normalized = degrees.remainder(BigDecimal("360")).stripTrailingZeros()
+        if (normalized.compareTo(BigDecimal.ZERO) == 0) return null
+
+        val pivotX = attributes.firstOrNull {
+            it.groupValues[1].equals("pivotX", true)
+        }?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val pivotY = attributes.firstOrNull {
+            it.groupValues[1].equals("pivotY", true)
+        }?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val translateX = attributes.firstOrNull {
+            it.groupValues[1].equals("translateX", true)
+        }?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val translateY = attributes.firstOrNull {
+            it.groupValues[1].equals("translateY", true)
+        }?.groupValues?.get(3)?.trim()?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+
+        return RotationTransform(
+            degrees = normalized,
+            pivotX = pivotX,
+            pivotY = pivotY,
+            translateX = translateX,
+            translateY = translateY
+        )
+    }
+
+    private fun rotatePathData(
+        pathData: String,
+        transform: RotationTransform
+    ): String? {
+        val segments = parseNormalizedSegments(pathData) ?: return null
+        if (segments.isEmpty()) return null
+        if (segments.any { it.command.uppercaseChar() == 'A' }) return null
+
+        val radians = Math.toRadians(transform.degrees.toDouble())
+        val cosine = BigDecimal.valueOf(cos(radians))
+        val sine = BigDecimal.valueOf(sin(radians))
+
+        fun rotatePoint(x: BigDecimal, y: BigDecimal): Pair<BigDecimal, BigDecimal> {
+            val localX = x.subtract(transform.pivotX)
+            val localY = y.subtract(transform.pivotY)
+            val rotatedX = localX.multiply(cosine).subtract(localY.multiply(sine))
+                .add(transform.pivotX).add(transform.translateX)
+            val rotatedY = localX.multiply(sine).add(localY.multiply(cosine))
+                .add(transform.pivotY).add(transform.translateY)
+            return rotatedX to rotatedY
+        }
+
+        val output = StringBuilder(pathData.length + 32)
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val absolute = absoluteValuesFor(segment, currentX, currentY)
+
+            fun appendPoint(x: BigDecimal, y: BigDecimal, first: Boolean) {
+                val point = rotatePoint(x, y)
+                if (!first) output.append(',')
+                output.append(formatBigDecimal(point.first))
+                output.append(',')
+                output.append(formatBigDecimal(point.second))
+            }
+
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    output.append(upper)
+                    appendPoint(absolute[0], absolute[1], true)
+                }
+                'H' -> {
+                    output.append('L')
+                    appendPoint(absolute[0], currentY, true)
+                }
+                'V' -> {
+                    output.append('L')
+                    appendPoint(currentX, absolute[0], true)
+                }
+                'C' -> {
+                    output.append('C')
+                    appendPoint(absolute[0], absolute[1], true)
+                    appendPoint(absolute[2], absolute[3], false)
+                    appendPoint(absolute[4], absolute[5], false)
+                }
+                'S', 'Q' -> {
+                    output.append(upper)
+                    appendPoint(absolute[0], absolute[1], true)
+                    appendPoint(absolute[2], absolute[3], false)
+                }
+                'Z' -> output.append('Z')
+                else -> return null
+            }
+
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
+                    if (upper == 'M') {
+                        subpathX = currentX
+                        subpathY = currentY
+                    }
+                }
+                'H' -> currentX = absolute[0]
+                'V' -> currentY = absolute[0]
+                'C', 'S', 'Q' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
                 }
                 'Z' -> {
                     currentX = subpathX

@@ -327,6 +327,12 @@ object SvgToVectorConverter {
                     pathOptimizationStats.nonUniformScaledPaths,
                 nonUniformScaleGroupsPreservedForSize =
                     pathOptimizationStats.nonUniformScaleGroupsPreservedForSize,
+                rotationGroupsFlattened =
+                    pathOptimizationStats.rotationGroupsFlattened,
+                rotatedPaths =
+                    pathOptimizationStats.rotatedPaths,
+                rotationGroupsPreservedForSize =
+                    pathOptimizationStats.rotationGroupsPreservedForSize,
                 identityTransformAttributesRemoved = pathOptimizationStats.identityTransformAttributesRemoved,
                 nestedTransformGroupsComposed = pathOptimizationStats.nestedTransformGroupsComposed,
                 shorterCommandFormsSelected = pathOptimizationStats.shorterCommandFormsSelected,
