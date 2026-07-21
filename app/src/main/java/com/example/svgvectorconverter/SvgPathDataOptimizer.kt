@@ -2848,9 +2848,21 @@ internal object SvgPathDataOptimizer {
         val secondBounds = compatiblePathBounds(secondPathData) ?: return null
         val strokeExpansion = sharedStrokeExpansion(firstAttributes)
 
-        if (!firstBounds.expanded(strokeExpansion)
+        val expandedBoundsAreDisjoint =
+            firstBounds.expanded(strokeExpansion)
                 .isStrictlyDisjointFrom(secondBounds.expanded(strokeExpansion))
-        ) {
+
+        // A6.2b: adjacent stroked subpaths commonly meet at an endpoint. Their
+        // stroke-expanded bounds therefore overlap even though consolidating
+        // them remains visually lossless when the paint is a fully opaque,
+        // stroke-only channel. Keep the original strict-disjoint rule for any
+        // fill or translucent paint, where combining subpaths can alter winding
+        // or compositing.
+        val safeOpaqueStrokeOnlyJoin =
+            isFullyOpaqueStrokeOnly(firstAttributes) &&
+                arcFlagsAreMergeCompatible(firstPathData, secondPathData)
+
+        if (!expandedBoundsAreDisjoint && !safeOpaqueStrokeOnlyJoin) {
             return null
         }
 
@@ -2864,6 +2876,100 @@ internal object SvgPathDataOptimizer {
                 match.groupValues[1].lowercase() to match.groupValues[3].trim()
             }
             .filterKeys { it != "pathdata" }
+    }
+
+
+    /**
+     * A6.2b permits endpoint-touching consolidation only for a single fully
+     * opaque stroke channel. Fill-bearing paths retain the older disjointness
+     * requirement because combining their subpaths can change winding.
+     */
+    private fun isFullyOpaqueStrokeOnly(attributes: Map<String, String>): Boolean {
+        val fill = attributes["fillcolor"]
+        val fillDraws = fill != null && !isTransparentColor(fill)
+        if (fillDraws) return false
+
+        val stroke = attributes["strokecolor"] ?: return false
+        if (isTransparentColor(stroke)) return false
+        val strokeWidth = attributes["strokewidth"]?.toDoubleOrNull() ?: 0.0
+        if (strokeWidth <= 0.0) return false
+
+        val strokeAlpha = attributes["strokealpha"]?.toDoubleOrNull() ?: 1.0
+        if (kotlin.math.abs(strokeAlpha - 1.0) > 1e-9) return false
+
+        val value = stroke.trim()
+        if (!value.startsWith("#")) return false
+        val hex = value.substring(1)
+        return when (hex.length) {
+            6 -> true
+            8 -> hex.substring(0, 2).equals("FF", ignoreCase = true)
+            else -> false
+        }
+    }
+
+    /**
+     * When both candidates contain arcs, require their large-arc and sweep flag
+     * sequences to agree. This preserves A6.2's conservative behavior for
+     * geometrically different adjacent arc constructions while still allowing
+     * matching arc runs and mixed line/arc runs to consolidate.
+     */
+    private fun arcFlagsAreMergeCompatible(
+        firstPathData: String,
+        secondPathData: String
+    ): Boolean {
+        val firstFlags = extractArcFlagPairs(firstPathData) ?: return false
+        val secondFlags = extractArcFlagPairs(secondPathData) ?: return false
+        if (firstFlags.isEmpty() || secondFlags.isEmpty()) return true
+        return firstFlags == secondFlags
+    }
+
+    private fun extractArcFlagPairs(pathData: String): List<Pair<Int, Int>>? {
+        val tokens = tokenRegex.findAll(pathData).map { it.value }.toList()
+        val result = mutableListOf<Pair<Int, Int>>()
+        var index = 0
+        var command: Char? = null
+
+        fun parameterCount(command: Char): Int = when (command.lowercaseChar()) {
+            'm', 'l', 't' -> 2
+            'h', 'v' -> 1
+            'c' -> 6
+            's', 'q' -> 4
+            'a' -> 7
+            'z' -> 0
+            else -> -1
+        }
+
+        while (index < tokens.size) {
+            if (isCommand(tokens[index])) {
+                command = tokens[index][0]
+                index++
+                if (command!!.lowercaseChar() == 'z') {
+                    command = null
+                    continue
+                }
+            }
+
+            val active = command ?: return null
+            val count = parameterCount(active)
+            if (count <= 0 || index + count > tokens.size) return null
+
+            if (active.lowercaseChar() == 'a') {
+                val large = tokens[index + 3].toDoubleOrNull() ?: return null
+                val sweep = tokens[index + 4].toDoubleOrNull() ?: return null
+                if (!large.isArcFlag() || !sweep.isArcFlag()) return null
+                result += (if (large == 0.0) 0 else 1) to
+                    (if (sweep == 0.0) 0 else 1)
+            }
+
+            index += count
+
+            // Additional moveto coordinate pairs are implicit lineto pairs.
+            if (active.lowercaseChar() == 'm') {
+                command = if (active.isLowerCase()) 'l' else 'L'
+            }
+        }
+
+        return result
     }
 
     private fun sharedStrokeExpansion(attributes: Map<String, String>): Double {
