@@ -148,6 +148,7 @@ data class SvgConversionReportData(
     val invisiblePathsRemoved: Int = 0,
     val emptyGroupsRemoved: Int = 0,
     val redundantGroupsFlattened: Int = 0,
+    val commonTranslationGroupsFactored: Int = 0,
     val adjacentGroupsCoalesced: Int = 0,
     val compatiblePathsMerged: Int = 0,
     val exactDuplicatePathsRemoved: Int = 0,
@@ -472,6 +473,8 @@ object SvgConversionReporter {
                 appendLine("✓ Empty groups removed: ${data.emptyGroupsRemoved}")
             if (data.redundantGroupsFlattened > 0)
                 appendLine("✓ Redundant groups flattened: ${data.redundantGroupsFlattened}")
+            if (data.commonTranslationGroupsFactored > 0)
+                appendLine("✓ Groups sharing translations factored: ${data.commonTranslationGroupsFactored}")
             if (data.adjacentGroupsCoalesced > 0)
                 appendLine("✓ Identical adjacent groups coalesced: ${data.adjacentGroupsCoalesced}")
             if (data.exactDuplicatePathsRemoved > 0)

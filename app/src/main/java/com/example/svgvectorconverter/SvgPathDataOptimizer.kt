@@ -33,6 +33,7 @@ internal object SvgPathDataOptimizer {
         val invisiblePathsRemoved: Int = 0,
         val emptyGroupsRemoved: Int = 0,
         val redundantGroupsFlattened: Int = 0,
+        val commonTranslationGroupsFactored: Int = 0,
         val adjacentGroupsCoalesced: Int = 0,
         val compatiblePathsMerged: Int = 0,
         val compatiblePathMergesPreservedForSize: Int = 0,
@@ -197,7 +198,9 @@ internal object SvgPathDataOptimizer {
             composeNestedCompatibleSamePivotGroups(translationComposition.xml)
         val postCompositionIdentityCleanup =
             removeIdentityGroupTransformAttributes(compatibleComposition.xml)
-        val groupFlattening = flattenRedundantGroups(postCompositionIdentityCleanup.xml)
+        val commonTranslationFactoring =
+            factorCommonSiblingTranslations(postCompositionIdentityCleanup.xml)
+        val groupFlattening = flattenRedundantGroups(commonTranslationFactoring.xml)
         val scaleFlattening = flattenUniformPositiveScaleGroups(groupFlattening.xml)
         val nonUniformScaleFlattening =
             flattenNonUniformPositiveScaleFillOnlyGroups(scaleFlattening.xml)
@@ -261,6 +264,7 @@ internal object SvgPathDataOptimizer {
                 invisiblePathsRemoved = invisiblePathsRemoved,
                 emptyGroupsRemoved = groupCleanup.removedCount,
                 redundantGroupsFlattened = groupFlattening.flattenedCount,
+                commonTranslationGroupsFactored = commonTranslationFactoring.factoredGroups,
                 adjacentGroupsCoalesced = adjacentGroupCoalescing.coalescedGroups,
                 compatiblePathsMerged = pathMerging.mergedCount,
                 compatiblePathMergesPreservedForSize =
@@ -1381,6 +1385,170 @@ internal object SvgPathDataOptimizer {
             append(closingIndent)
             append('>')
         }
+    }
+
+    private data class CommonTranslationFactoringResult(
+        val xml: String,
+        val factoredGroups: Int
+    )
+
+    /**
+     * C2: factors an identical final translation out of consecutive sibling
+     * groups and places it on one shared parent group.
+     *
+     * VectorDrawable applies a parent translation after every child transform,
+     * so this rewrite is exact even when the children use different rotations,
+     * scales, pivots, or clip paths. Child group boundaries remain intact until
+     * the ordinary redundant-group cleanup decides they can safely disappear.
+     *
+     * The rewrite is accepted only when:
+     * - at least two direct sibling groups form a consecutive run;
+     * - only comments/whitespace separate the groups;
+     * - every group has the same non-zero translateX/translateY pair;
+     * - all group attributes are recognized numeric VectorDrawable transforms;
+     * - and the rewritten XML is strictly shorter.
+     */
+    private fun factorCommonSiblingTranslations(
+        xml: String
+    ): CommonTranslationFactoringResult {
+        var current = xml
+        var factoredGroups = 0
+
+        val allowed = setOf(
+            "rotation", "pivotx", "pivoty",
+            "scalex", "scaley", "translatex", "translatey"
+        )
+
+        while (true) {
+            val groups = findMatchedGroups(current)
+            if (groups.size < 2) break
+
+            fun parentOf(range: GroupRange): GroupRange? = groups
+                .asSequence()
+                .filter { it.start < range.start && it.end > range.end }
+                .minByOrNull { it.end - it.start }
+
+            var chosen: Pair<List<GroupRange>, Pair<BigDecimal, BigDecimal>>? = null
+
+            outer@ for (siblings in groups.groupBy { parentOf(it)?.start }.values) {
+                val ordered = siblings.sortedBy { it.start }
+                var start = 0
+                while (start < ordered.size) {
+                    val first = ordered[start]
+                    val firstAttrs = recognizedNumericGroupAttributes(
+                        current.substring(first.start, first.openingEnd), allowed
+                    )
+                    if (firstAttrs == null) {
+                        start++
+                        continue
+                    }
+
+                    val tx = firstAttrs["translatex"] ?: BigDecimal.ZERO
+                    val ty = firstAttrs["translatey"] ?: BigDecimal.ZERO
+                    if (tx.compareTo(BigDecimal.ZERO) == 0 &&
+                        ty.compareTo(BigDecimal.ZERO) == 0
+                    ) {
+                        start++
+                        continue
+                    }
+
+                    val run = mutableListOf(first)
+                    var next = start + 1
+                    while (next < ordered.size) {
+                        val previous = run.last()
+                        val candidate = ordered[next]
+                        if (!commentsAndWhitespaceOnly(
+                                current.substring(previous.end, candidate.start)
+                            )
+                        ) break
+
+                        val attrs = recognizedNumericGroupAttributes(
+                            current.substring(candidate.start, candidate.openingEnd), allowed
+                        ) ?: break
+                        val candidateX = attrs["translatex"] ?: BigDecimal.ZERO
+                        val candidateY = attrs["translatey"] ?: BigDecimal.ZERO
+                        if (candidateX.compareTo(tx) != 0 || candidateY.compareTo(ty) != 0) {
+                            break
+                        }
+                        run += candidate
+                        next++
+                    }
+
+                    if (run.size >= 2) {
+                        chosen = run to (tx to ty)
+                        break@outer
+                    }
+                    start = next.coerceAtLeast(start + 1)
+                }
+            }
+
+            val selection = chosen ?: break
+            val run = selection.first
+            val (translateX, translateY) = selection.second
+            val first = run.first()
+            val last = run.last()
+
+            val original = current.substring(first.start, last.end)
+            val rewrittenChildren = buildString(original.length) {
+                var cursor = first.start
+                for (group in run) {
+                    append(current, cursor, group.start)
+                    val opening = current.substring(group.start, group.openingEnd)
+                    append(removeGroupTransformAttributes(
+                        opening, setOf("translatex", "translatey")
+                    ))
+                    append(current, group.openingEnd, group.end)
+                    cursor = group.end
+                }
+                append(current, cursor, last.end)
+            }
+
+            val replacement = buildString(rewrittenChildren.length + 96) {
+                append("<group")
+                if (translateX.compareTo(BigDecimal.ZERO) != 0) {
+                    append(" android:translateX=\"")
+                    append(formatBigDecimal(translateX))
+                    append('\"')
+                }
+                if (translateY.compareTo(BigDecimal.ZERO) != 0) {
+                    append(" android:translateY=\"")
+                    append(formatBigDecimal(translateY))
+                    append('\"')
+                }
+                append('>')
+                append(rewrittenChildren)
+                append("</group>")
+            }
+
+            if (replacement.length >= original.length) break
+
+            current = buildString(current.length - original.length + replacement.length) {
+                append(current, 0, first.start)
+                append(replacement)
+                append(current, last.end, current.length)
+            }
+            factoredGroups += run.size
+        }
+
+        return CommonTranslationFactoringResult(current, factoredGroups)
+    }
+
+    private fun removeGroupTransformAttributes(
+        openingTag: String,
+        lowercaseNames: Set<String>
+    ): String {
+        var updated = openingTag
+        val matches = androidAttributeRegex.findAll(openingTag)
+            .filter { it.groupValues[1].lowercase() in lowercaseNames }
+            .toList()
+            .sortedByDescending { it.range.first }
+        for (match in matches) {
+            updated = updated.removeRange(match.range)
+        }
+        return updated
+            .replace(Regex("""[ \t]{2,}"""), " ")
+            .replace(Regex("""[ \t]+>"""), ">")
+            .replace(Regex("""\n[ \t]*\n"""), "\n")
     }
 
     private data class AdjacentGroupCoalescingResult(
