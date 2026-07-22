@@ -349,6 +349,7 @@ object SvgToVectorConverter {
                 shorterCommandFormsSelected = pathOptimizationStats.shorterCommandFormsSelected,
                 relativeCommandsSelected = pathOptimizationStats.relativeCommandsSelected,
                 axisCommandsSelected = pathOptimizationStats.axisCommandsSelected,
+                sourceSvgCharacters = svg.length,
                 optimizedXmlCharactersBefore = pathOptimizationStats.xmlCharactersBefore,
                 optimizedXmlCharactersAfter = pathOptimizationStats.xmlCharactersAfter,
                 styleResolutionMs = styleResolutionMs,

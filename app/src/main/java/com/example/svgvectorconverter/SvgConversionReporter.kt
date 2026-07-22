@@ -167,6 +167,7 @@ data class SvgConversionReportData(
     val shorterCommandFormsSelected: Int = 0,
     val relativeCommandsSelected: Int = 0,
     val axisCommandsSelected: Int = 0,
+    val sourceSvgCharacters: Int = 0,
     val optimizedXmlCharactersBefore: Int = 0,
     val optimizedXmlCharactersAfter: Int = 0,
     val styleResolutionMs: Long = 0,
@@ -533,6 +534,7 @@ object SvgConversionReporter {
                 appendLine("✓ Horizontal/vertical commands selected: ${data.axisCommandsSelected}")
 
             appendOptimizationImpact(data)
+            appendOptimizationQualityMetrics(data)
             appendLine()
 
             appendLine("────────────────────")
@@ -944,7 +946,9 @@ object SvgConversionReporter {
             "Deduplication and merging" to data.optimizationDeduplicationCharactersSaved,
             "Numeric cleanup" to data.optimizationNumericCleanupCharactersSaved,
             "Final formatting" to data.optimizationFormattingCharactersSaved
-        ).filter { (_, charactersSaved) -> charactersSaved > 0 }
+        )
+            .filter { (_, charactersSaved) -> charactersSaved > 0 }
+            .sortedByDescending { (_, charactersSaved) -> charactersSaved }
 
         if (savings.isEmpty()) return
 
@@ -952,6 +956,57 @@ object SvgConversionReporter {
         appendLine("Savings by optimization stage")
         savings.forEach { (label, charactersSaved) ->
             appendLine("• $label: ${formatCharacterCount(charactersSaved)} saved")
+        }
+        appendLine("Stage savings are not additive.")
+    }
+
+    private fun StringBuilder.appendOptimizationQualityMetrics(data: SvgConversionReportData) {
+        val sourceCharacters = data.sourceSvgCharacters.coerceAtLeast(0)
+        val outputCharacters = data.optimizedXmlCharactersAfter.coerceAtLeast(0)
+        val netCharactersSaved =
+            (data.optimizedXmlCharactersBefore - data.optimizedXmlCharactersAfter)
+                .coerceAtLeast(0)
+
+        if (sourceCharacters <= 0 && outputCharacters <= 0) return
+
+        appendLine()
+        appendLine("Optimization quality")
+
+        if (sourceCharacters > 0) {
+            appendLine("• Source SVG size: ${formatCharacterCount(sourceCharacters)}")
+        }
+        if (outputCharacters > 0) {
+            appendLine("• Final VectorDrawable size: ${formatCharacterCount(outputCharacters)}")
+        }
+        if (sourceCharacters > 0 && outputCharacters > 0) {
+            val outputSourceRatio = outputCharacters * 100.0 / sourceCharacters.toDouble()
+            appendLine(
+                "• Output/source size ratio: " +
+                    String.format(java.util.Locale.US, "%.1f%%", outputSourceRatio)
+            )
+        }
+
+        if (data.visibleDrawableElementCount > 0 || data.convertedPathCount > 0) {
+            appendLine(
+                "• Drawable elements: ${data.visibleDrawableElementCount} SVG → " +
+                    "${data.convertedPathCount} VectorDrawable paths"
+            )
+        }
+
+        if (netCharactersSaved > 0 && data.pathDataOptimizedCount > 0) {
+            val averageSavings = netCharactersSaved.toDouble() / data.pathDataOptimizedCount
+            appendLine(
+                "• Net savings per optimized path: " +
+                    String.format(java.util.Locale.US, "%.1f characters", averageSavings)
+            )
+        }
+
+        if (netCharactersSaved > 0 && data.outputOptimizationMs > 0L) {
+            val efficiency = netCharactersSaved.toDouble() / data.outputOptimizationMs
+            appendLine(
+                "• Optimization efficiency: " +
+                    String.format(java.util.Locale.US, "%.1f characters saved/ms", efficiency)
+            )
         }
     }
 
