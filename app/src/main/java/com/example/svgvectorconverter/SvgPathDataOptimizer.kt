@@ -33,6 +33,7 @@ internal object SvgPathDataOptimizer {
         val invisiblePathsRemoved: Int = 0,
         val emptyGroupsRemoved: Int = 0,
         val redundantGroupsFlattened: Int = 0,
+        val adjacentGroupsCoalesced: Int = 0,
         val compatiblePathsMerged: Int = 0,
         val compatiblePathMergesPreservedForSize: Int = 0,
         val exactDuplicatePathsRemoved: Int = 0,
@@ -204,12 +205,14 @@ internal object SvgPathDataOptimizer {
             flattenRotationOnlyGroups(nonUniformScaleFlattening.xml)
         val translationFlattening =
             flattenTranslationOnlyGroups(rotationFlattening.xml)
+        val adjacentGroupCoalescing =
+            coalesceIdenticalAdjacentGroups(translationFlattening.xml)
         val transformOptimizationNanos = System.nanoTime() - transformStartTime
         val transformCharactersSaved =
-            charactersSaved(groupCleanup.xml, translationFlattening.xml)
+            charactersSaved(groupCleanup.xml, adjacentGroupCoalescing.xml)
 
         val numericCleanupStartTime = System.nanoTime()
-        val nearIntegerSnapping = snapNearIntegerPathValues(translationFlattening.xml)
+        val nearIntegerSnapping = snapNearIntegerPathValues(adjacentGroupCoalescing.xml)
         val nearIntegerSnappingNanos = System.nanoTime() - numericCleanupStartTime
 
         val deduplicationStartTime = System.nanoTime()
@@ -229,7 +232,7 @@ internal object SvgPathDataOptimizer {
         val numericCleanupNanos =
             nearIntegerSnappingNanos + (System.nanoTime() - decimalCanonicalizationStartTime)
         val numericCleanupCharactersSaved =
-            charactersSaved(translationFlattening.xml, nearIntegerSnapping.xml) +
+            charactersSaved(adjacentGroupCoalescing.xml, nearIntegerSnapping.xml) +
                 charactersSaved(pathMerging.xml, decimalCanonicalization.xml)
 
         val finalFormattingStartTime = System.nanoTime()
@@ -258,6 +261,7 @@ internal object SvgPathDataOptimizer {
                 invisiblePathsRemoved = invisiblePathsRemoved,
                 emptyGroupsRemoved = groupCleanup.removedCount,
                 redundantGroupsFlattened = groupFlattening.flattenedCount,
+                adjacentGroupsCoalesced = adjacentGroupCoalescing.coalescedGroups,
                 compatiblePathsMerged = pathMerging.mergedCount,
                 compatiblePathMergesPreservedForSize =
                     pathMerging.preservedForSize,
@@ -1377,6 +1381,127 @@ internal object SvgPathDataOptimizer {
             append(closingIndent)
             append('>')
         }
+    }
+
+    private data class AdjacentGroupCoalescingResult(
+        val xml: String,
+        val coalescedGroups: Int
+    )
+
+    /**
+     * C1: merges adjacent sibling groups that have identical VectorDrawable
+     * group state.
+     *
+     * This removes one complete group wrapper without baking geometry. The
+     * merge is deliberately conservative:
+     * - both groups must be direct siblings under the same parent;
+     * - only comments and whitespace may occur between them;
+     * - their complete Android group-attribute sets must be identical; and
+     * - the left group may not contain a clip-path, because merging would let
+     *   that clip affect content that originally lived in the right group.
+     *
+     * A clip-path in the right group is safe: it still begins at the same point
+     * in drawing order and the merged group ends where the right group ended.
+     */
+    private fun coalesceIdenticalAdjacentGroups(
+        xml: String
+    ): AdjacentGroupCoalescingResult {
+        var current = xml
+        var coalesced = 0
+
+        while (true) {
+            val groups = findMatchedGroups(current)
+            if (groups.size < 2) break
+
+            fun parentOf(range: GroupRange): GroupRange? = groups
+                .asSequence()
+                .filter { candidate ->
+                    candidate.start < range.start && candidate.end > range.end
+                }
+                .minByOrNull { candidate -> candidate.end - candidate.start }
+
+            val byParent = groups
+                .groupBy { range -> parentOf(range)?.start }
+                .values
+
+            var selected: Pair<GroupRange, GroupRange>? = null
+
+            outer@ for (siblings in byParent) {
+                val ordered = siblings.sortedBy { it.start }
+                for (index in 0 until ordered.lastIndex) {
+                    val left = ordered[index]
+                    val right = ordered[index + 1]
+
+                    val between = current.substring(left.end, right.start)
+                    if (!commentsAndWhitespaceOnly(between)) continue
+
+                    val leftOpening = current.substring(left.start, left.openingEnd)
+                    val rightOpening = current.substring(right.start, right.openingEnd)
+                    val leftSignature = groupAttributeSignature(leftOpening) ?: continue
+                    val rightSignature = groupAttributeSignature(rightOpening) ?: continue
+                    if (leftSignature != rightSignature) continue
+
+                    val leftBody = current.substring(left.openingEnd, left.closingStart)
+                    if (Regex("""<clip-path\b""", RegexOption.IGNORE_CASE)
+                            .containsMatchIn(leftBody)
+                    ) {
+                        continue
+                    }
+
+                    selected = left to right
+                    break@outer
+                }
+            }
+
+            val (left, right) = selected ?: break
+            val replacement = buildString(right.end - left.start) {
+                append(current, left.start, left.openingEnd)
+                append(current, left.openingEnd, left.closingStart)
+                append(current, left.end, right.start)
+                append(current, right.openingEnd, right.end)
+            }
+
+            current = buildString(current.length) {
+                append(current, 0, left.start)
+                append(replacement)
+                append(current, right.end, current.length)
+            }
+            coalesced++
+        }
+
+        return AdjacentGroupCoalescingResult(current, coalesced)
+    }
+
+    /**
+     * Returns a canonical signature for a generated VectorDrawable group tag.
+     * Unknown/non-Android attributes make the group ineligible rather than
+     * risking a merge across semantics the optimizer does not understand.
+     */
+    private fun groupAttributeSignature(openingTag: String): List<Pair<String, String>>? {
+        val trimmed = openingTag.trim()
+        if (!trimmed.startsWith("<group", ignoreCase = true) || !trimmed.endsWith('>')) {
+            return null
+        }
+
+        val attributes = androidAttributeRegex.findAll(trimmed).toList()
+        var remainder = trimmed
+            .removePrefix(trimmed.substring(0, trimmed.indexOf("group") + "group".length))
+            .removeSuffix(">")
+
+        for (attribute in attributes.sortedByDescending { it.range.first }) {
+            // Attribute ranges are relative to the original opening tag. Build
+            // a simpler validation string instead of attempting range deletion
+            // against the trimmed/rebased text.
+            remainder = remainder.replace(attribute.value, "", ignoreCase = false)
+        }
+
+        if (remainder.any { !it.isWhitespace() }) return null
+
+        return attributes
+            .map { attribute ->
+                attribute.groupValues[1].lowercase() to attribute.groupValues[3].trim()
+            }
+            .sortedWith(compareBy<Pair<String, String>> { it.first }.thenBy { it.second })
     }
 
     private data class GroupFlatteningResult(

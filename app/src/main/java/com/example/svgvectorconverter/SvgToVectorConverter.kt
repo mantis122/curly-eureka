@@ -323,6 +323,7 @@ object SvgToVectorConverter {
                 invisiblePathsRemoved = pathOptimizationStats.invisiblePathsRemoved,
                 emptyGroupsRemoved = pathOptimizationStats.emptyGroupsRemoved,
                 redundantGroupsFlattened = pathOptimizationStats.redundantGroupsFlattened,
+                adjacentGroupsCoalesced = pathOptimizationStats.adjacentGroupsCoalesced,
                 compatiblePathsMerged = pathOptimizationStats.compatiblePathsMerged,
                 exactDuplicatePathsRemoved = pathOptimizationStats.exactDuplicatePathsRemoved,
                 translatedGroupsFlattened = pathOptimizationStats.translatedGroupsFlattened,
