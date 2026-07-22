@@ -367,6 +367,18 @@ object SvgToVectorConverter {
                     pathOptimizationStats.numericCleanupNanos,
                 optimizationFormattingNanos =
                     pathOptimizationStats.finalFormattingNanos,
+                optimizationPathSyntaxCharactersSaved =
+                    pathOptimizationStats.pathSyntaxCharactersSaved,
+                optimizationPruningCleanupCharactersSaved =
+                    pathOptimizationStats.pruningCleanupCharactersSaved,
+                optimizationTransformCharactersSaved =
+                    pathOptimizationStats.transformCharactersSaved,
+                optimizationDeduplicationCharactersSaved =
+                    pathOptimizationStats.deduplicationCharactersSaved,
+                optimizationNumericCleanupCharactersSaved =
+                    pathOptimizationStats.numericCleanupCharactersSaved,
+                optimizationFormattingCharactersSaved =
+                    pathOptimizationStats.formattingCharactersSaved,
                 reportAnalysisMs = reportAnalysisMs,
                 elapsedMs = elapsedMs
             )

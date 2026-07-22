@@ -179,6 +179,12 @@ data class SvgConversionReportData(
     val optimizationDeduplicationNanos: Long = 0,
     val optimizationNumericCleanupNanos: Long = 0,
     val optimizationFormattingNanos: Long = 0,
+    val optimizationPathSyntaxCharactersSaved: Int = 0,
+    val optimizationPruningCleanupCharactersSaved: Int = 0,
+    val optimizationTransformCharactersSaved: Int = 0,
+    val optimizationDeduplicationCharactersSaved: Int = 0,
+    val optimizationNumericCleanupCharactersSaved: Int = 0,
+    val optimizationFormattingCharactersSaved: Int = 0,
     val reportAnalysisMs: Long = 0,
     val elapsedMs: Long = 0
 )
@@ -525,6 +531,8 @@ object SvgConversionReporter {
                 appendLine("✓ Relative commands selected: ${data.relativeCommandsSelected}")
             if (data.axisCommandsSelected > 0)
                 appendLine("✓ Horizontal/vertical commands selected: ${data.axisCommandsSelected}")
+
+            appendOptimizationImpact(data)
             appendLine()
 
             appendLine("────────────────────")
@@ -928,6 +936,28 @@ object SvgConversionReporter {
      * used. The converter's raw warning count may also include the internal
      * invalid-array diagnostic, so remove that duplicate from the aggregate.
      */
+    private fun StringBuilder.appendOptimizationImpact(data: SvgConversionReportData) {
+        val savings = listOf(
+            "Path syntax and colors" to data.optimizationPathSyntaxCharactersSaved,
+            "Pruning and group cleanup" to data.optimizationPruningCleanupCharactersSaved,
+            "Transform optimization" to data.optimizationTransformCharactersSaved,
+            "Deduplication and merging" to data.optimizationDeduplicationCharactersSaved,
+            "Numeric cleanup" to data.optimizationNumericCleanupCharactersSaved,
+            "Final formatting" to data.optimizationFormattingCharactersSaved
+        ).filter { (_, charactersSaved) -> charactersSaved > 0 }
+
+        if (savings.isEmpty()) return
+
+        appendLine()
+        appendLine("Savings by optimization stage")
+        savings.forEach { (label, charactersSaved) ->
+            appendLine("• $label: ${formatCharacterCount(charactersSaved)} saved")
+        }
+    }
+
+    private fun formatCharacterCount(count: Int): String =
+        if (count == 1) "1 character" else "$count characters"
+
     private fun StringBuilder.appendPerformanceBreakdown(data: SvgConversionReportData) {
         val measuredStages = listOf(
             "Style resolution" to data.styleResolutionMs,

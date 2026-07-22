@@ -59,6 +59,12 @@ internal object SvgPathDataOptimizer {
         val deduplicationAndMergeNanos: Long = 0,
         val numericCleanupNanos: Long = 0,
         val finalFormattingNanos: Long = 0,
+        val pathSyntaxCharactersSaved: Int = 0,
+        val pruningCleanupCharactersSaved: Int = 0,
+        val transformCharactersSaved: Int = 0,
+        val deduplicationCharactersSaved: Int = 0,
+        val numericCleanupCharactersSaved: Int = 0,
+        val formattingCharactersSaved: Int = 0,
         val xmlCharactersBefore: Int = 0,
         val xmlCharactersAfter: Int = 0
     ) {
@@ -120,6 +126,9 @@ internal object SvgPathDataOptimizer {
     )
 
     fun optimizeVectorXml(xml: String): Result {
+        fun charactersSaved(before: String, after: String): Int =
+            (before.length - after.length).coerceAtLeast(0)
+
         var pathCount = 0
         var charactersBefore = 0
         var repeatedCommandsRemoved = 0
@@ -146,6 +155,7 @@ internal object SvgPathDataOptimizer {
 
         val colorNormalizedXml = normalizeAndroidColorAttributes(syntaxOptimizedXml)
         val pathSyntaxOptimizationNanos = System.nanoTime() - pathSyntaxStartTime
+        val pathSyntaxCharactersSaved = charactersSaved(xml, colorNormalizedXml)
 
         val pruningStartTime = System.nanoTime()
         var emptyPathDataRemoved = 0
@@ -176,6 +186,8 @@ internal object SvgPathDataOptimizer {
 
         val groupCleanup = removeEmptyGroups(pathsPrunedXml)
         val pruningAndGroupCleanupNanos = System.nanoTime() - pruningStartTime
+        val pruningCleanupCharactersSaved =
+            charactersSaved(colorNormalizedXml, groupCleanup.xml)
 
         val transformStartTime = System.nanoTime()
         val identityCleanup = removeIdentityGroupTransformAttributes(groupCleanup.xml)
@@ -193,6 +205,8 @@ internal object SvgPathDataOptimizer {
         val translationFlattening =
             flattenTranslationOnlyGroups(rotationFlattening.xml)
         val transformOptimizationNanos = System.nanoTime() - transformStartTime
+        val transformCharactersSaved =
+            charactersSaved(groupCleanup.xml, translationFlattening.xml)
 
         val numericCleanupStartTime = System.nanoTime()
         val nearIntegerSnapping = snapNearIntegerPathValues(translationFlattening.xml)
@@ -203,6 +217,8 @@ internal object SvgPathDataOptimizer {
             removeExactAdjacentDuplicatePaths(nearIntegerSnapping.xml)
         val pathMerging = mergeCompatibleAdjacentPaths(duplicateRemoval.xml)
         val deduplicationAndMergeNanos = System.nanoTime() - deduplicationStartTime
+        val deduplicationCharactersSaved =
+            charactersSaved(nearIntegerSnapping.xml, pathMerging.xml)
 
         // A11.2.1: run decimal canonicalization after every geometry-producing
         // optimization. Earlier passes may create new relative deltas, so this
@@ -212,10 +228,15 @@ internal object SvgPathDataOptimizer {
             canonicalizePathDecimalPrecision(pathMerging.xml)
         val numericCleanupNanos =
             nearIntegerSnappingNanos + (System.nanoTime() - decimalCanonicalizationStartTime)
+        val numericCleanupCharactersSaved =
+            charactersSaved(translationFlattening.xml, nearIntegerSnapping.xml) +
+                charactersSaved(pathMerging.xml, decimalCanonicalization.xml)
 
         val finalFormattingStartTime = System.nanoTime()
         val finalXml = formatVectorXml(decimalCanonicalization.xml)
         val finalFormattingNanos = System.nanoTime() - finalFormattingStartTime
+        val formattingCharactersSaved =
+            charactersSaved(decimalCanonicalization.xml, finalXml)
         val charactersAfter = pathDataAttributeRegex.findAll(finalXml)
             .sumOf { it.groupValues[1].length }
 
@@ -277,6 +298,12 @@ internal object SvgPathDataOptimizer {
                 deduplicationAndMergeNanos = deduplicationAndMergeNanos,
                 numericCleanupNanos = numericCleanupNanos,
                 finalFormattingNanos = finalFormattingNanos,
+                pathSyntaxCharactersSaved = pathSyntaxCharactersSaved,
+                pruningCleanupCharactersSaved = pruningCleanupCharactersSaved,
+                transformCharactersSaved = transformCharactersSaved,
+                deduplicationCharactersSaved = deduplicationCharactersSaved,
+                numericCleanupCharactersSaved = numericCleanupCharactersSaved,
+                formattingCharactersSaved = formattingCharactersSaved,
                 xmlCharactersBefore = xml.length,
                 xmlCharactersAfter = finalXml.length
             )
