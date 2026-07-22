@@ -923,20 +923,32 @@ object SvgConversionReporter {
      * invalid-array diagnostic, so remove that duplicate from the aggregate.
      */
     private fun StringBuilder.appendPerformanceBreakdown(data: SvgConversionReportData) {
-        val stages = listOf(
+        val measuredStages = listOf(
             "Style resolution" to data.styleResolutionMs,
             "Preparation" to data.definitionSetupMs,
             "Tree conversion" to data.treeConversionMs,
             "Optimization" to data.outputOptimizationMs,
             "Analysis" to data.reportAnalysisMs
-        ).filter { (_, durationMs) -> durationMs > 0 }
+        )
 
-        if (stages.isEmpty()) return
+        val measuredTimeMs = measuredStages.sumOf { (_, durationMs) ->
+            durationMs.coerceAtLeast(0L)
+        }
+        val otherFrameworkMs = (data.elapsedMs - measuredTimeMs).coerceAtLeast(0L)
+
+        val visibleStages = buildList {
+            addAll(measuredStages.filter { (_, durationMs) -> durationMs > 0L })
+            if (otherFrameworkMs > 0L) {
+                add("Other / framework" to otherFrameworkMs)
+            }
+        }
+
+        if (visibleStages.isEmpty()) return
 
         appendLine()
         appendLine("Performance")
 
-        stages.forEach { (label, durationMs) ->
+        visibleStages.forEach { (label, durationMs) ->
             val percentage = performancePercentage(durationMs, data.elapsedMs)
             appendLine("• $label: $durationMs ms ($percentage%)")
         }
