@@ -978,8 +978,8 @@ object SvgConversionReporter {
 
         val totalNanos = stages.sumOf { (_, durationNanos) -> durationNanos }
         stages.forEach { (label, durationNanos) ->
-            val percentage = nanosPercentage(durationNanos, totalNanos)
-            appendLine("  ◦ $label: ${formatNanosAsMilliseconds(durationNanos)} ($percentage%)")
+            val percentage = nanosPercentageLabel(durationNanos, totalNanos)
+            appendLine("  ◦ $label: ${formatNanosAsMilliseconds(durationNanos)} ($percentage)")
         }
     }
 
@@ -992,9 +992,14 @@ object SvgConversionReporter {
         }
     }
 
-    private fun nanosPercentage(durationNanos: Long, totalNanos: Long): Int {
-        if (durationNanos <= 0L || totalNanos <= 0L) return 0
-        return (((durationNanos * 100.0) / totalNanos) + 0.5).toInt().coerceIn(0, 100)
+    private fun nanosPercentageLabel(durationNanos: Long, totalNanos: Long): String {
+        if (durationNanos <= 0L || totalNanos <= 0L) return "0%"
+
+        val exactPercentage = durationNanos * 100.0 / totalNanos.toDouble()
+        if (exactPercentage < 1.0) return "<1%"
+
+        val roundedPercentage = (exactPercentage + 0.5).toInt().coerceIn(1, 100)
+        return "$roundedPercentage%"
     }
 
     private fun performancePercentage(durationMs: Long, totalMs: Long): Int {
