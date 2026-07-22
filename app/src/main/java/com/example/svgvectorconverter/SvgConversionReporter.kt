@@ -540,15 +540,33 @@ object SvgConversionReporter {
             appendLine("────────────────────")
             appendLine()
 
-            appendLine("✓ Translate: ${data.translateCount}")
-            appendLine("✓ Scale: ${data.scaleCount}")
-            appendLine("✓ Rotate: ${data.rotateCount}")
+            var transformLinesAdded = 0
 
+            if (data.translateCount > 0) {
+                appendLine("✓ Translate: ${data.translateCount}")
+                transformLinesAdded++
+            }
+            if (data.scaleCount > 0) {
+                appendLine("✓ Scale: ${data.scaleCount}")
+                transformLinesAdded++
+            }
+            if (data.rotateCount > 0) {
+                appendLine("✓ Rotate: ${data.rotateCount}")
+                transformLinesAdded++
+            }
             if (data.matrixCount > 0) {
-                appendLine("✓ Matrix supported: ${data.supportedMatrixTransforms}")
-                appendLine("⚠ Matrix unsupported: ${data.unsupportedMatrixTransforms}")
-            } else {
-                appendLine("✓ Matrix: 0")
+                if (data.supportedMatrixTransforms > 0) {
+                    appendLine("✓ Matrix supported: ${data.supportedMatrixTransforms}")
+                    transformLinesAdded++
+                }
+                if (data.unsupportedMatrixTransforms > 0) {
+                    appendLine("⚠ Matrix unsupported: ${data.unsupportedMatrixTransforms}")
+                    transformLinesAdded++
+                }
+            }
+
+            if (transformLinesAdded == 0) {
+                appendLine("✓ None")
             }
 
             if (data.textElementCount > 0 || data.tspanElementCount > 0 || data.textPathElementCount > 0 || data.svgFontGlyphCount > 0) {
@@ -984,7 +1002,7 @@ object SvgConversionReporter {
         if (hasPerPathReduction) {
             val averageReduction = netCharactersSaved.toDouble() / data.pathDataOptimizedCount
             appendLine(
-                "• Reduction per optimized path: " +
+                "• Average reduction per optimized path: " +
                     String.format(java.util.Locale.US, "%.1f characters", averageReduction)
             )
         }
@@ -992,7 +1010,7 @@ object SvgConversionReporter {
         if (hasThroughput) {
             val throughput = netCharactersSaved.toDouble() / data.outputOptimizationMs
             appendLine(
-                "• Optimizer throughput: " +
+                "• Optimization throughput: " +
                     String.format(java.util.Locale.US, "%.1f characters/ms", throughput)
             )
         }
