@@ -621,7 +621,7 @@ internal object SvgPathDataOptimizer {
      * remove paths, groups, clip paths, gradients, or comments.
      */
     private fun prettyPrintVectorXml(xml: String): String {
-        val source = xml
+        val source = splitAdjacentXmlTags(xml)
             .replace("\r\n", "\n")
             .replace('\r', '\n')
             .lines()
@@ -781,6 +781,18 @@ internal object SvgPathDataOptimizer {
 
         return spaced.joinToString("\n").trimEnd() + "\n"
     }
+
+    /**
+     * Separates XML tags that structural optimizer passes may have joined onto
+     * the same physical line, for example `><group` or `</group></group>`.
+     *
+     * VectorDrawable output contains no meaningful text nodes between drawable
+     * elements, so inserting a newline at a direct `><` boundary is purely
+     * presentational. Doing this before indentation lets the pretty printer
+     * track each nested element independently.
+     */
+    private fun splitAdjacentXmlTags(xml: String): String =
+        xml.replace(Regex(""">(?=<)"""), ">\n")
 
     private fun removeOrphanedConversionComments(xml: String): String {
         val lines = xml.lines()
