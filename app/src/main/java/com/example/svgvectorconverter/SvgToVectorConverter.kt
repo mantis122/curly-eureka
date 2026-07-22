@@ -16,8 +16,11 @@ object SvgToVectorConverter {
 
         SvgTransformParser.resetMatrixStats()
 
+        val styleStartTime = System.nanoTime()
         val svgWithCssClassStyles = SvgStyleResolver.applyStylesheets(svg)
+        val styleResolutionMs = elapsedMilliseconds(styleStartTime)
 
+        val setupStartTime = System.nanoTime()
         val svgForTransformStats = stripSvgComments(svgWithCssClassStyles)
         val drawableSvgForStats = stripDefs(svgWithCssClassStyles)
 
@@ -63,7 +66,9 @@ object SvgToVectorConverter {
 
         val vectorWidthDp = if (outputDpSize > 0) outputDpSize else viewportWidth.toInt()
         val vectorHeightDp = if (outputDpSize > 0) outputDpSize else viewportHeight.toInt()
+        val definitionSetupMs = elapsedMilliseconds(setupStartTime)
 
+        val treeConversionStartTime = System.nanoTime()
         val output = StringBuilder()
         val usesVectorGradients = gradientDefinitions.isNotEmpty()
         if (usesVectorGradients) {
@@ -90,12 +95,17 @@ object SvgToVectorConverter {
         )
 
         output.appendLine("</vector>")
+        val treeConversionMs = elapsedMilliseconds(treeConversionStartTime)
 
+        val optimizationStartTime = System.nanoTime()
         val rawXml = output.toString().trim().substringBeforeLast("</vector>") + "</vector>"
         val clipOptimizedXml = optimizeDuplicateClipPathGroups(rawXml)
         val pathOptimizationResult = SvgPathDataOptimizer.optimizeVectorXml(clipOptimizedXml)
         val finalXml = pathOptimizationResult.xml
         val pathOptimizationStats = pathOptimizationResult.stats
+        val outputOptimizationMs = elapsedMilliseconds(optimizationStartTime)
+
+        val analysisStartTime = System.nanoTime()
         val finalXmlForStats = stripSvgComments(finalXml)
 
         val convertedBasicShapeCount = countConvertedBasicShapes(finalXml)
@@ -192,7 +202,8 @@ object SvgToVectorConverter {
             (if (SvgTreeConverter.nestedSvgOverflowApproximated > 0) 1 else 0) +
             (if (SvgTreeConverter.nestedSvgOverflowUnsupported > 0) 1 else 0)
 
-        val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
+        val reportAnalysisMs = elapsedMilliseconds(analysisStartTime)
+        val elapsedMs = elapsedMilliseconds(startTime)
 
         val report = SvgConversionReporter.buildReport(
             SvgConversionReportData(
@@ -340,6 +351,11 @@ object SvgToVectorConverter {
                 axisCommandsSelected = pathOptimizationStats.axisCommandsSelected,
                 optimizedXmlCharactersBefore = pathOptimizationStats.xmlCharactersBefore,
                 optimizedXmlCharactersAfter = pathOptimizationStats.xmlCharactersAfter,
+                styleResolutionMs = styleResolutionMs,
+                definitionSetupMs = definitionSetupMs,
+                treeConversionMs = treeConversionMs,
+                outputOptimizationMs = outputOptimizationMs,
+                reportAnalysisMs = reportAnalysisMs,
                 elapsedMs = elapsedMs
             )
         )
@@ -347,6 +363,9 @@ object SvgToVectorConverter {
         return ConversionResult(finalXml, report)
     }
 
+
+    private fun elapsedMilliseconds(startTimeNanos: Long): Long =
+        (System.nanoTime() - startTimeNanos) / 1_000_000
 
     private data class TextLayoutStats(
         val verticalTextCount: Int = 0,

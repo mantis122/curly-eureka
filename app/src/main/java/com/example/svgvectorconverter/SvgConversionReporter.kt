@@ -169,7 +169,12 @@ data class SvgConversionReportData(
     val axisCommandsSelected: Int = 0,
     val optimizedXmlCharactersBefore: Int = 0,
     val optimizedXmlCharactersAfter: Int = 0,
-    val elapsedMs: Long
+    val styleResolutionMs: Long = 0,
+    val definitionSetupMs: Long = 0,
+    val treeConversionMs: Long = 0,
+    val outputOptimizationMs: Long = 0,
+    val reportAnalysisMs: Long = 0,
+    val elapsedMs: Long = 0
 )
 
 object SvgConversionReporter {
@@ -378,6 +383,7 @@ object SvgConversionReporter {
 
             appendLine()
             appendLine("Converted in ${data.elapsedMs} ms")
+            appendPerformanceBreakdown(data)
 
             appendLine()
             appendLine("────────────────────")
@@ -916,6 +922,16 @@ object SvgConversionReporter {
      * used. The converter's raw warning count may also include the internal
      * invalid-array diagnostic, so remove that duplicate from the aggregate.
      */
+    private fun StringBuilder.appendPerformanceBreakdown(data: SvgConversionReportData) {
+        appendLine()
+        appendLine("Performance")
+        appendLine("• Stylesheet resolution: ${data.styleResolutionMs} ms")
+        appendLine("• Definitions and setup: ${data.definitionSetupMs} ms")
+        appendLine("• Tree conversion: ${data.treeConversionMs} ms")
+        appendLine("• Output optimization: ${data.outputOptimizationMs} ms")
+        appendLine("• Analysis and statistics: ${data.reportAnalysisMs} ms")
+    }
+
     private fun aggregateWarningCount(data: SvgConversionReportData): Int {
         val unapproximatedDashedStrokes =
             maxOf(0, data.dashedStrokesDetected - data.dashedStrokesApproximated)
