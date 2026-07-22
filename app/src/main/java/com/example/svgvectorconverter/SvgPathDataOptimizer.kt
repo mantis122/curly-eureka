@@ -469,7 +469,11 @@ internal object SvgPathDataOptimizer {
         // the rebuilt canonical data. No earlier high-precision spelling is
         // available to be selected again.
         val optimized = optimizePathData(rebuiltPathData).pathData
-        return CanonicalizedPathData(optimized, changedCount)
+        return if (parseNormalizedSegments(optimized) != null) {
+            CanonicalizedPathData(optimized, changedCount)
+        } else {
+            CanonicalizedPathData(pathData, 0)
+        }
     }
 
     private data class NearIntegerSnappingResult(
@@ -570,7 +574,11 @@ internal object SvgPathDataOptimizer {
         // Re-run the existing lossless syntax optimizer so snapped values receive
         // the same compact separators and command selection as every other path.
         val optimized = optimizePathData(rebuilt.toString()).pathData
-        return SnappedPathData(optimized, snappedCount)
+        return if (parseNormalizedSegments(optimized) != null) {
+            SnappedPathData(optimized, snappedCount)
+        } else {
+            SnappedPathData(pathData, 0)
+        }
     }
 
     /**
@@ -2705,7 +2713,18 @@ internal object SvgPathDataOptimizer {
             }
         }
 
-        return optimizePathData(output.toString()).pathData
+        val rotatedPathData = output.toString()
+        val optimizedPathData = optimizePathData(rotatedPathData).pathData
+
+        // Rotation flattening happens after the main path-syntax pass. Validate
+        // its optimized result independently so a malformed shorter spelling can
+        // never enter the final VectorDrawable. The unshortened rotated path is
+        // already complete and geometry-equivalent, so it is the safe fallback.
+        return if (parseNormalizedSegments(optimizedPathData) != null) {
+            optimizedPathData
+        } else {
+            rotatedPathData
+        }
     }
 
     private data class TranslationFlatteningResult(
@@ -4048,7 +4067,14 @@ internal object SvgPathDataOptimizer {
         }
 
         val optimized = output.toString()
-        return if (optimized.length <= pathData.length) {
+
+        // Never emit a shorter spelling unless it still parses as a complete SVG
+        // path. This guards against incomplete implicit command parameter sets
+        // such as `l0,14,-30,0,-14`, where the final line segment is missing its
+        // Y coordinate. In that situation, retain the valid normalized input.
+        val optimizedIsValid = parseNormalizedSegments(optimized) != null
+
+        return if (optimizedIsValid && optimized.length <= pathData.length) {
             CommandOptimizationResult(optimized, shorterForms, relativeSelected, axisSelected)
         } else {
             CommandOptimizationResult(pathData, 0, 0, 0)
