@@ -53,6 +53,12 @@ internal object SvgPathDataOptimizer {
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
+        val pathSyntaxOptimizationNanos: Long = 0,
+        val pruningAndGroupCleanupNanos: Long = 0,
+        val transformOptimizationNanos: Long = 0,
+        val deduplicationAndMergeNanos: Long = 0,
+        val numericCleanupNanos: Long = 0,
+        val finalFormattingNanos: Long = 0,
         val xmlCharactersBefore: Int = 0,
         val xmlCharactersAfter: Int = 0
     ) {
@@ -122,6 +128,7 @@ internal object SvgPathDataOptimizer {
         var relativeCommandsSelected = 0
         var axisCommandsSelected = 0
 
+        val pathSyntaxStartTime = System.nanoTime()
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
             val original = match.groupValues[1]
             val optimized = optimizePathData(original)
@@ -138,7 +145,9 @@ internal object SvgPathDataOptimizer {
         }
 
         val colorNormalizedXml = normalizeAndroidColorAttributes(syntaxOptimizedXml)
+        val pathSyntaxOptimizationNanos = System.nanoTime() - pathSyntaxStartTime
 
+        val pruningStartTime = System.nanoTime()
         var emptyPathDataRemoved = 0
         var moveOnlyPathsRemoved = 0
         var invisiblePathsRemoved = 0
@@ -166,6 +175,9 @@ internal object SvgPathDataOptimizer {
         }
 
         val groupCleanup = removeEmptyGroups(pathsPrunedXml)
+        val pruningAndGroupCleanupNanos = System.nanoTime() - pruningStartTime
+
+        val transformStartTime = System.nanoTime()
         val identityCleanup = removeIdentityGroupTransformAttributes(groupCleanup.xml)
         val translationComposition = composeNestedParentTranslationGroups(identityCleanup.xml)
         val compatibleComposition =
@@ -180,17 +192,30 @@ internal object SvgPathDataOptimizer {
             flattenRotationOnlyGroups(nonUniformScaleFlattening.xml)
         val translationFlattening =
             flattenTranslationOnlyGroups(rotationFlattening.xml)
+        val transformOptimizationNanos = System.nanoTime() - transformStartTime
+
+        val numericCleanupStartTime = System.nanoTime()
         val nearIntegerSnapping = snapNearIntegerPathValues(translationFlattening.xml)
+        val nearIntegerSnappingNanos = System.nanoTime() - numericCleanupStartTime
+
+        val deduplicationStartTime = System.nanoTime()
         val duplicateRemoval =
             removeExactAdjacentDuplicatePaths(nearIntegerSnapping.xml)
         val pathMerging = mergeCompatibleAdjacentPaths(duplicateRemoval.xml)
+        val deduplicationAndMergeNanos = System.nanoTime() - deduplicationStartTime
 
         // A11.2.1: run decimal canonicalization after every geometry-producing
         // optimization. Earlier passes may create new relative deltas, so this
         // must be the final path-data mutation before XML formatting.
+        val decimalCanonicalizationStartTime = System.nanoTime()
         val decimalCanonicalization =
             canonicalizePathDecimalPrecision(pathMerging.xml)
+        val numericCleanupNanos =
+            nearIntegerSnappingNanos + (System.nanoTime() - decimalCanonicalizationStartTime)
+
+        val finalFormattingStartTime = System.nanoTime()
         val finalXml = formatVectorXml(decimalCanonicalization.xml)
+        val finalFormattingNanos = System.nanoTime() - finalFormattingStartTime
         val charactersAfter = pathDataAttributeRegex.findAll(finalXml)
             .sumOf { it.groupValues[1].length }
 
@@ -246,6 +271,12 @@ internal object SvgPathDataOptimizer {
                 shorterCommandFormsSelected = shorterCommandFormsSelected,
                 relativeCommandsSelected = relativeCommandsSelected,
                 axisCommandsSelected = axisCommandsSelected,
+                pathSyntaxOptimizationNanos = pathSyntaxOptimizationNanos,
+                pruningAndGroupCleanupNanos = pruningAndGroupCleanupNanos,
+                transformOptimizationNanos = transformOptimizationNanos,
+                deduplicationAndMergeNanos = deduplicationAndMergeNanos,
+                numericCleanupNanos = numericCleanupNanos,
+                finalFormattingNanos = finalFormattingNanos,
                 xmlCharactersBefore = xml.length,
                 xmlCharactersAfter = finalXml.length
             )

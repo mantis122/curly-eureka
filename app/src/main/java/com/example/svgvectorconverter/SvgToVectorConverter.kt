@@ -355,6 +355,18 @@ object SvgToVectorConverter {
                 definitionSetupMs = definitionSetupMs,
                 treeConversionMs = treeConversionMs,
                 outputOptimizationMs = outputOptimizationMs,
+                optimizationPathSyntaxNanos =
+                    pathOptimizationStats.pathSyntaxOptimizationNanos,
+                optimizationPruningCleanupNanos =
+                    pathOptimizationStats.pruningAndGroupCleanupNanos,
+                optimizationTransformsNanos =
+                    pathOptimizationStats.transformOptimizationNanos,
+                optimizationDeduplicationNanos =
+                    pathOptimizationStats.deduplicationAndMergeNanos,
+                optimizationNumericCleanupNanos =
+                    pathOptimizationStats.numericCleanupNanos,
+                optimizationFormattingNanos =
+                    pathOptimizationStats.finalFormattingNanos,
                 reportAnalysisMs = reportAnalysisMs,
                 elapsedMs = elapsedMs
             )

@@ -173,6 +173,12 @@ data class SvgConversionReportData(
     val definitionSetupMs: Long = 0,
     val treeConversionMs: Long = 0,
     val outputOptimizationMs: Long = 0,
+    val optimizationPathSyntaxNanos: Long = 0,
+    val optimizationPruningCleanupNanos: Long = 0,
+    val optimizationTransformsNanos: Long = 0,
+    val optimizationDeduplicationNanos: Long = 0,
+    val optimizationNumericCleanupNanos: Long = 0,
+    val optimizationFormattingNanos: Long = 0,
     val reportAnalysisMs: Long = 0,
     val elapsedMs: Long = 0
 )
@@ -951,7 +957,44 @@ object SvgConversionReporter {
         visibleStages.forEach { (label, durationMs) ->
             val percentage = performancePercentage(durationMs, data.elapsedMs)
             appendLine("• $label: $durationMs ms ($percentage%)")
+
+            if (label == "Optimization") {
+                appendOptimizationBreakdown(data)
+            }
         }
+    }
+
+    private fun StringBuilder.appendOptimizationBreakdown(data: SvgConversionReportData) {
+        val stages = listOf(
+            "Path syntax and colors" to data.optimizationPathSyntaxNanos,
+            "Pruning and group cleanup" to data.optimizationPruningCleanupNanos,
+            "Transform optimization" to data.optimizationTransformsNanos,
+            "Deduplication and merging" to data.optimizationDeduplicationNanos,
+            "Numeric cleanup" to data.optimizationNumericCleanupNanos,
+            "Final formatting" to data.optimizationFormattingNanos
+        ).filter { (_, durationNanos) -> durationNanos > 0L }
+
+        if (stages.isEmpty()) return
+
+        val totalNanos = stages.sumOf { (_, durationNanos) -> durationNanos }
+        stages.forEach { (label, durationNanos) ->
+            val percentage = nanosPercentage(durationNanos, totalNanos)
+            appendLine("  ◦ $label: ${formatNanosAsMilliseconds(durationNanos)} ($percentage%)")
+        }
+    }
+
+    private fun formatNanosAsMilliseconds(durationNanos: Long): String {
+        val milliseconds = durationNanos / 1_000_000.0
+        return if (milliseconds >= 10.0) {
+            "${milliseconds.toLong()} ms"
+        } else {
+            String.format(java.util.Locale.US, "%.1f ms", milliseconds)
+        }
+    }
+
+    private fun nanosPercentage(durationNanos: Long, totalNanos: Long): Int {
+        if (durationNanos <= 0L || totalNanos <= 0L) return 0
+        return (((durationNanos * 100.0) / totalNanos) + 0.5).toInt().coerceIn(0, 100)
     }
 
     private fun performancePercentage(durationMs: Long, totalMs: Long): Int {
