@@ -923,13 +923,31 @@ object SvgConversionReporter {
      * invalid-array diagnostic, so remove that duplicate from the aggregate.
      */
     private fun StringBuilder.appendPerformanceBreakdown(data: SvgConversionReportData) {
+        val stages = listOf(
+            "Style resolution" to data.styleResolutionMs,
+            "Preparation" to data.definitionSetupMs,
+            "Tree conversion" to data.treeConversionMs,
+            "Optimization" to data.outputOptimizationMs,
+            "Analysis" to data.reportAnalysisMs
+        ).filter { (_, durationMs) -> durationMs > 0 }
+
+        if (stages.isEmpty()) return
+
         appendLine()
         appendLine("Performance")
-        appendLine("• Stylesheet resolution: ${data.styleResolutionMs} ms")
-        appendLine("• Definitions and setup: ${data.definitionSetupMs} ms")
-        appendLine("• Tree conversion: ${data.treeConversionMs} ms")
-        appendLine("• Output optimization: ${data.outputOptimizationMs} ms")
-        appendLine("• Analysis and statistics: ${data.reportAnalysisMs} ms")
+
+        stages.forEach { (label, durationMs) ->
+            val percentage = performancePercentage(durationMs, data.elapsedMs)
+            appendLine("• $label: $durationMs ms ($percentage%)")
+        }
+    }
+
+    private fun performancePercentage(durationMs: Long, totalMs: Long): Int {
+        if (durationMs <= 0L || totalMs <= 0L) return 0
+
+        return (((durationMs * 100.0) / totalMs) + 0.5)
+            .toInt()
+            .coerceIn(0, 100)
     }
 
     private fun aggregateWarningCount(data: SvgConversionReportData): Int {
