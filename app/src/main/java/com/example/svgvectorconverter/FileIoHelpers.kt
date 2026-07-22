@@ -1,6 +1,7 @@
 package com.example.svgvectorconverter
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
 import java.util.zip.ZipEntry
@@ -18,6 +19,14 @@ object FileIoHelpers {
         context.contentResolver.openOutputStream(uri)?.use {
             it.write(text.toByteArray())
         }
+    }
+
+    fun writeBitmapPngToUri(context: Context, uri: Uri, bitmap: Bitmap) {
+        context.contentResolver.openOutputStream(uri)?.use { output ->
+            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                "Failed to encode PNG"
+            }
+        } ?: error("Could not open output file")
     }
 
     fun writeZipToUri(

@@ -2,6 +2,8 @@ package com.example.svgvectorconverter
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -33,6 +35,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var copyButton: Button
     private lateinit var saveXmlButton: Button
     private lateinit var saveZipButton: Button
+    private lateinit var copyReportButton: Button
+    private lateinit var saveReportTextButton: Button
+    private lateinit var saveReportImageButton: Button
+    private lateinit var reportActionsRow: LinearLayout
 
     private fun makeButton(
         label: String,
@@ -67,6 +73,7 @@ class MainActivity : ComponentActivity() {
     ) {
         previewBox.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
         reportBox.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
+        reportActionsRow.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
         batchGallery.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
         outputBox.visibility = if (showPreviewContent) View.GONE else View.VISIBLE
     }
@@ -100,6 +107,33 @@ class MainActivity : ComponentActivity() {
         if (uri != null) {
             FileIoHelpers.writeTextToUri(this, uri, convertedXml)
             toast("Saved")
+        }
+    }
+
+    private val saveReportText = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null) {
+            FileIoHelpers.writeTextToUri(this, uri, currentReportText())
+            toast("Report saved")
+        }
+    }
+
+    private val saveReportImage = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("image/png")
+    ) { uri ->
+        if (uri != null) {
+            val bitmap = createReportBitmap()
+            if (bitmap == null) {
+                toast("Could not create report image")
+            } else {
+                try {
+                    FileIoHelpers.writeBitmapPngToUri(this, uri, bitmap)
+                    toast("Report image saved")
+                } finally {
+                    bitmap.recycle()
+                }
+            }
         }
     }
 
@@ -145,6 +179,9 @@ class MainActivity : ComponentActivity() {
 
         saveZipButton = makeButton("Save ZIP") { saveBatchZip() }
         saveXmlButton = makeButton("Save XML") { saveSingleXml() }
+        copyReportButton = makeButton("Copy Report") { copyReport() }
+        saveReportTextButton = makeButton("Save Report .txt") { saveCurrentReportText() }
+        saveReportImageButton = makeButton("Save Report Image") { saveCurrentReportImage() }
         val aboutButton = makeButton("About") { showAboutDialog() }
 
         previewBox = ImageView(this).apply {
@@ -189,6 +226,12 @@ class MainActivity : ComponentActivity() {
             setPadding(0, 16, 0, 16)
         }
 
+        reportActionsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(horizontalRow(copyReportButton, saveReportTextButton))
+            addView(saveReportImageButton, LinearLayout.LayoutParams(-1, -2))
+        }
+
         mainPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -199,6 +242,7 @@ class MainActivity : ComponentActivity() {
 
         mainPanel.addView(previewBox, LinearLayout.LayoutParams(-1, 450))
         mainPanel.addView(outputBox, LinearLayout.LayoutParams(-1, -2))
+        mainPanel.addView(reportActionsRow)
         mainPanel.addView(reportBox)
         mainPanel.addView(batchGallery)
         mainPanel.addView(Space(this), LinearLayout.LayoutParams(-1, 96))
@@ -468,6 +512,92 @@ class MainActivity : ComponentActivity() {
         toast("Copied")
     }
 
+
+    private fun currentReportText(): String {
+        return reportBox.text?.toString().orEmpty()
+    }
+
+    private fun hasReport(): Boolean {
+        val report = currentReportText().trim()
+        return report.isNotEmpty() && report != "No SVG converted yet"
+    }
+
+    private fun copyReport() {
+        if (!hasReport()) {
+            toast("No report to copy yet")
+            return
+        }
+
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText("conversion_report.txt", currentReportText())
+        )
+        toast("Report copied")
+    }
+
+    private fun saveCurrentReportText() {
+        if (!hasReport()) {
+            toast("No report to save yet")
+            return
+        }
+
+        saveReportText.launch(makeReportFileName("txt"))
+    }
+
+    private fun saveCurrentReportImage() {
+        if (!hasReport()) {
+            toast("No report to save yet")
+            return
+        }
+
+        saveReportImage.launch(makeReportFileName("png"))
+    }
+
+    private fun makeReportFileName(extension: String): String {
+        val baseName = if (batchResults.isNotEmpty()) {
+            "batch_conversion"
+        } else {
+            suggestedFileName.substringBeforeLast('.')
+        }
+        return "${baseName}_report.$extension"
+    }
+
+    private fun createReportBitmap(): Bitmap? {
+        val reportText = currentReportText()
+        if (reportText.isBlank()) return null
+
+        val horizontalPadding = 32
+        val verticalPadding = 32
+        val width = (resources.displayMetrics.widthPixels - horizontalPadding * 2)
+            .coerceAtLeast(320)
+
+        val imageTextView = TextView(this).apply {
+            text = reportText
+            textSize = reportBox.textSize / resources.displayMetrics.scaledDensity
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.WHITE)
+            gravity = Gravity.START
+            setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
+        }
+
+        val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
+        val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        imageTextView.measure(widthSpec, heightSpec)
+
+        val height = imageTextView.measuredHeight
+        if (height <= 0) return null
+
+        return try {
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+                val canvas = Canvas(bitmap)
+                imageTextView.layout(0, 0, width, height)
+                imageTextView.draw(canvas)
+            }
+        } catch (_: OutOfMemoryError) {
+            null
+        }
+    }
+
     private fun showPreviewTab() {
         setMainContentState(showPreviewContent = true)
     }
@@ -637,6 +767,10 @@ class MainActivity : ComponentActivity() {
         copyButton.isEnabled = convertedXml.isNotBlank()
         saveXmlButton.isEnabled = convertedXml.isNotBlank()
         saveZipButton.isEnabled = batchResults.isNotEmpty()
+        val reportAvailable = hasReport()
+        copyReportButton.isEnabled = reportAvailable
+        saveReportTextButton.isEnabled = reportAvailable
+        saveReportImageButton.isEnabled = reportAvailable
     }
 
     private fun showBatchGallery() {
