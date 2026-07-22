@@ -394,8 +394,6 @@ object SvgConversionReporter {
             else
                 appendLine("$aggregateWarningCount warning(s) detected")
 
-            appendLine()
-            appendLine("Converted in ${data.elapsedMs} ms")
             appendPerformanceBreakdown(data)
 
             appendLine()
@@ -953,7 +951,7 @@ object SvgConversionReporter {
         if (savings.isEmpty()) return
 
         appendLine()
-        appendLine("Savings by optimization stage")
+        appendLine("Largest optimization savings")
         savings.forEach { (label, charactersSaved) ->
             appendLine("• $label: ${formatCharacterCount(charactersSaved)} saved")
         }
@@ -961,51 +959,41 @@ object SvgConversionReporter {
     }
 
     private fun StringBuilder.appendOptimizationQualityMetrics(data: SvgConversionReportData) {
-        val sourceCharacters = data.sourceSvgCharacters.coerceAtLeast(0)
-        val outputCharacters = data.optimizedXmlCharactersAfter.coerceAtLeast(0)
-        val netCharactersSaved =
-            (data.optimizedXmlCharactersBefore - data.optimizedXmlCharactersAfter)
-                .coerceAtLeast(0)
+        val xmlCharactersBefore = data.optimizedXmlCharactersBefore.coerceAtLeast(0)
+        val xmlCharactersAfter = data.optimizedXmlCharactersAfter.coerceAtLeast(0)
+        val netCharactersSaved = (xmlCharactersBefore - xmlCharactersAfter).coerceAtLeast(0)
 
-        if (sourceCharacters <= 0 && outputCharacters <= 0) return
+        val hasNetReduction = netCharactersSaved > 0 && xmlCharactersBefore > 0
+        val hasPerPathReduction = netCharactersSaved > 0 && data.pathDataOptimizedCount > 0
+        val hasThroughput = netCharactersSaved > 0 && data.outputOptimizationMs > 0L
+
+        if (!hasNetReduction && !hasPerPathReduction && !hasThroughput) return
 
         appendLine()
         appendLine("Optimization quality")
 
-        if (sourceCharacters > 0) {
-            appendLine("• Source SVG size: ${formatCharacterCount(sourceCharacters)}")
-        }
-        if (outputCharacters > 0) {
-            appendLine("• Final VectorDrawable size: ${formatCharacterCount(outputCharacters)}")
-        }
-        if (sourceCharacters > 0 && outputCharacters > 0) {
-            val outputSourceRatio = outputCharacters * 100.0 / sourceCharacters.toDouble()
+        if (hasNetReduction) {
+            val reductionPercent = netCharactersSaved * 100.0 / xmlCharactersBefore.toDouble()
             appendLine(
-                "• Output/source size ratio: " +
-                    String.format(java.util.Locale.US, "%.1f%%", outputSourceRatio)
+                "• Net XML reduction: ${formatCharacterCount(netCharactersSaved)} (" +
+                    String.format(java.util.Locale.US, "%.1f%%", reductionPercent) +
+                    ")"
             )
         }
 
-        if (data.visibleDrawableElementCount > 0 || data.convertedPathCount > 0) {
+        if (hasPerPathReduction) {
+            val averageReduction = netCharactersSaved.toDouble() / data.pathDataOptimizedCount
             appendLine(
-                "• Drawable elements: ${data.visibleDrawableElementCount} SVG → " +
-                    "${data.convertedPathCount} VectorDrawable paths"
+                "• Reduction per optimized path: " +
+                    String.format(java.util.Locale.US, "%.1f characters", averageReduction)
             )
         }
 
-        if (netCharactersSaved > 0 && data.pathDataOptimizedCount > 0) {
-            val averageSavings = netCharactersSaved.toDouble() / data.pathDataOptimizedCount
+        if (hasThroughput) {
+            val throughput = netCharactersSaved.toDouble() / data.outputOptimizationMs
             appendLine(
-                "• Net savings per optimized path: " +
-                    String.format(java.util.Locale.US, "%.1f characters", averageSavings)
-            )
-        }
-
-        if (netCharactersSaved > 0 && data.outputOptimizationMs > 0L) {
-            val efficiency = netCharactersSaved.toDouble() / data.outputOptimizationMs
-            appendLine(
-                "• Optimization efficiency: " +
-                    String.format(java.util.Locale.US, "%.1f characters saved/ms", efficiency)
+                "• Optimizer throughput: " +
+                    String.format(java.util.Locale.US, "%.1f characters/ms", throughput)
             )
         }
     }
@@ -1034,18 +1022,34 @@ object SvgConversionReporter {
             }
         }
 
-        if (visibleStages.isEmpty()) return
-
         appendLine()
         appendLine("Performance")
+        appendLine()
+        appendLine("Conversion time")
+        appendLine("${data.elapsedMs} ms")
 
-        visibleStages.forEach { (label, durationMs) ->
-            val percentage = performancePercentage(durationMs, data.elapsedMs)
-            appendLine("• $label: $durationMs ms ($percentage%)")
-
-            if (label == "Optimization") {
-                appendOptimizationBreakdown(data)
+        if (visibleStages.isNotEmpty()) {
+            appendLine()
+            appendLine("Pipeline")
+            visibleStages.forEach { (label, durationMs) ->
+                val percentage = performancePercentage(durationMs, data.elapsedMs)
+                appendLine("• $label: $durationMs ms ($percentage%)")
             }
+        }
+
+        val hasOptimizationBreakdown = listOf(
+            data.optimizationPathSyntaxNanos,
+            data.optimizationPruningCleanupNanos,
+            data.optimizationTransformsNanos,
+            data.optimizationDeduplicationNanos,
+            data.optimizationNumericCleanupNanos,
+            data.optimizationFormattingNanos
+        ).any { it > 0L }
+
+        if (hasOptimizationBreakdown) {
+            appendLine()
+            appendLine("Optimization breakdown")
+            appendOptimizationBreakdown(data)
         }
     }
 
@@ -1064,7 +1068,7 @@ object SvgConversionReporter {
         val totalNanos = stages.sumOf { (_, durationNanos) -> durationNanos }
         stages.forEach { (label, durationNanos) ->
             val percentage = nanosPercentageLabel(durationNanos, totalNanos)
-            appendLine("  ◦ $label: ${formatNanosAsMilliseconds(durationNanos)} ($percentage)")
+            appendLine("• $label: ${formatNanosAsMilliseconds(durationNanos)} ($percentage)")
         }
     }
 
