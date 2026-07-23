@@ -545,22 +545,6 @@ object SvgConversionReporter {
                 appendLine("✓ Redundant zero pivots removed: ${data.zeroPivotAttributesRemoved}")
             if (data.transformGroupsReordered > 0)
                 appendLine("✓ Transform groups put in canonical order: ${data.transformGroupsReordered}")
-            if (data.optimizerValidationPasses > 0) {
-                appendLine()
-                appendLine("Optimizer validation")
-                when {
-                    data.optimizerIdempotenceVerified ->
-                        appendLine("✓ Optimizer idempotence verified")
-                    data.optimizerReachedFixedPoint ->
-                        appendLine(
-                            "⚠ Optimizer required ${data.optimizerStabilityPasses} passes to stabilize"
-                        )
-                    else ->
-                        appendLine(
-                            "⚠ Optimizer did not reach a fixed point after " +
-                                "${data.optimizerStabilityPasses} passes"
-                        )
-                }
                 appendLine("• Validation passes: ${data.optimizerValidationPasses}")
                 appendLine(
                     "• XML changed after pass 1: " +
@@ -1028,6 +1012,23 @@ object SvgConversionReporter {
         if (savings.isEmpty()) return
 
         appendLine()
+            if (data.optimizerValidationPasses > 0) {
+                appendLine()
+                appendLine("Optimizer validation")
+                when {
+                    data.optimizerIdempotenceVerified ->
+                        appendLine("✓ Optimizer idempotence verified")
+                    data.optimizerReachedFixedPoint ->
+                        appendLine(
+                            "⚠ Optimizer required ${data.optimizerStabilityPasses} passes to stabilize"
+                        )
+                    else ->
+                        appendLine(
+                            "⚠ Optimizer did not reach a fixed point after " +
+                                "${data.optimizerStabilityPasses} passes"
+                        )
+                }
+
         appendLine("Largest optimization savings")
         savings.forEach { (label, charactersSaved) ->
             appendLine("• $label: ${formatCharacterCount(charactersSaved)} saved")
