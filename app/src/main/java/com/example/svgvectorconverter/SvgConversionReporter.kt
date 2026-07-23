@@ -177,6 +177,14 @@ data class SvgConversionReportData(
     val optimizerFirstPassChangedXml: Boolean = false,
     val optimizerSecondPassChangedXml: Boolean = false,
     val optimizerThirdPassChangedXml: Boolean = false,
+    val finalOutputValidationPassed: Boolean = false,
+    val finalOutputValidationNanos: Long = 0,
+    val validatedPathDataCount: Int = 0,
+    val invalidPathDataCount: Int = 0,
+    val nonFiniteNumberCount: Int = 0,
+    val malformedStructureCount: Int = 0,
+    val invalidViewportCount: Int = 0,
+    val unsupportedOutputConstructCount: Int = 0,
     val shorterCommandFormsSelected: Int = 0,
     val relativeCommandsSelected: Int = 0,
     val axisCommandsSelected: Int = 0,
@@ -555,6 +563,7 @@ object SvgConversionReporter {
                 appendLine("✓ Horizontal/vertical commands selected: ${data.axisCommandsSelected}")
 
             appendOptimizerValidation(data)
+            appendFinalOutputValidation(data)
             appendOptimizationImpact(data)
             appendOptimizationQualityMetrics(data)
             appendLine()
@@ -978,6 +987,44 @@ object SvgConversionReporter {
      * used. The converter's raw warning count may also include the internal
      * invalid-array diagnostic, so remove that duplicate from the aggregate.
      */
+    private fun StringBuilder.appendFinalOutputValidation(
+        data: SvgConversionReportData
+    ) {
+        if (data.validatedPathDataCount <= 0 &&
+            data.finalOutputValidationNanos <= 0L
+        ) return
+
+        appendLine()
+        appendLine("Final output validation")
+
+        if (data.finalOutputValidationPassed) {
+            appendLine("✓ Final VectorDrawable validation passed")
+        } else {
+            appendLine("⚠ Final VectorDrawable validation found issues")
+        }
+
+        appendLine("• Path data values validated: ${data.validatedPathDataCount}")
+
+        if (data.invalidPathDataCount > 0)
+            appendLine("⚠ Invalid pathData values: ${data.invalidPathDataCount}")
+        if (data.nonFiniteNumberCount > 0)
+            appendLine("⚠ Non-finite numeric values: ${data.nonFiniteNumberCount}")
+        if (data.malformedStructureCount > 0)
+            appendLine("⚠ Structural XML issues: ${data.malformedStructureCount}")
+        if (data.invalidViewportCount > 0)
+            appendLine("⚠ Invalid viewport dimensions: ${data.invalidViewportCount}")
+        if (data.unsupportedOutputConstructCount > 0)
+            appendLine(
+                "⚠ Unsupported output constructs: " +
+                    data.unsupportedOutputConstructCount
+            )
+
+        appendLine(
+            "• Validation time: " +
+                formatNanosAsMilliseconds(data.finalOutputValidationNanos)
+        )
+    }
+
     private fun StringBuilder.appendOptimizerValidation(data: SvgConversionReportData) {
         if (data.optimizerValidationPasses <= 0) return
 

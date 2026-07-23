@@ -368,6 +368,22 @@ object SvgToVectorConverter {
                     pathOptimizationStats.optimizerSecondPassChangedXml,
                 optimizerThirdPassChangedXml =
                     pathOptimizationStats.optimizerThirdPassChangedXml,
+                finalOutputValidationPassed =
+                    pathOptimizationStats.finalOutputValidationPassed,
+                finalOutputValidationNanos =
+                    pathOptimizationStats.finalOutputValidationNanos,
+                validatedPathDataCount =
+                    pathOptimizationStats.validatedPathDataCount,
+                invalidPathDataCount =
+                    pathOptimizationStats.invalidPathDataCount,
+                nonFiniteNumberCount =
+                    pathOptimizationStats.nonFiniteNumberCount,
+                malformedStructureCount =
+                    pathOptimizationStats.malformedStructureCount,
+                invalidViewportCount =
+                    pathOptimizationStats.invalidViewportCount,
+                unsupportedOutputConstructCount =
+                    pathOptimizationStats.unsupportedOutputConstructCount,
                 shorterCommandFormsSelected = pathOptimizationStats.shorterCommandFormsSelected,
                 relativeCommandsSelected = pathOptimizationStats.relativeCommandsSelected,
                 axisCommandsSelected = pathOptimizationStats.axisCommandsSelected,

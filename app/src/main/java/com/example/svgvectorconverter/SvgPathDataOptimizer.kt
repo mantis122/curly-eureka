@@ -1,4 +1,4 @@
-// D1_v2: validate optimizer idempotence and report each validation pass.
+// D2_v1: validate optimizer fixed-point behavior and final VectorDrawable semantics.
 package com.example.svgvectorconverter
 
 import java.math.BigDecimal
@@ -64,6 +64,14 @@ internal object SvgPathDataOptimizer {
         val optimizerFirstPassChangedXml: Boolean = false,
         val optimizerSecondPassChangedXml: Boolean = false,
         val optimizerThirdPassChangedXml: Boolean = false,
+        val finalOutputValidationPassed: Boolean = false,
+        val finalOutputValidationNanos: Long = 0,
+        val validatedPathDataCount: Int = 0,
+        val invalidPathDataCount: Int = 0,
+        val nonFiniteNumberCount: Int = 0,
+        val malformedStructureCount: Int = 0,
+        val invalidViewportCount: Int = 0,
+        val unsupportedOutputConstructCount: Int = 0,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
@@ -146,8 +154,9 @@ internal object SvgPathDataOptimizer {
         val secondPass = optimizeVectorXmlSinglePass(firstPass.xml)
 
         if (secondPass.xml == firstPass.xml) {
-            return firstPass.copy(
-                stats = firstPass.stats.copy(
+            return attachFinalOutputValidation(
+                firstPass.copy(
+                    stats = firstPass.stats.copy(
                     optimizerIdempotenceVerified = true,
                     optimizerReachedFixedPoint = true,
                     optimizerStabilityPasses = 1,
@@ -157,6 +166,7 @@ internal object SvgPathDataOptimizer {
                     optimizerFirstPassChangedXml = firstPass.xml != xml,
                     optimizerSecondPassChangedXml = false,
                     optimizerThirdPassChangedXml = false
+                    )
                 )
             )
         }
@@ -168,8 +178,9 @@ internal object SvgPathDataOptimizer {
         val thirdPass = optimizeVectorXmlSinglePass(secondPass.xml)
         val reachedFixedPoint = thirdPass.xml == secondPass.xml
 
-        return firstPass.copy(
-            stats = firstPass.stats.copy(
+        return attachFinalOutputValidation(
+            firstPass.copy(
+                stats = firstPass.stats.copy(
                 optimizerIdempotenceVerified = false,
                 optimizerReachedFixedPoint = reachedFixedPoint,
                 optimizerStabilityPasses = if (reachedFixedPoint) 2 else 3,
@@ -179,7 +190,134 @@ internal object SvgPathDataOptimizer {
                 optimizerFirstPassChangedXml = firstPass.xml != xml,
                 optimizerSecondPassChangedXml = secondPass.xml != firstPass.xml,
                 optimizerThirdPassChangedXml = thirdPass.xml != secondPass.xml
+                )
             )
+        )
+    }
+
+    private data class FinalOutputValidation(
+        val passed: Boolean,
+        val validatedPathDataCount: Int,
+        val invalidPathDataCount: Int,
+        val nonFiniteNumberCount: Int,
+        val malformedStructureCount: Int,
+        val invalidViewportCount: Int,
+        val unsupportedOutputConstructCount: Int
+    )
+
+    private fun attachFinalOutputValidation(result: Result): Result {
+        val startTime = System.nanoTime()
+        val validation = validateFinalVectorXml(result.xml)
+
+        return result.copy(
+            stats = result.stats.copy(
+                finalOutputValidationPassed = validation.passed,
+                finalOutputValidationNanos = System.nanoTime() - startTime,
+                validatedPathDataCount = validation.validatedPathDataCount,
+                invalidPathDataCount = validation.invalidPathDataCount,
+                nonFiniteNumberCount = validation.nonFiniteNumberCount,
+                malformedStructureCount = validation.malformedStructureCount,
+                invalidViewportCount = validation.invalidViewportCount,
+                unsupportedOutputConstructCount =
+                    validation.unsupportedOutputConstructCount
+            )
+        )
+    }
+
+    private fun validateFinalVectorXml(xml: String): FinalOutputValidation {
+        var validatedPathDataCount = 0
+        var invalidPathDataCount = 0
+
+        pathDataAttributeRegex.findAll(xml).forEach { match ->
+            validatedPathDataCount++
+            val pathData = match.groupValues[1]
+            if (pathData.isBlank() || parseNormalizedSegments(pathData) == null) {
+                invalidPathDataCount++
+            }
+        }
+
+        val nonFiniteNumberCount = Regex(
+            """(?i)(?<![A-Za-z0-9_])(?:NaN|[-+]?Infinity)(?![A-Za-z0-9_])"""
+        ).findAll(xml).count()
+
+        var malformedStructureCount = 0
+        if (!Regex("""<vector\b""", RegexOption.IGNORE_CASE).containsMatchIn(xml)) {
+            malformedStructureCount++
+        }
+        if (!Regex("""</vector\s*>""", RegexOption.IGNORE_CASE).containsMatchIn(xml)) {
+            malformedStructureCount++
+        }
+
+        fun openingCount(tag: String): Int =
+            Regex("""<$tag\b""", RegexOption.IGNORE_CASE).findAll(xml).count()
+
+        fun closingCount(tag: String): Int =
+            Regex("""</$tag\s*>""", RegexOption.IGNORE_CASE).findAll(xml).count()
+
+        val groupOpen = openingCount("group")
+        val groupClose = closingCount("group")
+        if (groupOpen != groupClose) malformedStructureCount++
+
+        val explicitPathOpen = Regex(
+            """<path\b(?:"[^"]*"|'[^']*'|[^>])*?(?<!/)>
+            """.trimIndent(),
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).findAll(xml).count()
+        val pathClose = closingCount("path")
+        if (explicitPathOpen != pathClose) malformedStructureCount++
+
+        val explicitClipOpen = Regex(
+            """<clip-path\b(?:"[^"]*"|'[^']*'|[^>])*?(?<!/)>
+            """.trimIndent(),
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).findAll(xml).count()
+        val clipClose = closingCount("clip-path")
+        if (explicitClipOpen != clipClose) malformedStructureCount++
+
+        fun viewportValue(name: String): Double? {
+            val match = Regex(
+                """android:$name\s*=\s*["']([^"']+)["']""",
+                RegexOption.IGNORE_CASE
+            ).find(xml) ?: return null
+            return match.groupValues[1].toDoubleOrNull()
+        }
+
+        var invalidViewportCount = 0
+        val viewportWidth = viewportValue("viewportWidth")
+        val viewportHeight = viewportValue("viewportHeight")
+        if (viewportWidth == null || !viewportWidth.isFinite() || viewportWidth <= 0.0) {
+            invalidViewportCount++
+        }
+        if (viewportHeight == null || !viewportHeight.isFinite() || viewportHeight <= 0.0) {
+            invalidViewportCount++
+        }
+
+        val unsupportedOutputConstructCount = listOf(
+            Regex("""<svg\b""", RegexOption.IGNORE_CASE),
+            Regex("""<defs\b""", RegexOption.IGNORE_CASE),
+            Regex("""<use\b""", RegexOption.IGNORE_CASE),
+            Regex("""<mask\b""", RegexOption.IGNORE_CASE),
+            Regex("""<filter\b""", RegexOption.IGNORE_CASE),
+            Regex("""<linearGradient\b""", RegexOption.IGNORE_CASE),
+            Regex("""<radialGradient\b""", RegexOption.IGNORE_CASE),
+            Regex("""\btransform\s*=""", RegexOption.IGNORE_CASE)
+        ).sumOf { regex -> regex.findAll(xml).count() }
+
+        val passed =
+            invalidPathDataCount == 0 &&
+                nonFiniteNumberCount == 0 &&
+                malformedStructureCount == 0 &&
+                invalidViewportCount == 0 &&
+                unsupportedOutputConstructCount == 0
+
+        return FinalOutputValidation(
+            passed = passed,
+            validatedPathDataCount = validatedPathDataCount,
+            invalidPathDataCount = invalidPathDataCount,
+            nonFiniteNumberCount = nonFiniteNumberCount,
+            malformedStructureCount = malformedStructureCount,
+            invalidViewportCount = invalidViewportCount,
+            unsupportedOutputConstructCount = unsupportedOutputConstructCount
         )
     }
 
