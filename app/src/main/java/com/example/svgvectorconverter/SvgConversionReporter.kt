@@ -169,6 +169,7 @@ data class SvgConversionReportData(
     val transformAttributesCanonicalized: Int = 0,
     val zeroPivotAttributesRemoved: Int = 0,
     val transformGroupsReordered: Int = 0,
+    val identicalSiblingTransformGroupsMerged: Int = 0,
     val shorterCommandFormsSelected: Int = 0,
     val relativeCommandsSelected: Int = 0,
     val axisCommandsSelected: Int = 0,
@@ -537,6 +538,8 @@ object SvgConversionReporter {
                 appendLine("✓ Redundant zero pivots removed: ${data.zeroPivotAttributesRemoved}")
             if (data.transformGroupsReordered > 0)
                 appendLine("✓ Transform groups put in canonical order: ${data.transformGroupsReordered}")
+            if (data.identicalSiblingTransformGroupsMerged > 0)
+                appendLine("✓ Identical sibling transform groups merged: ${data.identicalSiblingTransformGroupsMerged}")
             if (data.compatiblePathsMerged > 0)
                 appendLine("✓ Compatible adjacent paths merged: ${data.compatiblePathsMerged}")
             if (data.shorterCommandFormsSelected > 0)
