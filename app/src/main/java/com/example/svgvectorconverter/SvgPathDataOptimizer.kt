@@ -1,4 +1,4 @@
-// C3_v1: conservative nested transform-group consolidation with comment preservation.
+// C4_v1: canonicalize remaining VectorDrawable group transforms.
 package com.example.svgvectorconverter
 
 import java.math.BigDecimal
@@ -53,6 +53,9 @@ internal object SvgPathDataOptimizer {
         val rotationGroupsPreservedForSize: Int = 0,
         val identityTransformAttributesRemoved: Int = 0,
         val nestedTransformGroupsComposed: Int = 0,
+        val transformAttributesCanonicalized: Int = 0,
+        val zeroPivotAttributesRemoved: Int = 0,
+        val transformGroupsReordered: Int = 0,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
@@ -211,12 +214,14 @@ internal object SvgPathDataOptimizer {
             flattenTranslationOnlyGroups(rotationFlattening.xml)
         val adjacentGroupCoalescing =
             coalesceIdenticalAdjacentGroups(translationFlattening.xml)
+        val transformCanonicalization =
+            canonicalizeGroupTransformAttributes(adjacentGroupCoalescing.xml)
         val transformOptimizationNanos = System.nanoTime() - transformStartTime
         val transformCharactersSaved =
-            charactersSaved(groupCleanup.xml, adjacentGroupCoalescing.xml)
+            charactersSaved(groupCleanup.xml, transformCanonicalization.xml)
 
         val numericCleanupStartTime = System.nanoTime()
-        val nearIntegerSnapping = snapNearIntegerPathValues(adjacentGroupCoalescing.xml)
+        val nearIntegerSnapping = snapNearIntegerPathValues(transformCanonicalization.xml)
         val nearIntegerSnappingNanos = System.nanoTime() - numericCleanupStartTime
 
         val deduplicationStartTime = System.nanoTime()
@@ -236,7 +241,7 @@ internal object SvgPathDataOptimizer {
         val numericCleanupNanos =
             nearIntegerSnappingNanos + (System.nanoTime() - decimalCanonicalizationStartTime)
         val numericCleanupCharactersSaved =
-            charactersSaved(adjacentGroupCoalescing.xml, nearIntegerSnapping.xml) +
+            charactersSaved(transformCanonicalization.xml, nearIntegerSnapping.xml) +
                 charactersSaved(pathMerging.xml, decimalCanonicalization.xml)
 
         val finalFormattingStartTime = System.nanoTime()
@@ -298,6 +303,12 @@ internal object SvgPathDataOptimizer {
                 nestedTransformGroupsComposed =
                     translationComposition.composedGroups +
                         compatibleComposition.composedGroups,
+                transformAttributesCanonicalized =
+                    transformCanonicalization.canonicalizedAttributes,
+                zeroPivotAttributesRemoved =
+                    transformCanonicalization.zeroPivotsRemoved,
+                transformGroupsReordered =
+                    transformCanonicalization.reorderedGroups,
                 shorterCommandFormsSelected = shorterCommandFormsSelected,
                 relativeCommandsSelected = relativeCommandsSelected,
                 axisCommandsSelected = axisCommandsSelected,
@@ -832,6 +843,148 @@ internal object SvgPathDataOptimizer {
         return output.joinToString("\n")
     }
 
+
+
+    private data class TransformCanonicalizationResult(
+        val xml: String,
+        val canonicalizedAttributes: Int,
+        val zeroPivotsRemoved: Int,
+        val reorderedGroups: Int
+    )
+
+    /**
+     * C4: canonicalizes the transform attributes left on generated groups.
+     *
+     * This pass is semantics-neutral:
+     * - numeric spellings are normalized (for example 1.000 -> 1 and -0 -> 0);
+     * - explicit zero pivots are removed because VectorDrawable defaults them to 0;
+     * - transform attributes are emitted in one stable order;
+     * - unknown/non-transform attributes retain their original relative order.
+     *
+     * Resource-valued attributes are left untouched.
+     */
+    private fun canonicalizeGroupTransformAttributes(
+        xml: String
+    ): TransformCanonicalizationResult {
+        val groupOpeningRegex = Regex(
+            """<group\b(?:\"[^\"]*\"|'[^']*'|[^>])*?>""",
+            RegexOption.IGNORE_CASE
+        )
+        val canonicalOrder = listOf(
+            "scaleX", "scaleY",
+            "pivotX", "pivotY",
+            "rotation",
+            "translateX", "translateY"
+        )
+        val transformNames = canonicalOrder.map { it.lowercase() }.toSet()
+
+        var canonicalized = 0
+        var zeroPivotsRemoved = 0
+        var reorderedGroups = 0
+
+        val updated = groupOpeningRegex.replace(xml) { match ->
+            val tag = match.value
+            val attrs = androidAttributeRegex.findAll(tag).toList()
+            if (attrs.isEmpty()) return@replace tag
+
+            val transformAttrs = attrs.filter {
+                it.groupValues[1].lowercase() in transformNames
+            }
+            if (transformAttrs.isEmpty()) return@replace tag
+
+            data class CanonicalAttr(
+                val name: String,
+                val value: String,
+                val originalIndex: Int
+            )
+
+            val retainedTransforms = mutableListOf<CanonicalAttr>()
+            transformAttrs.forEachIndexed { index, attr ->
+                val rawName = attr.groupValues[1]
+                val canonicalName = canonicalOrder.first {
+                    it.equals(rawName, ignoreCase = true)
+                }
+                val rawValue = attr.groupValues[3].trim()
+                val numeric = rawValue.toBigDecimalOrNull()
+
+                if ((canonicalName == "pivotX" || canonicalName == "pivotY") &&
+                    numeric != null &&
+                    numeric.compareTo(BigDecimal.ZERO) == 0
+                ) {
+                    zeroPivotsRemoved++
+                    return@forEachIndexed
+                }
+
+                val canonicalValue = if (numeric != null) {
+                    val normalized = if (numeric.compareTo(BigDecimal.ZERO) == 0) {
+                        BigDecimal.ZERO
+                    } else {
+                        numeric
+                    }
+                    formatBigDecimal(normalized)
+                } else {
+                    rawValue
+                }
+
+                if (canonicalName != rawName || canonicalValue != rawValue) {
+                    canonicalized++
+                }
+                retainedTransforms += CanonicalAttr(
+                    canonicalName,
+                    canonicalValue,
+                    index
+                )
+            }
+
+            val sortedTransforms = retainedTransforms.sortedBy {
+                canonicalOrder.indexOf(it.name)
+            }
+            if (retainedTransforms.map { it.name } != sortedTransforms.map { it.name }) {
+                reorderedGroups++
+            }
+
+            // Remove only transform attributes from the opening tag, keeping
+            // unknown attributes and their order intact.
+            var baseTag = tag
+            transformAttrs.sortedByDescending { it.range.first }.forEach { attr ->
+                var start = attr.range.first
+                val end = attr.range.last + 1
+                while (start > 0 && baseTag[start - 1].isWhitespace()) start--
+                baseTag = baseTag.removeRange(start, end)
+            }
+            baseTag = baseTag
+                .replace(Regex("""\s+>"""), ">")
+                .replace(Regex("""<group\s*>""", RegexOption.IGNORE_CASE), "<group>")
+
+            if (sortedTransforms.isEmpty()) {
+                return@replace baseTag
+            }
+
+            val closeIndex = baseTag.lastIndexOf('>')
+            if (closeIndex < 0) return@replace tag
+
+            val prefix = baseTag.substring(0, closeIndex).trimEnd()
+            val suffix = baseTag.substring(closeIndex)
+            buildString {
+                append(prefix)
+                sortedTransforms.forEach { attr ->
+                    append("\n    android:")
+                    append(attr.name)
+                    append("=\"")
+                    append(attr.value)
+                    append('"')
+                }
+                append(suffix)
+            }
+        }
+
+        return TransformCanonicalizationResult(
+            xml = updated,
+            canonicalizedAttributes = canonicalized,
+            zeroPivotsRemoved = zeroPivotsRemoved,
+            reorderedGroups = reorderedGroups
+        )
+    }
 
     private data class IdentityGroupCleanupResult(
         val xml: String,
