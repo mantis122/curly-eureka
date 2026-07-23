@@ -1,4 +1,4 @@
-// C4_v1: canonicalize remaining VectorDrawable group transforms.
+// D1_v1: validate optimizer idempotence and fixed-point stability.
 package com.example.svgvectorconverter
 
 import java.math.BigDecimal
@@ -56,6 +56,10 @@ internal object SvgPathDataOptimizer {
         val transformAttributesCanonicalized: Int = 0,
         val zeroPivotAttributesRemoved: Int = 0,
         val transformGroupsReordered: Int = 0,
+        val optimizerIdempotenceVerified: Boolean = false,
+        val optimizerReachedFixedPoint: Boolean = false,
+        val optimizerStabilityPasses: Int = 0,
+        val optimizerValidationNanos: Long = 0,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
@@ -132,6 +136,42 @@ internal object SvgPathDataOptimizer {
     )
 
     fun optimizeVectorXml(xml: String): Result {
+        val validationStartTime = System.nanoTime()
+
+        val firstPass = optimizeVectorXmlSinglePass(xml)
+        val secondPass = optimizeVectorXmlSinglePass(firstPass.xml)
+
+        if (secondPass.xml == firstPass.xml) {
+            return firstPass.copy(
+                stats = firstPass.stats.copy(
+                    optimizerIdempotenceVerified = true,
+                    optimizerReachedFixedPoint = true,
+                    optimizerStabilityPasses = 1,
+                    optimizerValidationNanos =
+                        System.nanoTime() - validationStartTime
+                )
+            )
+        }
+
+        // A third pass distinguishes a one-pass drift from an optimizer that
+        // continues changing its own output. D1 intentionally returns the
+        // original first-pass output so validation never silently changes
+        // production behavior.
+        val thirdPass = optimizeVectorXmlSinglePass(secondPass.xml)
+        val reachedFixedPoint = thirdPass.xml == secondPass.xml
+
+        return firstPass.copy(
+            stats = firstPass.stats.copy(
+                optimizerIdempotenceVerified = false,
+                optimizerReachedFixedPoint = reachedFixedPoint,
+                optimizerStabilityPasses = if (reachedFixedPoint) 2 else 3,
+                optimizerValidationNanos =
+                    System.nanoTime() - validationStartTime
+            )
+        )
+    }
+
+    private fun optimizeVectorXmlSinglePass(xml: String): Result {
         fun charactersSaved(before: String, after: String): Int =
             (before.length - after.length).coerceAtLeast(0)
 

@@ -169,6 +169,10 @@ data class SvgConversionReportData(
     val transformAttributesCanonicalized: Int = 0,
     val zeroPivotAttributesRemoved: Int = 0,
     val transformGroupsReordered: Int = 0,
+    val optimizerIdempotenceVerified: Boolean = false,
+    val optimizerReachedFixedPoint: Boolean = false,
+    val optimizerStabilityPasses: Int = 0,
+    val optimizerValidationNanos: Long = 0,
     val shorterCommandFormsSelected: Int = 0,
     val relativeCommandsSelected: Int = 0,
     val axisCommandsSelected: Int = 0,
@@ -537,6 +541,19 @@ object SvgConversionReporter {
                 appendLine("✓ Redundant zero pivots removed: ${data.zeroPivotAttributesRemoved}")
             if (data.transformGroupsReordered > 0)
                 appendLine("✓ Transform groups put in canonical order: ${data.transformGroupsReordered}")
+            when {
+                data.optimizerIdempotenceVerified ->
+                    appendLine("✓ Optimizer idempotence verified")
+                data.optimizerReachedFixedPoint ->
+                    appendLine(
+                        "⚠ Optimizer required ${data.optimizerStabilityPasses} passes to stabilize"
+                    )
+                data.optimizerStabilityPasses > 0 ->
+                    appendLine(
+                        "⚠ Optimizer did not reach a fixed point after " +
+                            "${data.optimizerStabilityPasses} passes"
+                    )
+            }
             if (data.compatiblePathsMerged > 0)
                 appendLine("✓ Compatible adjacent paths merged: ${data.compatiblePathsMerged}")
             if (data.shorterCommandFormsSelected > 0)
