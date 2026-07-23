@@ -249,30 +249,27 @@ internal object SvgPathDataOptimizer {
         }
 
         fun openingCount(tag: String): Int =
-            Regex("""<$tag\b""", RegexOption.IGNORE_CASE).findAll(xml).count()
+            Regex("""<${tag}\b""", RegexOption.IGNORE_CASE).findAll(xml).count()
+
+        fun selfClosingCount(tag: String): Int =
+            Regex(
+                """<${tag}\b(?:"[^"]*"|'[^']*'|[^>])*?/\s*>""",
+                setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+            ).findAll(xml).count()
 
         fun closingCount(tag: String): Int =
-            Regex("""</$tag\s*>""", RegexOption.IGNORE_CASE).findAll(xml).count()
+            Regex("""</${tag}\s*>""", RegexOption.IGNORE_CASE).findAll(xml).count()
 
-        val groupOpen = openingCount("group")
-        val groupClose = closingCount("group")
-        if (groupOpen != groupClose) malformedStructureCount++
+        fun hasBalancedElements(tag: String): Boolean {
+            val openings = openingCount(tag)
+            val selfClosing = selfClosingCount(tag)
+            val closings = closingCount(tag)
+            return openings - selfClosing == closings
+        }
 
-        val explicitPathOpen = Regex(
-            """<path\b(?:"[^"]*"|'[^']*'|[^>])*?(?<!/)>
-            """.trimIndent(),
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-        ).findAll(xml).count()
-        val pathClose = closingCount("path")
-        if (explicitPathOpen != pathClose) malformedStructureCount++
-
-        val explicitClipOpen = Regex(
-            """<clip-path\b(?:"[^"]*"|'[^']*'|[^>])*?(?<!/)>
-            """.trimIndent(),
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-        ).findAll(xml).count()
-        val clipClose = closingCount("clip-path")
-        if (explicitClipOpen != clipClose) malformedStructureCount++
+        if (!hasBalancedElements("group")) malformedStructureCount++
+        if (!hasBalancedElements("path")) malformedStructureCount++
+        if (!hasBalancedElements("clip-path")) malformedStructureCount++
 
         fun viewportValue(name: String): Double? {
             val match = Regex(
