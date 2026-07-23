@@ -1,4 +1,4 @@
-// C5_v1: merge adjacent sibling groups with identical canonical transform state.
+// C4_v1: canonicalize remaining VectorDrawable group transforms.
 package com.example.svgvectorconverter
 
 import java.math.BigDecimal
@@ -56,7 +56,6 @@ internal object SvgPathDataOptimizer {
         val transformAttributesCanonicalized: Int = 0,
         val zeroPivotAttributesRemoved: Int = 0,
         val transformGroupsReordered: Int = 0,
-        val identicalSiblingTransformGroupsMerged: Int = 0,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
@@ -217,14 +216,12 @@ internal object SvgPathDataOptimizer {
             coalesceIdenticalAdjacentGroups(translationFlattening.xml)
         val transformCanonicalization =
             canonicalizeGroupTransformAttributes(adjacentGroupCoalescing.xml)
-        val siblingTransformHoisting =
-            mergeIdenticalSiblingTransformGroups(transformCanonicalization.xml)
         val transformOptimizationNanos = System.nanoTime() - transformStartTime
         val transformCharactersSaved =
-            charactersSaved(groupCleanup.xml, siblingTransformHoisting.xml)
+            charactersSaved(groupCleanup.xml, transformCanonicalization.xml)
 
         val numericCleanupStartTime = System.nanoTime()
-        val nearIntegerSnapping = snapNearIntegerPathValues(siblingTransformHoisting.xml)
+        val nearIntegerSnapping = snapNearIntegerPathValues(transformCanonicalization.xml)
         val nearIntegerSnappingNanos = System.nanoTime() - numericCleanupStartTime
 
         val deduplicationStartTime = System.nanoTime()
@@ -244,7 +241,7 @@ internal object SvgPathDataOptimizer {
         val numericCleanupNanos =
             nearIntegerSnappingNanos + (System.nanoTime() - decimalCanonicalizationStartTime)
         val numericCleanupCharactersSaved =
-            charactersSaved(siblingTransformHoisting.xml, nearIntegerSnapping.xml) +
+            charactersSaved(transformCanonicalization.xml, nearIntegerSnapping.xml) +
                 charactersSaved(pathMerging.xml, decimalCanonicalization.xml)
 
         val finalFormattingStartTime = System.nanoTime()
@@ -312,8 +309,6 @@ internal object SvgPathDataOptimizer {
                     transformCanonicalization.zeroPivotsRemoved,
                 transformGroupsReordered =
                     transformCanonicalization.reorderedGroups,
-                identicalSiblingTransformGroupsMerged =
-                    siblingTransformHoisting.mergedGroups,
                 shorterCommandFormsSelected = shorterCommandFormsSelected,
                 relativeCommandsSelected = relativeCommandsSelected,
                 axisCommandsSelected = axisCommandsSelected,
@@ -1742,123 +1737,6 @@ internal object SvgPathDataOptimizer {
             .replace(Regex("""[ \t]{2,}"""), " ")
             .replace(Regex("""[ \t]+>"""), ">")
             .replace(Regex("""\n[ \t]*\n"""), "\n")
-    }
-
-
-    private data class SiblingTransformHoistingResult(
-        val xml: String,
-        val mergedGroups: Int
-    )
-
-    /**
-     * C5: merges adjacent sibling groups whose complete canonical transform
-     * state is identical.
-     *
-     * C4 runs immediately before this pass, so equivalent numeric spellings,
-     * redundant zero pivots, and attribute order have already been normalized.
-     * The pass remains deliberately conservative:
-     * - groups must be direct siblings;
-     * - only whitespace/comments may separate them;
-     * - each group must contain at least one transform attribute;
-     * - their complete Android attribute signatures must match;
-     * - the left group may not contain a clip-path, because its clip would then
-     *   extend over content from the right group.
-     *
-     * The right group's opening wrapper is removed and its body is appended to
-     * the left group. Drawing order is preserved.
-     */
-    private fun mergeIdenticalSiblingTransformGroups(
-        xml: String
-    ): SiblingTransformHoistingResult {
-        val transformAttributeNames = setOf(
-            "rotation",
-            "pivotx",
-            "pivoty",
-            "scalex",
-            "scaley",
-            "translatex",
-            "translatey"
-        )
-
-        var current = xml
-        var merged = 0
-
-        while (true) {
-            val groups = findMatchedGroups(current)
-            if (groups.size < 2) break
-
-            fun parentOf(range: GroupRange): GroupRange? = groups
-                .asSequence()
-                .filter { candidate ->
-                    candidate.start < range.start && candidate.end > range.end
-                }
-                .minByOrNull { candidate -> candidate.end - candidate.start }
-
-            val siblingSets = groups
-                .groupBy { range -> parentOf(range)?.start }
-                .values
-
-            var selected: Pair<GroupRange, GroupRange>? = null
-
-            outer@ for (siblings in siblingSets) {
-                val ordered = siblings.sortedBy { it.start }
-                for (index in 0 until ordered.lastIndex) {
-                    val left = ordered[index]
-                    val right = ordered[index + 1]
-
-                    val between = current.substring(left.end, right.start)
-                    if (!commentsAndWhitespaceOnly(between)) continue
-
-                    val leftOpening = current.substring(left.start, left.openingEnd)
-                    val rightOpening = current.substring(right.start, right.openingEnd)
-
-                    val leftAttributes = androidAttributeRegex.findAll(leftOpening).toList()
-                    val rightAttributes = androidAttributeRegex.findAll(rightOpening).toList()
-
-                    val leftHasTransform = leftAttributes.any {
-                        it.groupValues[1].lowercase() in transformAttributeNames
-                    }
-                    val rightHasTransform = rightAttributes.any {
-                        it.groupValues[1].lowercase() in transformAttributeNames
-                    }
-                    if (!leftHasTransform || !rightHasTransform) continue
-
-                    val leftSignature = groupAttributeSignature(leftOpening) ?: continue
-                    val rightSignature = groupAttributeSignature(rightOpening) ?: continue
-                    if (leftSignature != rightSignature) continue
-
-                    val leftBody = current.substring(left.openingEnd, left.closingStart)
-                    if (Regex("""<clip-path\b""", RegexOption.IGNORE_CASE)
-                            .containsMatchIn(leftBody)
-                    ) {
-                        continue
-                    }
-
-                    selected = left to right
-                    break@outer
-                }
-            }
-
-            val (left, right) = selected ?: break
-            val replacement = buildString(right.end - left.start) {
-                append(current, left.start, left.openingEnd)
-                append(current, left.openingEnd, left.closingStart)
-                append(current, left.end, right.start)
-                append(current, right.openingEnd, right.end)
-            }
-
-            current = buildString(current.length) {
-                append(current, 0, left.start)
-                append(replacement)
-                append(current, right.end, current.length)
-            }
-            merged++
-        }
-
-        return SiblingTransformHoistingResult(
-            xml = current,
-            mergedGroups = merged
-        )
     }
 
     private data class AdjacentGroupCoalescingResult(

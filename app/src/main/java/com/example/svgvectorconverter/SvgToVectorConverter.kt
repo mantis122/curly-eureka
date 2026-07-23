@@ -352,7 +352,6 @@ object SvgToVectorConverter {
                 transformAttributesCanonicalized = pathOptimizationStats.transformAttributesCanonicalized,
                 zeroPivotAttributesRemoved = pathOptimizationStats.zeroPivotAttributesRemoved,
                 transformGroupsReordered = pathOptimizationStats.transformGroupsReordered,
-                identicalSiblingTransformGroupsMerged = pathOptimizationStats.identicalSiblingTransformGroupsMerged,
                 shorterCommandFormsSelected = pathOptimizationStats.shorterCommandFormsSelected,
                 relativeCommandsSelected = pathOptimizationStats.relativeCommandsSelected,
                 axisCommandsSelected = pathOptimizationStats.axisCommandsSelected,
