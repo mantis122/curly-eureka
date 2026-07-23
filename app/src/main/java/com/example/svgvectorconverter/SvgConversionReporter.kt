@@ -173,6 +173,10 @@ data class SvgConversionReportData(
     val optimizerReachedFixedPoint: Boolean = false,
     val optimizerStabilityPasses: Int = 0,
     val optimizerValidationNanos: Long = 0,
+    val optimizerValidationPasses: Int = 0,
+    val optimizerFirstPassChangedXml: Boolean = false,
+    val optimizerSecondPassChangedXml: Boolean = false,
+    val optimizerThirdPassChangedXml: Boolean = false,
     val shorterCommandFormsSelected: Int = 0,
     val relativeCommandsSelected: Int = 0,
     val axisCommandsSelected: Int = 0,
@@ -541,18 +545,41 @@ object SvgConversionReporter {
                 appendLine("✓ Redundant zero pivots removed: ${data.zeroPivotAttributesRemoved}")
             if (data.transformGroupsReordered > 0)
                 appendLine("✓ Transform groups put in canonical order: ${data.transformGroupsReordered}")
-            when {
-                data.optimizerIdempotenceVerified ->
-                    appendLine("✓ Optimizer idempotence verified")
-                data.optimizerReachedFixedPoint ->
+            if (data.optimizerValidationPasses > 0) {
+                appendLine()
+                appendLine("Optimizer validation")
+                when {
+                    data.optimizerIdempotenceVerified ->
+                        appendLine("✓ Optimizer idempotence verified")
+                    data.optimizerReachedFixedPoint ->
+                        appendLine(
+                            "⚠ Optimizer required ${data.optimizerStabilityPasses} passes to stabilize"
+                        )
+                    else ->
+                        appendLine(
+                            "⚠ Optimizer did not reach a fixed point after " +
+                                "${data.optimizerStabilityPasses} passes"
+                        )
+                }
+                appendLine("• Validation passes: ${data.optimizerValidationPasses}")
+                appendLine(
+                    "• XML changed after pass 1: " +
+                        if (data.optimizerFirstPassChangedXml) "Yes" else "No"
+                )
+                appendLine(
+                    "• XML changed after pass 2: " +
+                        if (data.optimizerSecondPassChangedXml) "Yes" else "No"
+                )
+                if (data.optimizerValidationPasses >= 3) {
                     appendLine(
-                        "⚠ Optimizer required ${data.optimizerStabilityPasses} passes to stabilize"
+                        "• XML changed after pass 3: " +
+                            if (data.optimizerThirdPassChangedXml) "Yes" else "No"
                     )
-                data.optimizerStabilityPasses > 0 ->
-                    appendLine(
-                        "⚠ Optimizer did not reach a fixed point after " +
-                            "${data.optimizerStabilityPasses} passes"
-                    )
+                }
+                appendLine(
+                    "• Validation time: " +
+                        formatNanosAsMilliseconds(data.optimizerValidationNanos)
+                )
             }
             if (data.compatiblePathsMerged > 0)
                 appendLine("✓ Compatible adjacent paths merged: ${data.compatiblePathsMerged}")

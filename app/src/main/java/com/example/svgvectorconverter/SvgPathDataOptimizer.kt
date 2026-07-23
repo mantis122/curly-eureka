@@ -1,4 +1,4 @@
-// D1_v1: validate optimizer idempotence and fixed-point stability.
+// D1_v2: validate optimizer idempotence and report each validation pass.
 package com.example.svgvectorconverter
 
 import java.math.BigDecimal
@@ -60,6 +60,10 @@ internal object SvgPathDataOptimizer {
         val optimizerReachedFixedPoint: Boolean = false,
         val optimizerStabilityPasses: Int = 0,
         val optimizerValidationNanos: Long = 0,
+        val optimizerValidationPasses: Int = 0,
+        val optimizerFirstPassChangedXml: Boolean = false,
+        val optimizerSecondPassChangedXml: Boolean = false,
+        val optimizerThirdPassChangedXml: Boolean = false,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
@@ -148,7 +152,11 @@ internal object SvgPathDataOptimizer {
                     optimizerReachedFixedPoint = true,
                     optimizerStabilityPasses = 1,
                     optimizerValidationNanos =
-                        System.nanoTime() - validationStartTime
+                        System.nanoTime() - validationStartTime,
+                    optimizerValidationPasses = 2,
+                    optimizerFirstPassChangedXml = firstPass.xml != xml,
+                    optimizerSecondPassChangedXml = false,
+                    optimizerThirdPassChangedXml = false
                 )
             )
         }
@@ -166,7 +174,11 @@ internal object SvgPathDataOptimizer {
                 optimizerReachedFixedPoint = reachedFixedPoint,
                 optimizerStabilityPasses = if (reachedFixedPoint) 2 else 3,
                 optimizerValidationNanos =
-                    System.nanoTime() - validationStartTime
+                    System.nanoTime() - validationStartTime,
+                optimizerValidationPasses = 3,
+                optimizerFirstPassChangedXml = firstPass.xml != xml,
+                optimizerSecondPassChangedXml = secondPass.xml != firstPass.xml,
+                optimizerThirdPassChangedXml = thirdPass.xml != secondPass.xml
             )
         )
     }

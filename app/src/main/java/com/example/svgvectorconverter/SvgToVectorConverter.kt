@@ -360,6 +360,14 @@ object SvgToVectorConverter {
                     pathOptimizationStats.optimizerStabilityPasses,
                 optimizerValidationNanos =
                     pathOptimizationStats.optimizerValidationNanos,
+                optimizerValidationPasses =
+                    pathOptimizationStats.optimizerValidationPasses,
+                optimizerFirstPassChangedXml =
+                    pathOptimizationStats.optimizerFirstPassChangedXml,
+                optimizerSecondPassChangedXml =
+                    pathOptimizationStats.optimizerSecondPassChangedXml,
+                optimizerThirdPassChangedXml =
+                    pathOptimizationStats.optimizerThirdPassChangedXml,
                 shorterCommandFormsSelected = pathOptimizationStats.shorterCommandFormsSelected,
                 relativeCommandsSelected = pathOptimizationStats.relativeCommandsSelected,
                 axisCommandsSelected = pathOptimizationStats.axisCommandsSelected,
