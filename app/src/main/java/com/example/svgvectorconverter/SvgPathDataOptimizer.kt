@@ -1,3 +1,4 @@
+// Rotation90Fix_v3: exact quarter-turn matrices plus validated path-rewrite fallback.
 package com.example.svgvectorconverter
 
 import java.math.BigDecimal
@@ -2631,9 +2632,30 @@ internal object SvgPathDataOptimizer {
         if (segments.isEmpty()) return null
         if (segments.any { it.command.uppercaseChar() == 'A' }) return null
 
-        val radians = Math.toRadians(transform.degrees.toDouble())
-        val cosine = BigDecimal.valueOf(cos(radians))
-        val sine = BigDecimal.valueOf(sin(radians))
+        // Use exact quarter-turn values whenever possible. Computing sin/cos
+        // through Double for 90/180/270 degrees produces tiny residuals such as
+        // 6.123233995736766E-17. Those residuals make otherwise simple rotated
+        // rectangles much longer and can prevent the cost-aware flattener from
+        // accepting an exact rewrite. Exact values also avoid feeding numerical
+        // noise into the later path command optimizer.
+        val quarterTurns = transform.degrees
+            .remainder(BigDecimal("360"))
+            .let { if (it.signum() < 0) it.add(BigDecimal("360")) else it }
+            .divideAndRemainder(BigDecimal("90"))
+
+        val exactQuarterTurn = quarterTurns[1].compareTo(BigDecimal.ZERO) == 0
+        val (cosine, sine) = if (exactQuarterTurn) {
+            when (quarterTurns[0].toInt()) {
+                0 -> BigDecimal.ONE to BigDecimal.ZERO
+                1 -> BigDecimal.ZERO to BigDecimal.ONE
+                2 -> BigDecimal.ONE.negate() to BigDecimal.ZERO
+                3 -> BigDecimal.ZERO to BigDecimal.ONE.negate()
+                else -> return null
+            }
+        } else {
+            val radians = Math.toRadians(transform.degrees.toDouble())
+            BigDecimal.valueOf(cos(radians)) to BigDecimal.valueOf(sin(radians))
+        }
 
         fun rotatePoint(x: BigDecimal, y: BigDecimal): Pair<BigDecimal, BigDecimal> {
             val localX = x.subtract(transform.pivotX)
