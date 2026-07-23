@@ -545,26 +545,6 @@ object SvgConversionReporter {
                 appendLine("✓ Redundant zero pivots removed: ${data.zeroPivotAttributesRemoved}")
             if (data.transformGroupsReordered > 0)
                 appendLine("✓ Transform groups put in canonical order: ${data.transformGroupsReordered}")
-                appendLine("• Validation passes: ${data.optimizerValidationPasses}")
-                appendLine(
-                    "• XML changed after pass 1: " +
-                        if (data.optimizerFirstPassChangedXml) "Yes" else "No"
-                )
-                appendLine(
-                    "• XML changed after pass 2: " +
-                        if (data.optimizerSecondPassChangedXml) "Yes" else "No"
-                )
-                if (data.optimizerValidationPasses >= 3) {
-                    appendLine(
-                        "• XML changed after pass 3: " +
-                            if (data.optimizerThirdPassChangedXml) "Yes" else "No"
-                    )
-                }
-                appendLine(
-                    "• Validation time: " +
-                        formatNanosAsMilliseconds(data.optimizerValidationNanos)
-                )
-            }
             if (data.compatiblePathsMerged > 0)
                 appendLine("✓ Compatible adjacent paths merged: ${data.compatiblePathsMerged}")
             if (data.shorterCommandFormsSelected > 0)
@@ -574,6 +554,7 @@ object SvgConversionReporter {
             if (data.axisCommandsSelected > 0)
                 appendLine("✓ Horizontal/vertical commands selected: ${data.axisCommandsSelected}")
 
+            appendOptimizerValidation(data)
             appendOptimizationImpact(data)
             appendOptimizationQualityMetrics(data)
             appendLine()
@@ -997,6 +978,45 @@ object SvgConversionReporter {
      * used. The converter's raw warning count may also include the internal
      * invalid-array diagnostic, so remove that duplicate from the aggregate.
      */
+    private fun StringBuilder.appendOptimizerValidation(data: SvgConversionReportData) {
+        if (data.optimizerValidationPasses <= 0) return
+
+        appendLine()
+        appendLine("Optimizer validation")
+        when {
+            data.optimizerIdempotenceVerified ->
+                appendLine("✓ Optimizer idempotence verified")
+            data.optimizerReachedFixedPoint ->
+                appendLine(
+                    "⚠ Optimizer required ${data.optimizerStabilityPasses} passes to stabilize"
+                )
+            else ->
+                appendLine(
+                    "⚠ Optimizer did not reach a fixed point after " +
+                        "${data.optimizerStabilityPasses} passes"
+                )
+        }
+        appendLine("• Validation passes: ${data.optimizerValidationPasses}")
+        appendLine(
+            "• XML changed after pass 1: " +
+                if (data.optimizerFirstPassChangedXml) "Yes" else "No"
+        )
+        appendLine(
+            "• XML changed after pass 2: " +
+                if (data.optimizerSecondPassChangedXml) "Yes" else "No"
+        )
+        if (data.optimizerValidationPasses >= 3) {
+            appendLine(
+                "• XML changed after pass 3: " +
+                    if (data.optimizerThirdPassChangedXml) "Yes" else "No"
+            )
+        }
+        appendLine(
+            "• Validation time: " +
+                formatNanosAsMilliseconds(data.optimizerValidationNanos)
+        )
+    }
+
     private fun StringBuilder.appendOptimizationImpact(data: SvgConversionReportData) {
         val savings = listOf(
             "Path syntax and colors" to data.optimizationPathSyntaxCharactersSaved,
@@ -1012,23 +1032,6 @@ object SvgConversionReporter {
         if (savings.isEmpty()) return
 
         appendLine()
-            if (data.optimizerValidationPasses > 0) {
-                appendLine()
-                appendLine("Optimizer validation")
-                when {
-                    data.optimizerIdempotenceVerified ->
-                        appendLine("✓ Optimizer idempotence verified")
-                    data.optimizerReachedFixedPoint ->
-                        appendLine(
-                            "⚠ Optimizer required ${data.optimizerStabilityPasses} passes to stabilize"
-                        )
-                    else ->
-                        appendLine(
-                            "⚠ Optimizer did not reach a fixed point after " +
-                                "${data.optimizerStabilityPasses} passes"
-                        )
-                }
-
         appendLine("Largest optimization savings")
         savings.forEach { (label, charactersSaved) ->
             appendLine("• $label: ${formatCharacterCount(charactersSaved)} saved")
