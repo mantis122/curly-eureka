@@ -1,4 +1,4 @@
-// Rotation90Fix_v3: exact quarter-turn matrices plus validated path-rewrite fallback.
+// C3_v1: conservative nested transform-group consolidation with comment preservation.
 package com.example.svgvectorconverter
 
 import java.math.BigDecimal
@@ -1034,10 +1034,16 @@ internal object SvgPathDataOptimizer {
                 } ?: break
 
             val (outer, child, updatedChildOpening) = candidate
+            val beforeChild = current.substring(outer.openingEnd, child.start)
             val childBodyAndClosing = current.substring(child.openingEnd, child.end)
+            val afterChild = current.substring(child.end, outer.closingStart)
             val replacement = buildString {
+                // C3: comments belong to the wrapper scope and must survive when
+                // the wrapper is consolidated into its only child.
+                append(beforeChild)
                 append(updatedChildOpening)
                 append(childBodyAndClosing)
+                append(afterChild)
             }
 
             current = buildString(current.length) {
@@ -1142,8 +1148,16 @@ internal object SvgPathDataOptimizer {
                 } ?: break
 
             val (outer, child, updatedChildOpening) = candidate
+            val beforeChild = current.substring(outer.openingEnd, child.start)
             val childBodyAndClosing = current.substring(child.openingEnd, child.end)
-            val replacement = updatedChildOpening + childBodyAndClosing
+            val afterChild = current.substring(child.end, outer.closingStart)
+            val replacement = buildString {
+                // C3: preserve wrapper comments on both sides of the child.
+                append(beforeChild)
+                append(updatedChildOpening)
+                append(childBodyAndClosing)
+                append(afterChild)
+            }
 
             current = buildString(current.length) {
                 append(current, 0, outer.start)

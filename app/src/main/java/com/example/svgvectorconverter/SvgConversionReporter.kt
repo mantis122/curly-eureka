@@ -527,7 +527,7 @@ object SvgConversionReporter {
             if (data.identityTransformAttributesRemoved > 0)
                 appendLine("✓ Identity transform attributes removed: ${data.identityTransformAttributesRemoved}")
             if (data.nestedTransformGroupsComposed > 0)
-                appendLine("✓ Nested transform groups composed: ${data.nestedTransformGroupsComposed}")
+                appendLine("✓ Nested transform groups consolidated: ${data.nestedTransformGroupsComposed}")
             if (data.compatiblePathsMerged > 0)
                 appendLine("✓ Compatible adjacent paths merged: ${data.compatiblePathsMerged}")
             if (data.shorterCommandFormsSelected > 0)
