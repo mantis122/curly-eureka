@@ -1,5 +1,12 @@
 package com.example.svgvectorconverter
 
+import java.io.StringReader
+import java.security.MessageDigest
+import javax.xml.parsers.DocumentBuilderFactory
+import org.w3c.dom.Element
+import org.w3c.dom.Node
+import org.xml.sax.InputSource
+
 /**
  * E1.1 core regression runner.
  *
@@ -17,6 +24,30 @@ object SvgRegressionRunner {
         val conversionProfile: String = "Default"
     )
 
+    sealed class GoldenExpectation {
+        object Disabled : GoldenExpectation()
+
+        /**
+         * Records the current canonical XML and SHA-256 fingerprint in the
+         * regression report so it can be reviewed and promoted to a baseline.
+         */
+        object CaptureCandidate : GoldenExpectation()
+
+        /**
+         * Compares canonicalized XML rather than raw formatting.
+         */
+        data class CanonicalXml(
+            val xml: String
+        ) : GoldenExpectation()
+
+        /**
+         * Compares the SHA-256 fingerprint of canonicalized XML.
+         */
+        data class CanonicalSha256(
+            val sha256: String
+        ) : GoldenExpectation()
+    }
+
     data class Expectations(
         val expectedDrawablePathCount: Int? = null,
         val expectedWarningCount: Int? = null,
@@ -25,7 +56,8 @@ object SvgRegressionRunner {
         val requiredXmlFragments: List<String> = emptyList(),
         val forbiddenXmlFragments: List<String> = emptyList(),
         val requiredReportFragments: List<String> = emptyList(),
-        val forbiddenReportFragments: List<String> = emptyList()
+        val forbiddenReportFragments: List<String> = emptyList(),
+        val golden: GoldenExpectation = GoldenExpectation.Disabled
     )
 
     enum class CheckStatus {
@@ -37,7 +69,8 @@ object SvgRegressionRunner {
         val description: String,
         val status: CheckStatus,
         val expected: String? = null,
-        val actual: String? = null
+        val actual: String? = null,
+        val details: String? = null
     ) {
         val passed: Boolean
             get() = status == CheckStatus.PASSED
@@ -96,7 +129,11 @@ object SvgRegressionRunner {
                 }
 
                 test.checks
-                    .filterNot { test.passed && it.passed }
+                    .filterNot {
+                        test.passed &&
+                            it.passed &&
+                            it.details == null
+                    }
                     .forEach { check ->
                         val marker = if (check.passed) "✓" else "•"
                         appendLine("  $marker ${check.description}")
@@ -107,6 +144,12 @@ object SvgRegressionRunner {
                             }
                             check.actual?.let {
                                 appendLine("    Actual: $it")
+                            }
+                        }
+
+                        check.details?.let { details ->
+                            details.lineSequence().forEach { line ->
+                                appendLine("    $line")
                             }
                         }
                     }
@@ -269,7 +312,275 @@ object SvgRegressionRunner {
             )
         }
 
+        checks += evaluateGoldenOutput(
+            actualXml = result.xml,
+            expectation = expectations.golden
+        )
+
         return checks
+    }
+
+    private fun evaluateGoldenOutput(
+        actualXml: String,
+        expectation: GoldenExpectation
+    ): List<CheckResult> {
+        if (expectation is GoldenExpectation.Disabled) {
+            return emptyList()
+        }
+
+        val canonicalActual = canonicalizeXml(actualXml)
+            ?: return listOf(
+                CheckResult(
+                    description = "Golden output canonicalization",
+                    status = CheckStatus.FAILED,
+                    expected = "Canonicalizable VectorDrawable XML",
+                    actual = "Could not canonicalize generated XML"
+                )
+            )
+
+        val actualHash = sha256(canonicalActual)
+
+        return when (expectation) {
+            GoldenExpectation.Disabled -> emptyList()
+
+            GoldenExpectation.CaptureCandidate -> listOf(
+                CheckResult(
+                    description = "Golden output candidate captured",
+                    status = CheckStatus.PASSED,
+                    actual = actualHash,
+                    details = buildString {
+                        appendLine("Canonical SHA-256: $actualHash")
+                        appendLine("BEGIN GOLDEN XML")
+                        canonicalActual.lineSequence().forEach(::appendLine)
+                        append("END GOLDEN XML")
+                    }
+                )
+            )
+
+            is GoldenExpectation.CanonicalXml -> {
+                val canonicalExpected = canonicalizeXml(expectation.xml)
+                if (canonicalExpected == null) {
+                    listOf(
+                        CheckResult(
+                            description = "Golden output comparison",
+                            status = CheckStatus.FAILED,
+                            expected = "Canonicalizable expected XML",
+                            actual = "Expected golden XML could not be canonicalized"
+                        )
+                    )
+                } else {
+                    val passed = canonicalExpected == canonicalActual
+                    listOf(
+                        CheckResult(
+                            description = "Golden output matches canonical XML",
+                            status = passed.toStatus(),
+                            expected = sha256(canonicalExpected),
+                            actual = actualHash,
+                            details = if (passed) {
+                                null
+                            } else {
+                                compactXmlDiff(
+                                    expected = canonicalExpected,
+                                    actual = canonicalActual
+                                )
+                            }
+                        )
+                    )
+                }
+            }
+
+            is GoldenExpectation.CanonicalSha256 -> {
+                val expected = expectation.sha256
+                    .trim()
+                    .lowercase()
+                val passed = expected == actualHash
+                listOf(
+                    CheckResult(
+                        description = "Golden output fingerprint",
+                        status = passed.toStatus(),
+                        expected = expected,
+                        actual = actualHash,
+                        details = if (passed) null else "Canonical XML changed."
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Produces a stable semantic representation:
+     * - removes comments
+     * - ignores indentation-only text nodes
+     * - sorts attributes by namespace/name
+     * - preserves child order and meaningful text
+     */
+    private fun canonicalizeXml(xml: String): String? {
+        return try {
+            val factory = DocumentBuilderFactory.newInstance().apply {
+                isNamespaceAware = true
+                isExpandEntityReferences = false
+
+                runCatching {
+                    setFeature(
+                        "http://apache.org/xml/features/disallow-doctype-decl",
+                        true
+                    )
+                }
+                runCatching {
+                    setFeature(
+                        "http://xml.org/sax/features/external-general-entities",
+                        false
+                    )
+                }
+                runCatching {
+                    setFeature(
+                        "http://xml.org/sax/features/external-parameter-entities",
+                        false
+                    )
+                }
+            }
+
+            val document = factory.newDocumentBuilder().parse(
+                InputSource(StringReader(xml))
+            )
+
+            buildString {
+                appendCanonicalNode(document.documentElement, this, 0)
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun appendCanonicalNode(
+        node: Node,
+        output: StringBuilder,
+        depth: Int
+    ) {
+        when (node.nodeType) {
+            Node.ELEMENT_NODE -> {
+                val element = node as Element
+                val name = element.tagName
+                val indent = "  ".repeat(depth)
+
+                output.append(indent)
+                output.append('<')
+                output.append(name)
+
+                val attributes = (0 until element.attributes.length)
+                    .map { index -> element.attributes.item(index) }
+                    .sortedWith(
+                        compareBy<Node>(
+                            { it.namespaceURI.orEmpty() },
+                            { it.nodeName }
+                        )
+                    )
+
+                attributes.forEach { attribute ->
+                    output.append(' ')
+                    output.append(attribute.nodeName)
+                    output.append("=\"")
+                    output.append(escapeXml(attribute.nodeValue.orEmpty()))
+                    output.append('"')
+                }
+
+                val meaningfulChildren = (0 until element.childNodes.length)
+                    .map { index -> element.childNodes.item(index) }
+                    .filter { child ->
+                        when (child.nodeType) {
+                            Node.COMMENT_NODE -> false
+                            Node.TEXT_NODE,
+                            Node.CDATA_SECTION_NODE ->
+                                child.nodeValue?.trim()?.isNotEmpty() == true
+                            else -> true
+                        }
+                    }
+
+                if (meaningfulChildren.isEmpty()) {
+                    output.append("/>")
+                    return
+                }
+
+                val onlyText = meaningfulChildren.all {
+                    it.nodeType == Node.TEXT_NODE ||
+                        it.nodeType == Node.CDATA_SECTION_NODE
+                }
+
+                output.append('>')
+
+                if (onlyText) {
+                    meaningfulChildren.forEach { child ->
+                        output.append(escapeXml(child.nodeValue.orEmpty().trim()))
+                    }
+                    output.append("</")
+                    output.append(name)
+                    output.append('>')
+                } else {
+                    output.append('\n')
+                    meaningfulChildren.forEachIndexed { index, child ->
+                        appendCanonicalNode(child, output, depth + 1)
+                        if (index != meaningfulChildren.lastIndex) {
+                            output.append('\n')
+                        }
+                    }
+                    output.append('\n')
+                    output.append(indent)
+                    output.append("</")
+                    output.append(name)
+                    output.append('>')
+                }
+            }
+
+            Node.TEXT_NODE,
+            Node.CDATA_SECTION_NODE -> {
+                val text = node.nodeValue?.trim().orEmpty()
+                if (text.isNotEmpty()) {
+                    output.append("  ".repeat(depth))
+                    output.append(escapeXml(text))
+                }
+            }
+        }
+    }
+
+    private fun escapeXml(value: String): String =
+        value
+            .replace("&", "&amp;")
+            .replace("\"", "&quot;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+
+    private fun sha256(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
+
+    private fun compactXmlDiff(
+        expected: String,
+        actual: String
+    ): String {
+        val expectedLines = expected.lines()
+        val actualLines = actual.lines()
+        val maxLines = maxOf(expectedLines.size, actualLines.size)
+        val firstDifference = (0 until maxLines).firstOrNull { index ->
+            expectedLines.getOrNull(index) != actualLines.getOrNull(index)
+        } ?: return "Canonical XML differs."
+
+        val start = maxOf(0, firstDifference - 2)
+        val end = minOf(maxLines, firstDifference + 3)
+
+        return buildString {
+            appendLine("First difference near canonical line ${firstDifference + 1}:")
+            for (index in start until end) {
+                appendLine(
+                    "E ${index + 1}: " +
+                        (expectedLines.getOrNull(index) ?: "<missing>")
+                )
+                appendLine(
+                    "A ${index + 1}: " +
+                        (actualLines.getOrNull(index) ?: "<missing>")
+                )
+            }
+        }.trimEnd()
     }
 
     private fun parseDrawablePathCount(report: String): Int? {

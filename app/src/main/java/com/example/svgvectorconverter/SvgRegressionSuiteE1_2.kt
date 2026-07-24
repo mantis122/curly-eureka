@@ -7,7 +7,7 @@ package com.example.svgvectorconverter
  * five representative SVG fixtures and returns the same plain-text report
  * format that can later be shown in a developer screen or exported to a file.
  */
-object SvgRegressionSuiteE1_2 {
+object SvgRegressionSuiteE2 {
 
     fun fixtures(): List<SvgRegressionRunner.Fixture> = listOf(
         simpleRectangle(),
@@ -41,6 +41,7 @@ object SvgRegressionSuiteE1_2 {
                 "android:pathData=",
                 "android:fillColor=\"#2196F3\""
             ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "<rect",
@@ -71,6 +72,7 @@ object SvgRegressionSuiteE1_2 {
                 "#03A9F4",
                 "#FF5722"
             ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "<rect",
@@ -99,6 +101,7 @@ object SvgRegressionSuiteE1_2 {
                 "android:pathData=",
                 "android:fillColor=\"#8BC34A\""
             ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "NaN",
@@ -127,6 +130,7 @@ object SvgRegressionSuiteE1_2 {
                 "android:pathData=",
                 "android:fillColor=\"#607D8B\""
             ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "NaN",
@@ -159,6 +163,7 @@ object SvgRegressionSuiteE1_2 {
                 "#FFC107",
                 "android:pathData="
             ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "<circle",
@@ -168,4 +173,19 @@ object SvgRegressionSuiteE1_2 {
             )
         )
     )
+}
+
+
+/**
+ * Compatibility wrapper so the existing Developer Tools UI continues to work.
+ */
+object SvgRegressionSuiteE1_2 {
+    fun fixtures(): List<SvgRegressionRunner.Fixture> =
+        SvgRegressionSuiteE2.fixtures()
+
+    fun run(): SvgRegressionRunner.SuiteResult =
+        SvgRegressionSuiteE2.run()
+
+    fun runAndFormat(): String =
+        SvgRegressionSuiteE2.runAndFormat()
 }
