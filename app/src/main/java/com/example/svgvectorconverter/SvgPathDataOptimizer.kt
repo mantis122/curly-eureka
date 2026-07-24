@@ -248,17 +248,24 @@ internal object SvgPathDataOptimizer {
             malformedStructureCount++
         }
 
+        // Ignore XML comments while counting structural tags. Comments such as
+        // <!-- converted from <path> --> are descriptive text, not XML elements.
+        val structuralXml = Regex(
+            """<!--.*?-->""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        ).replace(xml, "")
+
         fun openingCount(tag: String): Int =
-            Regex("""<${tag}\b""", RegexOption.IGNORE_CASE).findAll(xml).count()
+            Regex("""<${tag}\b""", RegexOption.IGNORE_CASE).findAll(structuralXml).count()
 
         fun selfClosingCount(tag: String): Int =
             Regex(
                 """<${tag}\b(?:"[^"]*"|'[^']*'|[^>])*?/\s*>""",
                 setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-            ).findAll(xml).count()
+            ).findAll(structuralXml).count()
 
         fun closingCount(tag: String): Int =
-            Regex("""</${tag}\s*>""", RegexOption.IGNORE_CASE).findAll(xml).count()
+            Regex("""</${tag}\s*>""", RegexOption.IGNORE_CASE).findAll(structuralXml).count()
 
         fun hasBalancedElements(tag: String): Boolean {
             val openings = openingCount(tag)
@@ -267,6 +274,9 @@ internal object SvgPathDataOptimizer {
             return openings - selfClosing == closings
         }
 
+        // Paired elements require matching closing tags.
+        // Self-closing path and clip-path elements are already complete.
+        // Count both forms without reporting false structural errors.
         if (!hasBalancedElements("group")) malformedStructureCount++
         if (!hasBalancedElements("path")) malformedStructureCount++
         if (!hasBalancedElements("clip-path")) malformedStructureCount++
