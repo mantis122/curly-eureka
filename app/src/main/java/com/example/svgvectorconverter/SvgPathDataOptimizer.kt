@@ -28,6 +28,7 @@ internal object SvgPathDataOptimizer {
         val charactersBefore: Int = 0,
         val charactersAfter: Int = 0,
         val repeatedCommandsRemoved: Int = 0,
+        val redundantNonDrawingSegmentsRemoved: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -341,6 +342,7 @@ internal object SvgPathDataOptimizer {
         var pathCount = 0
         var charactersBefore = 0
         var repeatedCommandsRemoved = 0
+        var redundantNonDrawingSegmentsRemoved = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -354,6 +356,8 @@ internal object SvgPathDataOptimizer {
             pathCount++
             charactersBefore += original.length
             repeatedCommandsRemoved += optimized.repeatedCommandsRemoved
+            redundantNonDrawingSegmentsRemoved +=
+                optimized.redundantNonDrawingSegmentsRemoved
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -462,6 +466,8 @@ internal object SvgPathDataOptimizer {
                 charactersBefore = charactersBefore,
                 charactersAfter = charactersAfter,
                 repeatedCommandsRemoved = repeatedCommandsRemoved,
+                redundantNonDrawingSegmentsRemoved =
+                    redundantNonDrawingSegmentsRemoved,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -4257,6 +4263,7 @@ internal object SvgPathDataOptimizer {
     private data class PathResult(
         val pathData: String,
         val repeatedCommandsRemoved: Int,
+        val redundantNonDrawingSegmentsRemoved: Int,
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
@@ -4266,7 +4273,7 @@ internal object SvgPathDataOptimizer {
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return PathResult(pathData.trim(), 0, 0, 0, 0, 0)
+            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0)
         }
 
         // If tokenization skipped anything other than legal separators, preserve the
@@ -4274,12 +4281,12 @@ internal object SvgPathDataOptimizer {
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return PathResult(pathData, 0, 0, 0, 0, 0)
+                return PathResult(pathData, 0, 0, 0, 0, 0, 0)
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return PathResult(pathData, 0, 0, 0, 0, 0)
+            return PathResult(pathData, 0, 0, 0, 0, 0, 0)
         }
 
         val output = StringBuilder(pathData.length)
@@ -4319,12 +4326,14 @@ internal object SvgPathDataOptimizer {
             output.toString()
         )
         val commandOptimization = shortenPathCommands(
-            redundantCleanup
+            redundantCleanup.pathData
         )
 
         return PathResult(
             pathData = commandOptimization.pathData,
             repeatedCommandsRemoved = repeatedCommandsRemoved,
+            redundantNonDrawingSegmentsRemoved =
+                redundantCleanup.removedCount,
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
@@ -4345,11 +4354,19 @@ internal object SvgPathDataOptimizer {
      * Zero-length drawing commands are deliberately preserved because stroke
      * caps and joins can make them visible.
      */
+    private data class RedundantNonDrawingCleanupResult(
+        val pathData: String,
+        val removedCount: Int
+    )
+
     private fun removeRedundantNonDrawingSegments(
         pathData: String
-    ): String {
-        val segments = parseNormalizedSegments(pathData) ?: return pathData
-        if (segments.isEmpty()) return pathData
+    ): RedundantNonDrawingCleanupResult {
+        val segments = parseNormalizedSegments(pathData)
+            ?: return RedundantNonDrawingCleanupResult(pathData, 0)
+        if (segments.isEmpty()) {
+            return RedundantNonDrawingCleanupResult(pathData, 0)
+        }
 
         val kept = mutableListOf<ParsedSegment>()
         var removed = false
@@ -4383,16 +4400,21 @@ internal object SvgPathDataOptimizer {
             kept += segment
         }
 
-        if (!removed) return pathData
+        if (!removed) {
+            return RedundantNonDrawingCleanupResult(pathData, 0)
+        }
 
         val rebuilt = encodeParsedSegments(kept)
         return if (
             rebuilt.length <= pathData.length &&
             parseNormalizedSegments(rebuilt) != null
         ) {
-            rebuilt
+            RedundantNonDrawingCleanupResult(
+                pathData = rebuilt,
+                removedCount = segments.size - kept.size
+            )
         } else {
-            pathData
+            RedundantNonDrawingCleanupResult(pathData, 0)
         }
     }
 
