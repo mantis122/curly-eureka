@@ -227,8 +227,10 @@ object SvgRegressionRunner {
             )
         }
 
+        val assertionXml = stripXmlComments(result.xml)
+
         expectations.requiredXmlFragments.forEach { fragment ->
-            val found = result.xml.contains(fragment)
+            val found = assertionXml.contains(fragment)
             checks += CheckResult(
                 description = "XML contains required fragment",
                 status = found.toStatus(),
@@ -238,7 +240,7 @@ object SvgRegressionRunner {
         }
 
         expectations.forbiddenXmlFragments.forEach { fragment ->
-            val absent = !result.xml.contains(fragment)
+            val absent = !assertionXml.contains(fragment)
             checks += CheckResult(
                 description = "XML omits forbidden fragment",
                 status = absent.toStatus(),
@@ -346,6 +348,12 @@ object SvgRegressionRunner {
 
         return if (detail.isEmpty()) type else "$type: $detail"
     }
+
+    private fun stripXmlComments(xml: String): String =
+        Regex(
+            """<!--.*?-->""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        ).replace(xml, "")
 
     private fun quote(value: String): String =
         "\"${value.replace("\n", "\\n")}\""

@@ -3,6 +3,9 @@ package com.example.svgvectorconverter
 
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.io.StringReader
+import javax.xml.parsers.DocumentBuilderFactory
+import org.xml.sax.InputSource
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -224,6 +227,44 @@ internal object SvgPathDataOptimizer {
         )
     }
 
+    private fun isStructurallyValidVectorXml(xml: String): Boolean {
+        return try {
+            val factory = DocumentBuilderFactory.newInstance().apply {
+                isNamespaceAware = true
+                isExpandEntityReferences = false
+
+                runCatching {
+                    setFeature(
+                        "http://apache.org/xml/features/disallow-doctype-decl",
+                        true
+                    )
+                }
+                runCatching {
+                    setFeature(
+                        "http://xml.org/sax/features/external-general-entities",
+                        false
+                    )
+                }
+                runCatching {
+                    setFeature(
+                        "http://xml.org/sax/features/external-parameter-entities",
+                        false
+                    )
+                }
+            }
+
+            val document = factory.newDocumentBuilder().parse(
+                InputSource(StringReader(xml))
+            )
+            document.documentElement?.localName.equals(
+                "vector",
+                ignoreCase = true
+            )
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     private fun validateFinalVectorXml(xml: String): FinalOutputValidation {
         var validatedPathDataCount = 0
         var invalidPathDataCount = 0
@@ -240,46 +281,11 @@ internal object SvgPathDataOptimizer {
             """(?i)(?<![A-Za-z0-9_])(?:NaN|[-+]?Infinity)(?![A-Za-z0-9_])"""
         ).findAll(xml).count()
 
-        var malformedStructureCount = 0
-        if (!Regex("""<vector\b""", RegexOption.IGNORE_CASE).containsMatchIn(xml)) {
-            malformedStructureCount++
-        }
-        if (!Regex("""</vector\s*>""", RegexOption.IGNORE_CASE).containsMatchIn(xml)) {
-            malformedStructureCount++
-        }
-
-        // Ignore XML comments while counting structural tags. Comments such as
-        // <!-- converted from <path> --> are descriptive text, not XML elements.
-        val structuralXml = Regex(
-            """<!--.*?-->""",
-            setOf(RegexOption.DOT_MATCHES_ALL)
-        ).replace(xml, "")
-
-        fun openingCount(tag: String): Int =
-            Regex("""<${tag}\b""", RegexOption.IGNORE_CASE).findAll(structuralXml).count()
-
-        fun selfClosingCount(tag: String): Int =
-            Regex(
-                """<${tag}\b(?:"[^"]*"|'[^']*'|[^>])*?/\s*>""",
-                setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-            ).findAll(structuralXml).count()
-
-        fun closingCount(tag: String): Int =
-            Regex("""</${tag}\s*>""", RegexOption.IGNORE_CASE).findAll(structuralXml).count()
-
-        fun hasBalancedElements(tag: String): Boolean {
-            val openings = openingCount(tag)
-            val selfClosing = selfClosingCount(tag)
-            val closings = closingCount(tag)
-            return openings - selfClosing == closings
-        }
-
-        // Paired elements require matching closing tags.
-        // Self-closing path and clip-path elements are already complete.
-        // Count both forms without reporting false structural errors.
-        if (!hasBalancedElements("group")) malformedStructureCount++
-        if (!hasBalancedElements("path")) malformedStructureCount++
-        if (!hasBalancedElements("clip-path")) malformedStructureCount++
+        // Use a real XML parser rather than tag-counting regular expressions.
+        // This correctly handles comments, quoted attribute values, self-closing
+        // elements, nested groups, aapt elements, and future VectorDrawable tags.
+        val malformedStructureCount =
+            if (isStructurallyValidVectorXml(xml)) 0 else 1
 
         fun viewportValue(name: String): Double? {
             val match = Regex(
