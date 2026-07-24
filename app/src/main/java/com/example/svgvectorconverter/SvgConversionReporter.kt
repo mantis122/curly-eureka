@@ -143,6 +143,7 @@ data class SvgConversionReportData(
     val pathDataCharactersAfter: Int = 0,
     val pathDataRepeatedCommandsRemoved: Int = 0,
     val redundantNonDrawingSegmentsRemoved: Int = 0,
+    val collinearLineSegmentsConsolidated: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
@@ -487,6 +488,11 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Redundant non-drawing segments removed: " +
                         data.redundantNonDrawingSegmentsRemoved
+                )
+            if (data.collinearLineSegmentsConsolidated > 0)
+                appendLine(
+                    "✓ Collinear line segments consolidated: " +
+                        data.collinearLineSegmentsConsolidated
                 )
             if (data.emptyPathDataRemoved > 0)
                 appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")

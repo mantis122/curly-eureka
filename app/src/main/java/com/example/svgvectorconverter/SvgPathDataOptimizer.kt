@@ -29,6 +29,7 @@ internal object SvgPathDataOptimizer {
         val charactersAfter: Int = 0,
         val repeatedCommandsRemoved: Int = 0,
         val redundantNonDrawingSegmentsRemoved: Int = 0,
+        val collinearLineSegmentsConsolidated: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -343,6 +344,7 @@ internal object SvgPathDataOptimizer {
         var charactersBefore = 0
         var repeatedCommandsRemoved = 0
         var redundantNonDrawingSegmentsRemoved = 0
+        var collinearLineSegmentsConsolidated = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -358,6 +360,8 @@ internal object SvgPathDataOptimizer {
             repeatedCommandsRemoved += optimized.repeatedCommandsRemoved
             redundantNonDrawingSegmentsRemoved +=
                 optimized.redundantNonDrawingSegmentsRemoved
+            collinearLineSegmentsConsolidated +=
+                optimized.collinearLineSegmentsConsolidated
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -468,6 +472,8 @@ internal object SvgPathDataOptimizer {
                 repeatedCommandsRemoved = repeatedCommandsRemoved,
                 redundantNonDrawingSegmentsRemoved =
                     redundantNonDrawingSegmentsRemoved,
+                collinearLineSegmentsConsolidated =
+                    collinearLineSegmentsConsolidated,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -4264,6 +4270,7 @@ internal object SvgPathDataOptimizer {
         val pathData: String,
         val repeatedCommandsRemoved: Int,
         val redundantNonDrawingSegmentsRemoved: Int,
+        val collinearLineSegmentsConsolidated: Int,
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
@@ -4273,7 +4280,7 @@ internal object SvgPathDataOptimizer {
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0)
         }
 
         // If tokenization skipped anything other than legal separators, preserve the
@@ -4281,12 +4288,12 @@ internal object SvgPathDataOptimizer {
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return PathResult(pathData, 0, 0, 0, 0, 0, 0)
+                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0)
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return PathResult(pathData, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0)
         }
 
         val output = StringBuilder(pathData.length)
@@ -4325,8 +4332,11 @@ internal object SvgPathDataOptimizer {
         val redundantCleanup = removeRedundantNonDrawingSegments(
             output.toString()
         )
-        val commandOptimization = shortenPathCommands(
+        val collinearCleanup = consolidateConsecutiveCollinearLines(
             redundantCleanup.pathData
+        )
+        val commandOptimization = shortenPathCommands(
+            collinearCleanup.pathData
         )
 
         return PathResult(
@@ -4334,6 +4344,8 @@ internal object SvgPathDataOptimizer {
             repeatedCommandsRemoved = repeatedCommandsRemoved,
             redundantNonDrawingSegmentsRemoved =
                 redundantCleanup.removedCount,
+            collinearLineSegmentsConsolidated =
+                collinearCleanup.consolidatedCount,
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
@@ -4442,6 +4454,160 @@ internal object SvgPathDataOptimizer {
         }
 
         return output.toString()
+    }
+
+    private data class CollinearLineCleanupResult(
+        val pathData: String,
+        val consolidatedCount: Int
+    )
+
+    /**
+     * F1.2: Consolidates adjacent horizontal or vertical line segments when
+     * they continue strictly in the same direction.
+     *
+     * Examples:
+     * H10 H20  -> H20
+     * v5 v7    -> v12 (the later shortening pass chooses the best spelling)
+     *
+     * Backtracking, zero-length segments, direction changes, curves, arcs,
+     * subpath boundaries, and mixed-axis sequences are deliberately preserved.
+     */
+    private fun consolidateConsecutiveCollinearLines(
+        pathData: String
+    ): CollinearLineCleanupResult {
+        val segments = parseNormalizedSegments(pathData)
+            ?: return CollinearLineCleanupResult(pathData, 0)
+        if (segments.size < 2) {
+            return CollinearLineCleanupResult(pathData, 0)
+        }
+
+        val kept = mutableListOf<ParsedSegment>()
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+
+        var previousAxis: Char? = null
+        var previousAxisStart = BigDecimal.ZERO
+        var previousAxisEnd = BigDecimal.ZERO
+        var consolidated = 0
+
+        fun sameStrictDirection(
+            firstDelta: BigDecimal,
+            secondDelta: BigDecimal
+        ): Boolean {
+            val firstSign = firstDelta.signum()
+            val secondSign = secondDelta.signum()
+            return firstSign != 0 && firstSign == secondSign
+        }
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val absolute = absoluteValuesFor(segment, currentX, currentY)
+
+            val endX: BigDecimal
+            val endY: BigDecimal
+
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    endX = absolute[0]
+                    endY = absolute[1]
+                }
+                'H' -> {
+                    endX = absolute[0]
+                    endY = currentY
+                }
+                'V' -> {
+                    endX = currentX
+                    endY = absolute[0]
+                }
+                'C' -> {
+                    endX = absolute[4]
+                    endY = absolute[5]
+                }
+                'S', 'Q' -> {
+                    endX = absolute[2]
+                    endY = absolute[3]
+                }
+                'A' -> {
+                    endX = absolute[5]
+                    endY = absolute[6]
+                }
+                'Z' -> {
+                    endX = subpathX
+                    endY = subpathY
+                }
+                else -> {
+                    return CollinearLineCleanupResult(pathData, 0)
+                }
+            }
+
+            val isAxisLine = upper == 'H' || upper == 'V'
+            val canConsolidate = when {
+                upper == 'H' && previousAxis == 'H' -> {
+                    sameStrictDirection(
+                        previousAxisEnd.subtract(previousAxisStart),
+                        endX.subtract(previousAxisEnd)
+                    )
+                }
+                upper == 'V' && previousAxis == 'V' -> {
+                    sameStrictDirection(
+                        previousAxisEnd.subtract(previousAxisStart),
+                        endY.subtract(previousAxisEnd)
+                    )
+                }
+                else -> false
+            }
+
+            if (canConsolidate && kept.isNotEmpty()) {
+                kept[kept.lastIndex] = if (upper == 'H') {
+                    ParsedSegment('H', listOf(endX))
+                } else {
+                    ParsedSegment('V', listOf(endY))
+                }
+                previousAxisEnd = if (upper == 'H') endX else endY
+                consolidated++
+            } else {
+                kept += segment
+                if (isAxisLine) {
+                    previousAxis = upper
+                    previousAxisStart =
+                        if (upper == 'H') currentX else currentY
+                    previousAxisEnd =
+                        if (upper == 'H') endX else endY
+                } else {
+                    previousAxis = null
+                }
+            }
+
+            currentX = endX
+            currentY = endY
+
+            if (upper == 'M') {
+                subpathX = endX
+                subpathY = endY
+            }
+            if (upper == 'Z') {
+                previousAxis = null
+            }
+        }
+
+        if (consolidated == 0) {
+            return CollinearLineCleanupResult(pathData, 0)
+        }
+
+        val rebuilt = encodeParsedSegments(kept)
+        return if (
+            rebuilt.length <= pathData.length &&
+            parseNormalizedSegments(rebuilt) != null
+        ) {
+            CollinearLineCleanupResult(
+                pathData = rebuilt,
+                consolidatedCount = consolidated
+            )
+        } else {
+            CollinearLineCleanupResult(pathData, 0)
+        }
     }
 
     private data class CommandOptimizationResult(
