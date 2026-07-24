@@ -3,9 +3,6 @@ package com.example.svgvectorconverter
 
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.io.StringReader
-import javax.xml.parsers.DocumentBuilderFactory
-import org.xml.sax.InputSource
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -227,44 +224,6 @@ internal object SvgPathDataOptimizer {
         )
     }
 
-    private fun isStructurallyValidVectorXml(xml: String): Boolean {
-        return try {
-            val factory = DocumentBuilderFactory.newInstance().apply {
-                isNamespaceAware = true
-                isExpandEntityReferences = false
-
-                runCatching {
-                    setFeature(
-                        "http://apache.org/xml/features/disallow-doctype-decl",
-                        true
-                    )
-                }
-                runCatching {
-                    setFeature(
-                        "http://xml.org/sax/features/external-general-entities",
-                        false
-                    )
-                }
-                runCatching {
-                    setFeature(
-                        "http://xml.org/sax/features/external-parameter-entities",
-                        false
-                    )
-                }
-            }
-
-            val document = factory.newDocumentBuilder().parse(
-                InputSource(StringReader(xml))
-            )
-            document.documentElement?.localName.equals(
-                "vector",
-                ignoreCase = true
-            )
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
     private fun validateFinalVectorXml(xml: String): FinalOutputValidation {
         var validatedPathDataCount = 0
         var invalidPathDataCount = 0
@@ -281,11 +240,46 @@ internal object SvgPathDataOptimizer {
             """(?i)(?<![A-Za-z0-9_])(?:NaN|[-+]?Infinity)(?![A-Za-z0-9_])"""
         ).findAll(xml).count()
 
-        // Use a real XML parser rather than tag-counting regular expressions.
-        // This correctly handles comments, quoted attribute values, self-closing
-        // elements, nested groups, aapt elements, and future VectorDrawable tags.
-        val malformedStructureCount =
-            if (isStructurallyValidVectorXml(xml)) 0 else 1
+        var malformedStructureCount = 0
+        if (!Regex("""<vector\b""", RegexOption.IGNORE_CASE).containsMatchIn(xml)) {
+            malformedStructureCount++
+        }
+        if (!Regex("""</vector\s*>""", RegexOption.IGNORE_CASE).containsMatchIn(xml)) {
+            malformedStructureCount++
+        }
+
+        // Ignore XML comments while counting structural tags. Comments such as
+        // <!-- converted from <path> --> are descriptive text, not XML elements.
+        val structuralXml = Regex(
+            """<!--.*?-->""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        ).replace(xml, "")
+
+        fun openingCount(tag: String): Int =
+            Regex("""<${tag}\b""", RegexOption.IGNORE_CASE).findAll(structuralXml).count()
+
+        fun selfClosingCount(tag: String): Int =
+            Regex(
+                """<${tag}\b(?:"[^"]*"|'[^']*'|[^>])*?/\s*>""",
+                setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+            ).findAll(structuralXml).count()
+
+        fun closingCount(tag: String): Int =
+            Regex("""</${tag}\s*>""", RegexOption.IGNORE_CASE).findAll(structuralXml).count()
+
+        fun hasBalancedElements(tag: String): Boolean {
+            val openings = openingCount(tag)
+            val selfClosing = selfClosingCount(tag)
+            val closings = closingCount(tag)
+            return openings - selfClosing == closings
+        }
+
+        // Paired elements require matching closing tags.
+        // Self-closing path and clip-path elements are already complete.
+        // Count both forms without reporting false structural errors.
+        if (!hasBalancedElements("group")) malformedStructureCount++
+        if (!hasBalancedElements("path")) malformedStructureCount++
+        if (!hasBalancedElements("clip-path")) malformedStructureCount++
 
         fun viewportValue(name: String): Double? {
             val match = Regex(
@@ -4260,13 +4254,14 @@ internal object SvgPathDataOptimizer {
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
-        val axisCommandsSelected: Int = 0
+        val axisCommandsSelected: Int = 0,
+        val redundantSegmentsRemoved: Int = 0
     )
 
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return PathResult(pathData.trim(), 0, 0, 0, 0, 0)
+            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0)
         }
 
         // If tokenization skipped anything other than legal separators, preserve the
@@ -4274,12 +4269,12 @@ internal object SvgPathDataOptimizer {
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return PathResult(pathData, 0, 0, 0, 0, 0)
+                return PathResult(pathData, 0, 0, 0, 0, 0, 0)
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return PathResult(pathData, 0, 0, 0, 0, 0)
+            return PathResult(pathData, 0, 0, 0, 0, 0, 0)
         }
 
         val output = StringBuilder(pathData.length)
@@ -4315,7 +4310,12 @@ internal object SvgPathDataOptimizer {
             }
         }
 
-        val commandOptimization = shortenPathCommands(output.toString())
+        val redundantCleanup = removeRedundantNonDrawingSegments(
+            output.toString()
+        )
+        val commandOptimization = shortenPathCommands(
+            redundantCleanup.pathData
+        )
 
         return PathResult(
             pathData = commandOptimization.pathData,
@@ -4323,10 +4323,130 @@ internal object SvgPathDataOptimizer {
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
-            axisCommandsSelected = commandOptimization.axisCommandsSelected
+            axisCommandsSelected = commandOptimization.axisCommandsSelected,
+            redundantSegmentsRemoved = redundantCleanup.removedCount
         )
     }
 
+
+    private data class RedundantSegmentCleanupResult(
+        val pathData: String,
+        val removedCount: Int
+    )
+
+    /**
+     * F1.1: Removes only path segments that cannot contribute geometry.
+     *
+     * Safe cases:
+     * - a move command superseded by another move before any drawable segment;
+     * - a move-only subpath closed without drawing;
+     * - a trailing move command after the last drawable segment;
+     * - repeated close commands after the same drawable subpath.
+     *
+     * Deliberately preserved:
+     * - zero-length L/H/V/C/S/Q/T/A segments, because stroked line caps and
+     *   joins can make them visible;
+     * - backtracking or collinear segments;
+     * - any segment whose effect depends on fill/stroke semantics.
+     */
+    private fun removeRedundantNonDrawingSegments(
+        pathData: String
+    ): RedundantSegmentCleanupResult {
+        val segments = parseNormalizedSegments(pathData)
+            ?: return RedundantSegmentCleanupResult(pathData, 0)
+        if (segments.isEmpty()) {
+            return RedundantSegmentCleanupResult(pathData, 0)
+        }
+
+        val kept = mutableListOf<ParsedSegment>()
+        var pendingMove: ParsedSegment? = null
+        var currentSubpathHasDrawing = false
+        var removed = 0
+
+        fun flushPendingMove() {
+            pendingMove?.let(kept::add)
+            pendingMove = null
+        }
+
+        for (segment in segments) {
+            when (segment.command.uppercaseChar()) {
+                'M' -> {
+                    if (pendingMove != null) {
+                        removed++
+                    }
+                    pendingMove = segment
+                    currentSubpathHasDrawing = false
+                }
+
+                'Z' -> {
+                    if (currentSubpathHasDrawing) {
+                        flushPendingMove()
+
+                        if (kept.lastOrNull()?.command?.uppercaseChar() == 'Z') {
+                            removed++
+                        } else {
+                            kept += segment
+                        }
+                    } else {
+                        if (pendingMove != null) {
+                            removed++
+                            pendingMove = null
+                        }
+                        removed++
+                    }
+                }
+
+                else -> {
+                    flushPendingMove()
+                    kept += segment
+                    currentSubpathHasDrawing = true
+                }
+            }
+        }
+
+        if (pendingMove != null) {
+            removed++
+        }
+
+        if (removed == 0) {
+            return RedundantSegmentCleanupResult(pathData, 0)
+        }
+
+        val rebuilt = encodeParsedSegments(kept)
+        val parsedAgain = parseNormalizedSegments(rebuilt)
+
+        return if (
+            parsedAgain != null &&
+            rebuilt.length <= pathData.length
+        ) {
+            RedundantSegmentCleanupResult(rebuilt, removed)
+        } else {
+            RedundantSegmentCleanupResult(pathData, 0)
+        }
+    }
+
+    private fun encodeParsedSegments(
+        segments: List<ParsedSegment>
+    ): String {
+        val output = StringBuilder()
+        var previousCommand: Char? = null
+        var previousNumber: String? = null
+
+        for (segment in segments) {
+            val encoded = encodeSegment(
+                command = segment.command,
+                values = segment.values,
+                previousOutputCommand = previousCommand,
+                previousOutputNumber = previousNumber,
+                forceCommand = segment.command.uppercaseChar() == 'M'
+            )
+            output.append(encoded)
+            previousCommand = segment.command
+            previousNumber = segment.values.lastOrNull()?.let(::formatBigDecimal)
+        }
+
+        return output.toString()
+    }
 
     private data class CommandOptimizationResult(
         val pathData: String,
