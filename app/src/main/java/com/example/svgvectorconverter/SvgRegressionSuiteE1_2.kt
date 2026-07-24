@@ -41,7 +41,9 @@ object SvgRegressionSuiteE2 {
                 "android:pathData=",
                 "android:fillColor=\"#2196F3\""
             ),
-            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            golden = SvgRegressionRunner.GoldenExpectation.CanonicalSha256(
+                SvgGoldenBaselinesE2_1.SIMPLE_RECTANGLE
+            ),
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "<rect",
@@ -72,7 +74,9 @@ object SvgRegressionSuiteE2 {
                 "#03A9F4",
                 "#FF5722"
             ),
-            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            golden = SvgRegressionRunner.GoldenExpectation.CanonicalSha256(
+                SvgGoldenBaselinesE2_1.TRANSLATED_SIBLINGS
+            ),
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "<rect",
@@ -101,7 +105,9 @@ object SvgRegressionSuiteE2 {
                 "android:pathData=",
                 "android:fillColor=\"#8BC34A\""
             ),
-            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            golden = SvgRegressionRunner.GoldenExpectation.CanonicalSha256(
+                SvgGoldenBaselinesE2_1.RIGHT_ANGLE_ROTATION
+            ),
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "NaN",
@@ -130,7 +136,9 @@ object SvgRegressionSuiteE2 {
                 "android:pathData=",
                 "android:fillColor=\"#607D8B\""
             ),
-            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            golden = SvgRegressionRunner.GoldenExpectation.CanonicalSha256(
+                SvgGoldenBaselinesE2_1.ARC_HEAVY_PATH
+            ),
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "NaN",
@@ -163,7 +171,9 @@ object SvgRegressionSuiteE2 {
                 "#FFC107",
                 "android:pathData="
             ),
-            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            golden = SvgRegressionRunner.GoldenExpectation.CanonicalSha256(
+                SvgGoldenBaselinesE2_1.MIXED_LAYERING
+            ),
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "<circle",
@@ -188,4 +198,27 @@ object SvgRegressionSuiteE1_2 {
 
     fun runAndFormat(): String =
         SvgRegressionSuiteE2.runAndFormat()
+}
+
+/**
+ * E2.1 locked canonical golden-output fingerprints.
+ *
+ * Update a fingerprint only after reviewing and approving the corresponding
+ * canonical XML change produced by the regression runner.
+ */
+object SvgGoldenBaselinesE2_1 {
+    const val SIMPLE_RECTANGLE =
+        "238d0a6c5aa99ae4dbd76c94ed5330e38f825e908c61e917f48d846a584b2691"
+
+    const val TRANSLATED_SIBLINGS =
+        "7fc897278da200ffa35eb86afe362898579cdb3d8cb860b73809f06173ae1e76"
+
+    const val RIGHT_ANGLE_ROTATION =
+        "4a5a6f5b313e188a2d60253591381e5e22ffbee89998cc24c1eb6ca44bc0b604"
+
+    const val ARC_HEAVY_PATH =
+        "cda1d53f2bd9536c3229d638c601206013bc6ca1acd26585276b2d2aee6b5c64"
+
+    const val MIXED_LAYERING =
+        "0bc5bf17f8e8a2052b2802caeb97f188473190fa6511f596c40dc079920f91ca"
 }
