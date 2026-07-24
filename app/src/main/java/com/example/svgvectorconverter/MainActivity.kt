@@ -13,6 +13,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.Space
 import android.widget.TextView
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var saveReportTextButton: Button
     private lateinit var saveReportImageButton: Button
     private lateinit var reportActionsRow: LinearLayout
+    private var currentRegressionReport = ""
 
     private fun makeButton(
         label: String,
@@ -137,6 +139,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val saveRegressionReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentRegressionReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(this, uri, currentRegressionReport)
+            toast("Regression report saved")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -182,6 +193,7 @@ class MainActivity : ComponentActivity() {
         copyReportButton = makeButton("Copy Report") { copyReport() }
         saveReportTextButton = makeButton("Save Report .txt") { saveCurrentReportText() }
         saveReportImageButton = makeButton("Save Report Image") { saveCurrentReportImage() }
+        val developerButton = makeButton("Developer Tools") { showDeveloperToolsDialog() }
         val aboutButton = makeButton("About") { showAboutDialog() }
 
         previewBox = ImageView(this).apply {
@@ -217,6 +229,7 @@ class MainActivity : ComponentActivity() {
 
             addView(horizontalRow(copyButton, sizeButton))
             addView(profileButton, LinearLayout.LayoutParams(-1, -2))
+            addView(developerButton, LinearLayout.LayoutParams(-1, -2))
             addView(aboutButton, LinearLayout.LayoutParams(-1, -2))
         }
 
@@ -615,6 +628,234 @@ class MainActivity : ComponentActivity() {
             addView(left, LinearLayout.LayoutParams(0, -2, 1f))
             addView(right, LinearLayout.LayoutParams(0, -2, 1f))
         }
+    }
+
+    private fun showDeveloperToolsDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 8)
+        }
+
+        layout.addView(
+            makeText(
+                "Developer Tools",
+                21f,
+                Color.BLACK,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        layout.addView(
+            makeText(
+                "Regression Testing",
+                16f,
+                Color.DKGRAY,
+                Gravity.START,
+                paddingBottom = 8
+            )
+        )
+
+        val runButton = makeButton("Run Bundled Regression Suite") {
+            runBundledRegressionSuite()
+        }
+        layout.addView(runButton, LinearLayout.LayoutParams(-1, -2))
+
+        layout.addView(
+            makeText(
+                """
+                Runs the five bundled E1.2 fixtures and checks conversion,
+                path counts, warnings, optimizer idempotence, final-output
+                validation, and required or forbidden XML fragments.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        val diagnosticsHeading = makeText(
+            "Future Diagnostics",
+            16f,
+            Color.DKGRAY,
+            Gravity.START,
+            paddingBottom = 8
+        )
+        layout.addView(diagnosticsHeading)
+
+        val validateButton = makeButton("Validate Last Conversion — coming soon") {}
+        validateButton.isEnabled = false
+        layout.addView(validateButton, LinearLayout.LayoutParams(-1, -2))
+
+        val optimizerButton = makeButton("Optimizer Statistics — coming soon") {}
+        optimizerButton.isEnabled = false
+        layout.addView(optimizerButton, LinearLayout.LayoutParams(-1, -2))
+
+        val scrollView = ScrollView(this).apply {
+            isFillViewport = true
+            addView(layout)
+        }
+
+        android.app.AlertDialog.Builder(this)
+            .setView(scrollView)
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun runBundledRegressionSuite() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+
+        val progressBar = ProgressBar(this)
+        val statusText = makeText(
+            "Running 5 bundled regression tests…",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply {
+            setPadding(0, 24, 0, 0)
+        }
+
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Regression Suite")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+
+        progressDialog.show()
+
+        Thread {
+            val suiteResult = try {
+                SvgRegressionSuiteE1_2.run()
+            } catch (throwable: Throwable) {
+                null
+            }
+
+            val report = suiteResult?.toPlainTextReport()
+                ?: buildString {
+                    appendLine("Regression suite")
+                    appendLine()
+                    appendLine("Tests run: 0")
+                    appendLine("Passed: 0")
+                    appendLine("Failed: 1")
+                    appendLine()
+                    appendLine("✕ The regression suite could not be started.")
+                    appendLine("  Check that SvgRegressionRunner.kt and")
+                    appendLine("  SvgRegressionSuiteE1_2.kt are included in the app.")
+                }
+
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentRegressionReport = report
+                    showRegressionResultsDialog(
+                        suiteResult = suiteResult,
+                        report = report
+                    )
+                }
+            }
+        }.start()
+    }
+
+    private fun showRegressionResultsDialog(
+        suiteResult: SvgRegressionRunner.SuiteResult?,
+        report: String
+    ) {
+        val passed = suiteResult?.passed == true
+        val passedCount = suiteResult?.passedCount ?: 0
+        val failedCount = suiteResult?.failedCount ?: 1
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+
+        val summary = makeText(
+            if (passed) {
+                "✓ All $passedCount tests passed"
+            } else {
+                "✕ $failedCount test${if (failedCount == 1) "" else "s"} failed"
+            },
+            18f,
+            if (passed) Color.rgb(30, 120, 55) else Color.rgb(180, 35, 35),
+            Gravity.START,
+            paddingBottom = 16
+        )
+        layout.addView(summary)
+
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+
+        val reportScroll = ScrollView(this).apply {
+            addView(reportView)
+        }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val copyButton = makeButton("Copy Report") {
+            copyRegressionReport()
+        }
+        val saveButton = makeButton("Save .txt") {
+            saveRegressionReport.launch("svg_regression_report.txt")
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+
+        val rerunButton = makeButton("Run Again") {
+            runBundledRegressionSuite()
+        }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Regression Suite Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+
+        dialog.show()
+    }
+
+    private fun copyRegressionReport() {
+        if (currentRegressionReport.isBlank()) {
+            toast("No regression report to copy")
+            return
+        }
+
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "svg_regression_report.txt",
+                currentRegressionReport
+            )
+        )
+        toast("Regression report copied")
     }
 
     private fun showAboutDialog() {
