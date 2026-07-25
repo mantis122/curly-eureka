@@ -30,6 +30,7 @@ internal object SvgPathDataOptimizer {
         val repeatedCommandsRemoved: Int = 0,
         val redundantNonDrawingSegmentsRemoved: Int = 0,
         val collinearLineSegmentsConsolidated: Int = 0,
+        val straightBezierCurvesSimplified: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -345,6 +346,7 @@ internal object SvgPathDataOptimizer {
         var repeatedCommandsRemoved = 0
         var redundantNonDrawingSegmentsRemoved = 0
         var collinearLineSegmentsConsolidated = 0
+        var straightBezierCurvesSimplified = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -362,6 +364,8 @@ internal object SvgPathDataOptimizer {
                 optimized.redundantNonDrawingSegmentsRemoved
             collinearLineSegmentsConsolidated +=
                 optimized.collinearLineSegmentsConsolidated
+            straightBezierCurvesSimplified +=
+                optimized.straightBezierCurvesSimplified
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -474,6 +478,8 @@ internal object SvgPathDataOptimizer {
                     redundantNonDrawingSegmentsRemoved,
                 collinearLineSegmentsConsolidated =
                     collinearLineSegmentsConsolidated,
+                straightBezierCurvesSimplified =
+                    straightBezierCurvesSimplified,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -4271,6 +4277,7 @@ internal object SvgPathDataOptimizer {
         val repeatedCommandsRemoved: Int,
         val redundantNonDrawingSegmentsRemoved: Int,
         val collinearLineSegmentsConsolidated: Int,
+        val straightBezierCurvesSimplified: Int,
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
@@ -4280,7 +4287,7 @@ internal object SvgPathDataOptimizer {
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         // If tokenization skipped anything other than legal separators, preserve the
@@ -4288,12 +4295,12 @@ internal object SvgPathDataOptimizer {
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0)
+                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0)
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         val output = StringBuilder(pathData.length)
@@ -4332,8 +4339,11 @@ internal object SvgPathDataOptimizer {
         val redundantCleanup = removeRedundantNonDrawingSegments(
             output.toString()
         )
-        val collinearCleanup = consolidateConsecutiveCollinearLineRuns(
+        val straightBezierCleanup = simplifyStraightBezierCurves(
             redundantCleanup.pathData
+        )
+        val collinearCleanup = consolidateConsecutiveCollinearLineRuns(
+            straightBezierCleanup.pathData
         )
         val commandOptimization = shortenPathCommands(
             collinearCleanup.pathData
@@ -4346,6 +4356,8 @@ internal object SvgPathDataOptimizer {
                 redundantCleanup.removedCount,
             collinearLineSegmentsConsolidated =
                 collinearCleanup.consolidatedCount,
+            straightBezierCurvesSimplified =
+                straightBezierCleanup.simplifiedCount,
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
@@ -4454,6 +4466,220 @@ internal object SvgPathDataOptimizer {
         }
 
         return output.toString()
+    }
+
+    private data class StraightBezierCleanupResult(
+        val pathData: String,
+        val simplifiedCount: Int
+    )
+
+    /**
+     * F1.4: Converts explicit quadratic and cubic Bézier curves to straight
+     * line segments only when the curve is exactly collinear and monotonic.
+     *
+     * Quadratic:
+     * - control point lies on the closed start/end segment.
+     *
+     * Cubic:
+     * - both control points lie on the closed start/end segment;
+     * - their projections are ordered from start to end.
+     *
+     * Degenerate zero-length curves, shorthand S/T curves, backtracking
+     * controls, and any non-collinear curve are preserved.
+     */
+    private fun simplifyStraightBezierCurves(
+        pathData: String
+    ): StraightBezierCleanupResult {
+        val segments = parseNormalizedSegments(pathData)
+            ?: return StraightBezierCleanupResult(pathData, 0)
+        if (segments.isEmpty()) {
+            return StraightBezierCleanupResult(pathData, 0)
+        }
+
+        val kept = mutableListOf<ParsedSegment>()
+        var simplified = 0
+
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+
+        fun cross(
+            ax: BigDecimal,
+            ay: BigDecimal,
+            bx: BigDecimal,
+            by: BigDecimal
+        ): BigDecimal =
+            ax.multiply(by).subtract(ay.multiply(bx))
+
+        fun dot(
+            ax: BigDecimal,
+            ay: BigDecimal,
+            bx: BigDecimal,
+            by: BigDecimal
+        ): BigDecimal =
+            ax.multiply(bx).add(ay.multiply(by))
+
+        fun projectionWithinSegment(
+            pointX: BigDecimal,
+            pointY: BigDecimal,
+            startX: BigDecimal,
+            startY: BigDecimal,
+            endX: BigDecimal,
+            endY: BigDecimal
+        ): BigDecimal? {
+            val dx = endX.subtract(startX)
+            val dy = endY.subtract(startY)
+            val px = pointX.subtract(startX)
+            val py = pointY.subtract(startY)
+
+            if (
+                dx.compareTo(BigDecimal.ZERO) == 0 &&
+                dy.compareTo(BigDecimal.ZERO) == 0
+            ) {
+                return null
+            }
+
+            if (cross(dx, dy, px, py).compareTo(BigDecimal.ZERO) != 0) {
+                return null
+            }
+
+            val projection = dot(px, py, dx, dy)
+            val lengthSquared = dot(dx, dy, dx, dy)
+
+            return if (
+                projection.compareTo(BigDecimal.ZERO) >= 0 &&
+                projection.compareTo(lengthSquared) <= 0
+            ) {
+                projection
+            } else {
+                null
+            }
+        }
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val absolute = absoluteValuesFor(segment, currentX, currentY)
+
+            val endX: BigDecimal
+            val endY: BigDecimal
+
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    endX = absolute[0]
+                    endY = absolute[1]
+                }
+                'H' -> {
+                    endX = absolute[0]
+                    endY = currentY
+                }
+                'V' -> {
+                    endX = currentX
+                    endY = absolute[0]
+                }
+                'C' -> {
+                    endX = absolute[4]
+                    endY = absolute[5]
+                }
+                'S', 'Q' -> {
+                    endX = absolute[2]
+                    endY = absolute[3]
+                }
+                'A' -> {
+                    endX = absolute[5]
+                    endY = absolute[6]
+                }
+                'Z' -> {
+                    endX = subpathX
+                    endY = subpathY
+                }
+                else -> {
+                    return StraightBezierCleanupResult(pathData, 0)
+                }
+            }
+
+            val replacement = when (upper) {
+                'Q' -> {
+                    val controlProjection = projectionWithinSegment(
+                        pointX = absolute[0],
+                        pointY = absolute[1],
+                        startX = currentX,
+                        startY = currentY,
+                        endX = endX,
+                        endY = endY
+                    )
+
+                    if (controlProjection != null) {
+                        ParsedSegment('L', listOf(endX, endY))
+                    } else {
+                        null
+                    }
+                }
+
+                'C' -> {
+                    val firstProjection = projectionWithinSegment(
+                        pointX = absolute[0],
+                        pointY = absolute[1],
+                        startX = currentX,
+                        startY = currentY,
+                        endX = endX,
+                        endY = endY
+                    )
+                    val secondProjection = projectionWithinSegment(
+                        pointX = absolute[2],
+                        pointY = absolute[3],
+                        startX = currentX,
+                        startY = currentY,
+                        endX = endX,
+                        endY = endY
+                    )
+
+                    if (
+                        firstProjection != null &&
+                        secondProjection != null &&
+                        firstProjection.compareTo(secondProjection) <= 0
+                    ) {
+                        ParsedSegment('L', listOf(endX, endY))
+                    } else {
+                        null
+                    }
+                }
+
+                else -> null
+            }
+
+            if (replacement != null) {
+                kept += replacement
+                simplified++
+            } else {
+                kept += segment
+            }
+
+            currentX = endX
+            currentY = endY
+
+            if (upper == 'M') {
+                subpathX = endX
+                subpathY = endY
+            }
+        }
+
+        if (simplified == 0) {
+            return StraightBezierCleanupResult(pathData, 0)
+        }
+
+        val rebuilt = encodeParsedSegments(kept)
+        return if (
+            rebuilt.length <= pathData.length &&
+            parseNormalizedSegments(rebuilt) != null
+        ) {
+            StraightBezierCleanupResult(
+                pathData = rebuilt,
+                simplifiedCount = simplified
+            )
+        } else {
+            StraightBezierCleanupResult(pathData, 0)
+        }
     }
 
     private data class CollinearLineCleanupResult(

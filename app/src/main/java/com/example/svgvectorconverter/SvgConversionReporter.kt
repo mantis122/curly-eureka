@@ -144,6 +144,7 @@ data class SvgConversionReportData(
     val pathDataRepeatedCommandsRemoved: Int = 0,
     val redundantNonDrawingSegmentsRemoved: Int = 0,
     val collinearLineSegmentsConsolidated: Int = 0,
+    val straightBezierCurvesSimplified: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
@@ -493,6 +494,11 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Collinear line segments consolidated: " +
                         data.collinearLineSegmentsConsolidated
+                )
+            if (data.straightBezierCurvesSimplified > 0)
+                appendLine(
+                    "✓ Straight Bézier curves simplified: " +
+                        data.straightBezierCurvesSimplified
                 )
             if (data.emptyPathDataRemoved > 0)
                 appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")
