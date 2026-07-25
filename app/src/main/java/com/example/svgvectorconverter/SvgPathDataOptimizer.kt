@@ -4471,6 +4471,9 @@ internal object SvgPathDataOptimizer {
      *
      * Backtracking, zero-length segments, direction changes, curves, arcs,
      * subpath boundaries, and mixed-axis sequences are deliberately preserved.
+     *
+     * Direction is evaluated from each segment's actual start and end point,
+     * preventing consolidation across a backtracking reversal.
      */
     private fun consolidateConsecutiveCollinearLines(
         pathData: String
@@ -4543,17 +4546,22 @@ internal object SvgPathDataOptimizer {
             }
 
             val isAxisLine = upper == 'H' || upper == 'V'
+            val segmentStart =
+                if (upper == 'H') currentX else currentY
+            val segmentEnd =
+                if (upper == 'H') endX else endY
+
             val canConsolidate = when {
                 upper == 'H' && previousAxis == 'H' -> {
                     sameStrictDirection(
                         previousAxisEnd.subtract(previousAxisStart),
-                        endX.subtract(previousAxisEnd)
+                        segmentEnd.subtract(segmentStart)
                     )
                 }
                 upper == 'V' && previousAxis == 'V' -> {
                     sameStrictDirection(
                         previousAxisEnd.subtract(previousAxisStart),
-                        endY.subtract(previousAxisEnd)
+                        segmentEnd.subtract(segmentStart)
                     )
                 }
                 else -> false
@@ -4565,16 +4573,14 @@ internal object SvgPathDataOptimizer {
                 } else {
                     ParsedSegment('V', listOf(endY))
                 }
-                previousAxisEnd = if (upper == 'H') endX else endY
+                previousAxisEnd = segmentEnd
                 consolidated++
             } else {
                 kept += segment
                 if (isAxisLine) {
                     previousAxis = upper
-                    previousAxisStart =
-                        if (upper == 'H') currentX else currentY
-                    previousAxisEnd =
-                        if (upper == 'H') endX else endY
+                    previousAxisStart = segmentStart
+                    previousAxisEnd = segmentEnd
                 } else {
                     previousAxis = null
                 }
