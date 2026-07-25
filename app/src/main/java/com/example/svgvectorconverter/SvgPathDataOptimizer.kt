@@ -32,6 +32,7 @@ internal object SvgPathDataOptimizer {
         val collinearLineSegmentsConsolidated: Int = 0,
         val straightBezierCurvesSimplified: Int = 0,
         val degenerateArcsSimplified: Int = 0,
+        val smoothBezierShorthandsSelected: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -349,6 +350,7 @@ internal object SvgPathDataOptimizer {
         var collinearLineSegmentsConsolidated = 0
         var straightBezierCurvesSimplified = 0
         var degenerateArcsSimplified = 0
+        var smoothBezierShorthandsSelected = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -370,6 +372,8 @@ internal object SvgPathDataOptimizer {
                 optimized.straightBezierCurvesSimplified
             degenerateArcsSimplified +=
                 optimized.degenerateArcsSimplified
+            smoothBezierShorthandsSelected +=
+                optimized.smoothBezierShorthandsSelected
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -486,6 +490,8 @@ internal object SvgPathDataOptimizer {
                     straightBezierCurvesSimplified,
                 degenerateArcsSimplified =
                     degenerateArcsSimplified,
+                smoothBezierShorthandsSelected =
+                    smoothBezierShorthandsSelected,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -4285,6 +4291,7 @@ internal object SvgPathDataOptimizer {
         val collinearLineSegmentsConsolidated: Int,
         val straightBezierCurvesSimplified: Int,
         val degenerateArcsSimplified: Int,
+        val smoothBezierShorthandsSelected: Int,
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
@@ -4294,7 +4301,7 @@ internal object SvgPathDataOptimizer {
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         // If tokenization skipped anything other than legal separators, preserve the
@@ -4302,12 +4309,12 @@ internal object SvgPathDataOptimizer {
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         val output = StringBuilder(pathData.length)
@@ -4370,6 +4377,8 @@ internal object SvgPathDataOptimizer {
                 straightBezierCleanup.simplifiedCount,
             degenerateArcsSimplified =
                 degenerateArcCleanup.simplifiedCount,
+            smoothBezierShorthandsSelected =
+                commandOptimization.smoothBezierShorthandsSelected,
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
@@ -5046,7 +5055,8 @@ internal object SvgPathDataOptimizer {
         val pathData: String,
         val shorterFormsSelected: Int,
         val relativeCommandsSelected: Int,
-        val axisCommandsSelected: Int
+        val axisCommandsSelected: Int,
+        val smoothBezierShorthandsSelected: Int
     )
 
     private data class ParsedSegment(
@@ -5068,8 +5078,8 @@ internal object SvgPathDataOptimizer {
      */
     private fun shortenPathCommands(pathData: String): CommandOptimizationResult {
         val segments = parseNormalizedSegments(pathData)
-            ?: return CommandOptimizationResult(pathData, 0, 0, 0)
-        if (segments.isEmpty()) return CommandOptimizationResult(pathData, 0, 0, 0)
+            ?: return CommandOptimizationResult(pathData, 0, 0, 0, 0)
+        if (segments.isEmpty()) return CommandOptimizationResult(pathData, 0, 0, 0, 0)
 
         val output = StringBuilder(pathData.length)
         var currentX = BigDecimal.ZERO
@@ -5079,9 +5089,16 @@ internal object SvgPathDataOptimizer {
         var previousOutputCommand: Char? = null
         var previousOutputNumber: String? = null
         var previousAxisDirection: Int? = null
+
+        var previousCubicControlX: BigDecimal? = null
+        var previousCubicControlY: BigDecimal? = null
+        var previousQuadraticControlX: BigDecimal? = null
+        var previousQuadraticControlY: BigDecimal? = null
+
         var shorterForms = 0
         var relativeSelected = 0
         var axisSelected = 0
+        var smoothShorthandsSelected = 0
 
         for (segment in segments) {
             val upper = segment.command.uppercaseChar()
@@ -5105,6 +5122,63 @@ internal object SvgPathDataOptimizer {
                 if (endX.compareTo(startX) == 0) {
                     candidates += 'V' to listOf(endY)
                     candidates += 'v' to listOf(endY.subtract(startY))
+                }
+            }
+
+            if (
+                upper == 'C' &&
+                previousCubicControlX != null &&
+                previousCubicControlY != null
+            ) {
+                val absolute = absoluteValuesFor(segment, startX, startY)
+                val reflectedX =
+                    startX.multiply(BigDecimal("2"))
+                        .subtract(previousCubicControlX)
+                val reflectedY =
+                    startY.multiply(BigDecimal("2"))
+                        .subtract(previousCubicControlY)
+
+                if (
+                    absolute[0].compareTo(reflectedX) == 0 &&
+                    absolute[1].compareTo(reflectedY) == 0
+                ) {
+                    candidates += 'S' to listOf(
+                        absolute[2], absolute[3],
+                        absolute[4], absolute[5]
+                    )
+                    candidates += 's' to listOf(
+                        absolute[2].subtract(startX),
+                        absolute[3].subtract(startY),
+                        absolute[4].subtract(startX),
+                        absolute[5].subtract(startY)
+                    )
+                }
+            }
+
+            if (
+                upper == 'Q' &&
+                previousQuadraticControlX != null &&
+                previousQuadraticControlY != null
+            ) {
+                val absolute = absoluteValuesFor(segment, startX, startY)
+                val reflectedX =
+                    startX.multiply(BigDecimal("2"))
+                        .subtract(previousQuadraticControlX)
+                val reflectedY =
+                    startY.multiply(BigDecimal("2"))
+                        .subtract(previousQuadraticControlY)
+
+                if (
+                    absolute[0].compareTo(reflectedX) == 0 &&
+                    absolute[1].compareTo(reflectedY) == 0
+                ) {
+                    candidates += 'T' to listOf(
+                        absolute[2], absolute[3]
+                    )
+                    candidates += 't' to listOf(
+                        absolute[2].subtract(startX),
+                        absolute[3].subtract(startY)
+                    )
                 }
             }
 
@@ -5160,7 +5234,7 @@ internal object SvgPathDataOptimizer {
                 }
                 .minWithOrNull(compareBy<Triple<Pair<Char, List<BigDecimal>>, String, Int>> { it.third }
                     .thenBy { if (it.first.first == originalCommand) 0 else 1 })
-                ?: return CommandOptimizationResult(pathData, 0, 0, 0)
+                ?: return CommandOptimizationResult(pathData, 0, 0, 0, 0)
 
             val selectedCommand = chosen.first.first
             output.append(chosen.second)
@@ -5169,6 +5243,12 @@ internal object SvgPathDataOptimizer {
                 if (chosen.second.length < originalEncoded.length) shorterForms++
                 if (selectedCommand.isLowerCase() && selectedCommand.uppercaseChar() != 'Z') relativeSelected++
                 if (selectedCommand.uppercaseChar() in charArrayOf('H', 'V')) axisSelected++
+                if (
+                    selectedCommand.uppercaseChar() in charArrayOf('S', 'T') &&
+                    selectedCommand.uppercaseChar() != originalCommand.uppercaseChar()
+                ) {
+                    smoothShorthandsSelected++
+                }
             }
 
             previousOutputCommand = selectedCommand
@@ -5195,6 +5275,45 @@ internal object SvgPathDataOptimizer {
             }
 
             val absolute = absoluteValuesFor(segment, startX, startY)
+
+            when (upper) {
+                'C' -> {
+                    previousCubicControlX = absolute[2]
+                    previousCubicControlY = absolute[3]
+                }
+                'S' -> {
+                    previousCubicControlX = absolute[0]
+                    previousCubicControlY = absolute[1]
+                }
+                else -> {
+                    previousCubicControlX = null
+                    previousCubicControlY = null
+                }
+            }
+
+            when (upper) {
+                'Q' -> {
+                    previousQuadraticControlX = absolute[0]
+                    previousQuadraticControlY = absolute[1]
+                }
+                'T' -> {
+                    val reflectedX =
+                        previousQuadraticControlX?.let {
+                            startX.multiply(BigDecimal("2")).subtract(it)
+                        } ?: startX
+                    val reflectedY =
+                        previousQuadraticControlY?.let {
+                            startY.multiply(BigDecimal("2")).subtract(it)
+                        } ?: startY
+                    previousQuadraticControlX = reflectedX
+                    previousQuadraticControlY = reflectedY
+                }
+                else -> {
+                    previousQuadraticControlX = null
+                    previousQuadraticControlY = null
+                }
+            }
+
             when (upper) {
                 'M', 'L', 'T' -> {
                     currentX = absolute[absolute.size - 2]
@@ -5230,9 +5349,15 @@ internal object SvgPathDataOptimizer {
         val optimizedIsValid = parseNormalizedSegments(optimized) != null
 
         return if (optimizedIsValid && optimized.length <= pathData.length) {
-            CommandOptimizationResult(optimized, shorterForms, relativeSelected, axisSelected)
+            CommandOptimizationResult(
+                optimized,
+                shorterForms,
+                relativeSelected,
+                axisSelected,
+                smoothShorthandsSelected
+            )
         } else {
-            CommandOptimizationResult(pathData, 0, 0, 0)
+            CommandOptimizationResult(pathData, 0, 0, 0, 0)
         }
     }
 
