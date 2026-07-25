@@ -33,6 +33,7 @@ internal object SvgPathDataOptimizer {
         val straightBezierCurvesSimplified: Int = 0,
         val degenerateArcsSimplified: Int = 0,
         val smoothBezierShorthandsSelected: Int = 0,
+        val cubicCurvesReducedToQuadratic: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -351,6 +352,7 @@ internal object SvgPathDataOptimizer {
         var straightBezierCurvesSimplified = 0
         var degenerateArcsSimplified = 0
         var smoothBezierShorthandsSelected = 0
+        var cubicCurvesReducedToQuadratic = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -374,6 +376,8 @@ internal object SvgPathDataOptimizer {
                 optimized.degenerateArcsSimplified
             smoothBezierShorthandsSelected +=
                 optimized.smoothBezierShorthandsSelected
+            cubicCurvesReducedToQuadratic +=
+                optimized.cubicCurvesReducedToQuadratic
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -492,6 +496,8 @@ internal object SvgPathDataOptimizer {
                     degenerateArcsSimplified,
                 smoothBezierShorthandsSelected =
                     smoothBezierShorthandsSelected,
+                cubicCurvesReducedToQuadratic =
+                    cubicCurvesReducedToQuadratic,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -4292,6 +4298,7 @@ internal object SvgPathDataOptimizer {
         val straightBezierCurvesSimplified: Int,
         val degenerateArcsSimplified: Int,
         val smoothBezierShorthandsSelected: Int,
+        val cubicCurvesReducedToQuadratic: Int,
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
@@ -4301,7 +4308,7 @@ internal object SvgPathDataOptimizer {
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         // If tokenization skipped anything other than legal separators, preserve the
@@ -4309,12 +4316,12 @@ internal object SvgPathDataOptimizer {
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         val output = StringBuilder(pathData.length)
@@ -4356,8 +4363,11 @@ internal object SvgPathDataOptimizer {
         val degenerateArcCleanup = simplifyDegenerateArcs(
             redundantCleanup.pathData
         )
-        val straightBezierCleanup = simplifyStraightBezierCurves(
+        val cubicToQuadraticCleanup = reduceExactCubicCurvesToQuadratic(
             degenerateArcCleanup.pathData
+        )
+        val straightBezierCleanup = simplifyStraightBezierCurves(
+            cubicToQuadraticCleanup.pathData
         )
         val collinearCleanup = consolidateConsecutiveCollinearLineRuns(
             straightBezierCleanup.pathData
@@ -4379,6 +4389,8 @@ internal object SvgPathDataOptimizer {
                 degenerateArcCleanup.simplifiedCount,
             smoothBezierShorthandsSelected =
                 commandOptimization.smoothBezierShorthandsSelected,
+            cubicCurvesReducedToQuadratic =
+                cubicToQuadraticCleanup.reducedCount,
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
@@ -4487,6 +4499,153 @@ internal object SvgPathDataOptimizer {
         }
 
         return output.toString()
+    }
+
+    private data class CubicToQuadraticCleanupResult(
+        val pathData: String,
+        val reducedCount: Int
+    )
+
+    /**
+     * F2.2: Converts an explicit cubic Bézier C/c to an exactly equivalent
+     * quadratic Bézier Q when both cubic controls imply the same quadratic
+     * control point.
+     *
+     * For a cubic from P0 to P3 to equal a quadratic with control Q:
+     *
+     * Q = (3*C1 - P0) / 2
+     * Q = (3*C2 - P3) / 2
+     *
+     * Both derived controls must match exactly. No tolerance or approximation
+     * is used. S/s commands are deliberately preserved because their reflected
+     * first control depends on previous command state.
+     */
+    private fun reduceExactCubicCurvesToQuadratic(
+        pathData: String
+    ): CubicToQuadraticCleanupResult {
+        val segments = parseNormalizedSegments(pathData)
+            ?: return CubicToQuadraticCleanupResult(pathData, 0)
+        if (segments.isEmpty()) {
+            return CubicToQuadraticCleanupResult(pathData, 0)
+        }
+
+        val kept = mutableListOf<ParsedSegment>()
+        var reduced = 0
+
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+
+        val three = BigDecimal("3")
+        val two = BigDecimal("2")
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val absolute = absoluteValuesFor(segment, currentX, currentY)
+
+            val endX: BigDecimal
+            val endY: BigDecimal
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    endX = absolute[0]
+                    endY = absolute[1]
+                }
+                'H' -> {
+                    endX = absolute[0]
+                    endY = currentY
+                }
+                'V' -> {
+                    endX = currentX
+                    endY = absolute[0]
+                }
+                'C' -> {
+                    endX = absolute[4]
+                    endY = absolute[5]
+                }
+                'S', 'Q' -> {
+                    endX = absolute[2]
+                    endY = absolute[3]
+                }
+                'A' -> {
+                    endX = absolute[5]
+                    endY = absolute[6]
+                }
+                'Z' -> {
+                    endX = subpathX
+                    endY = subpathY
+                }
+                else -> {
+                    return CubicToQuadraticCleanupResult(pathData, 0)
+                }
+            }
+
+            val replacement = if (upper == 'C') {
+                val q1x =
+                    absolute[0].multiply(three)
+                        .subtract(currentX)
+                        .divide(two)
+                val q1y =
+                    absolute[1].multiply(three)
+                        .subtract(currentY)
+                        .divide(two)
+
+                val q2x =
+                    absolute[2].multiply(three)
+                        .subtract(endX)
+                        .divide(two)
+                val q2y =
+                    absolute[3].multiply(three)
+                        .subtract(endY)
+                        .divide(two)
+
+                if (
+                    q1x.compareTo(q2x) == 0 &&
+                    q1y.compareTo(q2y) == 0
+                ) {
+                    ParsedSegment(
+                        command = 'Q',
+                        values = listOf(q1x, q1y, endX, endY)
+                    )
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+
+            if (replacement != null) {
+                kept += replacement
+                reduced++
+            } else {
+                kept += segment
+            }
+
+            currentX = endX
+            currentY = endY
+
+            if (upper == 'M') {
+                subpathX = endX
+                subpathY = endY
+            }
+        }
+
+        if (reduced == 0) {
+            return CubicToQuadraticCleanupResult(pathData, 0)
+        }
+
+        val rebuilt = encodeParsedSegments(kept)
+        return if (
+            rebuilt.length <= pathData.length &&
+            parseNormalizedSegments(rebuilt) != null
+        ) {
+            CubicToQuadraticCleanupResult(
+                pathData = rebuilt,
+                reducedCount = reduced
+            )
+        } else {
+            CubicToQuadraticCleanupResult(pathData, 0)
+        }
     }
 
     private data class DegenerateArcCleanupResult(

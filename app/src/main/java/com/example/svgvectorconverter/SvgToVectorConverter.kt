@@ -328,6 +328,8 @@ object SvgToVectorConverter {
                     pathOptimizationStats.degenerateArcsSimplified,
                 smoothBezierShorthandsSelected =
                     pathOptimizationStats.smoothBezierShorthandsSelected,
+                cubicCurvesReducedToQuadratic =
+                    pathOptimizationStats.cubicCurvesReducedToQuadratic,
                 pathDataNumbersNormalized = pathOptimizationStats.numbersNormalized,
                 emptyPathDataRemoved = pathOptimizationStats.emptyPathDataRemoved,
                 moveOnlyPathsRemoved = pathOptimizationStats.moveOnlyPathsRemoved,
