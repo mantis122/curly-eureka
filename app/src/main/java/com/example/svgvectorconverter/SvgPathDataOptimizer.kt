@@ -31,6 +31,7 @@ internal object SvgPathDataOptimizer {
         val redundantNonDrawingSegmentsRemoved: Int = 0,
         val collinearLineSegmentsConsolidated: Int = 0,
         val straightBezierCurvesSimplified: Int = 0,
+        val degenerateArcsSimplified: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -347,6 +348,7 @@ internal object SvgPathDataOptimizer {
         var redundantNonDrawingSegmentsRemoved = 0
         var collinearLineSegmentsConsolidated = 0
         var straightBezierCurvesSimplified = 0
+        var degenerateArcsSimplified = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -366,6 +368,8 @@ internal object SvgPathDataOptimizer {
                 optimized.collinearLineSegmentsConsolidated
             straightBezierCurvesSimplified +=
                 optimized.straightBezierCurvesSimplified
+            degenerateArcsSimplified +=
+                optimized.degenerateArcsSimplified
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -480,6 +484,8 @@ internal object SvgPathDataOptimizer {
                     collinearLineSegmentsConsolidated,
                 straightBezierCurvesSimplified =
                     straightBezierCurvesSimplified,
+                degenerateArcsSimplified =
+                    degenerateArcsSimplified,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -4278,6 +4284,7 @@ internal object SvgPathDataOptimizer {
         val redundantNonDrawingSegmentsRemoved: Int,
         val collinearLineSegmentsConsolidated: Int,
         val straightBezierCurvesSimplified: Int,
+        val degenerateArcsSimplified: Int,
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
@@ -4287,7 +4294,7 @@ internal object SvgPathDataOptimizer {
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         // If tokenization skipped anything other than legal separators, preserve the
@@ -4295,12 +4302,12 @@ internal object SvgPathDataOptimizer {
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0)
+                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0)
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         val output = StringBuilder(pathData.length)
@@ -4339,8 +4346,11 @@ internal object SvgPathDataOptimizer {
         val redundantCleanup = removeRedundantNonDrawingSegments(
             output.toString()
         )
-        val straightBezierCleanup = simplifyStraightBezierCurves(
+        val degenerateArcCleanup = simplifyDegenerateArcs(
             redundantCleanup.pathData
+        )
+        val straightBezierCleanup = simplifyStraightBezierCurves(
+            degenerateArcCleanup.pathData
         )
         val collinearCleanup = consolidateConsecutiveCollinearLineRuns(
             straightBezierCleanup.pathData
@@ -4358,6 +4368,8 @@ internal object SvgPathDataOptimizer {
                 collinearCleanup.consolidatedCount,
             straightBezierCurvesSimplified =
                 straightBezierCleanup.simplifiedCount,
+            degenerateArcsSimplified =
+                degenerateArcCleanup.simplifiedCount,
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
@@ -4466,6 +4478,136 @@ internal object SvgPathDataOptimizer {
         }
 
         return output.toString()
+    }
+
+    private data class DegenerateArcCleanupResult(
+        val pathData: String,
+        val simplifiedCount: Int
+    )
+
+    /**
+     * F1.5: Converts elliptical arc commands to straight lines when either
+     * radius is exactly zero, as required by SVG path semantics.
+     *
+     * This pass deliberately preserves:
+     * - arcs with two non-zero radii;
+     * - arcs whose endpoint equals the current point;
+     * - all arc flags and rotations unless the radius-zero rule applies.
+     *
+     * Preserving same-endpoint arcs avoids changing subtle zero-length stroke
+     * behavior in renderers.
+     */
+    private fun simplifyDegenerateArcs(
+        pathData: String
+    ): DegenerateArcCleanupResult {
+        val segments = parseNormalizedSegments(pathData)
+            ?: return DegenerateArcCleanupResult(pathData, 0)
+        if (segments.isEmpty()) {
+            return DegenerateArcCleanupResult(pathData, 0)
+        }
+
+        val kept = mutableListOf<ParsedSegment>()
+        var simplified = 0
+
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val absolute = absoluteValuesFor(segment, currentX, currentY)
+
+            val endX: BigDecimal
+            val endY: BigDecimal
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    endX = absolute[0]
+                    endY = absolute[1]
+                }
+                'H' -> {
+                    endX = absolute[0]
+                    endY = currentY
+                }
+                'V' -> {
+                    endX = currentX
+                    endY = absolute[0]
+                }
+                'C' -> {
+                    endX = absolute[4]
+                    endY = absolute[5]
+                }
+                'S', 'Q' -> {
+                    endX = absolute[2]
+                    endY = absolute[3]
+                }
+                'A' -> {
+                    endX = absolute[5]
+                    endY = absolute[6]
+                }
+                'Z' -> {
+                    endX = subpathX
+                    endY = subpathY
+                }
+                else -> {
+                    return DegenerateArcCleanupResult(pathData, 0)
+                }
+            }
+
+            val replacement = if (upper == 'A') {
+                val radiusX = absolute[0].abs()
+                val radiusY = absolute[1].abs()
+                val sameEndpoint =
+                    endX.compareTo(currentX) == 0 &&
+                    endY.compareTo(currentY) == 0
+
+                if (
+                    !sameEndpoint &&
+                    (
+                        radiusX.compareTo(BigDecimal.ZERO) == 0 ||
+                        radiusY.compareTo(BigDecimal.ZERO) == 0
+                    )
+                ) {
+                    ParsedSegment('L', listOf(endX, endY))
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+
+            if (replacement != null) {
+                kept += replacement
+                simplified++
+            } else {
+                kept += segment
+            }
+
+            currentX = endX
+            currentY = endY
+
+            if (upper == 'M') {
+                subpathX = endX
+                subpathY = endY
+            }
+        }
+
+        if (simplified == 0) {
+            return DegenerateArcCleanupResult(pathData, 0)
+        }
+
+        val rebuilt = encodeParsedSegments(kept)
+        return if (
+            rebuilt.length <= pathData.length &&
+            parseNormalizedSegments(rebuilt) != null
+        ) {
+            DegenerateArcCleanupResult(
+                pathData = rebuilt,
+                simplifiedCount = simplified
+            )
+        } else {
+            DegenerateArcCleanupResult(pathData, 0)
+        }
     }
 
     private data class StraightBezierCleanupResult(

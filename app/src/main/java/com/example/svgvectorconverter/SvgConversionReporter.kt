@@ -145,6 +145,7 @@ data class SvgConversionReportData(
     val redundantNonDrawingSegmentsRemoved: Int = 0,
     val collinearLineSegmentsConsolidated: Int = 0,
     val straightBezierCurvesSimplified: Int = 0,
+    val degenerateArcsSimplified: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
@@ -499,6 +500,11 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Straight Bézier curves simplified: " +
                         data.straightBezierCurvesSimplified
+                )
+            if (data.degenerateArcsSimplified > 0)
+                appendLine(
+                    "✓ Degenerate arcs simplified: " +
+                        data.degenerateArcsSimplified
                 )
             if (data.emptyPathDataRemoved > 0)
                 appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")
