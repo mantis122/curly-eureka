@@ -4332,7 +4332,7 @@ internal object SvgPathDataOptimizer {
         val redundantCleanup = removeRedundantNonDrawingSegments(
             output.toString()
         )
-        val collinearCleanup = consolidateConsecutiveCollinearLines(
+        val collinearCleanup = consolidateConsecutiveCollinearLineRuns(
             redundantCleanup.pathData
         )
         val commandOptimization = shortenPathCommands(
@@ -4462,21 +4462,21 @@ internal object SvgPathDataOptimizer {
     )
 
     /**
-     * F1.2: Consolidates adjacent horizontal or vertical line segments when
-     * they continue strictly in the same direction.
+     * F1.3: Consolidates adjacent straight-line segments when they are
+     * exactly collinear and continue strictly in the same direction.
      *
      * Examples:
-     * H10 H20  -> H20
-     * v5 v7    -> v12 (the later shortening pass chooses the best spelling)
+     * H10 H20              -> H20
+     * L10,10 L20,20        -> L20,20
+     * l5,5 l10,10          -> one equivalent diagonal segment
      *
-     * Backtracking, zero-length segments, direction changes, curves, arcs,
-     * subpath boundaries, and mixed-axis sequences are deliberately preserved.
+     * Backtracking, zero-length segments, slope changes, curves, arcs,
+     * subpath boundaries, and non-line commands are deliberately preserved.
      *
-     * The implementation builds explicit monotonic runs. A reversal,
-     * zero-length segment, axis change, non-axis command, or subpath boundary
-     * flushes the current run before a new one can begin.
+     * Exact cross-product and positive dot-product checks are used, so this
+     * stage introduces no geometric tolerance or approximation.
      */
-    private fun consolidateConsecutiveCollinearLines(
+    private fun consolidateConsecutiveCollinearLineRuns(
         pathData: String
     ): CollinearLineCleanupResult {
         val segments = parseNormalizedSegments(pathData)
@@ -4485,14 +4485,16 @@ internal object SvgPathDataOptimizer {
             return CollinearLineCleanupResult(pathData, 0)
         }
 
-        data class AxisRun(
-            val axis: Char,
-            val direction: Int,
-            val segments: MutableList<ParsedSegment>
+        data class LineRun(
+            val dx: BigDecimal,
+            val dy: BigDecimal,
+            val segments: MutableList<ParsedSegment>,
+            var endX: BigDecimal,
+            var endY: BigDecimal
         )
 
         val kept = mutableListOf<ParsedSegment>()
-        var run: AxisRun? = null
+        var run: LineRun? = null
         var consolidated = 0
 
         var currentX = BigDecimal.ZERO
@@ -4500,17 +4502,48 @@ internal object SvgPathDataOptimizer {
         var subpathX = BigDecimal.ZERO
         var subpathY = BigDecimal.ZERO
 
+        fun sameStrictDirectionAndSlope(
+            firstDx: BigDecimal,
+            firstDy: BigDecimal,
+            secondDx: BigDecimal,
+            secondDy: BigDecimal
+        ): Boolean {
+            if (
+                (firstDx.signum() == 0 && firstDy.signum() == 0) ||
+                (secondDx.signum() == 0 && secondDy.signum() == 0)
+            ) {
+                return false
+            }
+
+            val cross =
+                firstDx.multiply(secondDy)
+                    .subtract(firstDy.multiply(secondDx))
+            if (cross.compareTo(BigDecimal.ZERO) != 0) {
+                return false
+            }
+
+            val dot =
+                firstDx.multiply(secondDx)
+                    .add(firstDy.multiply(secondDy))
+            return dot.signum() > 0
+        }
+
         fun flushRun() {
             val active = run ?: return
             if (active.segments.size == 1) {
                 kept += active.segments.first()
             } else {
-                val last = active.segments.last()
-                val endpoint = last.values.last()
-                kept += ParsedSegment(
-                    command = active.axis,
-                    values = listOf(endpoint)
-                )
+                val command = when {
+                    active.dy.compareTo(BigDecimal.ZERO) == 0 -> 'H'
+                    active.dx.compareTo(BigDecimal.ZERO) == 0 -> 'V'
+                    else -> 'L'
+                }
+                val values = when (command) {
+                    'H' -> listOf(active.endX)
+                    'V' -> listOf(active.endY)
+                    else -> listOf(active.endX, active.endY)
+                }
+                kept += ParsedSegment(command, values)
                 consolidated += active.segments.size - 1
             }
             run = null
@@ -4556,41 +4589,51 @@ internal object SvgPathDataOptimizer {
                 }
             }
 
-            if (upper == 'H' || upper == 'V') {
-                val startCoordinate =
-                    if (upper == 'H') currentX else currentY
-                val endCoordinate =
-                    if (upper == 'H') endX else endY
-                val direction =
-                    endCoordinate.subtract(startCoordinate).signum()
+            val isStraightLine =
+                upper == 'L' || upper == 'H' || upper == 'V'
 
-                // Zero-length segments remain explicit because stroke caps and
-                // joins can make them visible.
-                if (direction == 0) {
+            if (isStraightLine) {
+                val dx = endX.subtract(currentX)
+                val dy = endY.subtract(currentY)
+
+                // Zero-length line segments stay explicit because round/square
+                // caps and joins can make them visible.
+                if (
+                    dx.compareTo(BigDecimal.ZERO) == 0 &&
+                    dy.compareTo(BigDecimal.ZERO) == 0
+                ) {
                     flushRun()
                     kept += segment
                 } else {
                     val active = run
                     if (
                         active != null &&
-                        active.axis == upper &&
-                        active.direction == direction
+                        sameStrictDirectionAndSlope(
+                            active.dx,
+                            active.dy,
+                            dx,
+                            dy
+                        )
                     ) {
                         active.segments += ParsedSegment(
-                            command = upper,
-                            values = listOf(endCoordinate)
+                            command = 'L',
+                            values = listOf(endX, endY)
                         )
+                        active.endX = endX
+                        active.endY = endY
                     } else {
                         flushRun()
-                        run = AxisRun(
-                            axis = upper,
-                            direction = direction,
+                        run = LineRun(
+                            dx = dx,
+                            dy = dy,
                             segments = mutableListOf(
                                 ParsedSegment(
-                                    command = upper,
-                                    values = listOf(endCoordinate)
+                                    command = 'L',
+                                    values = listOf(endX, endY)
                                 )
-                            )
+                            ),
+                            endX = endX,
+                            endY = endY
                         )
                     }
                 }
