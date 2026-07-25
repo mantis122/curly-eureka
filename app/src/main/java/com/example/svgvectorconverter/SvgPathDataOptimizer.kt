@@ -4472,8 +4472,9 @@ internal object SvgPathDataOptimizer {
      * Backtracking, zero-length segments, direction changes, curves, arcs,
      * subpath boundaries, and mixed-axis sequences are deliberately preserved.
      *
-     * Direction is evaluated from each segment's actual start and end point,
-     * preventing consolidation across a backtracking reversal.
+     * The implementation builds explicit monotonic runs. A reversal,
+     * zero-length segment, axis change, non-axis command, or subpath boundary
+     * flushes the current run before a new one can begin.
      */
     private fun consolidateConsecutiveCollinearLines(
         pathData: String
@@ -4484,24 +4485,35 @@ internal object SvgPathDataOptimizer {
             return CollinearLineCleanupResult(pathData, 0)
         }
 
+        data class AxisRun(
+            val axis: Char,
+            val direction: Int,
+            val segments: MutableList<ParsedSegment>
+        )
+
         val kept = mutableListOf<ParsedSegment>()
+        var run: AxisRun? = null
+        var consolidated = 0
+
         var currentX = BigDecimal.ZERO
         var currentY = BigDecimal.ZERO
         var subpathX = BigDecimal.ZERO
         var subpathY = BigDecimal.ZERO
 
-        var previousAxis: Char? = null
-        var previousAxisStart = BigDecimal.ZERO
-        var previousAxisEnd = BigDecimal.ZERO
-        var consolidated = 0
-
-        fun sameStrictDirection(
-            firstDelta: BigDecimal,
-            secondDelta: BigDecimal
-        ): Boolean {
-            val firstSign = firstDelta.signum()
-            val secondSign = secondDelta.signum()
-            return firstSign != 0 && firstSign == secondSign
+        fun flushRun() {
+            val active = run ?: return
+            if (active.segments.size == 1) {
+                kept += active.segments.first()
+            } else {
+                val last = active.segments.last()
+                val endpoint = last.values.last()
+                kept += ParsedSegment(
+                    command = active.axis,
+                    values = listOf(endpoint)
+                )
+                consolidated += active.segments.size - 1
+            }
+            run = null
         }
 
         for (segment in segments) {
@@ -4510,7 +4522,6 @@ internal object SvgPathDataOptimizer {
 
             val endX: BigDecimal
             val endY: BigDecimal
-
             when (upper) {
                 'M', 'L', 'T' -> {
                     endX = absolute[0]
@@ -4545,45 +4556,47 @@ internal object SvgPathDataOptimizer {
                 }
             }
 
-            val isAxisLine = upper == 'H' || upper == 'V'
-            val segmentStart =
-                if (upper == 'H') currentX else currentY
-            val segmentEnd =
-                if (upper == 'H') endX else endY
+            if (upper == 'H' || upper == 'V') {
+                val startCoordinate =
+                    if (upper == 'H') currentX else currentY
+                val endCoordinate =
+                    if (upper == 'H') endX else endY
+                val direction =
+                    endCoordinate.subtract(startCoordinate).signum()
 
-            val canConsolidate = when {
-                upper == 'H' && previousAxis == 'H' -> {
-                    sameStrictDirection(
-                        previousAxisEnd.subtract(previousAxisStart),
-                        segmentEnd.subtract(segmentStart)
-                    )
-                }
-                upper == 'V' && previousAxis == 'V' -> {
-                    sameStrictDirection(
-                        previousAxisEnd.subtract(previousAxisStart),
-                        segmentEnd.subtract(segmentStart)
-                    )
-                }
-                else -> false
-            }
-
-            if (canConsolidate && kept.isNotEmpty()) {
-                kept[kept.lastIndex] = if (upper == 'H') {
-                    ParsedSegment('H', listOf(endX))
+                // Zero-length segments remain explicit because stroke caps and
+                // joins can make them visible.
+                if (direction == 0) {
+                    flushRun()
+                    kept += segment
                 } else {
-                    ParsedSegment('V', listOf(endY))
+                    val active = run
+                    if (
+                        active != null &&
+                        active.axis == upper &&
+                        active.direction == direction
+                    ) {
+                        active.segments += ParsedSegment(
+                            command = upper,
+                            values = listOf(endCoordinate)
+                        )
+                    } else {
+                        flushRun()
+                        run = AxisRun(
+                            axis = upper,
+                            direction = direction,
+                            segments = mutableListOf(
+                                ParsedSegment(
+                                    command = upper,
+                                    values = listOf(endCoordinate)
+                                )
+                            )
+                        )
+                    }
                 }
-                previousAxisEnd = segmentEnd
-                consolidated++
             } else {
+                flushRun()
                 kept += segment
-                if (isAxisLine) {
-                    previousAxis = upper
-                    previousAxisStart = segmentStart
-                    previousAxisEnd = segmentEnd
-                } else {
-                    previousAxis = null
-                }
             }
 
             currentX = endX
@@ -4594,9 +4607,11 @@ internal object SvgPathDataOptimizer {
                 subpathY = endY
             }
             if (upper == 'Z') {
-                previousAxis = null
+                run = null
             }
         }
+
+        flushRun()
 
         if (consolidated == 0) {
             return CollinearLineCleanupResult(pathData, 0)
@@ -4652,6 +4667,7 @@ internal object SvgPathDataOptimizer {
         var subpathY = BigDecimal.ZERO
         var previousOutputCommand: Char? = null
         var previousOutputNumber: String? = null
+        var previousAxisDirection: Int? = null
         var shorterForms = 0
         var relativeSelected = 0
         var axisSelected = 0
@@ -4694,12 +4710,40 @@ internal object SvgPathDataOptimizer {
             val chosen = candidates
                 .distinctBy { it.first to it.second }
                 .map { candidate ->
+                    val candidateUpper = candidate.first.uppercaseChar()
+                    val candidateDirection = when (candidateUpper) {
+                        'H' -> {
+                            val end = if (candidate.first.isUpperCase()) {
+                                candidate.second[0]
+                            } else {
+                                startX.add(candidate.second[0])
+                            }
+                            end.subtract(startX).signum()
+                        }
+                        'V' -> {
+                            val end = if (candidate.first.isUpperCase()) {
+                                candidate.second[0]
+                            } else {
+                                startY.add(candidate.second[0])
+                            }
+                            end.subtract(startY).signum()
+                        }
+                        else -> null
+                    }
+                    val forceAxisBoundary =
+                        candidateUpper in charArrayOf('H', 'V') &&
+                        previousOutputCommand == candidate.first &&
+                        previousAxisDirection != null &&
+                        candidateDirection != previousAxisDirection
+
                     val encoded = encodeSegment(
                         candidate.first,
                         candidate.second,
                         previousOutputCommand,
                         previousOutputNumber,
-                        forceCommand = candidate.first.uppercaseChar() == 'M'
+                        forceCommand =
+                            candidateUpper == 'M' ||
+                                forceAxisBoundary
                     )
                     Triple(candidate, encoded, encoded.length)
                 }
@@ -4717,7 +4761,27 @@ internal object SvgPathDataOptimizer {
             }
 
             previousOutputCommand = selectedCommand
-            previousOutputNumber = chosen.first.second.lastOrNull()?.let(::formatBigDecimal)
+            previousOutputNumber =
+                chosen.first.second.lastOrNull()?.let(::formatBigDecimal)
+            previousAxisDirection = when (selectedCommand.uppercaseChar()) {
+                'H' -> {
+                    val end = if (selectedCommand.isUpperCase()) {
+                        chosen.first.second[0]
+                    } else {
+                        startX.add(chosen.first.second[0])
+                    }
+                    end.subtract(startX).signum()
+                }
+                'V' -> {
+                    val end = if (selectedCommand.isUpperCase()) {
+                        chosen.first.second[0]
+                    } else {
+                        startY.add(chosen.first.second[0])
+                    }
+                    end.subtract(startY).signum()
+                }
+                else -> null
+            }
 
             val absolute = absoluteValuesFor(segment, startX, startY)
             when (upper) {
