@@ -152,6 +152,7 @@ data class SvgConversionReportData(
     val arcRadiiCanonicalized: Int = 0,
     val arcHalfTurnRotationsReduced: Int = 0,
     val arcAxesSwappedForSize: Int = 0,
+    val arcRepresentationsGloballyMinimized: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
@@ -541,6 +542,11 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Arc axes swapped for shorter encoding: " +
                         data.arcAxesSwappedForSize
+                )
+            if (data.arcRepresentationsGloballyMinimized > 0)
+                appendLine(
+                    "✓ Arc representations globally minimized: " +
+                        data.arcRepresentationsGloballyMinimized
                 )
             if (data.emptyPathDataRemoved > 0)
                 appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")

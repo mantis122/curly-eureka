@@ -338,6 +338,8 @@ object SvgToVectorConverter {
                     pathOptimizationStats.arcHalfTurnRotationsReduced,
                 arcAxesSwappedForSize =
                     pathOptimizationStats.arcAxesSwappedForSize,
+                arcRepresentationsGloballyMinimized =
+                    pathOptimizationStats.arcRepresentationsGloballyMinimized,
                 pathDataNumbersNormalized = pathOptimizationStats.numbersNormalized,
                 emptyPathDataRemoved = pathOptimizationStats.emptyPathDataRemoved,
                 moveOnlyPathsRemoved = pathOptimizationStats.moveOnlyPathsRemoved,
