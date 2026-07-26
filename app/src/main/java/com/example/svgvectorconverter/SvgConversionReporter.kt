@@ -150,6 +150,7 @@ data class SvgConversionReportData(
     val cubicCurvesReducedToQuadratic: Int = 0,
     val arcRotationsCanonicalized: Int = 0,
     val arcRadiiCanonicalized: Int = 0,
+    val arcHalfTurnRotationsReduced: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
@@ -529,6 +530,11 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Arc radii canonicalized: " +
                         data.arcRadiiCanonicalized
+                )
+            if (data.arcHalfTurnRotationsReduced > 0)
+                appendLine(
+                    "✓ Arc half-turn rotations reduced: " +
+                        data.arcHalfTurnRotationsReduced
                 )
             if (data.emptyPathDataRemoved > 0)
                 appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")

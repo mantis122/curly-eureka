@@ -334,6 +334,8 @@ object SvgToVectorConverter {
                     pathOptimizationStats.arcRotationsCanonicalized,
                 arcRadiiCanonicalized =
                     pathOptimizationStats.arcRadiiCanonicalized,
+                arcHalfTurnRotationsReduced =
+                    pathOptimizationStats.arcHalfTurnRotationsReduced,
                 pathDataNumbersNormalized = pathOptimizationStats.numbersNormalized,
                 emptyPathDataRemoved = pathOptimizationStats.emptyPathDataRemoved,
                 moveOnlyPathsRemoved = pathOptimizationStats.moveOnlyPathsRemoved,
