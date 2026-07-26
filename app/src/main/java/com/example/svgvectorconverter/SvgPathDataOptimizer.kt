@@ -35,6 +35,7 @@ internal object SvgPathDataOptimizer {
         val smoothBezierShorthandsSelected: Int = 0,
         val cubicCurvesReducedToQuadratic: Int = 0,
         val arcRotationsCanonicalized: Int = 0,
+        val arcRadiiCanonicalized: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -355,6 +356,7 @@ internal object SvgPathDataOptimizer {
         var smoothBezierShorthandsSelected = 0
         var cubicCurvesReducedToQuadratic = 0
         var arcRotationsCanonicalized = 0
+        var arcRadiiCanonicalized = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -382,6 +384,8 @@ internal object SvgPathDataOptimizer {
                 optimized.cubicCurvesReducedToQuadratic
             arcRotationsCanonicalized +=
                 optimized.arcRotationsCanonicalized
+            arcRadiiCanonicalized +=
+                optimized.arcRadiiCanonicalized
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -504,6 +508,8 @@ internal object SvgPathDataOptimizer {
                     cubicCurvesReducedToQuadratic,
                 arcRotationsCanonicalized =
                     arcRotationsCanonicalized,
+                arcRadiiCanonicalized =
+                    arcRadiiCanonicalized,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -4306,6 +4312,7 @@ internal object SvgPathDataOptimizer {
         val smoothBezierShorthandsSelected: Int,
         val cubicCurvesReducedToQuadratic: Int,
         val arcRotationsCanonicalized: Int,
+        val arcRadiiCanonicalized: Int,
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
@@ -4315,7 +4322,7 @@ internal object SvgPathDataOptimizer {
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         // If tokenization skipped anything other than legal separators, preserve the
@@ -4323,12 +4330,12 @@ internal object SvgPathDataOptimizer {
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         val output = StringBuilder(pathData.length)
@@ -4367,8 +4374,11 @@ internal object SvgPathDataOptimizer {
         val redundantCleanup = removeRedundantNonDrawingSegments(
             output.toString()
         )
-        val arcCanonicalization = canonicalizeArcRotations(
+        val arcRadiusCanonicalization = canonicalizeArcRadii(
             redundantCleanup.pathData
+        )
+        val arcCanonicalization = canonicalizeArcRotations(
+            arcRadiusCanonicalization.pathData
         )
         val degenerateArcCleanup = simplifyDegenerateArcs(
             arcCanonicalization.pathData
@@ -4403,6 +4413,8 @@ internal object SvgPathDataOptimizer {
                 cubicToQuadraticCleanup.reducedCount,
             arcRotationsCanonicalized =
                 arcCanonicalization.canonicalizedCount,
+            arcRadiiCanonicalized =
+                arcRadiusCanonicalization.canonicalizedCount,
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
@@ -4511,6 +4523,90 @@ internal object SvgPathDataOptimizer {
         }
 
         return output.toString()
+    }
+
+    private data class ArcRadiusCanonicalizationResult(
+        val pathData: String,
+        val canonicalizedCount: Int
+    )
+
+    /**
+     * F2.4: Canonicalizes elliptical-arc radii to non-negative values.
+     *
+     * SVG arc geometry uses the magnitudes of rx and ry. This pass therefore:
+     * - replaces negative rx/ry with their absolute values;
+     * - normalizes negative zero to zero;
+     * - leaves flags, rotation, endpoints, and command case unchanged.
+     *
+     * The pass runs before rotation canonicalization and degenerate-arc
+     * simplification so later stages see a stable radius representation.
+     */
+    private fun canonicalizeArcRadii(
+        pathData: String
+    ): ArcRadiusCanonicalizationResult {
+        val segments = parseNormalizedSegments(pathData)
+            ?: return ArcRadiusCanonicalizationResult(pathData, 0)
+        if (segments.isEmpty()) {
+            return ArcRadiusCanonicalizationResult(pathData, 0)
+        }
+
+        val kept = mutableListOf<ParsedSegment>()
+        var canonicalized = 0
+
+        for (segment in segments) {
+            if (segment.command.uppercaseChar() != 'A') {
+                kept += segment
+                continue
+            }
+
+            val values = segment.values.toMutableList()
+            if (values.size != 7) {
+                return ArcRadiusCanonicalizationResult(pathData, 0)
+            }
+
+            val canonicalRx =
+                if (values[0].compareTo(BigDecimal.ZERO) == 0) {
+                    BigDecimal.ZERO
+                } else {
+                    values[0].abs().stripTrailingZeros()
+                }
+
+            val canonicalRy =
+                if (values[1].compareTo(BigDecimal.ZERO) == 0) {
+                    BigDecimal.ZERO
+                } else {
+                    values[1].abs().stripTrailingZeros()
+                }
+
+            if (canonicalRx.compareTo(values[0]) != 0) {
+                values[0] = canonicalRx
+                canonicalized++
+            }
+
+            if (canonicalRy.compareTo(values[1]) != 0) {
+                values[1] = canonicalRy
+                canonicalized++
+            }
+
+            kept += ParsedSegment(segment.command, values)
+        }
+
+        if (canonicalized == 0) {
+            return ArcRadiusCanonicalizationResult(pathData, 0)
+        }
+
+        val rebuilt = encodeParsedSegments(kept)
+        return if (
+            rebuilt.length <= pathData.length &&
+            parseNormalizedSegments(rebuilt) != null
+        ) {
+            ArcRadiusCanonicalizationResult(
+                pathData = rebuilt,
+                canonicalizedCount = canonicalized
+            )
+        } else {
+            ArcRadiusCanonicalizationResult(pathData, 0)
+        }
     }
 
     private data class ArcRotationCanonicalizationResult(
