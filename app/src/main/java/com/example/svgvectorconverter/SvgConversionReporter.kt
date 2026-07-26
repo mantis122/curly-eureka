@@ -148,6 +148,7 @@ data class SvgConversionReportData(
     val degenerateArcsSimplified: Int = 0,
     val smoothBezierShorthandsSelected: Int = 0,
     val cubicCurvesReducedToQuadratic: Int = 0,
+    val arcRotationsCanonicalized: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
@@ -517,6 +518,11 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Cubic curves reduced to quadratic: " +
                         data.cubicCurvesReducedToQuadratic
+                )
+            if (data.arcRotationsCanonicalized > 0)
+                appendLine(
+                    "✓ Arc rotations canonicalized: " +
+                        data.arcRotationsCanonicalized
                 )
             if (data.emptyPathDataRemoved > 0)
                 appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")
