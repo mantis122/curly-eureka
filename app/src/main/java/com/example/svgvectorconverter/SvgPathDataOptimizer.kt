@@ -39,6 +39,7 @@ internal object SvgPathDataOptimizer {
         val arcHalfTurnRotationsReduced: Int = 0,
         val arcAxesSwappedForSize: Int = 0,
         val arcRepresentationsGloballyMinimized: Int = 0,
+        val commandSequencesGloballyMinimized: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -363,6 +364,7 @@ internal object SvgPathDataOptimizer {
         var arcHalfTurnRotationsReduced = 0
         var arcAxesSwappedForSize = 0
         var arcRepresentationsGloballyMinimized = 0
+        var commandSequencesGloballyMinimized = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -398,6 +400,8 @@ internal object SvgPathDataOptimizer {
                 optimized.arcAxesSwappedForSize
             arcRepresentationsGloballyMinimized +=
                 optimized.arcRepresentationsGloballyMinimized
+            commandSequencesGloballyMinimized +=
+                optimized.commandSequencesGloballyMinimized
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -528,6 +532,8 @@ internal object SvgPathDataOptimizer {
                     arcAxesSwappedForSize,
                 arcRepresentationsGloballyMinimized =
                     arcRepresentationsGloballyMinimized,
+                commandSequencesGloballyMinimized =
+                    commandSequencesGloballyMinimized,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -4334,6 +4340,7 @@ internal object SvgPathDataOptimizer {
         val arcHalfTurnRotationsReduced: Int,
         val arcAxesSwappedForSize: Int,
         val arcRepresentationsGloballyMinimized: Int,
+        val commandSequencesGloballyMinimized: Int,
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
@@ -4343,7 +4350,7 @@ internal object SvgPathDataOptimizer {
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         // If tokenization skipped anything other than legal separators, preserve the
@@ -4351,12 +4358,12 @@ internal object SvgPathDataOptimizer {
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         val output = StringBuilder(pathData.length)
@@ -4425,9 +4432,12 @@ internal object SvgPathDataOptimizer {
         val commandOptimization = shortenPathCommands(
             collinearCleanup.pathData
         )
+        val globalCommandOptimization = globallyMinimizeCommandSequence(
+            commandOptimization.pathData
+        )
 
         return PathResult(
-            pathData = commandOptimization.pathData,
+            pathData = globalCommandOptimization.pathData,
             repeatedCommandsRemoved = repeatedCommandsRemoved,
             redundantNonDrawingSegmentsRemoved =
                 redundantCleanup.removedCount,
@@ -4451,6 +4461,8 @@ internal object SvgPathDataOptimizer {
                 arcAxisMinimization.swappedCount,
             arcRepresentationsGloballyMinimized =
                 arcGlobalMinimization.minimizedCount,
+            commandSequencesGloballyMinimized =
+                globalCommandOptimization.minimizedCount,
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
@@ -5831,6 +5843,228 @@ internal object SvgPathDataOptimizer {
             )
         } else {
             CollinearLineCleanupResult(pathData, 0)
+        }
+    }
+
+    private data class GlobalCommandSequenceResult(
+        val pathData: String,
+        val minimizedCount: Int
+    )
+
+    private data class CommandSequenceState(
+        val previousCommand: Char?,
+        val previousNumber: String?,
+        val previousAxisDirection: Int?
+    )
+
+    private data class CommandSequenceCandidate(
+        val command: Char,
+        val values: List<BigDecimal>,
+        val axisDirection: Int?
+    )
+
+    private data class CommandSequencePath(
+        val text: String,
+        val state: CommandSequenceState
+    )
+
+    /**
+     * F3.1: Globally minimizes absolute/relative command choices.
+     *
+     * The earlier command optimizer makes a locally shortest choice for each
+     * segment. A local tie can still be globally suboptimal because choosing a
+     * command's case now may let the next command letter be omitted.
+     *
+     * This dynamic-programming pass considers the complete path sequence and
+     * keeps the shortest encoding for each reachable output state. It changes
+     * only command spelling:
+     *
+     * - absolute versus relative command case;
+     * - L versus H/V for exactly axis-aligned lines.
+     *
+     * Geometry, control points, arc flags, subpath boundaries, and command
+     * order are unchanged. The original path is retained unless the complete
+     * encoded result is strictly shorter.
+     */
+    private fun globallyMinimizeCommandSequence(
+        pathData: String
+    ): GlobalCommandSequenceResult {
+        val segments = parseNormalizedSegments(pathData)
+            ?: return GlobalCommandSequenceResult(pathData, 0)
+        if (segments.isEmpty()) {
+            return GlobalCommandSequenceResult(pathData, 0)
+        }
+
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+
+        var paths = mapOf(
+            CommandSequenceState(null, null, null) to
+                CommandSequencePath(
+                    text = "",
+                    state = CommandSequenceState(null, null, null)
+                )
+        )
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val startX = currentX
+            val startY = currentY
+            val absolute = absoluteValuesFor(segment, startX, startY)
+
+            val candidates = mutableListOf<CommandSequenceCandidate>()
+
+            fun add(command: Char, values: List<BigDecimal>) {
+                val direction = when (command.uppercaseChar()) {
+                    'H' -> {
+                        val end = if (command.isUpperCase()) {
+                            values[0]
+                        } else {
+                            startX.add(values[0])
+                        }
+                        end.subtract(startX).signum()
+                    }
+                    'V' -> {
+                        val end = if (command.isUpperCase()) {
+                            values[0]
+                        } else {
+                            startY.add(values[0])
+                        }
+                        end.subtract(startY).signum()
+                    }
+                    else -> null
+                }
+                candidates += CommandSequenceCandidate(
+                    command = command,
+                    values = values,
+                    axisDirection = direction
+                )
+            }
+
+            add(upper, absolute)
+            if (upper != 'Z') {
+                add(
+                    upper.lowercaseChar(),
+                    relativeValuesFor(segment, startX, startY)
+                )
+            }
+
+            if (upper == 'L') {
+                val endX = absolute[0]
+                val endY = absolute[1]
+
+                if (endY.compareTo(startY) == 0) {
+                    add('H', listOf(endX))
+                    add('h', listOf(endX.subtract(startX)))
+                }
+                if (endX.compareTo(startX) == 0) {
+                    add('V', listOf(endY))
+                    add('v', listOf(endY.subtract(startY)))
+                }
+            }
+
+            val uniqueCandidates = candidates.distinctBy {
+                it.command to it.values
+            }
+            val nextPaths = mutableMapOf<
+                CommandSequenceState,
+                CommandSequencePath
+            >()
+
+            for ((_, path) in paths) {
+                for (candidate in uniqueCandidates) {
+                    val forceAxisBoundary =
+                        candidate.command.uppercaseChar() in
+                            charArrayOf('H', 'V') &&
+                        path.state.previousCommand == candidate.command &&
+                        path.state.previousAxisDirection != null &&
+                        candidate.axisDirection !=
+                            path.state.previousAxisDirection
+
+                    val encoded = encodeSegment(
+                        command = candidate.command,
+                        values = candidate.values,
+                        previousCommand = path.state.previousCommand,
+                        previousNumber = path.state.previousNumber,
+                        forceCommand =
+                            candidate.command.uppercaseChar() == 'M' ||
+                                forceAxisBoundary
+                    )
+
+                    val nextState = CommandSequenceState(
+                        previousCommand = candidate.command,
+                        previousNumber = candidate.values
+                            .lastOrNull()
+                            ?.let(::formatBigDecimal),
+                        previousAxisDirection = candidate.axisDirection
+                    )
+                    val next = CommandSequencePath(
+                        text = path.text + encoded,
+                        state = nextState
+                    )
+
+                    val existing = nextPaths[nextState]
+                    if (
+                        existing == null ||
+                        next.text.length < existing.text.length ||
+                        (
+                            next.text.length == existing.text.length &&
+                            next.text < existing.text
+                        )
+                    ) {
+                        nextPaths[nextState] = next
+                    }
+                }
+            }
+
+            if (nextPaths.isEmpty()) {
+                return GlobalCommandSequenceResult(pathData, 0)
+            }
+            paths = nextPaths
+
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
+                    if (upper == 'M') {
+                        subpathX = currentX
+                        subpathY = currentY
+                    }
+                }
+                'H' -> currentX = absolute[0]
+                'V' -> currentY = absolute[0]
+                'C', 'S', 'Q' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
+                }
+                'A' -> {
+                    currentX = absolute[5]
+                    currentY = absolute[6]
+                }
+                'Z' -> {
+                    currentX = subpathX
+                    currentY = subpathY
+                }
+            }
+        }
+
+        val best = paths.values.minWithOrNull(
+            compareBy<CommandSequencePath> { it.text.length }
+                .thenBy { it.text }
+        ) ?: return GlobalCommandSequenceResult(pathData, 0)
+
+        return if (
+            best.text.length < pathData.length &&
+            parseNormalizedSegments(best.text) != null
+        ) {
+            GlobalCommandSequenceResult(
+                pathData = best.text,
+                minimizedCount = 1
+            )
+        } else {
+            GlobalCommandSequenceResult(pathData, 0)
         }
     }
 
