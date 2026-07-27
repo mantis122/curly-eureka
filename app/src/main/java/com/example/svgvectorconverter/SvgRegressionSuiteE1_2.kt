@@ -136,7 +136,9 @@ object SvgRegressionSuiteE2 {
                 "android:pathData=",
                 "android:fillColor=\"#607D8B\""
             ),
-             golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+             golden = SvgRegressionRunner.GoldenExpectation.CanonicalSha256(
+    SvgGoldenBaselinesE2_1.ARC_HEAVY_PATH
+),
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "NaN",
@@ -215,7 +217,7 @@ object SvgGoldenBaselinesE2_1 {
         "4a5a6f5b313e188a2d60253591381e5e22ffbee89998cc24c1eb6ca44bc0b604"
 
     const val ARC_HEAVY_PATH =
-        "cda1d53f2bd9536c3229d638c601206013bc6ca1acd26585276b2d2aee6b5c64"
+    "ee7e05872df7a6369d761f93f8f46af5a620ed8fe1a388dbb0392d58f1005e3c"
 
     const val MIXED_LAYERING =
         "0bc5bf17f8e8a2052b2802caeb97f188473190fa6511f596c40dc079920f91ca"
