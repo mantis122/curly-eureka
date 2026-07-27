@@ -6080,18 +6080,84 @@ internal object SvgPathDataOptimizer {
                 .thenBy { it.text }
         ) ?: return GlobalCommandSequenceResult(pathData, 0, 0)
 
+        // F3.2b: Keep an explicit, parser-validated fallback for the one case
+        // where omitting L/l is guaranteed to save a character: the first
+        // coordinate begins with a sign. This also protects the optimization
+        // from being lost if a preceding command-choice state is collapsed by
+        // the global DP before the moveto/lineto pair is considered.
+        val implicitFallback = omitSignedLineCommandAfterMove(best.text)
+        val selectedText = if (
+            implicitFallback.pathData.length < best.text.length &&
+            parseNormalizedSegments(implicitFallback.pathData) != null
+        ) {
+            implicitFallback.pathData
+        } else {
+            best.text
+        }
+        val selectedImplicitCount =
+            best.implicitLineToCount +
+                if (selectedText == implicitFallback.pathData) {
+                    implicitFallback.omittedCount
+                } else {
+                    0
+                }
+
         return if (
-            best.text.length < pathData.length &&
-            parseNormalizedSegments(best.text) != null
+            selectedText.length < pathData.length &&
+            parseNormalizedSegments(selectedText) != null
         ) {
             GlobalCommandSequenceResult(
-                pathData = best.text,
+                pathData = selectedText,
                 minimizedCount = 1,
-                implicitLineToCount = best.implicitLineToCount
+                implicitLineToCount = selectedImplicitCount
             )
         } else {
             GlobalCommandSequenceResult(pathData, 0, 0)
         }
+    }
+
+    private data class ImplicitLineAfterMoveResult(
+        val pathData: String,
+        val omittedCount: Int
+    )
+
+    /**
+     * F3.2b: Removes an explicit L/l immediately following a same-case M/m
+     * when the first line coordinate starts with + or -. In that form the sign
+     * is already a legal SVG number boundary, so removing the command is both
+     * unambiguous and strictly shorter:
+     *
+     *     M10,10L-100-60 -> M10,10-100-60
+     *
+     * Unsigned coordinates are intentionally left to the normal encoder,
+     * because they require a comma/space and therefore usually produce a tie.
+     */
+    private fun omitSignedLineCommandAfterMove(
+        pathData: String
+    ): ImplicitLineAfterMoveResult {
+        val number =
+            "[-+]?(?:(?:\\d+\\.\\d*)|(?:\\.\\d+)|(?:\\d+))(?:[eE][-+]?\\d+)?"
+        val separator = "(?:,|\\s)*"
+        val pattern = Regex(
+            "([Mm]$number$separator$number)([Ll])(?=[+-])"
+        )
+
+        var omitted = 0
+        val rebuilt = pattern.replace(pathData) { match ->
+            val move = match.groupValues[1]
+            val line = match.groupValues[2]
+            val sameCase =
+                (move[0] == 'M' && line == "L") ||
+                    (move[0] == 'm' && line == "l")
+            if (sameCase) {
+                omitted++
+                move
+            } else {
+                match.value
+            }
+        }
+
+        return ImplicitLineAfterMoveResult(rebuilt, omitted)
     }
 
     private data class CommandOptimizationResult(
