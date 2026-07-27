@@ -45,6 +45,7 @@ internal object SvgPathDataOptimizer {
         val repeatedFullCurveCommandsOmitted: Int = 0,
         val repeatedArcCommandsOmitted: Int = 0,
         val scientificNotationValuesSelected: Int = 0,
+        val globallyOptimizedNumericPaths: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -375,6 +376,7 @@ internal object SvgPathDataOptimizer {
         var repeatedFullCurveCommandsOmitted = 0
         var repeatedArcCommandsOmitted = 0
         var scientificNotationValuesSelected = 0
+        var globallyOptimizedNumericPaths = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -422,6 +424,8 @@ internal object SvgPathDataOptimizer {
                 optimized.repeatedArcCommandsOmitted
             scientificNotationValuesSelected +=
                 optimized.scientificNotationValuesSelected
+            globallyOptimizedNumericPaths +=
+                optimized.globallyOptimizedNumericPaths
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -564,6 +568,8 @@ internal object SvgPathDataOptimizer {
                     repeatedArcCommandsOmitted,
                 scientificNotationValuesSelected =
                     scientificNotationValuesSelected,
+                globallyOptimizedNumericPaths =
+                    globallyOptimizedNumericPaths,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -4379,7 +4385,8 @@ internal object SvgPathDataOptimizer {
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
-        val axisCommandsSelected: Int = 0
+        val axisCommandsSelected: Int = 0,
+        val globallyOptimizedNumericPaths: Int = 0
     )
 
     private fun optimizePathData(pathData: String): PathResult {
@@ -4484,9 +4491,12 @@ internal object SvgPathDataOptimizer {
         val globalCommandOptimization = globallyMinimizeCommandSequence(
             commandOptimization.pathData
         )
+        val globalNumericOptimization = globallyOptimizeNumericSerialization(
+            globalCommandOptimization.pathData
+        )
 
         return PathResult(
-            pathData = globalCommandOptimization.pathData,
+            pathData = globalNumericOptimization.pathData,
             repeatedCommandsRemoved = repeatedCommandsRemoved,
             redundantNonDrawingSegmentsRemoved =
                 redundantCleanup.removedCount,
@@ -4535,13 +4545,15 @@ internal object SvgPathDataOptimizer {
             scientificNotationValuesSelected =
                 maxOf(
                     0,
-                    countExponentNumbers(globalCommandOptimization.pathData) -
+                    countExponentNumbers(globalNumericOptimization.pathData) -
                         countExponentNumbers(pathData)
                 ),
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
-            axisCommandsSelected = commandOptimization.axisCommandsSelected
+            axisCommandsSelected = commandOptimization.axisCommandsSelected,
+            globallyOptimizedNumericPaths =
+                if (globalNumericOptimization.optimized) 1 else 0
         )
     }
 
@@ -6694,6 +6706,184 @@ internal object SvgPathDataOptimizer {
             else -> v
         }
     }
+
+    private data class GlobalNumericSerializationResult(
+        val pathData: String,
+        val optimized: Boolean
+    )
+
+    private data class NumericSerializationState(
+        val previousNumber: String?
+    )
+
+    /**
+     * F4.2: Globally optimizes numeric spelling and separators across the
+     * complete already-selected command sequence.
+     *
+     * F4.1 selects the shortest standalone representation of each value.
+     * The shortest complete path can differ because a representation affects
+     * whether the following number needs a comma. This pass uses dynamic
+     * programming over the raw command/number token stream and compares:
+     *
+     * - canonical plain decimal;
+     * - exact scientific notation;
+     * - comma versus grammar-provided number boundaries.
+     *
+     * Commands and numeric values are unchanged. The candidate is retained
+     * only when it is strictly shorter and parses back into the same normalized
+     * segment sequence.
+     */
+    private fun globallyOptimizeNumericSerialization(
+        pathData: String
+    ): GlobalNumericSerializationResult {
+        val matches = tokenRegex.findAll(pathData).toList()
+        if (matches.isEmpty()) {
+            return GlobalNumericSerializationResult(pathData, false)
+        }
+
+        var cursor = 0
+        for (match in matches) {
+            if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
+                return GlobalNumericSerializationResult(pathData, false)
+            }
+            cursor = match.range.last + 1
+        }
+        if (!containsOnlySeparators(pathData.substring(cursor))) {
+            return GlobalNumericSerializationResult(pathData, false)
+        }
+
+        var paths = mapOf(
+            NumericSerializationState(null) to ""
+        )
+
+        for (match in matches) {
+            val token = match.value
+            val next = mutableMapOf<NumericSerializationState, String>()
+
+            if (isCommand(token)) {
+                for ((_, text) in paths) {
+                    val candidate = text + token.lowercaseOrOriginalCommand()
+                    val state = NumericSerializationState(null)
+                    val existing = next[state]
+                    if (
+                        existing == null ||
+                        candidate.length < existing.length ||
+                        (
+                            candidate.length == existing.length &&
+                            candidate < existing
+                        )
+                    ) {
+                        next[state] = candidate
+                    }
+                }
+            } else {
+                val value = token.toBigDecimalOrNull()
+                    ?: return GlobalNumericSerializationResult(pathData, false)
+                val representations = exactNumberRepresentations(value)
+
+                for ((state, text) in paths) {
+                    for (representation in representations) {
+                        val separator = when {
+                            state.previousNumber == null -> ""
+                            canConcatenateNumbers(
+                                state.previousNumber,
+                                representation
+                            ) -> ""
+                            else -> ","
+                        }
+                        val candidate = text + separator + representation
+                        val nextState =
+                            NumericSerializationState(representation)
+                        val existing = next[nextState]
+                        if (
+                            existing == null ||
+                            candidate.length < existing.length ||
+                            (
+                                candidate.length == existing.length &&
+                                candidate < existing
+                            )
+                        ) {
+                            next[nextState] = candidate
+                        }
+                    }
+                }
+            }
+
+            if (next.isEmpty()) {
+                return GlobalNumericSerializationResult(pathData, false)
+            }
+            paths = next
+        }
+
+        val best = paths.values.minWithOrNull(
+            compareBy<String> { it.length }.thenBy { it }
+        ) ?: return GlobalNumericSerializationResult(pathData, false)
+
+        if (best.length >= pathData.length) {
+            return GlobalNumericSerializationResult(pathData, false)
+        }
+
+        val originalSegments = parseNormalizedSegments(pathData)
+            ?: return GlobalNumericSerializationResult(pathData, false)
+        val optimizedSegments = parseNormalizedSegments(best)
+            ?: return GlobalNumericSerializationResult(pathData, false)
+
+        return if (originalSegments == optimizedSegments) {
+            GlobalNumericSerializationResult(best, true)
+        } else {
+            GlobalNumericSerializationResult(pathData, false)
+        }
+    }
+
+    /**
+     * Returns exact candidate spellings. The canonical plain form and the
+     * integer-mantissa exponent form cover the useful shortest alternatives
+     * without introducing approximation.
+     */
+    private fun exactNumberRepresentations(value: BigDecimal): List<String> {
+        val normalized = value.stripTrailingZeros()
+        if (normalized.compareTo(BigDecimal.ZERO) == 0) return listOf("0")
+
+        val plain = normalizeNumber(normalized.toPlainString())
+        val exponent =
+            normalized.unscaledValue().toString() +
+                "e" +
+                (-normalized.scale()).toString()
+
+        return listOf(plain, exponent)
+            .distinct()
+            .sortedWith(compareBy<String> { it.length }.thenBy { it })
+    }
+
+    /**
+     * SVG permits a new number without a comma when:
+     * - it begins with + or -; or
+     * - it begins with a decimal point and the previous number is already
+     *   lexically complete at that point (contains a decimal point or exponent).
+     *
+     * Examples:
+     *   10-5
+     *   .5.25
+     *   1e3.5
+     */
+    private fun canConcatenateNumbers(
+        previous: String,
+        next: String
+    ): Boolean {
+        if (next.startsWith('-') || next.startsWith('+')) return true
+        if (!next.startsWith('.')) return false
+
+        return previous.contains('.') ||
+            previous.contains('e') ||
+            previous.contains('E')
+    }
+
+    /**
+     * Commands are already case-optimized by F3.1. This helper deliberately
+     * returns the original spelling; its name makes the token-stream intent
+     * explicit and avoids accidentally applying locale-sensitive transforms.
+     */
+    private fun String.lowercaseOrOriginalCommand(): String = this
 
     private fun encodeSegment(
         command: Char,

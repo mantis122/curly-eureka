@@ -159,6 +159,7 @@ data class SvgConversionReportData(
     val repeatedFullCurveCommandsOmitted: Int = 0,
     val repeatedArcCommandsOmitted: Int = 0,
     val scientificNotationValuesSelected: Int = 0,
+    val globallyOptimizedNumericPaths: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
@@ -583,6 +584,11 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Scientific notation values selected: " +
                         data.scientificNotationValuesSelected
+                )
+            if (data.globallyOptimizedNumericPaths > 0)
+                appendLine(
+                    "✓ Paths with globally optimized numeric serialization: " +
+                        data.globallyOptimizedNumericPaths
                 )
             if (data.emptyPathDataRemoved > 0)
                 appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")
