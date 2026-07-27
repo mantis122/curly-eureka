@@ -155,6 +155,7 @@ data class SvgConversionReportData(
     val arcRepresentationsGloballyMinimized: Int = 0,
     val commandSequencesGloballyMinimized: Int = 0,
     val implicitLineTosAfterMoveSelected: Int = 0,
+    val repeatedShorthandCurveCommandsOmitted: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
@@ -559,6 +560,11 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Implicit line commands after move selected: " +
                         data.implicitLineTosAfterMoveSelected
+                )
+            if (data.repeatedShorthandCurveCommandsOmitted > 0)
+                appendLine(
+                    "✓ Repeated shorthand curve commands omitted: " +
+                        data.repeatedShorthandCurveCommandsOmitted
                 )
             if (data.emptyPathDataRemoved > 0)
                 appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")

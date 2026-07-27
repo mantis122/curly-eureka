@@ -344,6 +344,8 @@ object SvgToVectorConverter {
                     pathOptimizationStats.commandSequencesGloballyMinimized,
                 implicitLineTosAfterMoveSelected =
                     pathOptimizationStats.implicitLineTosAfterMoveSelected,
+                repeatedShorthandCurveCommandsOmitted =
+                    pathOptimizationStats.repeatedShorthandCurveCommandsOmitted,
                 pathDataNumbersNormalized = pathOptimizationStats.numbersNormalized,
                 emptyPathDataRemoved = pathOptimizationStats.emptyPathDataRemoved,
                 moveOnlyPathsRemoved = pathOptimizationStats.moveOnlyPathsRemoved,
