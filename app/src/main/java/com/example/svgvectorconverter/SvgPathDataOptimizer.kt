@@ -42,6 +42,7 @@ internal object SvgPathDataOptimizer {
         val commandSequencesGloballyMinimized: Int = 0,
         val implicitLineTosAfterMoveSelected: Int = 0,
         val repeatedShorthandCurveCommandsOmitted: Int = 0,
+        val repeatedFullCurveCommandsOmitted: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -369,6 +370,7 @@ internal object SvgPathDataOptimizer {
         var commandSequencesGloballyMinimized = 0
         var implicitLineTosAfterMoveSelected = 0
         var repeatedShorthandCurveCommandsOmitted = 0
+        var repeatedFullCurveCommandsOmitted = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -410,6 +412,8 @@ internal object SvgPathDataOptimizer {
                 optimized.implicitLineTosAfterMoveSelected
             repeatedShorthandCurveCommandsOmitted +=
                 optimized.repeatedShorthandCurveCommandsOmitted
+            repeatedFullCurveCommandsOmitted +=
+                optimized.repeatedFullCurveCommandsOmitted
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -546,6 +550,8 @@ internal object SvgPathDataOptimizer {
                     implicitLineTosAfterMoveSelected,
                 repeatedShorthandCurveCommandsOmitted =
                     repeatedShorthandCurveCommandsOmitted,
+                repeatedFullCurveCommandsOmitted =
+                    repeatedFullCurveCommandsOmitted,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -4355,6 +4361,7 @@ internal object SvgPathDataOptimizer {
         val commandSequencesGloballyMinimized: Int,
         val implicitLineTosAfterMoveSelected: Int,
         val repeatedShorthandCurveCommandsOmitted: Int,
+        val repeatedFullCurveCommandsOmitted: Int,
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
@@ -4385,6 +4392,7 @@ internal object SvgPathDataOptimizer {
         var previousWasNumber = false
         var repeatedCommandsRemoved = 0
         var repeatedShorthandCommandsOmittedInitially = 0
+        var repeatedFullCurveCommandsOmittedInitially = 0
         var numbersNormalized = 0
 
         for (match in matches) {
@@ -4398,6 +4406,9 @@ internal object SvgPathDataOptimizer {
                     repeatedCommandsRemoved++
                     if (command.uppercaseChar() in charArrayOf('S', 'T')) {
                         repeatedShorthandCommandsOmittedInitially++
+                    }
+                    if (command.uppercaseChar() in charArrayOf('C', 'Q')) {
+                        repeatedFullCurveCommandsOmittedInitially++
                     }
                     // Keep previousWasNumber=true so the first parameter of the
                     // implicit command is separated from the preceding parameter.
@@ -4486,6 +4497,9 @@ internal object SvgPathDataOptimizer {
             repeatedShorthandCurveCommandsOmitted =
                 repeatedShorthandCommandsOmittedInitially +
                     globalCommandOptimization.repeatedShorthandCount,
+            repeatedFullCurveCommandsOmitted =
+                repeatedFullCurveCommandsOmittedInitially +
+                    globalCommandOptimization.repeatedFullCurveCount,
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
@@ -5873,7 +5887,8 @@ internal object SvgPathDataOptimizer {
         val pathData: String,
         val minimizedCount: Int,
         val implicitLineToCount: Int,
-        val repeatedShorthandCount: Int
+        val repeatedShorthandCount: Int,
+        val repeatedFullCurveCount: Int
     )
 
     private data class CommandSequenceState(
@@ -5892,7 +5907,8 @@ internal object SvgPathDataOptimizer {
         val text: String,
         val state: CommandSequenceState,
         val implicitLineToCount: Int,
-        val repeatedShorthandCount: Int
+        val repeatedShorthandCount: Int,
+        val repeatedFullCurveCount: Int
     )
 
     /**
@@ -5917,9 +5933,9 @@ internal object SvgPathDataOptimizer {
         pathData: String
     ): GlobalCommandSequenceResult {
         val segments = parseNormalizedSegments(pathData)
-            ?: return GlobalCommandSequenceResult(pathData, 0, 0, 0)
+            ?: return GlobalCommandSequenceResult(pathData, 0, 0, 0, 0)
         if (segments.isEmpty()) {
-            return GlobalCommandSequenceResult(pathData, 0, 0, 0)
+            return GlobalCommandSequenceResult(pathData, 0, 0, 0, 0)
         }
 
         var currentX = BigDecimal.ZERO
@@ -5933,7 +5949,8 @@ internal object SvgPathDataOptimizer {
                     text = "",
                     state = CommandSequenceState(null, null, null),
                     implicitLineToCount = 0,
-                    repeatedShorthandCount = 0
+                    repeatedShorthandCount = 0,
+                    repeatedFullCurveCount = 0
                 )
         )
 
@@ -6024,6 +6041,10 @@ internal object SvgPathDataOptimizer {
                         path.state.previousCommand == candidate.command &&
                             candidate.command.uppercaseChar() in
                                 charArrayOf('S', 'T')
+                    val repeatedFullCurveCommand =
+                        path.state.previousCommand == candidate.command &&
+                            candidate.command.uppercaseChar() in
+                                charArrayOf('C', 'Q')
 
                     val encoded = encodeSegment(
                         command = candidate.command,
@@ -6051,7 +6072,10 @@ internal object SvgPathDataOptimizer {
                                 if (implicitLineAfterMove) 1 else 0,
                         repeatedShorthandCount =
                             path.repeatedShorthandCount +
-                                if (repeatedShorthandCommand) 1 else 0
+                                if (repeatedShorthandCommand) 1 else 0,
+                        repeatedFullCurveCount =
+                            path.repeatedFullCurveCount +
+                                if (repeatedFullCurveCommand) 1 else 0
                     )
 
                     val existing = nextPaths[nextState]
@@ -6069,7 +6093,7 @@ internal object SvgPathDataOptimizer {
             }
 
             if (nextPaths.isEmpty()) {
-                return GlobalCommandSequenceResult(pathData, 0, 0, 0)
+                return GlobalCommandSequenceResult(pathData, 0, 0, 0, 0)
             }
             paths = nextPaths
 
@@ -6102,7 +6126,7 @@ internal object SvgPathDataOptimizer {
         val best = paths.values.minWithOrNull(
             compareBy<CommandSequencePath> { it.text.length }
                 .thenBy { it.text }
-        ) ?: return GlobalCommandSequenceResult(pathData, 0, 0, 0)
+        ) ?: return GlobalCommandSequenceResult(pathData, 0, 0, 0, 0)
 
         // F3.2b: Keep an explicit, parser-validated fallback for the one case
         // where omitting L/l is guaranteed to save a character: the first
@@ -6134,10 +6158,11 @@ internal object SvgPathDataOptimizer {
                 pathData = selectedText,
                 minimizedCount = 1,
                 implicitLineToCount = selectedImplicitCount,
-                repeatedShorthandCount = best.repeatedShorthandCount
+                repeatedShorthandCount = best.repeatedShorthandCount,
+                repeatedFullCurveCount = best.repeatedFullCurveCount
             )
         } else {
-            GlobalCommandSequenceResult(pathData, 0, 0, 0)
+            GlobalCommandSequenceResult(pathData, 0, 0, 0, 0)
         }
     }
 

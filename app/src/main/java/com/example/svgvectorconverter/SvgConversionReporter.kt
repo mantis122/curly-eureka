@@ -156,6 +156,7 @@ data class SvgConversionReportData(
     val commandSequencesGloballyMinimized: Int = 0,
     val implicitLineTosAfterMoveSelected: Int = 0,
     val repeatedShorthandCurveCommandsOmitted: Int = 0,
+    val repeatedFullCurveCommandsOmitted: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
@@ -565,6 +566,11 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Repeated shorthand curve commands omitted: " +
                         data.repeatedShorthandCurveCommandsOmitted
+                )
+            if (data.repeatedFullCurveCommandsOmitted > 0)
+                appendLine(
+                    "✓ Repeated full curve commands omitted: " +
+                        data.repeatedFullCurveCommandsOmitted
                 )
             if (data.emptyPathDataRemoved > 0)
                 appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")
