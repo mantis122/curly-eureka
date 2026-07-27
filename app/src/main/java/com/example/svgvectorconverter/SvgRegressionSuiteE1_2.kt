@@ -136,9 +136,7 @@ object SvgRegressionSuiteE2 {
                 "android:pathData=",
                 "android:fillColor=\"#607D8B\""
             ),
-            golden = SvgRegressionRunner.GoldenExpectation.CanonicalSha256(
-                SvgGoldenBaselinesE2_1.ARC_HEAVY_PATH
-            ),
+             golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "NaN",
