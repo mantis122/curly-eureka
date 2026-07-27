@@ -4512,8 +4512,17 @@ internal object SvgPathDataOptimizer {
                 repeatedFullCurveCommandsOmittedInitially +
                     globalCommandOptimization.repeatedFullCurveCount,
             repeatedArcCommandsOmitted =
-                repeatedArcCommandsOmittedInitially +
-                    globalCommandOptimization.repeatedArcCount,
+                maxOf(
+                    0,
+                    countImplicitRepeatedCommands(
+                        globalCommandOptimization.pathData,
+                        setOf('A')
+                    ) -
+                        countImplicitRepeatedCommands(
+                            pathData,
+                            setOf('A')
+                        )
+                ),
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
@@ -6188,6 +6197,35 @@ internal object SvgPathDataOptimizer {
         } else {
             GlobalCommandSequenceResult(pathData, 0, 0, 0, 0, 0)
         }
+    }
+
+    /**
+     * Counts command letters omitted by SVG's implicit repetition syntax for
+     * the requested command families.
+     *
+     * Parsing provides the number of logical segments, while scanning the raw
+     * path string provides the number of explicitly written command letters.
+     * Their difference is the number of implicit repetitions. Comparing this
+     * value before and after optimization makes reporting independent of which
+     * pipeline stage selected the final absolute/relative command case.
+     */
+    private fun countImplicitRepeatedCommands(
+        pathData: String,
+        commandFamilies: Set<Char>
+    ): Int {
+        val segments = parseNormalizedSegments(pathData) ?: return 0
+
+        val logicalSegmentCount = segments.count {
+            it.command.uppercaseChar() in commandFamilies
+        }
+        if (logicalSegmentCount == 0) return 0
+
+        val explicitCommandCount = pathData.count { character ->
+            character.isLetter() &&
+                character.uppercaseChar() in commandFamilies
+        }
+
+        return maxOf(0, logicalSegmentCount - explicitCommandCount)
     }
 
     private data class ImplicitLineAfterMoveResult(
