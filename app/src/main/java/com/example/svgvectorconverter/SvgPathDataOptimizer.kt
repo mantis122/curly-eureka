@@ -44,6 +44,7 @@ internal object SvgPathDataOptimizer {
         val repeatedShorthandCurveCommandsOmitted: Int = 0,
         val repeatedFullCurveCommandsOmitted: Int = 0,
         val repeatedArcCommandsOmitted: Int = 0,
+        val scientificNotationValuesSelected: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -373,6 +374,7 @@ internal object SvgPathDataOptimizer {
         var repeatedShorthandCurveCommandsOmitted = 0
         var repeatedFullCurveCommandsOmitted = 0
         var repeatedArcCommandsOmitted = 0
+        var scientificNotationValuesSelected = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -418,6 +420,8 @@ internal object SvgPathDataOptimizer {
                 optimized.repeatedFullCurveCommandsOmitted
             repeatedArcCommandsOmitted +=
                 optimized.repeatedArcCommandsOmitted
+            scientificNotationValuesSelected +=
+                optimized.scientificNotationValuesSelected
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -558,6 +562,8 @@ internal object SvgPathDataOptimizer {
                     repeatedFullCurveCommandsOmitted,
                 repeatedArcCommandsOmitted =
                     repeatedArcCommandsOmitted,
+                scientificNotationValuesSelected =
+                    scientificNotationValuesSelected,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -755,7 +761,7 @@ internal object SvgPathDataOptimizer {
                         value
                     }
 
-                val canonical = formatBigDecimal(canonicalValue)
+                val canonical = formatPathNumber(canonicalValue)
                 rebuilt.append(canonical)
 
                 // Compare against the actual token spelling, not another
@@ -4369,6 +4375,7 @@ internal object SvgPathDataOptimizer {
         val repeatedShorthandCurveCommandsOmitted: Int,
         val repeatedFullCurveCommandsOmitted: Int,
         val repeatedArcCommandsOmitted: Int,
+        val scientificNotationValuesSelected: Int,
         val numbersNormalized: Int,
         val shorterCommandFormsSelected: Int = 0,
         val relativeCommandsSelected: Int = 0,
@@ -4378,7 +4385,7 @@ internal object SvgPathDataOptimizer {
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         // If tokenization skipped anything other than legal separators, preserve the
@@ -4386,12 +4393,12 @@ internal object SvgPathDataOptimizer {
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+                return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            return PathResult(pathData, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         }
 
         val output = StringBuilder(pathData.length)
@@ -4430,7 +4437,9 @@ internal object SvgPathDataOptimizer {
 
                 activeCommand = command
             } else {
-                val normalized = normalizeNumber(token)
+                val normalized = token.toBigDecimalOrNull()
+                    ?.let(::formatPathNumber)
+                    ?: normalizeNumber(token)
                 if (normalized != token) numbersNormalized++
 
                 if (previousWasNumber) output.append(',')
@@ -4522,6 +4531,12 @@ internal object SvgPathDataOptimizer {
                             pathData,
                             setOf('A')
                         )
+                ),
+            scientificNotationValuesSelected =
+                maxOf(
+                    0,
+                    countExponentNumbers(globalCommandOptimization.pathData) -
+                        countExponentNumbers(pathData)
                 ),
             numbersNormalized = numbersNormalized,
             shorterCommandFormsSelected = commandOptimization.shorterFormsSelected,
@@ -4627,7 +4642,7 @@ internal object SvgPathDataOptimizer {
             previousCommand = segment.command
             previousNumber = segment.values
                 .lastOrNull()
-                ?.let(::formatBigDecimal)
+                ?.let(::formatPathNumber)
         }
 
         return output.toString()
@@ -6702,7 +6717,7 @@ internal object SvgPathDataOptimizer {
         val commandPrefix = if (canOmit) "" else command.toString()
         if (values.isEmpty()) return commandPrefix
 
-        val numbers = values.map(::formatBigDecimal)
+        val numbers = values.map(::formatPathNumber)
         val boundarySeparator = if (
             canOmit &&
             previousNumber != null &&
@@ -6722,6 +6737,37 @@ internal object SvgPathDataOptimizer {
         if (next.startsWith('-')) return false
         if (next.startsWith('+')) return false
         return true
+    }
+
+    /**
+     * F4.1: Chooses the shortest exact SVG path-number spelling.
+     *
+     * BigDecimal's stripped unscaled value gives a compact exponent candidate
+     * without changing numeric value. Scientific notation is selected only
+     * when it is strictly shorter than the canonical plain-decimal spelling.
+     * Ties retain plain notation for stability and readability.
+     */
+    private fun formatPathNumber(value: BigDecimal): String {
+        val normalized = value.stripTrailingZeros()
+        if (normalized.compareTo(BigDecimal.ZERO) == 0) return "0"
+
+        val plain = normalizeNumber(normalized.toPlainString())
+        val exponent = -normalized.scale()
+        val mantissa = normalized.unscaledValue().toString()
+        val scientific = mantissa + "e" + exponent.toString()
+
+        return if (scientific.length < plain.length) {
+            scientific
+        } else {
+            plain
+        }
+    }
+
+    private fun countExponentNumbers(pathData: String): Int {
+        return tokenRegex.findAll(pathData).count { match ->
+            val token = match.value
+            !isCommand(token) && (token.contains('e') || token.contains('E'))
+        }
     }
 
     private fun formatBigDecimal(value: BigDecimal): String {

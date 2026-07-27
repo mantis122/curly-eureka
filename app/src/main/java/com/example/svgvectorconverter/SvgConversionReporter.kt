@@ -158,6 +158,7 @@ data class SvgConversionReportData(
     val repeatedShorthandCurveCommandsOmitted: Int = 0,
     val repeatedFullCurveCommandsOmitted: Int = 0,
     val repeatedArcCommandsOmitted: Int = 0,
+    val scientificNotationValuesSelected: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
@@ -577,6 +578,11 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Repeated arc commands omitted: " +
                         data.repeatedArcCommandsOmitted
+                )
+            if (data.scientificNotationValuesSelected > 0)
+                appendLine(
+                    "✓ Scientific notation values selected: " +
+                        data.scientificNotationValuesSelected
                 )
             if (data.emptyPathDataRemoved > 0)
                 appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")

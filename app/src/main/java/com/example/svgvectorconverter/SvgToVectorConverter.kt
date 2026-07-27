@@ -350,6 +350,8 @@ object SvgToVectorConverter {
                     pathOptimizationStats.repeatedFullCurveCommandsOmitted,
                 repeatedArcCommandsOmitted =
                     pathOptimizationStats.repeatedArcCommandsOmitted,
+                scientificNotationValuesSelected =
+                    pathOptimizationStats.scientificNotationValuesSelected,
                 pathDataNumbersNormalized = pathOptimizationStats.numbersNormalized,
                 emptyPathDataRemoved = pathOptimizationStats.emptyPathDataRemoved,
                 moveOnlyPathsRemoved = pathOptimizationStats.moveOnlyPathsRemoved,
