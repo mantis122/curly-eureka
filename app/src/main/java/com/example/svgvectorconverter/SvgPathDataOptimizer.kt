@@ -47,7 +47,6 @@ internal object SvgPathDataOptimizer {
         val repeatedArcCommandsOmitted: Int = 0,
         val scientificNotationValuesSelected: Int = 0,
         val globallyOptimizedNumericPaths: Int = 0,
-        val jointlyOptimizedCommandNumericPaths: Int = 0,
         val numbersNormalized: Int = 0,
         val nearIntegerValuesSnapped: Int = 0,
         val decimalValuesCanonicalized: Int = 0,
@@ -379,7 +378,6 @@ internal object SvgPathDataOptimizer {
         var repeatedArcCommandsOmitted = 0
         var scientificNotationValuesSelected = 0
         var globallyOptimizedNumericPaths = 0
-        var jointlyOptimizedCommandNumericPaths = 0
         var numbersNormalized = 0
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
@@ -429,8 +427,6 @@ internal object SvgPathDataOptimizer {
                 optimized.scientificNotationValuesSelected
             globallyOptimizedNumericPaths +=
                 optimized.globallyOptimizedNumericPaths
-            jointlyOptimizedCommandNumericPaths +=
-                optimized.jointlyOptimizedCommandNumericPaths
             numbersNormalized += optimized.numbersNormalized
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
@@ -575,8 +571,6 @@ internal object SvgPathDataOptimizer {
                     scientificNotationValuesSelected,
                 globallyOptimizedNumericPaths =
                     globallyOptimizedNumericPaths,
-                jointlyOptimizedCommandNumericPaths =
-                    jointlyOptimizedCommandNumericPaths,
                 numbersNormalized =
                     numbersNormalized +
                         nearIntegerSnapping.snappedValues +
@@ -4746,7 +4740,6 @@ internal object SvgPathDataOptimizer {
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
         val globallyOptimizedNumericPaths: Int = 0,
-        val jointlyOptimizedCommandNumericPaths: Int = 0
     )
 
     private fun optimizePathData(pathData: String): PathResult {
@@ -4854,13 +4847,8 @@ internal object SvgPathDataOptimizer {
         val globalNumericOptimization = globallyOptimizeNumericSerialization(
             globalCommandOptimization.pathData
         )
-        val jointCommandNumericOptimization =
-            jointlyOptimizeCommandAndNumericSerialization(
-                globalNumericOptimization.pathData
-            )
-
         return PathResult(
-            pathData = jointCommandNumericOptimization.pathData,
+            pathData = globalNumericOptimization.pathData,
             repeatedCommandsRemoved = repeatedCommandsRemoved,
             redundantNonDrawingSegmentsRemoved =
                 redundantCleanup.removedCount,
@@ -4898,7 +4886,7 @@ internal object SvgPathDataOptimizer {
                 maxOf(
                     0,
                     countImplicitRepeatedCommands(
-                        jointCommandNumericOptimization.pathData,
+                        globalNumericOptimization.pathData,
                         setOf('A')
                     ) -
                         countImplicitRepeatedCommands(
@@ -4909,7 +4897,7 @@ internal object SvgPathDataOptimizer {
             scientificNotationValuesSelected =
                 maxOf(
                     0,
-                    countExponentNumbers(jointCommandNumericOptimization.pathData) -
+                    countExponentNumbers(globalNumericOptimization.pathData) -
                         countExponentNumbers(pathData)
                 ),
             numbersNormalized = numbersNormalized,
@@ -4917,9 +4905,7 @@ internal object SvgPathDataOptimizer {
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
             axisCommandsSelected = commandOptimization.axisCommandsSelected,
             globallyOptimizedNumericPaths =
-                if (globalNumericOptimization.optimized) 1 else 0,
-            jointlyOptimizedCommandNumericPaths =
-                if (jointCommandNumericOptimization.optimized) 1 else 0
+                if (globalNumericOptimization.optimized) 1 else 0
         )
     }
 
@@ -7270,67 +7256,6 @@ internal object SvgPathDataOptimizer {
         }
 
         return result
-    }
-
-    private data class JointCommandNumericOptimizationResult(
-        val pathData: String,
-        val optimized: Boolean
-    )
-
-    /**
-     * F4.3: Joint command/numeric fixed-point minimization.
-     *
-     * F3.1 selects command cases using the numeric spelling available at that
-     * moment. F4.2 can subsequently shorten those numbers and separators,
-     * which can change the relative cost of absolute versus relative commands.
-     *
-     * This pass alternates the validated F3.1 and F4.2 global minimizers until
-     * no further strict reduction is found. Every accepted iteration must:
-     *
-     * - be strictly shorter than the previous path;
-     * - parse successfully;
-     * - preserve the exact normalized segment sequence.
-     *
-     * The strict-decrease rule guarantees termination. A small iteration cap
-     * protects against unexpected future changes while still allowing all
-     * currently useful command/numeric interactions to converge.
-     */
-    private fun jointlyOptimizeCommandAndNumericSerialization(
-        pathData: String
-    ): JointCommandNumericOptimizationResult {
-        val referenceSegments = canonicalPathSemantics(pathData)
-            ?: return JointCommandNumericOptimizationResult(pathData, false)
-
-        var current = pathData
-        var changed = false
-
-        repeat(6) {
-            val commandCandidate =
-                globallyMinimizeCommandSequence(current).pathData
-            val numericCandidate =
-                globallyOptimizeNumericSerialization(commandCandidate).pathData
-
-            val candidates = listOf(commandCandidate, numericCandidate)
-                .filter { candidate ->
-                    candidate.length < current.length &&
-                        canonicalPathSemantics(candidate) == referenceSegments
-                }
-
-            val best = candidates.minWithOrNull(
-                compareBy<String> { it.length }.thenBy { it }
-            ) ?: return JointCommandNumericOptimizationResult(
-                pathData = current,
-                optimized = changed
-            )
-
-            current = best
-            changed = true
-        }
-
-        return JointCommandNumericOptimizationResult(
-            pathData = current,
-            optimized = changed
-        )
     }
 
     private data class GlobalNumericSerializationResult(

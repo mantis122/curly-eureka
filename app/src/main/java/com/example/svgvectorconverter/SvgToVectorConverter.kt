@@ -354,8 +354,6 @@ object SvgToVectorConverter {
                     pathOptimizationStats.scientificNotationValuesSelected,
                 globallyOptimizedNumericPaths =
                     pathOptimizationStats.globallyOptimizedNumericPaths,
-                jointlyOptimizedCommandNumericPaths =
-                    pathOptimizationStats.jointlyOptimizedCommandNumericPaths,
                 pathDataNumbersNormalized = pathOptimizationStats.numbersNormalized,
                 emptyPathDataRemoved = pathOptimizationStats.emptyPathDataRemoved,
                 moveOnlyPathsRemoved = pathOptimizationStats.moveOnlyPathsRemoved,
