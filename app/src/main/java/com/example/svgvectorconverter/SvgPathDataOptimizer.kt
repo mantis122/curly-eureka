@@ -6945,13 +6945,20 @@ internal object SvgPathDataOptimizer {
     /**
      * SVG permits a new number without a comma when:
      * - it begins with + or -; or
-     * - it begins with a decimal point and the previous number is already
-     *   lexically complete at that point (contains a decimal point or exponent).
+     * - it begins with a decimal point and the previous number already has a
+     *   decimal point and does not use exponent notation.
      *
-     * Examples:
+     * Exponent notation must be treated as a terminal numeric token before an
+     * unsigned decimal-point form. Concatenating "1e5" and ".5" would produce
+     * the invalid token "1e50.5", not two numbers.
+     *
+     * Legal examples:
      *   10-5
      *   .5.25
-     *   1e3.5
+     *   1e5-.5
+     *
+     * Separator required:
+     *   1e5,.5
      */
     private fun canConcatenateNumbers(
         previous: String,
@@ -6960,9 +6967,10 @@ internal object SvgPathDataOptimizer {
         if (next.startsWith('-') || next.startsWith('+')) return true
         if (!next.startsWith('.')) return false
 
-        return previous.contains('.') ||
-            previous.contains('e') ||
-            previous.contains('E')
+        val previousUsesExponent =
+            previous.contains('e') || previous.contains('E')
+
+        return previous.contains('.') && !previousUsesExponent
     }
 
     /**
