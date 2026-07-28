@@ -210,7 +210,7 @@ data class SvgConversionReportData(
     val optimizedXmlCharactersBefore: Int = 0,
     val optimizedXmlCharactersAfter: Int = 0,
     val styleResolutionMs: Long = 0,
-    val definitionSetupMs: Long = 0,
+    val svgParsingMs: Long = 0,
     val treeConversionMs: Long = 0,
     val outputOptimizationMs: Long = 0,
     val optimizationPathSyntaxNanos: Long = 0,
@@ -226,6 +226,7 @@ data class SvgConversionReportData(
     val optimizationNumericCleanupCharactersSaved: Int = 0,
     val optimizationFormattingCharactersSaved: Int = 0,
     val reportAnalysisMs: Long = 0,
+    val reportGenerationMs: Long = 0,
     val elapsedMs: Long = 0
 )
 
@@ -412,7 +413,12 @@ object SvgConversionReporter {
     }
 
 
-    fun buildReport(data: SvgConversionReportData): String {
+    fun buildReport(
+        data: SvgConversionReportData,
+        conversionStartNanos: Long? = null
+    ): String {
+        val reportStartNanos = System.nanoTime()
+        val performanceMarker = "__SVG_CONVERTER_PERFORMANCE__"
         val aggregateWarningCount = aggregateWarningCount(data)
 
         val summaryTitle =
@@ -424,7 +430,7 @@ object SvgConversionReporter {
         val drawablePathWord =
             if (data.convertedPathCount == 1) "path" else "paths"
 
-        return buildString {
+        val reportWithoutPerformance = buildString {
             appendLine(summaryTitle)
             appendLine("${data.convertedPathCount} drawable $drawablePathWord created")
 
@@ -433,7 +439,7 @@ object SvgConversionReporter {
             else
                 appendLine("$aggregateWarningCount warning(s) detected")
 
-            appendPerformanceBreakdown(data)
+            appendLine(performanceMarker)
 
             appendLine()
             appendLine("────────────────────")
@@ -1084,6 +1090,20 @@ object SvgConversionReporter {
                 }
             }
         }
+    
+
+        val reportGenerationMs =
+            ((System.nanoTime() - reportStartNanos) / 1_000_000L).coerceAtLeast(0L)
+        val elapsedMs = conversionStartNanos
+            ?.let { ((System.nanoTime() - it) / 1_000_000L).coerceAtLeast(0L) }
+            ?: data.elapsedMs
+
+        val timedData = data.copy(
+            reportGenerationMs = reportGenerationMs,
+            elapsedMs = elapsedMs
+        )
+        val performance = buildString { appendPerformanceBreakdown(timedData) }.trimEnd()
+        return reportWithoutPerformance.replace(performanceMarker, performance)
     }
 
 
@@ -1240,10 +1260,11 @@ object SvgConversionReporter {
     private fun StringBuilder.appendPerformanceBreakdown(data: SvgConversionReportData) {
         val measuredStages = listOf(
             "Style resolution" to data.styleResolutionMs,
-            "Preparation" to data.definitionSetupMs,
+            "SVG parsing" to data.svgParsingMs,
             "Tree conversion" to data.treeConversionMs,
             "Optimization" to data.outputOptimizationMs,
-            "Analysis" to data.reportAnalysisMs
+            "Analysis" to data.reportAnalysisMs,
+            "Report generation" to data.reportGenerationMs
         )
 
         val measuredTimeMs = measuredStages.sumOf { (_, durationMs) ->

@@ -20,7 +20,7 @@ object SvgToVectorConverter {
         val svgWithCssClassStyles = SvgStyleResolver.applyStylesheets(svg)
         val styleResolutionMs = elapsedMilliseconds(styleStartTime)
 
-        val setupStartTime = System.nanoTime()
+        val svgParsingStartTime = System.nanoTime()
         val svgForTransformStats = stripSvgComments(svgWithCssClassStyles)
         val drawableSvgForStats = stripDefs(svgWithCssClassStyles)
 
@@ -66,7 +66,7 @@ object SvgToVectorConverter {
 
         val vectorWidthDp = if (outputDpSize > 0) outputDpSize else viewportWidth.toInt()
         val vectorHeightDp = if (outputDpSize > 0) outputDpSize else viewportHeight.toInt()
-        val definitionSetupMs = elapsedMilliseconds(setupStartTime)
+        val svgParsingMs = elapsedMilliseconds(svgParsingStartTime)
 
         val treeConversionStartTime = System.nanoTime()
         val output = StringBuilder()
@@ -206,7 +206,7 @@ object SvgToVectorConverter {
         val elapsedMs = elapsedMilliseconds(startTime)
 
         val report = SvgConversionReporter.buildReport(
-            SvgConversionReportData(
+            data = SvgConversionReportData(
                 convertedPathCount = convertedPathCount,
                 convertedOriginalPathCount = convertedOriginalPathCount,
                 convertedBasicShapeCount = convertedBasicShapeCount,
@@ -428,7 +428,7 @@ object SvgToVectorConverter {
                 optimizedXmlCharactersBefore = pathOptimizationStats.xmlCharactersBefore,
                 optimizedXmlCharactersAfter = pathOptimizationStats.xmlCharactersAfter,
                 styleResolutionMs = styleResolutionMs,
-                definitionSetupMs = definitionSetupMs,
+                svgParsingMs = svgParsingMs,
                 treeConversionMs = treeConversionMs,
                 outputOptimizationMs = outputOptimizationMs,
                 optimizationPathSyntaxNanos =
@@ -456,8 +456,10 @@ object SvgToVectorConverter {
                 optimizationFormattingCharactersSaved =
                     pathOptimizationStats.formattingCharactersSaved,
                 reportAnalysisMs = reportAnalysisMs,
+                reportGenerationMs = 0,
                 elapsedMs = elapsedMs
-            )
+            ),
+            conversionStartNanos = startTime
         )
 
         return ConversionResult(finalXml, report)
