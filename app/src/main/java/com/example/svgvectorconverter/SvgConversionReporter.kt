@@ -194,6 +194,8 @@ data class SvgConversionReportData(
     val optimizerProductionPassNanos: Long = 0,
     val optimizerIdempotencePassNanos: Long = 0,
     val optimizerFixedPointPassNanos: Long = 0,
+    val optimizerValidationPathCacheHits: Int = 0,
+    val optimizerValidationPathCacheMisses: Int = 0,
     val optimizerValidationPasses: Int = 0,
     val optimizerFirstPassChangedXml: Boolean = false,
     val optimizerSecondPassChangedXml: Boolean = false,
@@ -1206,6 +1208,21 @@ object SvgConversionReporter {
                     if (data.optimizerThirdPassChangedXml) "Yes" else "No"
             )
         }
+        val cacheLookups =
+            data.optimizerValidationPathCacheHits +
+                data.optimizerValidationPathCacheMisses
+        if (cacheLookups > 0) {
+            appendLine(
+                "• Unchanged path inputs reused: " +
+                    data.optimizerValidationPathCacheHits
+            )
+            if (data.optimizerValidationPathCacheMisses > 0) {
+                appendLine(
+                    "• Changed path inputs recomputed: " +
+                        data.optimizerValidationPathCacheMisses
+                )
+            }
+        }
         appendLine(
             "• Validation time: " +
                 formatNanosAsMilliseconds(data.optimizerValidationNanos)
@@ -1324,7 +1341,7 @@ object SvgConversionReporter {
 
         if (hasOptimizationBreakdown) {
             appendLine()
-            appendLine("Optimization breakdown")
+            appendLine("Production pass breakdown")
             appendOptimizationBreakdown(data)
         }
     }

@@ -85,6 +85,8 @@ internal object SvgPathDataOptimizer {
         val optimizerProductionPassNanos: Long = 0,
         val optimizerIdempotencePassNanos: Long = 0,
         val optimizerFixedPointPassNanos: Long = 0,
+        val optimizerValidationPathCacheHits: Int = 0,
+        val optimizerValidationPathCacheMisses: Int = 0,
         val optimizerValidationPasses: Int = 0,
         val optimizerFirstPassChangedXml: Boolean = false,
         val optimizerSecondPassChangedXml: Boolean = false,
@@ -172,13 +174,29 @@ internal object SvgPathDataOptimizer {
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
+    private data class PathOptimizationCache(
+        val values: MutableMap<String, PathResult> = linkedMapOf(),
+        var validationHits: Int = 0,
+        var validationMisses: Int = 0
+    )
+
     fun optimizeVectorXml(xml: String): Result {
+        val pathCache = PathOptimizationCache()
+
         val firstPassStartTime = System.nanoTime()
-        val firstPass = optimizeVectorXmlSinglePass(xml)
+        val firstPass = optimizeVectorXmlSinglePass(
+            xml = xml,
+            pathCache = pathCache,
+            validationPass = false
+        )
         val firstPassNanos = System.nanoTime() - firstPassStartTime
 
         val secondPassStartTime = System.nanoTime()
-        val secondPass = optimizeVectorXmlSinglePass(firstPass.xml)
+        val secondPass = optimizeVectorXmlSinglePass(
+            xml = firstPass.xml,
+            pathCache = pathCache,
+            validationPass = true
+        )
         val secondPassNanos = System.nanoTime() - secondPassStartTime
 
         if (secondPass.xml == firstPass.xml) {
@@ -192,6 +210,8 @@ internal object SvgPathDataOptimizer {
                         optimizerProductionPassNanos = firstPassNanos,
                         optimizerIdempotencePassNanos = secondPassNanos,
                         optimizerFixedPointPassNanos = 0L,
+                        optimizerValidationPathCacheHits = pathCache.validationHits,
+                        optimizerValidationPathCacheMisses = pathCache.validationMisses,
                         optimizerValidationPasses = 2,
                         optimizerFirstPassChangedXml = firstPass.xml != xml,
                         optimizerSecondPassChangedXml = false,
@@ -206,7 +226,11 @@ internal object SvgPathDataOptimizer {
         // original first-pass output so validation never silently changes
         // production behavior.
         val thirdPassStartTime = System.nanoTime()
-        val thirdPass = optimizeVectorXmlSinglePass(secondPass.xml)
+        val thirdPass = optimizeVectorXmlSinglePass(
+            xml = secondPass.xml,
+            pathCache = pathCache,
+            validationPass = true
+        )
         val thirdPassNanos = System.nanoTime() - thirdPassStartTime
         val reachedFixedPoint = thirdPass.xml == secondPass.xml
 
@@ -220,6 +244,8 @@ internal object SvgPathDataOptimizer {
                     optimizerProductionPassNanos = firstPassNanos,
                     optimizerIdempotencePassNanos = secondPassNanos,
                     optimizerFixedPointPassNanos = thirdPassNanos,
+                    optimizerValidationPathCacheHits = pathCache.validationHits,
+                    optimizerValidationPathCacheMisses = pathCache.validationMisses,
                     optimizerValidationPasses = 3,
                     optimizerFirstPassChangedXml = firstPass.xml != xml,
                     optimizerSecondPassChangedXml = secondPass.xml != firstPass.xml,
@@ -365,7 +391,11 @@ internal object SvgPathDataOptimizer {
         )
     }
 
-    private fun optimizeVectorXmlSinglePass(xml: String): Result {
+    private fun optimizeVectorXmlSinglePass(
+        xml: String,
+        pathCache: PathOptimizationCache,
+        validationPass: Boolean
+    ): Result {
         fun charactersSaved(before: String, after: String): Int =
             (before.length - after.length).coerceAtLeast(0)
 
@@ -398,7 +428,11 @@ internal object SvgPathDataOptimizer {
         val pathSyntaxStartTime = System.nanoTime()
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
             val original = match.groupValues[1]
-            val optimized = optimizePathData(original)
+            val optimized = optimizePathDataCached(
+                pathData = original,
+                cache = pathCache,
+                validationPass = validationPass
+            )
 
             pathCount++
             charactersBefore += original.length
@@ -525,7 +559,11 @@ internal object SvgPathDataOptimizer {
         // must be the final path-data mutation before XML formatting.
         val decimalCanonicalizationStartTime = System.nanoTime()
         val decimalCanonicalization =
-            canonicalizePathDecimalPrecision(pathMerging.xml)
+            canonicalizePathDecimalPrecisionCached(
+                xml = pathMerging.xml,
+                pathCache = pathCache,
+                validationPass = validationPass
+            )
         val numericCleanupNanos =
             nearIntegerSnappingNanos + (System.nanoTime() - decimalCanonicalizationStartTime)
         val numericCleanupCharactersSaved =
@@ -734,13 +772,50 @@ internal object SvgPathDataOptimizer {
         )
     }
 
+    private fun canonicalizePathDecimals(
+        pathData: String
+    ): CanonicalizedPathData {
+        return canonicalizePathDecimalsCached(
+            pathData = pathData,
+            pathCache = PathOptimizationCache(),
+            validationPass = false
+        )
+    }
+
+    private fun canonicalizePathDecimalPrecisionCached(
+        xml: String,
+        pathCache: PathOptimizationCache,
+        validationPass: Boolean
+    ): DecimalCanonicalizationResult {
+        var changedValues = 0
+
+        val rewritten = pathDataAttributeRegex.replace(xml) { match ->
+            val original = match.groupValues[1]
+            val canonicalized = canonicalizePathDecimalsCached(
+                pathData = original,
+                pathCache = pathCache,
+                validationPass = validationPass
+            )
+
+            changedValues += canonicalized.changedValues
+            "android:pathData=\"${canonicalized.pathData}\""
+        }
+
+        return DecimalCanonicalizationResult(
+            xml = rewritten,
+            changedValues = changedValues
+        )
+    }
+
     private data class CanonicalizedPathData(
         val pathData: String,
         val changedValues: Int
     )
 
-    private fun canonicalizePathDecimals(
-        pathData: String
+    private fun canonicalizePathDecimalsCached(
+        pathData: String,
+        pathCache: PathOptimizationCache,
+        validationPass: Boolean
     ): CanonicalizedPathData {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) return CanonicalizedPathData(pathData, 0)
@@ -804,7 +879,11 @@ internal object SvgPathDataOptimizer {
         // Reapply the existing lossless command/separator optimizer only to
         // the rebuilt canonical data. No earlier high-precision spelling is
         // available to be selected again.
-        val optimized = optimizePathData(rebuiltPathData).pathData
+        val optimized = optimizePathDataCached(
+            pathData = rebuiltPathData,
+            cache = pathCache,
+            validationPass = validationPass
+        ).pathData
         return if (parseNormalizedSegments(optimized) != null) {
             CanonicalizedPathData(optimized, changedCount)
         } else {
@@ -4753,6 +4832,24 @@ internal object SvgPathDataOptimizer {
         val axisCommandsSelected: Int = 0,
         val globallyOptimizedNumericPaths: Int = 0,
     )
+
+
+    private fun optimizePathDataCached(
+        pathData: String,
+        cache: PathOptimizationCache,
+        validationPass: Boolean
+    ): PathResult {
+        val cached = cache.values[pathData]
+        if (cached != null) {
+            if (validationPass) cache.validationHits++
+            return cached
+        }
+
+        if (validationPass) cache.validationMisses++
+        return optimizePathData(pathData).also { result ->
+            cache.values[pathData] = result
+        }
+    }
 
     private fun optimizePathData(pathData: String): PathResult {
         val matches = tokenRegex.findAll(pathData).toList()
