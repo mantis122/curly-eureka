@@ -4415,15 +4415,27 @@ internal object SvgPathDataOptimizer {
             )
             appendLine()
 
-            if (secondRoundImprovements > 0) {
-                appendLine("RESULT: F4.3 found genuine additional savings.")
-                appendLine("Recommendation: keep the joint fixed-point pass.")
-            } else {
-                appendLine("RESULT: no second-round strict reduction was found.")
-                appendLine(
-                    "Recommendation: F4.3 appears redundant for this search space; " +
-                        "consider removing it after repeating with larger case counts/seeds."
-                )
+            when {
+                semanticMismatchCount > 0 -> {
+                    appendLine("RESULT: semantic mismatches were detected.")
+                    appendLine(
+                        "Recommendation: investigate the mismatches before making " +
+                            "an F4.3 keep/remove decision."
+                    )
+                }
+
+                secondRoundImprovements > 0 -> {
+                    appendLine("RESULT: F4.3 found genuine additional savings.")
+                    appendLine("Recommendation: keep the joint fixed-point pass.")
+                }
+
+                else -> {
+                    appendLine("RESULT: no second-round strict reduction was found.")
+                    appendLine(
+                        "Recommendation: F4.3 appears redundant for this search space; " +
+                            "consider removing it after repeating with larger case counts/seeds."
+                    )
+                }
             }
 
             if (witnesses.isNotEmpty()) {
@@ -4476,7 +4488,7 @@ internal object SvgPathDataOptimizer {
         repeat(caseCount) { caseIndex ->
             generatedCases++
             val source = generateDifferentialStressPath(random)
-            val sourceSegments = parseNormalizedSegments(source)
+            val sourceSegments = canonicalPathSemantics(source)
 
             if (sourceSegments == null || sourceSegments.isEmpty()) {
                 invalidGeneratedCases++
@@ -4492,8 +4504,8 @@ internal object SvgPathDataOptimizer {
             val secondRound =
                 globallyOptimizeNumericSerialization(secondCommand).pathData
 
-            val firstSegments = parseNormalizedSegments(firstRound)
-            val secondSegments = parseNormalizedSegments(secondRound)
+            val firstSegments = canonicalPathSemantics(firstRound)
+            val secondSegments = canonicalPathSemantics(secondRound)
 
             if (
                 firstSegments != sourceSegments ||
@@ -7061,6 +7073,205 @@ internal object SvgPathDataOptimizer {
         }
     }
 
+    /**
+     * Geometry-level canonical representation used by F4.3 validation and its
+     * differential stress search.
+     *
+     * Raw ParsedSegment equality is not semantic equality because F3.1 may
+     * legitimately change:
+     * - absolute commands to relative commands;
+     * - L to H or V;
+     * - C to S;
+     * - Q to T;
+     * - numeric scale, such as 100000 to 1e5.
+     *
+     * This method expands every segment to an absolute full-form command and
+     * normalizes BigDecimal scale. Equivalent path spellings therefore compare
+     * equal while genuine geometry changes remain detectable.
+     */
+    private data class CanonicalSemanticSegment(
+        val command: Char,
+        val values: List<BigDecimal>
+    )
+
+    private fun canonicalPathSemantics(
+        pathData: String
+    ): List<CanonicalSemanticSegment>? {
+        val segments = parseNormalizedSegments(pathData) ?: return null
+        val result = mutableListOf<CanonicalSemanticSegment>()
+
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+
+        var previousCubicControlX: BigDecimal? = null
+        var previousCubicControlY: BigDecimal? = null
+        var previousQuadraticControlX: BigDecimal? = null
+        var previousQuadraticControlY: BigDecimal? = null
+
+        fun normalized(value: BigDecimal): BigDecimal {
+            val stripped = value.stripTrailingZeros()
+            return if (stripped.compareTo(BigDecimal.ZERO) == 0) {
+                BigDecimal.ZERO
+            } else {
+                stripped
+            }
+        }
+
+        fun canonicalValues(values: List<BigDecimal>): List<BigDecimal> =
+            values.map(::normalized)
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val absolute = absoluteValuesFor(segment, currentX, currentY)
+
+            when (upper) {
+                'M' -> {
+                    result += CanonicalSemanticSegment(
+                        'M',
+                        canonicalValues(absolute)
+                    )
+                    currentX = absolute[0]
+                    currentY = absolute[1]
+                    subpathX = currentX
+                    subpathY = currentY
+                }
+
+                'L' -> {
+                    result += CanonicalSemanticSegment(
+                        'L',
+                        canonicalValues(absolute)
+                    )
+                    currentX = absolute[0]
+                    currentY = absolute[1]
+                }
+
+                'H' -> {
+                    val endX = absolute[0]
+                    result += CanonicalSemanticSegment(
+                        'L',
+                        canonicalValues(listOf(endX, currentY))
+                    )
+                    currentX = endX
+                }
+
+                'V' -> {
+                    val endY = absolute[0]
+                    result += CanonicalSemanticSegment(
+                        'L',
+                        canonicalValues(listOf(currentX, endY))
+                    )
+                    currentY = endY
+                }
+
+                'C' -> {
+                    result += CanonicalSemanticSegment(
+                        'C',
+                        canonicalValues(absolute)
+                    )
+                    previousCubicControlX = absolute[2]
+                    previousCubicControlY = absolute[3]
+                    currentX = absolute[4]
+                    currentY = absolute[5]
+                }
+
+                'S' -> {
+                    val reflectedX =
+                        previousCubicControlX?.let {
+                            currentX.multiply(BigDecimal("2")).subtract(it)
+                        } ?: currentX
+                    val reflectedY =
+                        previousCubicControlY?.let {
+                            currentY.multiply(BigDecimal("2")).subtract(it)
+                        } ?: currentY
+
+                    val full = listOf(
+                        reflectedX,
+                        reflectedY,
+                        absolute[0],
+                        absolute[1],
+                        absolute[2],
+                        absolute[3]
+                    )
+                    result += CanonicalSemanticSegment(
+                        'C',
+                        canonicalValues(full)
+                    )
+                    previousCubicControlX = absolute[0]
+                    previousCubicControlY = absolute[1]
+                    currentX = absolute[2]
+                    currentY = absolute[3]
+                }
+
+                'Q' -> {
+                    result += CanonicalSemanticSegment(
+                        'Q',
+                        canonicalValues(absolute)
+                    )
+                    previousQuadraticControlX = absolute[0]
+                    previousQuadraticControlY = absolute[1]
+                    currentX = absolute[2]
+                    currentY = absolute[3]
+                }
+
+                'T' -> {
+                    val reflectedX =
+                        previousQuadraticControlX?.let {
+                            currentX.multiply(BigDecimal("2")).subtract(it)
+                        } ?: currentX
+                    val reflectedY =
+                        previousQuadraticControlY?.let {
+                            currentY.multiply(BigDecimal("2")).subtract(it)
+                        } ?: currentY
+
+                    val full = listOf(
+                        reflectedX,
+                        reflectedY,
+                        absolute[0],
+                        absolute[1]
+                    )
+                    result += CanonicalSemanticSegment(
+                        'Q',
+                        canonicalValues(full)
+                    )
+                    previousQuadraticControlX = reflectedX
+                    previousQuadraticControlY = reflectedY
+                    currentX = absolute[0]
+                    currentY = absolute[1]
+                }
+
+                'A' -> {
+                    result += CanonicalSemanticSegment(
+                        'A',
+                        canonicalValues(absolute)
+                    )
+                    currentX = absolute[5]
+                    currentY = absolute[6]
+                }
+
+                'Z' -> {
+                    result += CanonicalSemanticSegment('Z', emptyList())
+                    currentX = subpathX
+                    currentY = subpathY
+                }
+
+                else -> return null
+            }
+
+            if (upper !in charArrayOf('C', 'S')) {
+                previousCubicControlX = null
+                previousCubicControlY = null
+            }
+            if (upper !in charArrayOf('Q', 'T')) {
+                previousQuadraticControlX = null
+                previousQuadraticControlY = null
+            }
+        }
+
+        return result
+    }
+
     private data class JointCommandNumericOptimizationResult(
         val pathData: String,
         val optimized: Boolean
@@ -7087,7 +7298,7 @@ internal object SvgPathDataOptimizer {
     private fun jointlyOptimizeCommandAndNumericSerialization(
         pathData: String
     ): JointCommandNumericOptimizationResult {
-        val referenceSegments = parseNormalizedSegments(pathData)
+        val referenceSegments = canonicalPathSemantics(pathData)
             ?: return JointCommandNumericOptimizationResult(pathData, false)
 
         var current = pathData
@@ -7102,7 +7313,7 @@ internal object SvgPathDataOptimizer {
             val candidates = listOf(commandCandidate, numericCandidate)
                 .filter { candidate ->
                     candidate.length < current.length &&
-                        parseNormalizedSegments(candidate) == referenceSegments
+                        canonicalPathSemantics(candidate) == referenceSegments
                 }
 
             val best = candidates.minWithOrNull(
