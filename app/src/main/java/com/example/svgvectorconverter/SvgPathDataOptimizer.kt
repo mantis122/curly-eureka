@@ -6845,14 +6845,27 @@ internal object SvgPathDataOptimizer {
         if (normalized.compareTo(BigDecimal.ZERO) == 0) return listOf("0")
 
         val plain = normalizeNumber(normalized.toPlainString())
+        val compactPlain = when {
+            plain.startsWith("0.") -> plain.substring(1)
+            plain.startsWith("-0.") -> "-" + plain.substring(2)
+            plain.startsWith("+0.") -> "+" + plain.substring(2)
+            else -> plain
+        }
         val exponent =
             normalized.unscaledValue().toString() +
                 "e" +
                 (-normalized.scale()).toString()
 
-        return listOf(plain, exponent)
+        return listOf(
+            plain,
+            compactPlain,
+            exponent
+        )
             .distinct()
-            .sortedWith(compareBy<String> { it.length }.thenBy { it })
+            .sortedWith(
+                compareBy<String> { it.length }
+                    .thenBy { it }
+            )
     }
 
     /**
