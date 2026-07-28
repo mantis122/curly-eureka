@@ -160,6 +160,7 @@ data class SvgConversionReportData(
     val repeatedArcCommandsOmitted: Int = 0,
     val scientificNotationValuesSelected: Int = 0,
     val globallyOptimizedNumericPaths: Int = 0,
+    val jointlyOptimizedCommandNumericPaths: Int = 0,
     val pathDataNumbersNormalized: Int = 0,
     val emptyPathDataRemoved: Int = 0,
     val moveOnlyPathsRemoved: Int = 0,
@@ -589,6 +590,11 @@ object SvgConversionReporter {
                 appendLine(
                     "✓ Paths with globally optimized numeric serialization: " +
                         data.globallyOptimizedNumericPaths
+                )
+            if (data.jointlyOptimizedCommandNumericPaths > 0)
+                appendLine(
+                    "✓ Paths jointly optimized for commands and numbers: " +
+                        data.jointlyOptimizedCommandNumericPaths
                 )
             if (data.emptyPathDataRemoved > 0)
                 appendLine("✓ Empty path-data elements removed: ${data.emptyPathDataRemoved}")
