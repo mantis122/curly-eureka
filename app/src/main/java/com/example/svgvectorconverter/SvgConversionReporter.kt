@@ -191,6 +191,9 @@ data class SvgConversionReportData(
     val optimizerReachedFixedPoint: Boolean = false,
     val optimizerStabilityPasses: Int = 0,
     val optimizerValidationNanos: Long = 0,
+    val optimizerProductionPassNanos: Long = 0,
+    val optimizerIdempotencePassNanos: Long = 0,
+    val optimizerFixedPointPassNanos: Long = 0,
     val optimizerValidationPasses: Int = 0,
     val optimizerFirstPassChangedXml: Boolean = false,
     val optimizerSecondPassChangedXml: Boolean = false,
@@ -1175,6 +1178,20 @@ object SvgConversionReporter {
                 )
         }
         appendLine("• Validation passes: ${data.optimizerValidationPasses}")
+        appendLine(
+            "• Production pass: " +
+                formatNanosAsMilliseconds(data.optimizerProductionPassNanos)
+        )
+        appendLine(
+            "• Idempotence pass: " +
+                formatNanosAsMilliseconds(data.optimizerIdempotencePassNanos)
+        )
+        if (data.optimizerValidationPasses >= 3) {
+            appendLine(
+                "• Fixed-point pass: " +
+                    formatNanosAsMilliseconds(data.optimizerFixedPointPassNanos)
+            )
+        }
         appendLine(
             "• XML changed after pass 1: " +
                 if (data.optimizerFirstPassChangedXml) "Yes" else "No"

@@ -82,6 +82,9 @@ internal object SvgPathDataOptimizer {
         val optimizerReachedFixedPoint: Boolean = false,
         val optimizerStabilityPasses: Int = 0,
         val optimizerValidationNanos: Long = 0,
+        val optimizerProductionPassNanos: Long = 0,
+        val optimizerIdempotencePassNanos: Long = 0,
+        val optimizerFixedPointPassNanos: Long = 0,
         val optimizerValidationPasses: Int = 0,
         val optimizerFirstPassChangedXml: Boolean = false,
         val optimizerSecondPassChangedXml: Boolean = false,
@@ -170,24 +173,29 @@ internal object SvgPathDataOptimizer {
     )
 
     fun optimizeVectorXml(xml: String): Result {
-        val validationStartTime = System.nanoTime()
-
+        val firstPassStartTime = System.nanoTime()
         val firstPass = optimizeVectorXmlSinglePass(xml)
+        val firstPassNanos = System.nanoTime() - firstPassStartTime
+
+        val secondPassStartTime = System.nanoTime()
         val secondPass = optimizeVectorXmlSinglePass(firstPass.xml)
+        val secondPassNanos = System.nanoTime() - secondPassStartTime
 
         if (secondPass.xml == firstPass.xml) {
             return attachFinalOutputValidation(
                 firstPass.copy(
                     stats = firstPass.stats.copy(
-                    optimizerIdempotenceVerified = true,
-                    optimizerReachedFixedPoint = true,
-                    optimizerStabilityPasses = 1,
-                    optimizerValidationNanos =
-                        System.nanoTime() - validationStartTime,
-                    optimizerValidationPasses = 2,
-                    optimizerFirstPassChangedXml = firstPass.xml != xml,
-                    optimizerSecondPassChangedXml = false,
-                    optimizerThirdPassChangedXml = false
+                        optimizerIdempotenceVerified = true,
+                        optimizerReachedFixedPoint = true,
+                        optimizerStabilityPasses = 1,
+                        optimizerValidationNanos = secondPassNanos,
+                        optimizerProductionPassNanos = firstPassNanos,
+                        optimizerIdempotencePassNanos = secondPassNanos,
+                        optimizerFixedPointPassNanos = 0L,
+                        optimizerValidationPasses = 2,
+                        optimizerFirstPassChangedXml = firstPass.xml != xml,
+                        optimizerSecondPassChangedXml = false,
+                        optimizerThirdPassChangedXml = false
                     )
                 )
             )
@@ -197,21 +205,25 @@ internal object SvgPathDataOptimizer {
         // continues changing its own output. D1 intentionally returns the
         // original first-pass output so validation never silently changes
         // production behavior.
+        val thirdPassStartTime = System.nanoTime()
         val thirdPass = optimizeVectorXmlSinglePass(secondPass.xml)
+        val thirdPassNanos = System.nanoTime() - thirdPassStartTime
         val reachedFixedPoint = thirdPass.xml == secondPass.xml
 
         return attachFinalOutputValidation(
             firstPass.copy(
                 stats = firstPass.stats.copy(
-                optimizerIdempotenceVerified = false,
-                optimizerReachedFixedPoint = reachedFixedPoint,
-                optimizerStabilityPasses = if (reachedFixedPoint) 2 else 3,
-                optimizerValidationNanos =
-                    System.nanoTime() - validationStartTime,
-                optimizerValidationPasses = 3,
-                optimizerFirstPassChangedXml = firstPass.xml != xml,
-                optimizerSecondPassChangedXml = secondPass.xml != firstPass.xml,
-                optimizerThirdPassChangedXml = thirdPass.xml != secondPass.xml
+                    optimizerIdempotenceVerified = false,
+                    optimizerReachedFixedPoint = reachedFixedPoint,
+                    optimizerStabilityPasses = if (reachedFixedPoint) 2 else 3,
+                    optimizerValidationNanos = secondPassNanos + thirdPassNanos,
+                    optimizerProductionPassNanos = firstPassNanos,
+                    optimizerIdempotencePassNanos = secondPassNanos,
+                    optimizerFixedPointPassNanos = thirdPassNanos,
+                    optimizerValidationPasses = 3,
+                    optimizerFirstPassChangedXml = firstPass.xml != xml,
+                    optimizerSecondPassChangedXml = secondPass.xml != firstPass.xml,
+                    optimizerThirdPassChangedXml = thirdPass.xml != secondPass.xml
                 )
             )
         )

@@ -398,6 +398,12 @@ object SvgToVectorConverter {
                     pathOptimizationStats.optimizerStabilityPasses,
                 optimizerValidationNanos =
                     pathOptimizationStats.optimizerValidationNanos,
+                optimizerProductionPassNanos =
+                    pathOptimizationStats.optimizerProductionPassNanos,
+                optimizerIdempotencePassNanos =
+                    pathOptimizationStats.optimizerIdempotencePassNanos,
+                optimizerFixedPointPassNanos =
+                    pathOptimizationStats.optimizerFixedPointPassNanos,
                 optimizerValidationPasses =
                     pathOptimizationStats.optimizerValidationPasses,
                 optimizerFirstPassChangedXml =
