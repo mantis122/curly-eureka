@@ -10,6 +10,7 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.random.Random
 
 /**
  * Performs conservative cleanup of emitted VectorDrawable XML.
@@ -4366,6 +4367,346 @@ internal object SvgPathDataOptimizer {
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
         )
         return regex.find(element)?.groupValues?.get(2)
+    }
+
+
+    data class CommandNumericDifferentialWitness(
+        val caseIndex: Int,
+        val sourcePathData: String,
+        val firstRoundPathData: String,
+        val secondRoundPathData: String
+    ) {
+        val additionalCharactersSaved: Int
+            get() = firstRoundPathData.length - secondRoundPathData.length
+    }
+
+    data class CommandNumericDifferentialSearchResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val invalidGeneratedCases: Int,
+        val secondRoundImprovements: Int,
+        val equalLengthDifferences: Int,
+        val semanticMismatchCount: Int,
+        val elapsedNanos: Long,
+        val witnesses: List<CommandNumericDifferentialWitness>
+    ) {
+        val elapsedMilliseconds: Double
+            get() = elapsedNanos / 1_000_000.0
+
+        val supportsKeepingF43: Boolean
+            get() = secondRoundImprovements > 0
+
+        fun toPlainTextReport(): String = buildString {
+            appendLine("F4.3 command/numeric differential stress search")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $invalidGeneratedCases")
+            appendLine("Semantic mismatches: $semanticMismatchCount")
+            appendLine("Equal-length spelling differences: $equalLengthDifferences")
+            appendLine("Second-round strict improvements: $secondRoundImprovements")
+            appendLine(
+                "Elapsed: " +
+                    String.format(java.util.Locale.US, "%.2f ms", elapsedMilliseconds)
+            )
+            appendLine()
+
+            if (secondRoundImprovements > 0) {
+                appendLine("RESULT: F4.3 found genuine additional savings.")
+                appendLine("Recommendation: keep the joint fixed-point pass.")
+            } else {
+                appendLine("RESULT: no second-round strict reduction was found.")
+                appendLine(
+                    "Recommendation: F4.3 appears redundant for this search space; " +
+                        "consider removing it after repeating with larger case counts/seeds."
+                )
+            }
+
+            if (witnesses.isNotEmpty()) {
+                appendLine()
+                appendLine("Witnesses")
+                witnesses.forEachIndexed { index, witness ->
+                    appendLine()
+                    appendLine("${index + 1}. Case ${witness.caseIndex}")
+                    appendLine(
+                        "   Additional characters saved: " +
+                            witness.additionalCharactersSaved
+                    )
+                    appendLine("   Source: ${witness.sourcePathData}")
+                    appendLine("   F3.1 → F4.2: ${witness.firstRoundPathData}")
+                    appendLine("   Second round: ${witness.secondRoundPathData}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Differentially tests whether a second F3.1 → F4.2 round can produce a
+     * strict reduction after the first round has completed.
+     *
+     * The generator is deterministic for a supplied seed. Every candidate is
+     * parsed before comparison, and both outputs must preserve the same
+     * normalized segment sequence as the generated source.
+     */
+    fun runCommandNumericDifferentialStressSearch(
+        caseCount: Int = 50_000,
+        seed: Long = 0xF432_2026L,
+        maximumWitnesses: Int = 20
+    ): CommandNumericDifferentialSearchResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        require(maximumWitnesses >= 0) {
+            "maximumWitnesses must be non-negative"
+        }
+
+        val started = System.nanoTime()
+        val random = Random(seed)
+        val witnesses = mutableListOf<CommandNumericDifferentialWitness>()
+
+        var generatedCases = 0
+        var validCases = 0
+        var invalidGeneratedCases = 0
+        var secondRoundImprovements = 0
+        var equalLengthDifferences = 0
+        var semanticMismatchCount = 0
+
+        repeat(caseCount) { caseIndex ->
+            generatedCases++
+            val source = generateDifferentialStressPath(random)
+            val sourceSegments = parseNormalizedSegments(source)
+
+            if (sourceSegments == null || sourceSegments.isEmpty()) {
+                invalidGeneratedCases++
+                return@repeat
+            }
+
+            val firstCommand =
+                globallyMinimizeCommandSequence(source).pathData
+            val firstRound =
+                globallyOptimizeNumericSerialization(firstCommand).pathData
+            val secondCommand =
+                globallyMinimizeCommandSequence(firstRound).pathData
+            val secondRound =
+                globallyOptimizeNumericSerialization(secondCommand).pathData
+
+            val firstSegments = parseNormalizedSegments(firstRound)
+            val secondSegments = parseNormalizedSegments(secondRound)
+
+            if (
+                firstSegments != sourceSegments ||
+                secondSegments != sourceSegments
+            ) {
+                semanticMismatchCount++
+                return@repeat
+            }
+
+            validCases++
+
+            when {
+                secondRound.length < firstRound.length -> {
+                    secondRoundImprovements++
+                    if (witnesses.size < maximumWitnesses) {
+                        witnesses += CommandNumericDifferentialWitness(
+                            caseIndex = caseIndex + 1,
+                            sourcePathData = source,
+                            firstRoundPathData = firstRound,
+                            secondRoundPathData = secondRound
+                        )
+                    }
+                }
+
+                secondRound.length == firstRound.length &&
+                    secondRound != firstRound -> {
+                    equalLengthDifferences++
+                }
+            }
+        }
+
+        return CommandNumericDifferentialSearchResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generatedCases,
+            validCases = validCases,
+            invalidGeneratedCases = invalidGeneratedCases,
+            secondRoundImprovements = secondRoundImprovements,
+            equalLengthDifferences = equalLengthDifferences,
+            semanticMismatchCount = semanticMismatchCount,
+            elapsedNanos = System.nanoTime() - started,
+            witnesses = witnesses
+        )
+    }
+
+    private fun generateDifferentialStressPath(
+        random: Random
+    ): String {
+        val output = StringBuilder()
+        var currentX = randomStressNumber(random)
+        var currentY = randomStressNumber(random)
+        var subpathX = currentX
+        var subpathY = currentY
+
+        output.append('M')
+        appendStressNumber(output, currentX)
+        output.append(',')
+        appendStressNumber(output, currentY)
+
+        val segmentCount = random.nextInt(2, 15)
+
+        repeat(segmentCount) {
+            when (random.nextInt(100)) {
+                in 0..39 -> {
+                    val nextX = randomStressNumber(random)
+                    val nextY = randomStressNumber(random)
+                    output.append('L')
+                    appendStressNumber(output, nextX)
+                    output.append(',')
+                    appendStressNumber(output, nextY)
+                    currentX = nextX
+                    currentY = nextY
+                }
+
+                in 40..52 -> {
+                    val nextX = randomStressNumber(random)
+                    val nextY = randomStressNumber(random)
+                    output.append('Q')
+                    appendStressNumber(output, randomStressNumber(random))
+                    output.append(',')
+                    appendStressNumber(output, randomStressNumber(random))
+                    output.append(',')
+                    appendStressNumber(output, nextX)
+                    output.append(',')
+                    appendStressNumber(output, nextY)
+                    currentX = nextX
+                    currentY = nextY
+                }
+
+                in 53..67 -> {
+                    val nextX = randomStressNumber(random)
+                    val nextY = randomStressNumber(random)
+                    output.append('C')
+                    repeat(2) {
+                        appendStressNumber(output, randomStressNumber(random))
+                        output.append(',')
+                        appendStressNumber(output, randomStressNumber(random))
+                        output.append(',')
+                    }
+                    appendStressNumber(output, nextX)
+                    output.append(',')
+                    appendStressNumber(output, nextY)
+                    currentX = nextX
+                    currentY = nextY
+                }
+
+                in 68..81 -> {
+                    val nextX = randomStressNumber(random)
+                    val nextY = randomStressNumber(random)
+                    val radiusX = randomPositiveStressNumber(random)
+                    val radiusY = randomPositiveStressNumber(random)
+                    val rotation = listOf(
+                        BigDecimal.ZERO,
+                        BigDecimal("45"),
+                        BigDecimal("90"),
+                        BigDecimal("180"),
+                        BigDecimal("270"),
+                        BigDecimal("360")
+                    )[random.nextInt(6)]
+
+                    output.append('A')
+                    appendStressNumber(output, radiusX)
+                    output.append(',')
+                    appendStressNumber(output, radiusY)
+                    output.append(',')
+                    appendStressNumber(output, rotation)
+                    output.append(',')
+                    output.append(if (random.nextBoolean()) '1' else '0')
+                    output.append(',')
+                    output.append(if (random.nextBoolean()) '1' else '0')
+                    output.append(',')
+                    appendStressNumber(output, nextX)
+                    output.append(',')
+                    appendStressNumber(output, nextY)
+                    currentX = nextX
+                    currentY = nextY
+                }
+
+                in 82..89 -> {
+                    val nextX = randomStressNumber(random)
+                    output.append('H')
+                    appendStressNumber(output, nextX)
+                    currentX = nextX
+                }
+
+                in 90..95 -> {
+                    val nextY = randomStressNumber(random)
+                    output.append('V')
+                    appendStressNumber(output, nextY)
+                    currentY = nextY
+                }
+
+                else -> {
+                    if (
+                        currentX.compareTo(subpathX) != 0 ||
+                        currentY.compareTo(subpathY) != 0
+                    ) {
+                        output.append('Z')
+                        currentX = subpathX
+                        currentY = subpathY
+                    }
+
+                    val nextX = randomStressNumber(random)
+                    val nextY = randomStressNumber(random)
+                    output.append('M')
+                    appendStressNumber(output, nextX)
+                    output.append(',')
+                    appendStressNumber(output, nextY)
+                    currentX = nextX
+                    currentY = nextY
+                    subpathX = nextX
+                    subpathY = nextY
+                }
+            }
+        }
+
+        return output.toString()
+    }
+
+    private fun randomStressNumber(random: Random): BigDecimal {
+        val curated = arrayOf(
+            "0", "0.001", "-0.001", "0.00390625", "-0.00390625",
+            "0.015625", "-0.015625", "0.03125", "-0.03125",
+            "0.0625", "-0.0625", "0.125", "-0.125", "0.25", "-0.25",
+            "0.5", "-0.5", "1", "-1", "2", "-2", "5", "-5",
+            "10", "-10", "99", "-99", "100", "-100",
+            "999", "-999", "1000", "-1000",
+            "100000", "-100000", "1000000", "-1000000"
+        )
+
+        if (random.nextInt(100) < 70) {
+            return BigDecimal(curated[random.nextInt(curated.size)])
+        }
+
+        val unscaled = random.nextInt(-1_000_000, 1_000_001)
+        val scale = random.nextInt(0, 7)
+        return BigDecimal.valueOf(unscaled.toLong(), scale)
+            .stripTrailingZeros()
+    }
+
+    private fun randomPositiveStressNumber(random: Random): BigDecimal {
+        var value = randomStressNumber(random).abs()
+        if (value.compareTo(BigDecimal.ZERO) == 0) {
+            value = BigDecimal.ONE
+        }
+        return value
+    }
+
+    private fun appendStressNumber(
+        output: StringBuilder,
+        value: BigDecimal
+    ) {
+        output.append(value.stripTrailingZeros().toPlainString())
     }
 
     private data class PathResult(
