@@ -18,7 +18,7 @@ object SvgToVectorConverter {
 
         val styleStartTime = System.nanoTime()
         val svgWithCssClassStyles = SvgStyleResolver.applyStylesheets(svg)
-        val styleResolutionMs = elapsedMilliseconds(styleStartTime)
+        val styleResolutionNanos = elapsedNanoseconds(styleStartTime)
 
         val svgParsingStartTime = System.nanoTime()
         val svgForTransformStats = stripSvgComments(svgWithCssClassStyles)
@@ -66,7 +66,7 @@ object SvgToVectorConverter {
 
         val vectorWidthDp = if (outputDpSize > 0) outputDpSize else viewportWidth.toInt()
         val vectorHeightDp = if (outputDpSize > 0) outputDpSize else viewportHeight.toInt()
-        val svgParsingMs = elapsedMilliseconds(svgParsingStartTime)
+        val svgParsingNanos = elapsedNanoseconds(svgParsingStartTime)
 
         val treeConversionStartTime = System.nanoTime()
         val output = StringBuilder()
@@ -95,7 +95,7 @@ object SvgToVectorConverter {
         )
 
         output.appendLine("</vector>")
-        val treeConversionMs = elapsedMilliseconds(treeConversionStartTime)
+        val treeConversionNanos = elapsedNanoseconds(treeConversionStartTime)
 
         val optimizationStartTime = System.nanoTime()
         val rawXml = output.toString().trim().substringBeforeLast("</vector>") + "</vector>"
@@ -103,7 +103,7 @@ object SvgToVectorConverter {
         val pathOptimizationResult = SvgPathDataOptimizer.optimizeVectorXml(clipOptimizedXml)
         val finalXml = pathOptimizationResult.xml
         val pathOptimizationStats = pathOptimizationResult.stats
-        val outputOptimizationMs = elapsedMilliseconds(optimizationStartTime)
+        val outputOptimizationNanos = elapsedNanoseconds(optimizationStartTime)
 
         val analysisStartTime = System.nanoTime()
         val finalXmlForStats = stripSvgComments(finalXml)
@@ -202,8 +202,9 @@ object SvgToVectorConverter {
             (if (SvgTreeConverter.nestedSvgOverflowApproximated > 0) 1 else 0) +
             (if (SvgTreeConverter.nestedSvgOverflowUnsupported > 0) 1 else 0)
 
-        val reportAnalysisMs = elapsedMilliseconds(analysisStartTime)
-        val elapsedMs = elapsedMilliseconds(startTime)
+        val reportAnalysisNanos = elapsedNanoseconds(analysisStartTime)
+        val elapsedNanos = elapsedNanoseconds(startTime)
+        val elapsedMs = elapsedNanos / 1_000_000L
 
         val report = SvgConversionReporter.buildReport(
             data = SvgConversionReportData(
@@ -427,10 +428,10 @@ object SvgToVectorConverter {
                 sourceSvgCharacters = svg.length,
                 optimizedXmlCharactersBefore = pathOptimizationStats.xmlCharactersBefore,
                 optimizedXmlCharactersAfter = pathOptimizationStats.xmlCharactersAfter,
-                styleResolutionMs = styleResolutionMs,
-                svgParsingMs = svgParsingMs,
-                treeConversionMs = treeConversionMs,
-                outputOptimizationMs = outputOptimizationMs,
+                styleResolutionNanos = styleResolutionNanos,
+                svgParsingNanos = svgParsingNanos,
+                treeConversionNanos = treeConversionNanos,
+                outputOptimizationNanos = outputOptimizationNanos,
                 optimizationPathSyntaxNanos =
                     pathOptimizationStats.pathSyntaxOptimizationNanos,
                 optimizationPruningCleanupNanos =
@@ -455,8 +456,9 @@ object SvgToVectorConverter {
                     pathOptimizationStats.numericCleanupCharactersSaved,
                 optimizationFormattingCharactersSaved =
                     pathOptimizationStats.formattingCharactersSaved,
-                reportAnalysisMs = reportAnalysisMs,
-                reportGenerationMs = 0,
+                reportAnalysisNanos = reportAnalysisNanos,
+                reportGenerationNanos = 0,
+                elapsedNanos = elapsedNanos,
                 elapsedMs = elapsedMs
             ),
             conversionStartNanos = startTime
@@ -466,8 +468,8 @@ object SvgToVectorConverter {
     }
 
 
-    private fun elapsedMilliseconds(startTimeNanos: Long): Long =
-        (System.nanoTime() - startTimeNanos) / 1_000_000
+    private fun elapsedNanoseconds(startTimeNanos: Long): Long =
+        (System.nanoTime() - startTimeNanos).coerceAtLeast(0L)
 
     private data class TextLayoutStats(
         val verticalTextCount: Int = 0,

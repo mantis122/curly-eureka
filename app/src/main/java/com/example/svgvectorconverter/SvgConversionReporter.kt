@@ -209,10 +209,10 @@ data class SvgConversionReportData(
     val sourceSvgCharacters: Int = 0,
     val optimizedXmlCharactersBefore: Int = 0,
     val optimizedXmlCharactersAfter: Int = 0,
-    val styleResolutionMs: Long = 0,
-    val svgParsingMs: Long = 0,
-    val treeConversionMs: Long = 0,
-    val outputOptimizationMs: Long = 0,
+    val styleResolutionNanos: Long = 0,
+    val svgParsingNanos: Long = 0,
+    val treeConversionNanos: Long = 0,
+    val outputOptimizationNanos: Long = 0,
     val optimizationPathSyntaxNanos: Long = 0,
     val optimizationPruningCleanupNanos: Long = 0,
     val optimizationTransformsNanos: Long = 0,
@@ -225,8 +225,9 @@ data class SvgConversionReportData(
     val optimizationDeduplicationCharactersSaved: Int = 0,
     val optimizationNumericCleanupCharactersSaved: Int = 0,
     val optimizationFormattingCharactersSaved: Int = 0,
-    val reportAnalysisMs: Long = 0,
-    val reportGenerationMs: Long = 0,
+    val reportAnalysisNanos: Long = 0,
+    val reportGenerationNanos: Long = 0,
+    val elapsedNanos: Long = 0,
     val elapsedMs: Long = 0
 )
 
@@ -1092,14 +1093,16 @@ object SvgConversionReporter {
         }
     
 
-        val reportGenerationMs =
-            ((System.nanoTime() - reportStartNanos) / 1_000_000L).coerceAtLeast(0L)
-        val elapsedMs = conversionStartNanos
-            ?.let { ((System.nanoTime() - it) / 1_000_000L).coerceAtLeast(0L) }
-            ?: data.elapsedMs
+        val reportGenerationNanos =
+            (System.nanoTime() - reportStartNanos).coerceAtLeast(0L)
+        val elapsedNanos = conversionStartNanos
+            ?.let { (System.nanoTime() - it).coerceAtLeast(0L) }
+            ?: data.elapsedNanos
+        val elapsedMs = elapsedNanos / 1_000_000L
 
         val timedData = data.copy(
-            reportGenerationMs = reportGenerationMs,
+            reportGenerationNanos = reportGenerationNanos,
+            elapsedNanos = elapsedNanos,
             elapsedMs = elapsedMs
         )
         val performance = buildString { appendPerformanceBreakdown(timedData) }.trimEnd()
@@ -1221,7 +1224,7 @@ object SvgConversionReporter {
 
         val hasNetReduction = netCharactersSaved > 0 && xmlCharactersBefore > 0
         val hasPerPathReduction = netCharactersSaved > 0 && data.pathDataOptimizedCount > 0
-        val hasThroughput = netCharactersSaved > 0 && data.outputOptimizationMs > 0L
+        val hasThroughput = netCharactersSaved > 0 && data.outputOptimizationNanos > 0L
 
         if (!hasNetReduction && !hasPerPathReduction && !hasThroughput) return
 
@@ -1246,7 +1249,7 @@ object SvgConversionReporter {
         }
 
         if (hasThroughput) {
-            val throughput = netCharactersSaved.toDouble() / data.outputOptimizationMs
+            val throughput = netCharactersSaved.toDouble() / (data.outputOptimizationNanos / 1_000_000.0)
             appendLine(
                 "• Optimization throughput: " +
                     String.format(java.util.Locale.US, "%.1f characters/ms", throughput)
@@ -1259,39 +1262,38 @@ object SvgConversionReporter {
 
     private fun StringBuilder.appendPerformanceBreakdown(data: SvgConversionReportData) {
         val measuredStages = listOf(
-            "Style resolution" to data.styleResolutionMs,
-            "SVG parsing" to data.svgParsingMs,
-            "Tree conversion" to data.treeConversionMs,
-            "Optimization" to data.outputOptimizationMs,
-            "Analysis" to data.reportAnalysisMs,
-            "Report generation" to data.reportGenerationMs
+            "SVG parsing" to data.svgParsingNanos,
+            "Style resolution" to data.styleResolutionNanos,
+            "Tree conversion" to data.treeConversionNanos,
+            "Optimization" to data.outputOptimizationNanos,
+            "Analysis" to data.reportAnalysisNanos,
+            "Report generation" to data.reportGenerationNanos
         )
 
-        val measuredTimeMs = measuredStages.sumOf { (_, durationMs) ->
-            durationMs.coerceAtLeast(0L)
+        val totalNanos = when {
+            data.elapsedNanos > 0L -> data.elapsedNanos
+            data.elapsedMs > 0L -> data.elapsedMs * 1_000_000L
+            else -> measuredStages.sumOf { (_, durationNanos) -> durationNanos.coerceAtLeast(0L) }
         }
-        val otherFrameworkMs = (data.elapsedMs - measuredTimeMs).coerceAtLeast(0L)
-
-        val visibleStages = buildList {
-            addAll(measuredStages.filter { (_, durationMs) -> durationMs > 0L })
-            if (otherFrameworkMs > 0L) {
-                add("Other / framework" to otherFrameworkMs)
-            }
+        val measuredNanos = measuredStages.sumOf { (_, durationNanos) ->
+            durationNanos.coerceAtLeast(0L)
         }
+        val otherFrameworkNanos = (totalNanos - measuredNanos).coerceAtLeast(0L)
 
         appendLine()
         appendLine("Performance")
         appendLine()
         appendLine("Conversion time")
-        appendLine("${data.elapsedMs} ms")
-
-        if (visibleStages.isNotEmpty()) {
-            appendLine()
-            appendLine("Pipeline")
-            visibleStages.forEach { (label, durationMs) ->
-                val percentage = performancePercentage(durationMs, data.elapsedMs)
-                appendLine("• $label: $durationMs ms ($percentage%)")
-            }
+        appendLine(formatPerformanceDuration(totalNanos))
+        appendLine()
+        appendLine("Pipeline")
+        measuredStages.forEach { (label, durationNanos) ->
+            val percentage = performancePercentageNanos(durationNanos, totalNanos)
+            appendLine("• $label: ${formatPerformanceDuration(durationNanos)} ($percentage)")
+        }
+        if (otherFrameworkNanos >= 1_000_000L) {
+            val percentage = performancePercentageNanos(otherFrameworkNanos, totalNanos)
+            appendLine("• Other / framework: ${formatPerformanceDuration(otherFrameworkNanos)} ($percentage)")
         }
 
         val hasOptimizationBreakdown = listOf(
@@ -1346,6 +1348,28 @@ object SvgConversionReporter {
 
         val roundedPercentage = (exactPercentage + 0.5).toInt().coerceIn(1, 100)
         return "$roundedPercentage%"
+    }
+
+    private fun formatPerformanceDuration(durationNanos: Long): String {
+        val safeNanos = durationNanos.coerceAtLeast(0L)
+        return if (safeNanos < 1_000_000L) {
+            String.format(java.util.Locale.US, "%.3f ms", safeNanos / 1_000_000.0)
+        } else {
+            val milliseconds = safeNanos / 1_000_000.0
+            if (milliseconds < 10.0) {
+                String.format(java.util.Locale.US, "%.2f ms", milliseconds)
+            } else if (milliseconds < 100.0) {
+                String.format(java.util.Locale.US, "%.1f ms", milliseconds)
+            } else {
+                String.format(java.util.Locale.US, "%.0f ms", milliseconds)
+            }
+        }
+    }
+
+    private fun performancePercentageNanos(durationNanos: Long, totalNanos: Long): String {
+        if (durationNanos <= 0L || totalNanos <= 0L) return "<1%"
+        val percent = durationNanos.toDouble() * 100.0 / totalNanos.toDouble()
+        return if (percent < 1.0) "<1%" else "${percent.toInt().coerceAtMost(100)}%"
     }
 
     private fun performancePercentage(durationMs: Long, totalMs: Long): Int {
