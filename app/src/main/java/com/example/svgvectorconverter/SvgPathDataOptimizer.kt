@@ -103,8 +103,18 @@ internal object SvgPathDataOptimizer {
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
         val pathSyntaxOptimizationNanos: Long = 0,
+        val pathTokenizationNormalizationNanos: Long = 0,
+        val pathGeometryCleanupNanos: Long = 0,
+        val pathCommandMinimizationNanos: Long = 0,
+        val pathNumericSerializationNanos: Long = 0,
+        val colorNormalizationNanos: Long = 0,
         val pruningAndGroupCleanupNanos: Long = 0,
         val transformOptimizationNanos: Long = 0,
+        val transformIdentityCompositionNanos: Long = 0,
+        val transformFactoringFlatteningNanos: Long = 0,
+        val transformScaleFlatteningNanos: Long = 0,
+        val transformRotationTranslationNanos: Long = 0,
+        val transformCanonicalizationNanos: Long = 0,
         val deduplicationAndMergeNanos: Long = 0,
         val numericCleanupNanos: Long = 0,
         val finalFormattingNanos: Long = 0,
@@ -424,6 +434,7 @@ internal object SvgPathDataOptimizer {
         var shorterCommandFormsSelected = 0
         var relativeCommandsSelected = 0
         var axisCommandsSelected = 0
+        val pathProfiling = PathSyntaxProfiling()
 
         val pathSyntaxStartTime = System.nanoTime()
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
@@ -431,7 +442,8 @@ internal object SvgPathDataOptimizer {
             val optimized = optimizePathDataCached(
                 pathData = original,
                 cache = pathCache,
-                validationPass = validationPass
+                validationPass = validationPass,
+                profiling = pathProfiling
             )
 
             pathCount++
@@ -481,7 +493,9 @@ internal object SvgPathDataOptimizer {
             "android:pathData=\"${optimized.pathData}\""
         }
 
+        val colorNormalizationStartTime = System.nanoTime()
         val colorNormalizedXml = normalizeAndroidColorAttributes(syntaxOptimizedXml)
+        val colorNormalizationNanos = System.nanoTime() - colorNormalizationStartTime
         val pathSyntaxOptimizationNanos = System.nanoTime() - pathSyntaxStartTime
         val pathSyntaxCharactersSaved = charactersSaved(xml, colorNormalizedXml)
 
@@ -518,26 +532,46 @@ internal object SvgPathDataOptimizer {
             charactersSaved(colorNormalizedXml, groupCleanup.xml)
 
         val transformStartTime = System.nanoTime()
+
+        val identityCompositionStartTime = System.nanoTime()
         val identityCleanup = removeIdentityGroupTransformAttributes(groupCleanup.xml)
         val translationComposition = composeNestedParentTranslationGroups(identityCleanup.xml)
         val compatibleComposition =
             composeNestedCompatibleSamePivotGroups(translationComposition.xml)
         val postCompositionIdentityCleanup =
             removeIdentityGroupTransformAttributes(compatibleComposition.xml)
+        val transformIdentityCompositionNanos =
+            System.nanoTime() - identityCompositionStartTime
+
+        val factoringFlatteningStartTime = System.nanoTime()
         val commonTranslationFactoring =
             factorCommonSiblingTranslations(postCompositionIdentityCleanup.xml)
         val groupFlattening = flattenRedundantGroups(commonTranslationFactoring.xml)
+        val transformFactoringFlatteningNanos =
+            System.nanoTime() - factoringFlatteningStartTime
+
+        val scaleFlatteningStartTime = System.nanoTime()
         val scaleFlattening = flattenUniformPositiveScaleGroups(groupFlattening.xml)
         val nonUniformScaleFlattening =
             flattenNonUniformPositiveScaleFillOnlyGroups(scaleFlattening.xml)
+        val transformScaleFlatteningNanos =
+            System.nanoTime() - scaleFlatteningStartTime
+
+        val rotationTranslationStartTime = System.nanoTime()
         val rotationFlattening =
             flattenRotationOnlyGroups(nonUniformScaleFlattening.xml)
         val translationFlattening =
             flattenTranslationOnlyGroups(rotationFlattening.xml)
+        val transformRotationTranslationNanos =
+            System.nanoTime() - rotationTranslationStartTime
+
+        val canonicalizationStartTime = System.nanoTime()
         val adjacentGroupCoalescing =
             coalesceIdenticalAdjacentGroups(translationFlattening.xml)
         val transformCanonicalization =
             canonicalizeGroupTransformAttributes(adjacentGroupCoalescing.xml)
+        val transformCanonicalizationNanos =
+            System.nanoTime() - canonicalizationStartTime
         val transformOptimizationNanos = System.nanoTime() - transformStartTime
         val transformCharactersSaved =
             charactersSaved(groupCleanup.xml, transformCanonicalization.xml)
@@ -675,8 +709,19 @@ internal object SvgPathDataOptimizer {
                 relativeCommandsSelected = relativeCommandsSelected,
                 axisCommandsSelected = axisCommandsSelected,
                 pathSyntaxOptimizationNanos = pathSyntaxOptimizationNanos,
+                pathTokenizationNormalizationNanos =
+                    pathProfiling.tokenizationNormalizationNanos,
+                pathGeometryCleanupNanos = pathProfiling.geometryCleanupNanos,
+                pathCommandMinimizationNanos = pathProfiling.commandMinimizationNanos,
+                pathNumericSerializationNanos = pathProfiling.numericSerializationNanos,
+                colorNormalizationNanos = colorNormalizationNanos,
                 pruningAndGroupCleanupNanos = pruningAndGroupCleanupNanos,
                 transformOptimizationNanos = transformOptimizationNanos,
+                transformIdentityCompositionNanos = transformIdentityCompositionNanos,
+                transformFactoringFlatteningNanos = transformFactoringFlatteningNanos,
+                transformScaleFlatteningNanos = transformScaleFlatteningNanos,
+                transformRotationTranslationNanos = transformRotationTranslationNanos,
+                transformCanonicalizationNanos = transformCanonicalizationNanos,
                 deduplicationAndMergeNanos = deduplicationAndMergeNanos,
                 numericCleanupNanos = numericCleanupNanos,
                 finalFormattingNanos = finalFormattingNanos,
@@ -4834,10 +4879,18 @@ internal object SvgPathDataOptimizer {
     )
 
 
+    private data class PathSyntaxProfiling(
+        var tokenizationNormalizationNanos: Long = 0,
+        var geometryCleanupNanos: Long = 0,
+        var commandMinimizationNanos: Long = 0,
+        var numericSerializationNanos: Long = 0
+    )
+
     private fun optimizePathDataCached(
         pathData: String,
         cache: PathOptimizationCache,
-        validationPass: Boolean
+        validationPass: Boolean,
+        profiling: PathSyntaxProfiling? = null
     ): PathResult {
         val cached = cache.values[pathData]
         if (cached != null) {
@@ -4846,12 +4899,16 @@ internal object SvgPathDataOptimizer {
         }
 
         if (validationPass) cache.validationMisses++
-        return optimizePathData(pathData).also { result ->
+        return optimizePathData(pathData, profiling).also { result ->
             cache.values[pathData] = result
         }
     }
 
-    private fun optimizePathData(pathData: String): PathResult {
+    private fun optimizePathData(
+        pathData: String,
+        profiling: PathSyntaxProfiling? = null
+    ): PathResult {
+        val tokenizationStartTime = System.nanoTime()
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
             return PathResult(pathData.trim(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -4917,6 +4974,12 @@ internal object SvgPathDataOptimizer {
             }
         }
 
+        profiling?.let {
+            it.tokenizationNormalizationNanos +=
+                System.nanoTime() - tokenizationStartTime
+        }
+
+        val geometryCleanupStartTime = System.nanoTime()
         val redundantCleanup = removeRedundantNonDrawingSegments(
             output.toString()
         )
@@ -4947,15 +5010,30 @@ internal object SvgPathDataOptimizer {
         val collinearCleanup = consolidateConsecutiveCollinearLineRuns(
             straightBezierCleanup.pathData
         )
+        profiling?.let {
+            it.geometryCleanupNanos += System.nanoTime() - geometryCleanupStartTime
+        }
+
+        val commandMinimizationStartTime = System.nanoTime()
         val commandOptimization = shortenPathCommands(
             collinearCleanup.pathData
         )
         val globalCommandOptimization = globallyMinimizeCommandSequence(
             commandOptimization.pathData
         )
+        profiling?.let {
+            it.commandMinimizationNanos +=
+                System.nanoTime() - commandMinimizationStartTime
+        }
+
+        val numericSerializationStartTime = System.nanoTime()
         val globalNumericOptimization = globallyOptimizeNumericSerialization(
             globalCommandOptimization.pathData
         )
+        profiling?.let {
+            it.numericSerializationNanos +=
+                System.nanoTime() - numericSerializationStartTime
+        }
         return PathResult(
             pathData = globalNumericOptimization.pathData,
             repeatedCommandsRemoved = repeatedCommandsRemoved,

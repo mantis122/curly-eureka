@@ -219,8 +219,18 @@ data class SvgConversionReportData(
     val treeConversionNanos: Long = 0,
     val outputOptimizationNanos: Long = 0,
     val optimizationPathSyntaxNanos: Long = 0,
+    val optimizationPathTokenizationNanos: Long = 0,
+    val optimizationPathGeometryCleanupNanos: Long = 0,
+    val optimizationPathCommandMinimizationNanos: Long = 0,
+    val optimizationPathNumericSerializationNanos: Long = 0,
+    val optimizationColorNormalizationNanos: Long = 0,
     val optimizationPruningCleanupNanos: Long = 0,
     val optimizationTransformsNanos: Long = 0,
+    val optimizationTransformIdentityCompositionNanos: Long = 0,
+    val optimizationTransformFactoringFlatteningNanos: Long = 0,
+    val optimizationTransformScaleFlatteningNanos: Long = 0,
+    val optimizationTransformRotationTranslationNanos: Long = 0,
+    val optimizationTransformCanonicalizationNanos: Long = 0,
     val optimizationDeduplicationNanos: Long = 0,
     val optimizationNumericCleanupNanos: Long = 0,
     val optimizationFormattingNanos: Long = 0,
@@ -1362,7 +1372,54 @@ object SvgConversionReporter {
         stages.forEach { (label, durationNanos) ->
             val percentage = nanosPercentageLabel(durationNanos, totalNanos)
             appendLine("• $label: ${formatNanosAsMilliseconds(durationNanos)} ($percentage)")
+
+            when (label) {
+                "Path syntax and colors" -> appendNestedTimingBreakdown(
+                    parentNanos = durationNanos,
+                    stages = listOf(
+                        "Tokenization and normalization" to
+                            data.optimizationPathTokenizationNanos,
+                        "Geometry cleanup" to
+                            data.optimizationPathGeometryCleanupNanos,
+                        "Command minimization" to
+                            data.optimizationPathCommandMinimizationNanos,
+                        "Global numeric serialization" to
+                            data.optimizationPathNumericSerializationNanos,
+                        "Color normalization" to
+                            data.optimizationColorNormalizationNanos
+                    )
+                )
+                "Transform optimization" -> appendNestedTimingBreakdown(
+                    parentNanos = durationNanos,
+                    stages = listOf(
+                        "Identity cleanup and composition" to
+                            data.optimizationTransformIdentityCompositionNanos,
+                        "Factoring and group flattening" to
+                            data.optimizationTransformFactoringFlatteningNanos,
+                        "Scale flattening" to
+                            data.optimizationTransformScaleFlatteningNanos,
+                        "Rotation and translation flattening" to
+                            data.optimizationTransformRotationTranslationNanos,
+                        "Coalescing and canonicalization" to
+                            data.optimizationTransformCanonicalizationNanos
+                    )
+                )
+            }
         }
+    }
+
+    private fun StringBuilder.appendNestedTimingBreakdown(
+        parentNanos: Long,
+        stages: List<Pair<String, Long>>
+    ) {
+        stages.filter { (_, durationNanos) -> durationNanos > 0L }
+            .forEach { (label, durationNanos) ->
+                val percentage = nanosPercentageLabel(durationNanos, parentNanos)
+                appendLine(
+                    "  ◦ $label: ${formatNanosAsMilliseconds(durationNanos)} " +
+                        "($percentage of stage)"
+                )
+            }
     }
 
     private fun formatNanosAsMilliseconds(durationNanos: Long): String {
