@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var saveReportImageButton: Button
     private lateinit var reportActionsRow: LinearLayout
     private var currentRegressionReport = ""
+    private var currentDifferentialSearchReport = ""
 
     private fun makeButton(
         label: String,
@@ -145,6 +146,19 @@ class MainActivity : ComponentActivity() {
         if (uri != null && currentRegressionReport.isNotBlank()) {
             FileIoHelpers.writeTextToUri(this, uri, currentRegressionReport)
             toast("Regression report saved")
+        }
+    }
+
+    private val saveDifferentialSearchReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentDifferentialSearchReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(
+                this,
+                uri,
+                currentDifferentialSearchReport
+            )
+            toast("Differential search report saved")
         }
     }
 
@@ -675,6 +689,40 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        layout.addView(
+            makeText(
+                "Optimizer Stress Testing",
+                16f,
+                Color.DKGRAY,
+                Gravity.START,
+                paddingBottom = 8
+            )
+        )
+
+        val differentialSearchButton =
+            makeButton("Run F4.3 Differential Search") {
+                runCommandNumericDifferentialSearch()
+            }
+        layout.addView(
+            differentialSearchButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Generates 100,000 deterministic paths and compares one
+                F3.1 → F4.2 optimization round with a second round. Use this
+                to determine whether the F4.3 fixed-point pass provides any
+                additional reduction.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
         val diagnosticsHeading = makeText(
             "Future Diagnostics",
             16f,
@@ -701,6 +749,199 @@ class MainActivity : ComponentActivity() {
             .setView(scrollView)
             .setNegativeButton("Close", null)
             .show()
+    }
+
+    private fun runCommandNumericDifferentialSearch() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+
+        val progressBar = ProgressBar(this)
+        val statusText = makeText(
+            "Generating and comparing 100,000 paths…",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply {
+            setPadding(0, 24, 0, 0)
+        }
+
+        val detailText = makeText(
+            "This may take a little while on a phone.",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply {
+            setPadding(0, 12, 0, 0)
+        }
+
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(detailText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("F4.3 Differential Search")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgCommandNumericDifferentialSearch.runDefault()
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("F4.3 automated differential stress search")
+                    appendLine()
+                    appendLine("RESULT: The search could not be completed.")
+                    appendLine()
+                    appendLine(
+                        throwable.message
+                            ?: throwable::class.java.simpleName
+                    )
+                    appendLine()
+                    appendLine(
+                        "Check that SvgCommandNumericDifferentialSearch.kt " +
+                            "and the updated SvgPathDataOptimizer.kt are " +
+                            "included in the app."
+                    )
+                }
+            }
+
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentDifferentialSearchReport = report
+                    showDifferentialSearchResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showDifferentialSearchResultsDialog(report: String) {
+        val hasMismatch = report.contains(
+            "Semantic mismatches: 0"
+        ).not() && report.contains("Semantic mismatches:")
+        val foundImprovement =
+            report.contains("Second-round strict improvements:") &&
+                !report.contains("Second-round strict improvements: 0")
+        val failed = report.contains("could not be completed")
+
+        val summaryText: String
+        val summaryColor: Int
+
+        when {
+            failed -> {
+                summaryText = "✕ Search could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+
+            hasMismatch -> {
+                summaryText = "⚠ Semantic mismatches detected"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+
+            foundImprovement -> {
+                summaryText = "✓ F4.3 found additional savings"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+
+            else -> {
+                summaryText = "No second-round reduction found"
+                summaryColor = Color.DKGRAY
+            }
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+
+        layout.addView(
+            makeText(
+                summaryText,
+                18f,
+                summaryColor,
+                Gravity.START,
+                paddingBottom = 16
+            )
+        )
+
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+
+        val reportScroll = ScrollView(this).apply {
+            addView(reportView)
+        }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val copyButton = makeButton("Copy Results") {
+            copyDifferentialSearchReport()
+        }
+        val saveButton = makeButton("Save .txt") {
+            saveDifferentialSearchReport.launch(
+                "f4_3_differential_search_report.txt"
+            )
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+
+        val rerunButton = makeButton("Run Again") {
+            runCommandNumericDifferentialSearch()
+        }
+        layout.addView(
+            rerunButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("F4.3 Differential Search Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+
+        dialog.show()
+    }
+
+    private fun copyDifferentialSearchReport() {
+        if (currentDifferentialSearchReport.isBlank()) {
+            toast("No differential search report to copy")
+            return
+        }
+
+        val clipboard =
+            getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "f4_3_differential_search_report.txt",
+                currentDifferentialSearchReport
+            )
+        )
+        toast("Differential search report copied")
     }
 
     private fun runBundledRegressionSuite() {
