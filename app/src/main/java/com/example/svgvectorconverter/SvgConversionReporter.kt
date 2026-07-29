@@ -252,6 +252,9 @@ class SvgConversionReportData {
     var optimizationPathCommandGlobalReconstructionNanos: Long = 0
     var optimizationPathCommandGlobalStateKeyCreationNanos: Long = 0
     var optimizationPathCommandGlobalStateKeyFieldPreparationNanos: Long = 0
+    var optimizationPathCommandGlobalStateKeyPreviousCommandNanos: Long = 0
+    var optimizationPathCommandGlobalStateKeyPreviousNumberNanos: Long = 0
+    var optimizationPathCommandGlobalStateKeyAxisDirectionNanos: Long = 0
     var optimizationPathCommandGlobalStateKeyAllocationNanos: Long = 0
     var optimizationPathCommandGlobalStateStringConcatenationNanos: Long = 0
     var optimizationPathCommandGlobalStateMetadataPropagationNanos: Long = 0
@@ -1523,6 +1526,18 @@ object SvgConversionReporter {
                                 data.optimizationPathCommandGlobalStateKeyFieldPreparationNanos,
                             "Composite key allocation" to
                                 data.optimizationPathCommandGlobalStateKeyAllocationNanos
+                        )
+                    )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Key-field preparation",
+                        parentNanos = data.optimizationPathCommandGlobalStateKeyFieldPreparationNanos,
+                        stages = listOf(
+                            "Previous-command state" to
+                                data.optimizationPathCommandGlobalStateKeyPreviousCommandNanos,
+                            "Previous-number formatting" to
+                                data.optimizationPathCommandGlobalStateKeyPreviousNumberNanos,
+                            "Previous-axis-direction state" to
+                                data.optimizationPathCommandGlobalStateKeyAxisDirectionNanos
                         )
                     )
                     appendDeepTimingBreakdown(

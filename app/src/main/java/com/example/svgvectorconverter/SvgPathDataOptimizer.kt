@@ -51,6 +51,9 @@ internal object SvgPathDataOptimizer {
         val reconstructionNanos: Long = 0,
         val stateKeyCreationNanos: Long = 0,
         val stateKeyFieldPreparationNanos: Long = 0,
+        val stateKeyPreviousCommandNanos: Long = 0,
+        val stateKeyPreviousNumberNanos: Long = 0,
+        val stateKeyAxisDirectionNanos: Long = 0,
         val stateKeyAllocationNanos: Long = 0,
         val stateStringConcatenationNanos: Long = 0,
         val stateMetadataPropagationNanos: Long = 0,
@@ -812,6 +815,9 @@ internal object SvgPathDataOptimizer {
                     reconstructionNanos = pathProfiling.commandGlobalReconstructionNanos,
                     stateKeyCreationNanos = pathProfiling.commandGlobalStateKeyCreationNanos,
                     stateKeyFieldPreparationNanos = pathProfiling.commandGlobalStateKeyFieldPreparationNanos,
+                    stateKeyPreviousCommandNanos = pathProfiling.commandGlobalStateKeyPreviousCommandNanos,
+                    stateKeyPreviousNumberNanos = pathProfiling.commandGlobalStateKeyPreviousNumberNanos,
+                    stateKeyAxisDirectionNanos = pathProfiling.commandGlobalStateKeyAxisDirectionNanos,
                     stateKeyAllocationNanos = pathProfiling.commandGlobalStateKeyAllocationNanos,
                     stateStringConcatenationNanos = pathProfiling.commandGlobalStateStringConcatenationNanos,
                     stateMetadataPropagationNanos = pathProfiling.commandGlobalStateMetadataPropagationNanos,
@@ -5032,6 +5038,9 @@ internal object SvgPathDataOptimizer {
         var commandGlobalReconstructionNanos: Long = 0,
         var commandGlobalStateKeyCreationNanos: Long = 0,
         var commandGlobalStateKeyFieldPreparationNanos: Long = 0,
+        var commandGlobalStateKeyPreviousCommandNanos: Long = 0,
+        var commandGlobalStateKeyPreviousNumberNanos: Long = 0,
+        var commandGlobalStateKeyAxisDirectionNanos: Long = 0,
         var commandGlobalStateKeyAllocationNanos: Long = 0,
         var commandGlobalStateStringConcatenationNanos: Long = 0,
         var commandGlobalStateMetadataPropagationNanos: Long = 0,
@@ -6912,12 +6921,28 @@ internal object SvgPathDataOptimizer {
 
                     val stateKeyStartTime = System.nanoTime()
                     val keyFieldPreparationStartTime = System.nanoTime()
+
+                    val previousCommandStartTime = System.nanoTime()
                     val nextPreviousCommand = candidate.command
+                    profiling?.let {
+                        it.commandGlobalStateKeyPreviousCommandNanos +=
+                            System.nanoTime() - previousCommandStartTime
+                    }
+
+                    val previousNumberStartTime = System.nanoTime()
                     val nextPreviousNumber = candidate.values
                         .lastOrNull()
                         ?.let(::formatBigDecimal)
+                    profiling?.let {
+                        it.commandGlobalStateKeyPreviousNumberNanos +=
+                            System.nanoTime() - previousNumberStartTime
+                    }
+
+                    val axisDirectionStartTime = System.nanoTime()
                     val nextPreviousAxisDirection = candidate.axisDirection
                     profiling?.let {
+                        it.commandGlobalStateKeyAxisDirectionNanos +=
+                            System.nanoTime() - axisDirectionStartTime
                         it.commandGlobalStateKeyFieldPreparationNanos +=
                             System.nanoTime() - keyFieldPreparationStartTime
                     }

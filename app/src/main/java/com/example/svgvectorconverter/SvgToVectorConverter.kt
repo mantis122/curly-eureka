@@ -427,6 +427,9 @@ object SvgToVectorConverter {
         reportData.optimizationPathCommandGlobalReconstructionNanos = pathOptimizationStats.pathCommandGlobalProfiling.reconstructionNanos
         reportData.optimizationPathCommandGlobalStateKeyCreationNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateKeyCreationNanos
         reportData.optimizationPathCommandGlobalStateKeyFieldPreparationNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateKeyFieldPreparationNanos
+        reportData.optimizationPathCommandGlobalStateKeyPreviousCommandNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateKeyPreviousCommandNanos
+        reportData.optimizationPathCommandGlobalStateKeyPreviousNumberNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateKeyPreviousNumberNanos
+        reportData.optimizationPathCommandGlobalStateKeyAxisDirectionNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateKeyAxisDirectionNanos
         reportData.optimizationPathCommandGlobalStateKeyAllocationNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateKeyAllocationNanos
         reportData.optimizationPathCommandGlobalStateStringConcatenationNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateStringConcatenationNanos
         reportData.optimizationPathCommandGlobalStateMetadataPropagationNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateMetadataPropagationNanos
