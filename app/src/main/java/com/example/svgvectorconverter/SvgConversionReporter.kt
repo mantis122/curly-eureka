@@ -232,6 +232,12 @@ class SvgConversionReportData {
     var optimizationPathCommandLocalAxisCandidateNanos: Long = 0
     var optimizationPathCommandLocalSmoothShorthandCandidateNanos: Long = 0
     var optimizationPathCommandLocalEncodingSelectionNanos: Long = 0
+    var optimizationPathCommandLocalNumericSerializationNanos: Long = 0
+    var optimizationPathCommandLocalSeparatorCalculationNanos: Long = 0
+    var optimizationPathCommandLocalCommandOmissionNanos: Long = 0
+    var optimizationPathCommandLocalStringConstructionNanos: Long = 0
+    var optimizationPathCommandLocalWinnerSelectionNanos: Long = 0
+    var optimizationPathCommandLocalStateBookkeepingNanos: Long = 0
     var optimizationPathCommandGlobalParseSetupNanos: Long = 0
     var optimizationPathCommandGlobalCandidateGenerationNanos: Long = 0
     var optimizationPathCommandGlobalDynamicProgrammingNanos: Long = 0
@@ -1464,7 +1470,26 @@ object SvgConversionReporter {
                             "S/T shorthand candidates" to
                                 data.optimizationPathCommandLocalSmoothShorthandCandidateNanos,
                             "Candidate encoding and selection" to
-                                data.optimizationPathCommandLocalEncodingSelectionNanos
+                                data.optimizationPathCommandLocalEncodingSelectionNanos,
+                            "State bookkeeping" to
+                                data.optimizationPathCommandLocalStateBookkeepingNanos
+                        )
+                    )
+
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Candidate encoding and selection",
+                        parentNanos = data.optimizationPathCommandLocalEncodingSelectionNanos,
+                        stages = listOf(
+                            "Numeric serialization" to
+                                data.optimizationPathCommandLocalNumericSerializationNanos,
+                            "Separator calculation" to
+                                data.optimizationPathCommandLocalSeparatorCalculationNanos,
+                            "Command-letter omission checks" to
+                                data.optimizationPathCommandLocalCommandOmissionNanos,
+                            "Candidate string construction" to
+                                data.optimizationPathCommandLocalStringConstructionNanos,
+                            "Length comparison / winner selection" to
+                                data.optimizationPathCommandLocalWinnerSelectionNanos
                         )
                     )
                 }

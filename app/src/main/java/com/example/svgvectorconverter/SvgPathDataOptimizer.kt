@@ -29,7 +29,13 @@ internal object SvgPathDataOptimizer {
         val absoluteRelativeCandidateNanos: Long = 0,
         val axisCandidateNanos: Long = 0,
         val smoothShorthandCandidateNanos: Long = 0,
-        val encodingSelectionNanos: Long = 0
+        val encodingSelectionNanos: Long = 0,
+        val numericSerializationNanos: Long = 0,
+        val separatorCalculationNanos: Long = 0,
+        val commandOmissionNanos: Long = 0,
+        val stringConstructionNanos: Long = 0,
+        val winnerSelectionNanos: Long = 0,
+        val stateBookkeepingNanos: Long = 0
     )
 
     data class Stats(
@@ -751,7 +757,13 @@ internal object SvgPathDataOptimizer {
                     absoluteRelativeCandidateNanos = pathProfiling.commandLocalAbsoluteRelativeCandidateNanos,
                     axisCandidateNanos = pathProfiling.commandLocalAxisCandidateNanos,
                     smoothShorthandCandidateNanos = pathProfiling.commandLocalSmoothShorthandCandidateNanos,
-                    encodingSelectionNanos = pathProfiling.commandLocalEncodingSelectionNanos
+                    encodingSelectionNanos = pathProfiling.commandLocalEncodingSelectionNanos,
+                    numericSerializationNanos = pathProfiling.commandLocalNumericSerializationNanos,
+                    separatorCalculationNanos = pathProfiling.commandLocalSeparatorCalculationNanos,
+                    commandOmissionNanos = pathProfiling.commandLocalCommandOmissionNanos,
+                    stringConstructionNanos = pathProfiling.commandLocalStringConstructionNanos,
+                    winnerSelectionNanos = pathProfiling.commandLocalWinnerSelectionNanos,
+                    stateBookkeepingNanos = pathProfiling.commandLocalStateBookkeepingNanos
                 ),
                 pathCommandGlobalParseSetupNanos = pathProfiling.commandGlobalParseSetupNanos,
                 pathCommandGlobalCandidateGenerationNanos =
@@ -4942,6 +4954,12 @@ internal object SvgPathDataOptimizer {
         var commandLocalAxisCandidateNanos: Long = 0,
         var commandLocalSmoothShorthandCandidateNanos: Long = 0,
         var commandLocalEncodingSelectionNanos: Long = 0,
+        var commandLocalNumericSerializationNanos: Long = 0,
+        var commandLocalSeparatorCalculationNanos: Long = 0,
+        var commandLocalCommandOmissionNanos: Long = 0,
+        var commandLocalStringConstructionNanos: Long = 0,
+        var commandLocalWinnerSelectionNanos: Long = 0,
+        var commandLocalStateBookkeepingNanos: Long = 0,
         var commandGlobalParseSetupNanos: Long = 0,
         var commandGlobalCandidateGenerationNanos: Long = 0,
         var commandGlobalDynamicProgrammingNanos: Long = 0,
@@ -7141,10 +7159,11 @@ internal object SvgPathDataOptimizer {
                 originalValues,
                 previousOutputCommand,
                 previousOutputNumber,
-                forceCommand = originalCommand.uppercaseChar() == 'M'
+                forceCommand = originalCommand.uppercaseChar() == 'M',
+                localProfiling = profiling
             )
 
-            val chosen = candidates
+            val encodedCandidates = candidates
                 .distinctBy { it.first to it.second }
                 .map { candidate ->
                     val candidateUpper = candidate.first.uppercaseChar()
@@ -7180,19 +7199,25 @@ internal object SvgPathDataOptimizer {
                         previousOutputNumber,
                         forceCommand =
                             candidateUpper == 'M' ||
-                                forceAxisBoundary
+                                forceAxisBoundary,
+                        localProfiling = profiling
                     )
                     Triple(candidate, encoded, encoded.length)
                 }
+
+            val winnerSelectionStartTime = System.nanoTime()
+            val chosen = encodedCandidates
                 .minWithOrNull(compareBy<Triple<Pair<Char, List<BigDecimal>>, String, Int>> { it.third }
                     .thenBy { if (it.first.first == originalCommand) 0 else 1 })
                 ?: return CommandOptimizationResult(pathData, 0, 0, 0, 0)
-
             profiling?.let {
+                it.commandLocalWinnerSelectionNanos +=
+                    System.nanoTime() - winnerSelectionStartTime
                 it.commandLocalEncodingSelectionNanos +=
                     System.nanoTime() - encodingSelectionStartTime
             }
 
+            val stateBookkeepingStartTime = System.nanoTime()
             val selectedCommand = chosen.first.first
             output.append(chosen.second)
 
@@ -7294,6 +7319,10 @@ internal object SvgPathDataOptimizer {
                     currentX = subpathX
                     currentY = subpathY
                 }
+            }
+            profiling?.let {
+                it.commandLocalStateBookkeepingNanos +=
+                    System.nanoTime() - stateBookkeepingStartTime
             }
         }
 
@@ -7820,8 +7849,10 @@ internal object SvgPathDataOptimizer {
         previousCommand: Char?,
         previousNumber: String?,
         forceCommand: Boolean,
-        allowImplicitLineAfterMove: Boolean = false
+        allowImplicitLineAfterMove: Boolean = false,
+        localProfiling: PathSyntaxProfiling? = null
     ): String {
+        val omissionStartTime = System.nanoTime()
         val repeatsSameCommand =
             previousCommand == command
         val isImplicitLineAfterMove =
@@ -7834,22 +7865,52 @@ internal object SvgPathDataOptimizer {
                 command.uppercaseChar() != 'Z' &&
                 (repeatsSameCommand || isImplicitLineAfterMove)
         val commandPrefix = if (canOmit) "" else command.toString()
+        localProfiling?.let {
+            it.commandLocalCommandOmissionNanos +=
+                System.nanoTime() - omissionStartTime
+        }
         if (values.isEmpty()) return commandPrefix
 
+        val numericStartTime = System.nanoTime()
         val numbers = values.map(::formatPathNumber)
+        localProfiling?.let {
+            it.commandLocalNumericSerializationNanos +=
+                System.nanoTime() - numericStartTime
+        }
+
+        val separatorStartTime = System.nanoTime()
         val boundarySeparator = if (
             canOmit &&
             previousNumber != null &&
             needsNumberSeparator(previousNumber, numbers.first())
         ) "," else ""
+        localProfiling?.let {
+            it.commandLocalSeparatorCalculationNanos +=
+                System.nanoTime() - separatorStartTime
+        }
 
+        val constructionStartTime = System.nanoTime()
         val body = buildString {
             numbers.forEachIndexed { index, number ->
-                if (index > 0 && needsNumberSeparator(numbers[index - 1], number)) append(',')
+                if (index > 0) {
+                    val bodySeparatorStartTime = System.nanoTime()
+                    val needsSeparator =
+                        needsNumberSeparator(numbers[index - 1], number)
+                    localProfiling?.let {
+                        it.commandLocalSeparatorCalculationNanos +=
+                            System.nanoTime() - bodySeparatorStartTime
+                    }
+                    if (needsSeparator) append(',')
+                }
                 append(number)
             }
         }
-        return commandPrefix + boundarySeparator + body
+        val result = commandPrefix + boundarySeparator + body
+        localProfiling?.let {
+            it.commandLocalStringConstructionNanos +=
+                System.nanoTime() - constructionStartTime
+        }
+        return result
     }
 
     private fun needsNumberSeparator(previous: String, next: String): Boolean {
