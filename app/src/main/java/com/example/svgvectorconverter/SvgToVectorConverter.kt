@@ -458,6 +458,14 @@ object SvgToVectorConverter {
                     pathOptimizationStats.pathCollinearConsolidationNanos,
                 optimizationPathCommandMinimizationNanos =
                     pathOptimizationStats.pathCommandMinimizationNanos,
+                optimizationPathCommandLocalShorteningNanos =
+                    pathOptimizationStats.pathCommandLocalShorteningNanos,
+                optimizationPathCommandGlobalParseSetupNanos =
+                    pathOptimizationStats.pathCommandGlobalParseSetupNanos,
+                optimizationPathCommandGlobalCandidateGenerationNanos =
+                    pathOptimizationStats.pathCommandGlobalCandidateGenerationNanos,
+                optimizationPathCommandGlobalDynamicProgrammingNanos =
+                    pathOptimizationStats.pathCommandGlobalDynamicProgrammingNanos,
                 optimizationPathNumericSerializationNanos =
                     pathOptimizationStats.pathNumericSerializationNanos,
                 optimizationColorNormalizationNanos =

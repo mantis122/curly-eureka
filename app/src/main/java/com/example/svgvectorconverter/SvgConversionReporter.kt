@@ -226,6 +226,10 @@ data class SvgConversionReportData(
     val optimizationPathCurveSimplificationNanos: Long = 0,
     val optimizationPathCollinearConsolidationNanos: Long = 0,
     val optimizationPathCommandMinimizationNanos: Long = 0,
+    val optimizationPathCommandLocalShorteningNanos: Long = 0,
+    val optimizationPathCommandGlobalParseSetupNanos: Long = 0,
+    val optimizationPathCommandGlobalCandidateGenerationNanos: Long = 0,
+    val optimizationPathCommandGlobalDynamicProgrammingNanos: Long = 0,
     val optimizationPathNumericSerializationNanos: Long = 0,
     val optimizationColorNormalizationNanos: Long = 0,
     val optimizationPruningCleanupNanos: Long = 0,
@@ -1426,6 +1430,20 @@ object SvgConversionReporter {
                                 data.optimizationPathCurveSimplificationNanos,
                             "Collinear-line consolidation" to
                                 data.optimizationPathCollinearConsolidationNanos
+                        )
+                    )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Command minimization",
+                        parentNanos = data.optimizationPathCommandMinimizationNanos,
+                        stages = listOf(
+                            "Local command shortening" to
+                                data.optimizationPathCommandLocalShorteningNanos,
+                            "Global parse and setup" to
+                                data.optimizationPathCommandGlobalParseSetupNanos,
+                            "Global candidate generation" to
+                                data.optimizationPathCommandGlobalCandidateGenerationNanos,
+                            "Global dynamic programming" to
+                                data.optimizationPathCommandGlobalDynamicProgrammingNanos
                         )
                     )
                 }

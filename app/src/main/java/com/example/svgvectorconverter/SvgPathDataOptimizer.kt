@@ -110,6 +110,10 @@ internal object SvgPathDataOptimizer {
         val pathCurveSimplificationNanos: Long = 0,
         val pathCollinearConsolidationNanos: Long = 0,
         val pathCommandMinimizationNanos: Long = 0,
+        val pathCommandLocalShorteningNanos: Long = 0,
+        val pathCommandGlobalParseSetupNanos: Long = 0,
+        val pathCommandGlobalCandidateGenerationNanos: Long = 0,
+        val pathCommandGlobalDynamicProgrammingNanos: Long = 0,
         val pathNumericSerializationNanos: Long = 0,
         val colorNormalizationNanos: Long = 0,
         val pruningAndGroupCleanupNanos: Long = 0,
@@ -732,6 +736,12 @@ internal object SvgPathDataOptimizer {
                 pathCollinearConsolidationNanos =
                     pathProfiling.collinearConsolidationNanos,
                 pathCommandMinimizationNanos = pathProfiling.commandMinimizationNanos,
+                pathCommandLocalShorteningNanos = pathProfiling.commandLocalShorteningNanos,
+                pathCommandGlobalParseSetupNanos = pathProfiling.commandGlobalParseSetupNanos,
+                pathCommandGlobalCandidateGenerationNanos =
+                    pathProfiling.commandGlobalCandidateGenerationNanos,
+                pathCommandGlobalDynamicProgrammingNanos =
+                    pathProfiling.commandGlobalDynamicProgrammingNanos,
                 pathNumericSerializationNanos = pathProfiling.numericSerializationNanos,
                 colorNormalizationNanos = colorNormalizationNanos,
                 pruningAndGroupCleanupNanos = pruningAndGroupCleanupNanos,
@@ -4910,6 +4920,10 @@ internal object SvgPathDataOptimizer {
         var curveSimplificationNanos: Long = 0,
         var collinearConsolidationNanos: Long = 0,
         var commandMinimizationNanos: Long = 0,
+        var commandLocalShorteningNanos: Long = 0,
+        var commandGlobalParseSetupNanos: Long = 0,
+        var commandGlobalCandidateGenerationNanos: Long = 0,
+        var commandGlobalDynamicProgrammingNanos: Long = 0,
         var numericSerializationNanos: Long = 0
     )
 
@@ -5096,11 +5110,17 @@ internal object SvgPathDataOptimizer {
         }
 
         val commandMinimizationStartTime = System.nanoTime()
+        val localShorteningStartTime = System.nanoTime()
         val commandOptimization = shortenPathCommands(
             collinearCleanup.pathData
         )
+        profiling?.let {
+            it.commandLocalShorteningNanos +=
+                System.nanoTime() - localShorteningStartTime
+        }
         val globalCommandOptimization = globallyMinimizeCommandSequence(
-            commandOptimization.pathData
+            commandOptimization.pathData,
+            profiling
         )
         profiling?.let {
             it.commandMinimizationNanos +=
@@ -6602,12 +6622,18 @@ internal object SvgPathDataOptimizer {
      * encoded result is strictly shorter.
      */
     private fun globallyMinimizeCommandSequence(
-        pathData: String
+        pathData: String,
+        profiling: PathSyntaxProfiling? = null
     ): GlobalCommandSequenceResult {
+        val parseSetupStartTime = System.nanoTime()
         val segments = parseNormalizedSegments(pathData)
             ?: return GlobalCommandSequenceResult(pathData, 0, 0, 0, 0, 0)
         if (segments.isEmpty()) {
             return GlobalCommandSequenceResult(pathData, 0, 0, 0, 0, 0)
+        }
+        profiling?.let {
+            it.commandGlobalParseSetupNanos +=
+                System.nanoTime() - parseSetupStartTime
         }
 
         var currentX = BigDecimal.ZERO
@@ -6633,6 +6659,7 @@ internal object SvgPathDataOptimizer {
             val startY = currentY
             val absolute = absoluteValuesFor(segment, startX, startY)
 
+            val candidateGenerationStartTime = System.nanoTime()
             val candidates = mutableListOf<CommandSequenceCandidate>()
 
             fun add(command: Char, values: List<BigDecimal>) {
@@ -6687,6 +6714,11 @@ internal object SvgPathDataOptimizer {
             val uniqueCandidates = candidates.distinctBy {
                 it.command to it.values
             }
+            profiling?.let {
+                it.commandGlobalCandidateGenerationNanos +=
+                    System.nanoTime() - candidateGenerationStartTime
+            }
+            val dynamicProgrammingStartTime = System.nanoTime()
             val nextPaths = mutableMapOf<
                 CommandSequenceState,
                 CommandSequencePath
@@ -6775,6 +6807,10 @@ internal object SvgPathDataOptimizer {
                 return GlobalCommandSequenceResult(pathData, 0, 0, 0, 0, 0)
             }
             paths = nextPaths
+            profiling?.let {
+                it.commandGlobalDynamicProgrammingNanos +=
+                    System.nanoTime() - dynamicProgrammingStartTime
+            }
 
             when (upper) {
                 'M', 'L', 'T' -> {
