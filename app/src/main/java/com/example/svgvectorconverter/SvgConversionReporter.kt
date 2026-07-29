@@ -451,14 +451,13 @@ object SvgConversionReporter {
         val elapsedNanos = conversionStartNanos
             ?.let { (System.nanoTime() - it).coerceAtLeast(0L) }
             ?: data.elapsedNanos
-        val elapsedMs = elapsedNanos / 1_000_000L
-
-        val timedData = data.copy(
-            reportGenerationNanos = reportGenerationNanos,
-            elapsedNanos = elapsedNanos,
-            elapsedMs = elapsedMs
-        )
-        val performance = buildString { appendPerformanceBreakdown(timedData) }.trimEnd()
+        val performance = buildString {
+            appendPerformanceBreakdown(
+                data = data,
+                elapsedNanosOverride = elapsedNanos,
+                reportGenerationNanosOverride = reportGenerationNanos
+            )
+        }.trimEnd()
         return reportWithoutPerformance.replace(performanceMarker, performance)
     }
 
@@ -1322,17 +1321,24 @@ object SvgConversionReporter {
     private fun formatCharacterCount(count: Int): String =
         if (count == 1) "1 character" else "$count characters"
 
-    private fun StringBuilder.appendPerformanceBreakdown(data: SvgConversionReportData) {
+    private fun StringBuilder.appendPerformanceBreakdown(
+        data: SvgConversionReportData,
+        elapsedNanosOverride: Long? = null,
+        reportGenerationNanosOverride: Long? = null
+    ) {
+        val reportGenerationNanos =
+            reportGenerationNanosOverride ?: data.reportGenerationNanos
         val measuredStages = listOf(
             "SVG parsing" to data.svgParsingNanos,
             "Style resolution" to data.styleResolutionNanos,
             "Tree conversion" to data.treeConversionNanos,
             "Optimization" to data.outputOptimizationNanos,
             "Analysis" to data.reportAnalysisNanos,
-            "Report generation" to data.reportGenerationNanos
+            "Report generation" to reportGenerationNanos
         )
 
         val totalNanos = when {
+            elapsedNanosOverride != null -> elapsedNanosOverride
             data.elapsedNanos > 0L -> data.elapsedNanos
             data.elapsedMs > 0L -> data.elapsedMs * 1_000_000L
             else -> measuredStages.sumOf { (_, durationNanos) -> durationNanos.coerceAtLeast(0L) }
