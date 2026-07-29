@@ -227,6 +227,11 @@ class SvgConversionReportData {
     var optimizationPathCollinearConsolidationNanos: Long = 0
     var optimizationPathCommandMinimizationNanos: Long = 0
     var optimizationPathCommandLocalShorteningNanos: Long = 0
+    var optimizationPathCommandLocalParseSetupNanos: Long = 0
+    var optimizationPathCommandLocalAbsoluteRelativeCandidateNanos: Long = 0
+    var optimizationPathCommandLocalAxisCandidateNanos: Long = 0
+    var optimizationPathCommandLocalSmoothShorthandCandidateNanos: Long = 0
+    var optimizationPathCommandLocalEncodingSelectionNanos: Long = 0
     var optimizationPathCommandGlobalParseSetupNanos: Long = 0
     var optimizationPathCommandGlobalCandidateGenerationNanos: Long = 0
     var optimizationPathCommandGlobalDynamicProgrammingNanos: Long = 0
@@ -1444,6 +1449,22 @@ object SvgConversionReporter {
                                 data.optimizationPathCommandGlobalCandidateGenerationNanos,
                             "Global dynamic programming" to
                                 data.optimizationPathCommandGlobalDynamicProgrammingNanos
+                        )
+                    )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Local command shortening",
+                        parentNanos = data.optimizationPathCommandLocalShorteningNanos,
+                        stages = listOf(
+                            "Local parse and setup" to
+                                data.optimizationPathCommandLocalParseSetupNanos,
+                            "Absolute/relative candidates" to
+                                data.optimizationPathCommandLocalAbsoluteRelativeCandidateNanos,
+                            "H/V axis candidates" to
+                                data.optimizationPathCommandLocalAxisCandidateNanos,
+                            "S/T shorthand candidates" to
+                                data.optimizationPathCommandLocalSmoothShorthandCandidateNanos,
+                            "Candidate encoding and selection" to
+                                data.optimizationPathCommandLocalEncodingSelectionNanos
                         )
                     )
                 }

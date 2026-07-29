@@ -402,6 +402,11 @@ object SvgToVectorConverter {
         reportData.optimizationPathCollinearConsolidationNanos = pathOptimizationStats.pathCollinearConsolidationNanos
         reportData.optimizationPathCommandMinimizationNanos = pathOptimizationStats.pathCommandMinimizationNanos
         reportData.optimizationPathCommandLocalShorteningNanos = pathOptimizationStats.pathCommandLocalShorteningNanos
+        reportData.optimizationPathCommandLocalParseSetupNanos = pathOptimizationStats.pathCommandLocalProfiling.parseSetupNanos
+        reportData.optimizationPathCommandLocalAbsoluteRelativeCandidateNanos = pathOptimizationStats.pathCommandLocalProfiling.absoluteRelativeCandidateNanos
+        reportData.optimizationPathCommandLocalAxisCandidateNanos = pathOptimizationStats.pathCommandLocalProfiling.axisCandidateNanos
+        reportData.optimizationPathCommandLocalSmoothShorthandCandidateNanos = pathOptimizationStats.pathCommandLocalProfiling.smoothShorthandCandidateNanos
+        reportData.optimizationPathCommandLocalEncodingSelectionNanos = pathOptimizationStats.pathCommandLocalProfiling.encodingSelectionNanos
         reportData.optimizationPathCommandGlobalParseSetupNanos = pathOptimizationStats.pathCommandGlobalParseSetupNanos
         reportData.optimizationPathCommandGlobalCandidateGenerationNanos = pathOptimizationStats.pathCommandGlobalCandidateGenerationNanos
         reportData.optimizationPathCommandGlobalDynamicProgrammingNanos = pathOptimizationStats.pathCommandGlobalDynamicProgrammingNanos

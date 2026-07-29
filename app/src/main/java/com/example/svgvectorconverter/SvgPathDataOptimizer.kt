@@ -24,6 +24,14 @@ import kotlin.random.Random
  * cases are retained rather than risking a visual change.
  */
 internal object SvgPathDataOptimizer {
+    data class CommandLocalProfilingStats(
+        val parseSetupNanos: Long = 0,
+        val absoluteRelativeCandidateNanos: Long = 0,
+        val axisCandidateNanos: Long = 0,
+        val smoothShorthandCandidateNanos: Long = 0,
+        val encodingSelectionNanos: Long = 0
+    )
+
     data class Stats(
         val pathCount: Int = 0,
         val charactersBefore: Int = 0,
@@ -111,6 +119,7 @@ internal object SvgPathDataOptimizer {
         val pathCollinearConsolidationNanos: Long = 0,
         val pathCommandMinimizationNanos: Long = 0,
         val pathCommandLocalShorteningNanos: Long = 0,
+        val pathCommandLocalProfiling: CommandLocalProfilingStats = CommandLocalProfilingStats(),
         val pathCommandGlobalParseSetupNanos: Long = 0,
         val pathCommandGlobalCandidateGenerationNanos: Long = 0,
         val pathCommandGlobalDynamicProgrammingNanos: Long = 0,
@@ -737,6 +746,13 @@ internal object SvgPathDataOptimizer {
                     pathProfiling.collinearConsolidationNanos,
                 pathCommandMinimizationNanos = pathProfiling.commandMinimizationNanos,
                 pathCommandLocalShorteningNanos = pathProfiling.commandLocalShorteningNanos,
+                pathCommandLocalProfiling = CommandLocalProfilingStats(
+                    parseSetupNanos = pathProfiling.commandLocalParseSetupNanos,
+                    absoluteRelativeCandidateNanos = pathProfiling.commandLocalAbsoluteRelativeCandidateNanos,
+                    axisCandidateNanos = pathProfiling.commandLocalAxisCandidateNanos,
+                    smoothShorthandCandidateNanos = pathProfiling.commandLocalSmoothShorthandCandidateNanos,
+                    encodingSelectionNanos = pathProfiling.commandLocalEncodingSelectionNanos
+                ),
                 pathCommandGlobalParseSetupNanos = pathProfiling.commandGlobalParseSetupNanos,
                 pathCommandGlobalCandidateGenerationNanos =
                     pathProfiling.commandGlobalCandidateGenerationNanos,
@@ -4921,6 +4937,11 @@ internal object SvgPathDataOptimizer {
         var collinearConsolidationNanos: Long = 0,
         var commandMinimizationNanos: Long = 0,
         var commandLocalShorteningNanos: Long = 0,
+        var commandLocalParseSetupNanos: Long = 0,
+        var commandLocalAbsoluteRelativeCandidateNanos: Long = 0,
+        var commandLocalAxisCandidateNanos: Long = 0,
+        var commandLocalSmoothShorthandCandidateNanos: Long = 0,
+        var commandLocalEncodingSelectionNanos: Long = 0,
         var commandGlobalParseSetupNanos: Long = 0,
         var commandGlobalCandidateGenerationNanos: Long = 0,
         var commandGlobalDynamicProgrammingNanos: Long = 0,
@@ -5112,7 +5133,8 @@ internal object SvgPathDataOptimizer {
         val commandMinimizationStartTime = System.nanoTime()
         val localShorteningStartTime = System.nanoTime()
         val commandOptimization = shortenPathCommands(
-            collinearCleanup.pathData
+            collinearCleanup.pathData,
+            profiling
         )
         profiling?.let {
             it.commandLocalShorteningNanos +=
@@ -6980,7 +7002,11 @@ internal object SvgPathDataOptimizer {
      * - replace horizontal/vertical line segments with H/V or h/v;
      * - retain the original normalized form whenever no candidate is shorter.
      */
-    private fun shortenPathCommands(pathData: String): CommandOptimizationResult {
+    private fun shortenPathCommands(
+        pathData: String,
+        profiling: PathSyntaxProfiling? = null
+    ): CommandOptimizationResult {
+        val parseSetupStartTime = System.nanoTime()
         val segments = parseNormalizedSegments(pathData)
             ?: return CommandOptimizationResult(pathData, 0, 0, 0, 0)
         if (segments.isEmpty()) return CommandOptimizationResult(pathData, 0, 0, 0, 0)
@@ -7004,17 +7030,28 @@ internal object SvgPathDataOptimizer {
         var axisSelected = 0
         var smoothShorthandsSelected = 0
 
+        profiling?.let {
+            it.commandLocalParseSetupNanos +=
+                System.nanoTime() - parseSetupStartTime
+        }
+
         for (segment in segments) {
             val upper = segment.command.uppercaseChar()
             val startX = currentX
             val startY = currentY
 
             val candidates = mutableListOf<Pair<Char, List<BigDecimal>>>()
+            val absoluteRelativeStartTime = System.nanoTime()
             candidates += upper to absoluteValuesFor(segment, startX, startY)
             if (upper != 'Z') {
                 candidates += upper.lowercaseChar() to relativeValuesFor(segment, startX, startY)
             }
+            profiling?.let {
+                it.commandLocalAbsoluteRelativeCandidateNanos +=
+                    System.nanoTime() - absoluteRelativeStartTime
+            }
 
+            val axisCandidateStartTime = System.nanoTime()
             if (upper == 'L') {
                 val absolute = absoluteValuesFor(segment, startX, startY)
                 val endX = absolute[0]
@@ -7028,7 +7065,12 @@ internal object SvgPathDataOptimizer {
                     candidates += 'v' to listOf(endY.subtract(startY))
                 }
             }
+            profiling?.let {
+                it.commandLocalAxisCandidateNanos +=
+                    System.nanoTime() - axisCandidateStartTime
+            }
 
+            val smoothCandidateStartTime = System.nanoTime()
             if (
                 upper == 'C' &&
                 previousCubicControlX != null &&
@@ -7085,6 +7127,12 @@ internal object SvgPathDataOptimizer {
                     )
                 }
             }
+            profiling?.let {
+                it.commandLocalSmoothShorthandCandidateNanos +=
+                    System.nanoTime() - smoothCandidateStartTime
+            }
+
+            val encodingSelectionStartTime = System.nanoTime()
 
             val originalCommand = segment.command
             val originalValues = segment.values
@@ -7139,6 +7187,11 @@ internal object SvgPathDataOptimizer {
                 .minWithOrNull(compareBy<Triple<Pair<Char, List<BigDecimal>>, String, Int>> { it.third }
                     .thenBy { if (it.first.first == originalCommand) 0 else 1 })
                 ?: return CommandOptimizationResult(pathData, 0, 0, 0, 0)
+
+            profiling?.let {
+                it.commandLocalEncodingSelectionNanos +=
+                    System.nanoTime() - encodingSelectionStartTime
+            }
 
             val selectedCommand = chosen.first.first
             output.append(chosen.second)
