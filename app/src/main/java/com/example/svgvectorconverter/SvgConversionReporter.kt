@@ -31,230 +31,230 @@ data class SvgPatternApproximationStats(
     val sparsePatternApproximationCount: Int = 0
 )
 
-data class SvgConversionReportData(
-    val convertedPathCount: Int,
-    val convertedOriginalPathCount: Int,
-    val convertedBasicShapeCount: Int,
-    val basicShapeBreakdown: BasicShapeBreakdown,
-    val definitionDrawableElementCount: Int,
-    val visibleDrawableElementCount: Int,
-    val drawableValidPathCount: Int,
-    val emptyPathCount: Int,
-    val generatedGroupCount: Int,
-    val useCount: Int,
-    val resolvedUseExpansions: Int,
-    val unresolvedUseReferences: Int,
-    val symbolCount: Int,
-    val gradientFallbackColorCount: Int,
-    val patternApproximationCount: Int,
-    val patternApproximationStats: SvgPatternApproximationStats,
-    val patternTileExpansionCount: Int = 0,
-    val patternTilePathCount: Int = 0,
-    val markerDefinitionCount: Int,
-    val appliedMarkers: Int,
-    val clipPathCount: Int,
-    val clipPathReferenceCount: Int,
-    val appliedClipPaths: Int,
-    val maskPathCount: Int,
-    val maskReferenceCount: Int,
-    val appliedMasks: Int,
-    val dashedStrokesDetected: Int,
-    val dashedStrokesApproximated: Int,
-    val invalidDashArrays: Int = 0,
-    val dashSolidFallbacks: Int = 0,
-    val oddDashListsDuplicated: Int = 0,
-    val invalidDashOffsetFallbacks: Int = 0,
-    val dashOffsetsNormalized: Int = 0,
-    val dashTransformExactCompensations: Int = 0,
-    val dashTransformApproximateCompensations: Int = 0,
-    val nonScalingStrokesDetected: Int,
-    val nonScalingStrokesCompensated: Int,
-    val nonScalingStrokesUncertain: Int,
-    val displayNoneElementsSkipped: Int = 0,
-    val visibilityHiddenElementsSkipped: Int = 0,
-    val nestedSvgViewportCount: Int = 0,
-    val nestedSvgViewportClipCount: Int = 0,
-    val nestedSvgPercentageViewportCount: Int = 0,
-    val nestedSvgOverflowHiddenCount: Int = 0,
-    val nestedSvgOverflowVisibleCount: Int = 0,
-    val nestedSvgOverflowAutoCount: Int = 0,
-    val nestedSvgOverflowScrollCount: Int = 0,
-    val nestedSvgOverflowUnsupportedCount: Int = 0,
-    val filterDefinitionCount: Int,
-    val filterReferenceCount: Int,
-    val textElementCount: Int,
-    val tspanElementCount: Int,
-    val textPathElementCount: Int,
-    val textElementsApproximated: Int,
-    val textElementsConvertedToPaths: Int = 0,
-    val textGlyphPathsEmitted: Int = 0,
-    val textGlyphSpecificAdvances: Int = 0,
-    val textDefaultFontAdvances: Int = 0,
-    val textMissingGlyphFallbacks: Int = 0,
-    val textGlyphNameLookups: Int = 0,
-    val textHorizontalKerningPairs: Int = 0,
-    val textVerticalKerningPairs: Int = 0,
-    val textHorizontalKerningPairsMatched: Int = 0,
-    val textVerticalKerningPairsMatched: Int = 0,
-    val textKerningAdjustmentsApplied: Int = 0,
-    val textLengthSpacingAdjustments: Int = 0,
-    val textLengthSpacingAndGlyphsAdjustments: Int = 0,
-    val textGlyphRotationsApplied: Int = 0,
-    val textLetterSpacingAdjustmentsApplied: Int = 0,
-    val textWordSpacingAdjustmentsApplied: Int = 0,
-    val textDecorationPathsEmitted: Int = 0,
-    val textBidiRunsReordered: Int = 0,
-    val textDirections: List<String> = emptyList(),
-    val textUnicodeBidiModes: List<String> = emptyList(),
-    val textPathsConverted: Int = 0,
-    val textPathGlyphsEmitted: Int = 0,
-    val textFontFamilies: List<String> = emptyList(),
-    val textFontWeights: List<String> = emptyList(),
-    val verticalWritingTextCount: Int = 0,
-    val writingModes: List<String> = emptyList(),
-    val textAnchors: List<String> = emptyList(),
-    val dominantBaselines: List<String> = emptyList(),
-    val alignmentBaselines: List<String> = emptyList(),
-    val baselineShifts: List<String> = emptyList(),
-    val lengthAdjustModes: List<String> = emptyList(),
-    val textPathMethods: List<String> = emptyList(),
-    val svgFontGlyphCount: Int,
-    val contextPaintApproximationCount: Int,
-    val cssImportRuleCount: Int,
-    val cssImportedInlineRuleCount: Int,
-    val cssExternalImportCount: Int,
-    val imageStats: SvgImageStats,
-    val styleAttributeCount: Int,
-    val presentationStyleAttributeCount: Int,
-    val warningCount: Int,
-    val unsupportedWarnings: List<String>,
-    val unsupportedMatrixTransforms: Int,
-    val supportedMatrixTransforms: Int,
-    val matrixCount: Int,
-    val translateCount: Int,
-    val scaleCount: Int,
-    val rotateCount: Int,
-    val conversionProfile: String,
-    val outputDpSize: Int,
-    val viewportWidth: Float,
-    val viewportHeight: Float,
-    val pathDataOptimizedCount: Int = 0,
-    val pathDataCharactersBefore: Int = 0,
-    val pathDataCharactersAfter: Int = 0,
-    val pathDataRepeatedCommandsRemoved: Int = 0,
-    val redundantNonDrawingSegmentsRemoved: Int = 0,
-    val collinearLineSegmentsConsolidated: Int = 0,
-    val straightBezierCurvesSimplified: Int = 0,
-    val degenerateArcsSimplified: Int = 0,
-    val smoothBezierShorthandsSelected: Int = 0,
-    val cubicCurvesReducedToQuadratic: Int = 0,
-    val arcRotationsCanonicalized: Int = 0,
-    val arcRadiiCanonicalized: Int = 0,
-    val arcHalfTurnRotationsReduced: Int = 0,
-    val arcAxesSwappedForSize: Int = 0,
-    val arcRepresentationsGloballyMinimized: Int = 0,
-    val commandSequencesGloballyMinimized: Int = 0,
-    val implicitLineTosAfterMoveSelected: Int = 0,
-    val repeatedShorthandCurveCommandsOmitted: Int = 0,
-    val repeatedFullCurveCommandsOmitted: Int = 0,
-    val repeatedArcCommandsOmitted: Int = 0,
-    val scientificNotationValuesSelected: Int = 0,
-    val globallyOptimizedNumericPaths: Int = 0,
-    val pathDataNumbersNormalized: Int = 0,
-    val emptyPathDataRemoved: Int = 0,
-    val moveOnlyPathsRemoved: Int = 0,
-    val invisiblePathsRemoved: Int = 0,
-    val emptyGroupsRemoved: Int = 0,
-    val redundantGroupsFlattened: Int = 0,
-    val commonTranslationGroupsFactored: Int = 0,
-    val adjacentGroupsCoalesced: Int = 0,
-    val compatiblePathsMerged: Int = 0,
-    val exactDuplicatePathsRemoved: Int = 0,
-    val translatedGroupsFlattened: Int = 0,
-    val translatedPaths: Int = 0,
-    val scaledGroupsFlattened: Int = 0,
-    val scaledPaths: Int = 0,
-    val scaledStrokeWidths: Int = 0,
-    val scaleGroupsPreservedForSize: Int = 0,
-    val nonUniformScaleGroupsFlattened: Int = 0,
-    val nonUniformScaledPaths: Int = 0,
-    val nonUniformScaleGroupsPreservedForSize: Int = 0,
-    val rotationGroupsFlattened: Int = 0,
-    val rotatedPaths: Int = 0,
-    val rotationGroupsPreservedForSize: Int = 0,
-    val identityTransformAttributesRemoved: Int = 0,
-    val nestedTransformGroupsComposed: Int = 0,
-    val transformAttributesCanonicalized: Int = 0,
-    val zeroPivotAttributesRemoved: Int = 0,
-    val transformGroupsReordered: Int = 0,
-    val optimizerIdempotenceVerified: Boolean = false,
-    val optimizerReachedFixedPoint: Boolean = false,
-    val optimizerStabilityPasses: Int = 0,
-    val optimizerValidationNanos: Long = 0,
-    val optimizerProductionPassNanos: Long = 0,
-    val optimizerIdempotencePassNanos: Long = 0,
-    val optimizerFixedPointPassNanos: Long = 0,
-    val optimizerValidationPathCacheHits: Int = 0,
-    val optimizerValidationPathCacheMisses: Int = 0,
-    val optimizerValidationPasses: Int = 0,
-    val optimizerFirstPassChangedXml: Boolean = false,
-    val optimizerSecondPassChangedXml: Boolean = false,
-    val optimizerThirdPassChangedXml: Boolean = false,
-    val finalOutputValidationPassed: Boolean = false,
-    val finalOutputValidationNanos: Long = 0,
-    val validatedPathDataCount: Int = 0,
-    val invalidPathDataCount: Int = 0,
-    val nonFiniteNumberCount: Int = 0,
-    val malformedStructureCount: Int = 0,
-    val invalidViewportCount: Int = 0,
-    val unsupportedOutputConstructCount: Int = 0,
-    val shorterCommandFormsSelected: Int = 0,
-    val relativeCommandsSelected: Int = 0,
-    val axisCommandsSelected: Int = 0,
-    val sourceSvgCharacters: Int = 0,
-    val optimizedXmlCharactersBefore: Int = 0,
-    val optimizedXmlCharactersAfter: Int = 0,
-    val styleResolutionNanos: Long = 0,
-    val svgParsingNanos: Long = 0,
-    val treeConversionNanos: Long = 0,
-    val outputOptimizationNanos: Long = 0,
-    val optimizationPathSyntaxNanos: Long = 0,
-    val optimizationPathTokenizationNanos: Long = 0,
-    val optimizationPathGeometryCleanupNanos: Long = 0,
-    val optimizationPathRedundantSegmentCleanupNanos: Long = 0,
-    val optimizationPathArcCleanupNanos: Long = 0,
-    val optimizationPathCurveSimplificationNanos: Long = 0,
-    val optimizationPathCollinearConsolidationNanos: Long = 0,
-    val optimizationPathCommandMinimizationNanos: Long = 0,
-    val optimizationPathCommandLocalShorteningNanos: Long = 0,
-    val optimizationPathCommandGlobalParseSetupNanos: Long = 0,
-    val optimizationPathCommandGlobalCandidateGenerationNanos: Long = 0,
-    val optimizationPathCommandGlobalDynamicProgrammingNanos: Long = 0,
-    val optimizationPathNumericSerializationNanos: Long = 0,
-    val optimizationColorNormalizationNanos: Long = 0,
-    val optimizationPruningCleanupNanos: Long = 0,
-    val optimizationTransformsNanos: Long = 0,
-    val optimizationTransformIdentityCompositionNanos: Long = 0,
-    val optimizationTransformFactoringFlatteningNanos: Long = 0,
-    val optimizationTransformScaleFlatteningNanos: Long = 0,
-    val optimizationTransformUniformScaleFlatteningNanos: Long = 0,
-    val optimizationTransformNonUniformScaleFlatteningNanos: Long = 0,
-    val optimizationTransformRotationTranslationNanos: Long = 0,
-    val optimizationTransformCanonicalizationNanos: Long = 0,
-    val optimizationDeduplicationNanos: Long = 0,
-    val optimizationNumericCleanupNanos: Long = 0,
-    val optimizationFormattingNanos: Long = 0,
-    val optimizationPathSyntaxCharactersSaved: Int = 0,
-    val optimizationPruningCleanupCharactersSaved: Int = 0,
-    val optimizationTransformCharactersSaved: Int = 0,
-    val optimizationDeduplicationCharactersSaved: Int = 0,
-    val optimizationNumericCleanupCharactersSaved: Int = 0,
-    val optimizationFormattingCharactersSaved: Int = 0,
-    val reportAnalysisNanos: Long = 0,
-    val reportGenerationNanos: Long = 0,
-    val elapsedNanos: Long = 0,
-    val elapsedMs: Long = 0
-)
+class SvgConversionReportData {
+    var convertedPathCount: Int = 0
+    var convertedOriginalPathCount: Int = 0
+    var convertedBasicShapeCount: Int = 0
+    var basicShapeBreakdown: BasicShapeBreakdown = BasicShapeBreakdown()
+    var definitionDrawableElementCount: Int = 0
+    var visibleDrawableElementCount: Int = 0
+    var drawableValidPathCount: Int = 0
+    var emptyPathCount: Int = 0
+    var generatedGroupCount: Int = 0
+    var useCount: Int = 0
+    var resolvedUseExpansions: Int = 0
+    var unresolvedUseReferences: Int = 0
+    var symbolCount: Int = 0
+    var gradientFallbackColorCount: Int = 0
+    var patternApproximationCount: Int = 0
+    var patternApproximationStats: SvgPatternApproximationStats = SvgPatternApproximationStats()
+    var patternTileExpansionCount: Int = 0
+    var patternTilePathCount: Int = 0
+    var markerDefinitionCount: Int = 0
+    var appliedMarkers: Int = 0
+    var clipPathCount: Int = 0
+    var clipPathReferenceCount: Int = 0
+    var appliedClipPaths: Int = 0
+    var maskPathCount: Int = 0
+    var maskReferenceCount: Int = 0
+    var appliedMasks: Int = 0
+    var dashedStrokesDetected: Int = 0
+    var dashedStrokesApproximated: Int = 0
+    var invalidDashArrays: Int = 0
+    var dashSolidFallbacks: Int = 0
+    var oddDashListsDuplicated: Int = 0
+    var invalidDashOffsetFallbacks: Int = 0
+    var dashOffsetsNormalized: Int = 0
+    var dashTransformExactCompensations: Int = 0
+    var dashTransformApproximateCompensations: Int = 0
+    var nonScalingStrokesDetected: Int = 0
+    var nonScalingStrokesCompensated: Int = 0
+    var nonScalingStrokesUncertain: Int = 0
+    var displayNoneElementsSkipped: Int = 0
+    var visibilityHiddenElementsSkipped: Int = 0
+    var nestedSvgViewportCount: Int = 0
+    var nestedSvgViewportClipCount: Int = 0
+    var nestedSvgPercentageViewportCount: Int = 0
+    var nestedSvgOverflowHiddenCount: Int = 0
+    var nestedSvgOverflowVisibleCount: Int = 0
+    var nestedSvgOverflowAutoCount: Int = 0
+    var nestedSvgOverflowScrollCount: Int = 0
+    var nestedSvgOverflowUnsupportedCount: Int = 0
+    var filterDefinitionCount: Int = 0
+    var filterReferenceCount: Int = 0
+    var textElementCount: Int = 0
+    var tspanElementCount: Int = 0
+    var textPathElementCount: Int = 0
+    var textElementsApproximated: Int = 0
+    var textElementsConvertedToPaths: Int = 0
+    var textGlyphPathsEmitted: Int = 0
+    var textGlyphSpecificAdvances: Int = 0
+    var textDefaultFontAdvances: Int = 0
+    var textMissingGlyphFallbacks: Int = 0
+    var textGlyphNameLookups: Int = 0
+    var textHorizontalKerningPairs: Int = 0
+    var textVerticalKerningPairs: Int = 0
+    var textHorizontalKerningPairsMatched: Int = 0
+    var textVerticalKerningPairsMatched: Int = 0
+    var textKerningAdjustmentsApplied: Int = 0
+    var textLengthSpacingAdjustments: Int = 0
+    var textLengthSpacingAndGlyphsAdjustments: Int = 0
+    var textGlyphRotationsApplied: Int = 0
+    var textLetterSpacingAdjustmentsApplied: Int = 0
+    var textWordSpacingAdjustmentsApplied: Int = 0
+    var textDecorationPathsEmitted: Int = 0
+    var textBidiRunsReordered: Int = 0
+    var textDirections: List<String> = emptyList()
+    var textUnicodeBidiModes: List<String> = emptyList()
+    var textPathsConverted: Int = 0
+    var textPathGlyphsEmitted: Int = 0
+    var textFontFamilies: List<String> = emptyList()
+    var textFontWeights: List<String> = emptyList()
+    var verticalWritingTextCount: Int = 0
+    var writingModes: List<String> = emptyList()
+    var textAnchors: List<String> = emptyList()
+    var dominantBaselines: List<String> = emptyList()
+    var alignmentBaselines: List<String> = emptyList()
+    var baselineShifts: List<String> = emptyList()
+    var lengthAdjustModes: List<String> = emptyList()
+    var textPathMethods: List<String> = emptyList()
+    var svgFontGlyphCount: Int = 0
+    var contextPaintApproximationCount: Int = 0
+    var cssImportRuleCount: Int = 0
+    var cssImportedInlineRuleCount: Int = 0
+    var cssExternalImportCount: Int = 0
+    var imageStats: SvgImageStats = SvgImageStats()
+    var styleAttributeCount: Int = 0
+    var presentationStyleAttributeCount: Int = 0
+    var warningCount: Int = 0
+    var unsupportedWarnings: List<String> = emptyList()
+    var unsupportedMatrixTransforms: Int = 0
+    var supportedMatrixTransforms: Int = 0
+    var matrixCount: Int = 0
+    var translateCount: Int = 0
+    var scaleCount: Int = 0
+    var rotateCount: Int = 0
+    var conversionProfile: String = ""
+    var outputDpSize: Int = 0
+    var viewportWidth: Float = 0f
+    var viewportHeight: Float = 0f
+    var pathDataOptimizedCount: Int = 0
+    var pathDataCharactersBefore: Int = 0
+    var pathDataCharactersAfter: Int = 0
+    var pathDataRepeatedCommandsRemoved: Int = 0
+    var redundantNonDrawingSegmentsRemoved: Int = 0
+    var collinearLineSegmentsConsolidated: Int = 0
+    var straightBezierCurvesSimplified: Int = 0
+    var degenerateArcsSimplified: Int = 0
+    var smoothBezierShorthandsSelected: Int = 0
+    var cubicCurvesReducedToQuadratic: Int = 0
+    var arcRotationsCanonicalized: Int = 0
+    var arcRadiiCanonicalized: Int = 0
+    var arcHalfTurnRotationsReduced: Int = 0
+    var arcAxesSwappedForSize: Int = 0
+    var arcRepresentationsGloballyMinimized: Int = 0
+    var commandSequencesGloballyMinimized: Int = 0
+    var implicitLineTosAfterMoveSelected: Int = 0
+    var repeatedShorthandCurveCommandsOmitted: Int = 0
+    var repeatedFullCurveCommandsOmitted: Int = 0
+    var repeatedArcCommandsOmitted: Int = 0
+    var scientificNotationValuesSelected: Int = 0
+    var globallyOptimizedNumericPaths: Int = 0
+    var pathDataNumbersNormalized: Int = 0
+    var emptyPathDataRemoved: Int = 0
+    var moveOnlyPathsRemoved: Int = 0
+    var invisiblePathsRemoved: Int = 0
+    var emptyGroupsRemoved: Int = 0
+    var redundantGroupsFlattened: Int = 0
+    var commonTranslationGroupsFactored: Int = 0
+    var adjacentGroupsCoalesced: Int = 0
+    var compatiblePathsMerged: Int = 0
+    var exactDuplicatePathsRemoved: Int = 0
+    var translatedGroupsFlattened: Int = 0
+    var translatedPaths: Int = 0
+    var scaledGroupsFlattened: Int = 0
+    var scaledPaths: Int = 0
+    var scaledStrokeWidths: Int = 0
+    var scaleGroupsPreservedForSize: Int = 0
+    var nonUniformScaleGroupsFlattened: Int = 0
+    var nonUniformScaledPaths: Int = 0
+    var nonUniformScaleGroupsPreservedForSize: Int = 0
+    var rotationGroupsFlattened: Int = 0
+    var rotatedPaths: Int = 0
+    var rotationGroupsPreservedForSize: Int = 0
+    var identityTransformAttributesRemoved: Int = 0
+    var nestedTransformGroupsComposed: Int = 0
+    var transformAttributesCanonicalized: Int = 0
+    var zeroPivotAttributesRemoved: Int = 0
+    var transformGroupsReordered: Int = 0
+    var optimizerIdempotenceVerified: Boolean = false
+    var optimizerReachedFixedPoint: Boolean = false
+    var optimizerStabilityPasses: Int = 0
+    var optimizerValidationNanos: Long = 0
+    var optimizerProductionPassNanos: Long = 0
+    var optimizerIdempotencePassNanos: Long = 0
+    var optimizerFixedPointPassNanos: Long = 0
+    var optimizerValidationPathCacheHits: Int = 0
+    var optimizerValidationPathCacheMisses: Int = 0
+    var optimizerValidationPasses: Int = 0
+    var optimizerFirstPassChangedXml: Boolean = false
+    var optimizerSecondPassChangedXml: Boolean = false
+    var optimizerThirdPassChangedXml: Boolean = false
+    var finalOutputValidationPassed: Boolean = false
+    var finalOutputValidationNanos: Long = 0
+    var validatedPathDataCount: Int = 0
+    var invalidPathDataCount: Int = 0
+    var nonFiniteNumberCount: Int = 0
+    var malformedStructureCount: Int = 0
+    var invalidViewportCount: Int = 0
+    var unsupportedOutputConstructCount: Int = 0
+    var shorterCommandFormsSelected: Int = 0
+    var relativeCommandsSelected: Int = 0
+    var axisCommandsSelected: Int = 0
+    var sourceSvgCharacters: Int = 0
+    var optimizedXmlCharactersBefore: Int = 0
+    var optimizedXmlCharactersAfter: Int = 0
+    var styleResolutionNanos: Long = 0
+    var svgParsingNanos: Long = 0
+    var treeConversionNanos: Long = 0
+    var outputOptimizationNanos: Long = 0
+    var optimizationPathSyntaxNanos: Long = 0
+    var optimizationPathTokenizationNanos: Long = 0
+    var optimizationPathGeometryCleanupNanos: Long = 0
+    var optimizationPathRedundantSegmentCleanupNanos: Long = 0
+    var optimizationPathArcCleanupNanos: Long = 0
+    var optimizationPathCurveSimplificationNanos: Long = 0
+    var optimizationPathCollinearConsolidationNanos: Long = 0
+    var optimizationPathCommandMinimizationNanos: Long = 0
+    var optimizationPathCommandLocalShorteningNanos: Long = 0
+    var optimizationPathCommandGlobalParseSetupNanos: Long = 0
+    var optimizationPathCommandGlobalCandidateGenerationNanos: Long = 0
+    var optimizationPathCommandGlobalDynamicProgrammingNanos: Long = 0
+    var optimizationPathNumericSerializationNanos: Long = 0
+    var optimizationColorNormalizationNanos: Long = 0
+    var optimizationPruningCleanupNanos: Long = 0
+    var optimizationTransformsNanos: Long = 0
+    var optimizationTransformIdentityCompositionNanos: Long = 0
+    var optimizationTransformFactoringFlatteningNanos: Long = 0
+    var optimizationTransformScaleFlatteningNanos: Long = 0
+    var optimizationTransformUniformScaleFlatteningNanos: Long = 0
+    var optimizationTransformNonUniformScaleFlatteningNanos: Long = 0
+    var optimizationTransformRotationTranslationNanos: Long = 0
+    var optimizationTransformCanonicalizationNanos: Long = 0
+    var optimizationDeduplicationNanos: Long = 0
+    var optimizationNumericCleanupNanos: Long = 0
+    var optimizationFormattingNanos: Long = 0
+    var optimizationPathSyntaxCharactersSaved: Int = 0
+    var optimizationPruningCleanupCharactersSaved: Int = 0
+    var optimizationTransformCharactersSaved: Int = 0
+    var optimizationDeduplicationCharactersSaved: Int = 0
+    var optimizationNumericCleanupCharactersSaved: Int = 0
+    var optimizationFormattingCharactersSaved: Int = 0
+    var reportAnalysisNanos: Long = 0
+    var reportGenerationNanos: Long = 0
+    var elapsedNanos: Long = 0
+    var elapsedMs: Long = 0
+}
 
 object SvgConversionReporter {
     fun hasTag(svg: String, tagName: String): Boolean {

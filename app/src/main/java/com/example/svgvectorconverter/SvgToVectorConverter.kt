@@ -206,311 +206,232 @@ object SvgToVectorConverter {
         val elapsedNanos = elapsedNanoseconds(startTime)
         val elapsedMs = elapsedNanos / 1_000_000L
 
+        val reportData = SvgConversionReportData()
+        reportData.convertedPathCount = convertedPathCount
+        reportData.convertedOriginalPathCount = convertedOriginalPathCount
+        reportData.convertedBasicShapeCount = convertedBasicShapeCount
+        reportData.basicShapeBreakdown = basicShapeBreakdown
+        reportData.definitionDrawableElementCount = definitionDrawableElementCount
+        reportData.visibleDrawableElementCount = visibleDrawableElementCount
+        reportData.drawableValidPathCount = drawableValidPathCount
+        reportData.emptyPathCount = emptyPathCount
+        reportData.generatedGroupCount = generatedGroupCount
+        reportData.useCount = useCount
+        reportData.resolvedUseExpansions = SvgTreeConverter.resolvedUseExpansions
+        reportData.unresolvedUseReferences = unresolvedUseReferences
+        reportData.symbolCount = symbolCount
+        reportData.gradientFallbackColorCount = gradientFallbackColors.size
+        reportData.patternApproximationCount = patternFallbackColors.size
+        reportData.patternApproximationStats = patternApproximationStats
+        reportData.patternTileExpansionCount = SvgTreeConverter.patternTileExpansions
+        reportData.patternTilePathCount = SvgTreeConverter.patternTilePathsEmitted
+        reportData.markerDefinitionCount = markerDefinitions.size
+        reportData.appliedMarkers = SvgTreeConverter.appliedMarkers
+        reportData.clipPathCount = clipPathData.size
+        reportData.clipPathReferenceCount = clipPathReferenceCount
+        reportData.appliedClipPaths = SvgTreeConverter.appliedClipPaths
+        reportData.maskPathCount = maskPathData.size
+        reportData.maskReferenceCount = maskReferenceCount
+        reportData.appliedMasks = SvgTreeConverter.appliedMasks
+        reportData.dashedStrokesDetected = SvgTreeConverter.dashedStrokesDetected
+        reportData.dashedStrokesApproximated = SvgTreeConverter.dashedStrokesApproximated
+        reportData.invalidDashArrays = SvgTreeConverter.invalidDashArrays
+        reportData.dashSolidFallbacks = SvgTreeConverter.dashSolidFallbacks
+        reportData.oddDashListsDuplicated = SvgTreeConverter.oddDashListsDuplicated
+        reportData.invalidDashOffsetFallbacks = SvgTreeConverter.invalidDashOffsetFallbacks
+        reportData.dashOffsetsNormalized = SvgTreeConverter.dashOffsetsNormalized
+        reportData.dashTransformExactCompensations = SvgTreeConverter.dashTransformExactCompensations
+        reportData.dashTransformApproximateCompensations = SvgTreeConverter.dashTransformApproximateCompensations
+        reportData.nonScalingStrokesDetected = SvgTreeConverter.nonScalingStrokesDetected
+        reportData.nonScalingStrokesCompensated = SvgTreeConverter.nonScalingStrokesCompensated
+        reportData.nonScalingStrokesUncertain = SvgTreeConverter.nonScalingStrokesUncertain
+        reportData.displayNoneElementsSkipped = SvgTreeConverter.displayNoneElementsSkipped
+        reportData.visibilityHiddenElementsSkipped = SvgTreeConverter.visibilityHiddenElementsSkipped
+        reportData.nestedSvgViewportCount = SvgTreeConverter.nestedSvgViewports
+        reportData.nestedSvgViewportClipCount = SvgTreeConverter.nestedSvgViewportClips
+        reportData.nestedSvgPercentageViewportCount = SvgTreeConverter.nestedSvgPercentageViewports
+        reportData.nestedSvgOverflowHiddenCount = SvgTreeConverter.nestedSvgOverflowHidden
+        reportData.nestedSvgOverflowVisibleCount = SvgTreeConverter.nestedSvgOverflowVisible
+        reportData.nestedSvgOverflowAutoCount = SvgTreeConverter.nestedSvgOverflowAuto
+        reportData.nestedSvgOverflowScrollCount = SvgTreeConverter.nestedSvgOverflowScroll
+        reportData.nestedSvgOverflowUnsupportedCount = SvgTreeConverter.nestedSvgOverflowUnsupported
+        reportData.filterDefinitionCount = filterDefinitionCount
+        reportData.filterReferenceCount = filterReferenceCount
+        reportData.textElementCount = textElementCount
+        reportData.tspanElementCount = tspanElementCount
+        reportData.textPathElementCount = textPathElementCount
+        reportData.textElementsApproximated = SvgTreeConverter.textElementsApproximated
+        reportData.textElementsConvertedToPaths = SvgTreeConverter.textElementsConvertedToPaths
+        reportData.textGlyphPathsEmitted = SvgTreeConverter.textGlyphPathsEmitted
+        reportData.textGlyphSpecificAdvances = SvgTreeConverter.textGlyphSpecificAdvances
+        reportData.textDefaultFontAdvances = SvgTreeConverter.textDefaultFontAdvances
+        reportData.textMissingGlyphFallbacks = SvgTreeConverter.textMissingGlyphFallbacks
+        reportData.textGlyphNameLookups = SvgTreeConverter.textGlyphNameLookups
+        reportData.textHorizontalKerningPairs = SvgTreeConverter.textHorizontalKerningPairs
+        reportData.textVerticalKerningPairs = SvgTreeConverter.textVerticalKerningPairs
+        reportData.textHorizontalKerningPairsMatched = SvgTreeConverter.textHorizontalKerningPairsMatched
+        reportData.textVerticalKerningPairsMatched = SvgTreeConverter.textVerticalKerningPairsMatched
+        reportData.textKerningAdjustmentsApplied = SvgTreeConverter.textKerningAdjustmentsApplied
+        reportData.textLengthSpacingAdjustments = SvgTreeConverter.textLengthSpacingAdjustments
+        reportData.textLengthSpacingAndGlyphsAdjustments = SvgTreeConverter.textLengthSpacingAndGlyphsAdjustments
+        reportData.textGlyphRotationsApplied = SvgTreeConverter.textGlyphRotationsApplied
+        reportData.textLetterSpacingAdjustmentsApplied = SvgTreeConverter.textLetterSpacingAdjustmentsApplied
+        reportData.textWordSpacingAdjustmentsApplied = SvgTreeConverter.textWordSpacingAdjustmentsApplied
+        reportData.textDecorationPathsEmitted = SvgTreeConverter.textDecorationPathsEmitted
+        reportData.textBidiRunsReordered = SvgTreeConverter.textBidiRunsReordered
+        reportData.textDirections = SvgTreeConverter.textDirections
+        reportData.textUnicodeBidiModes = SvgTreeConverter.textUnicodeBidiModes
+        reportData.textPathsConverted = SvgTreeConverter.textPathsConverted
+        reportData.textPathGlyphsEmitted = SvgTreeConverter.textPathGlyphsEmitted
+        reportData.textFontFamilies = SvgTreeConverter.textFontFamilies
+        reportData.textFontWeights = SvgTreeConverter.textFontWeights
+        reportData.verticalWritingTextCount = textLayoutStats.verticalTextCount
+        reportData.writingModes = textLayoutStats.writingModes
+        reportData.textAnchors = textLayoutStats.textAnchors
+        reportData.dominantBaselines = textLayoutStats.dominantBaselines
+        reportData.alignmentBaselines = textLayoutStats.alignmentBaselines
+        reportData.baselineShifts = textLayoutStats.baselineShifts
+        reportData.lengthAdjustModes = textLayoutStats.lengthAdjustModes
+        reportData.textPathMethods = textLayoutStats.textPathMethods
+        reportData.svgFontGlyphCount = svgFontGlyphCount
+        reportData.contextPaintApproximationCount = contextPaintApproximationCount
+        reportData.cssImportRuleCount = cssImportRuleCount
+        reportData.cssImportedInlineRuleCount = cssImportedInlineRuleCount
+        reportData.cssExternalImportCount = cssExternalImportCount
+        reportData.imageStats = imageStats
+        reportData.styleAttributeCount = styleAttributeCount
+        reportData.presentationStyleAttributeCount = presentationStyleAttributeCount
+        reportData.warningCount = warningCount
+        reportData.unsupportedWarnings = unsupported
+        reportData.unsupportedMatrixTransforms = SvgTransformParser.unsupportedMatrixTransforms
+        reportData.supportedMatrixTransforms = SvgTransformParser.supportedMatrixTransforms
+        reportData.matrixCount = matrixCount
+        reportData.translateCount = generatedTranslateCount
+        reportData.scaleCount = generatedScaleCount
+        reportData.rotateCount = generatedRotateCount
+        reportData.conversionProfile = conversionProfile
+        reportData.outputDpSize = outputDpSize
+        reportData.viewportWidth = viewportWidth
+        reportData.viewportHeight = viewportHeight
+        reportData.pathDataOptimizedCount = pathOptimizationStats.pathCount
+        reportData.pathDataCharactersBefore = pathOptimizationStats.charactersBefore
+        reportData.pathDataCharactersAfter = pathOptimizationStats.charactersAfter
+        reportData.pathDataRepeatedCommandsRemoved = pathOptimizationStats.repeatedCommandsRemoved
+        reportData.redundantNonDrawingSegmentsRemoved = pathOptimizationStats.redundantNonDrawingSegmentsRemoved
+        reportData.collinearLineSegmentsConsolidated = pathOptimizationStats.collinearLineSegmentsConsolidated
+        reportData.straightBezierCurvesSimplified = pathOptimizationStats.straightBezierCurvesSimplified
+        reportData.degenerateArcsSimplified = pathOptimizationStats.degenerateArcsSimplified
+        reportData.smoothBezierShorthandsSelected = pathOptimizationStats.smoothBezierShorthandsSelected
+        reportData.cubicCurvesReducedToQuadratic = pathOptimizationStats.cubicCurvesReducedToQuadratic
+        reportData.arcRotationsCanonicalized = pathOptimizationStats.arcRotationsCanonicalized
+        reportData.arcRadiiCanonicalized = pathOptimizationStats.arcRadiiCanonicalized
+        reportData.arcHalfTurnRotationsReduced = pathOptimizationStats.arcHalfTurnRotationsReduced
+        reportData.arcAxesSwappedForSize = pathOptimizationStats.arcAxesSwappedForSize
+        reportData.arcRepresentationsGloballyMinimized = pathOptimizationStats.arcRepresentationsGloballyMinimized
+        reportData.commandSequencesGloballyMinimized = pathOptimizationStats.commandSequencesGloballyMinimized
+        reportData.implicitLineTosAfterMoveSelected = pathOptimizationStats.implicitLineTosAfterMoveSelected
+        reportData.repeatedShorthandCurveCommandsOmitted = pathOptimizationStats.repeatedShorthandCurveCommandsOmitted
+        reportData.repeatedFullCurveCommandsOmitted = pathOptimizationStats.repeatedFullCurveCommandsOmitted
+        reportData.repeatedArcCommandsOmitted = pathOptimizationStats.repeatedArcCommandsOmitted
+        reportData.scientificNotationValuesSelected = pathOptimizationStats.scientificNotationValuesSelected
+        reportData.globallyOptimizedNumericPaths = pathOptimizationStats.globallyOptimizedNumericPaths
+        reportData.pathDataNumbersNormalized = pathOptimizationStats.numbersNormalized
+        reportData.emptyPathDataRemoved = pathOptimizationStats.emptyPathDataRemoved
+        reportData.moveOnlyPathsRemoved = pathOptimizationStats.moveOnlyPathsRemoved
+        reportData.invisiblePathsRemoved = pathOptimizationStats.invisiblePathsRemoved
+        reportData.emptyGroupsRemoved = pathOptimizationStats.emptyGroupsRemoved
+        reportData.redundantGroupsFlattened = pathOptimizationStats.redundantGroupsFlattened
+        reportData.commonTranslationGroupsFactored = pathOptimizationStats.commonTranslationGroupsFactored
+        reportData.adjacentGroupsCoalesced = pathOptimizationStats.adjacentGroupsCoalesced
+        reportData.compatiblePathsMerged = pathOptimizationStats.compatiblePathsMerged
+        reportData.exactDuplicatePathsRemoved = pathOptimizationStats.exactDuplicatePathsRemoved
+        reportData.translatedGroupsFlattened = pathOptimizationStats.translatedGroupsFlattened
+        reportData.translatedPaths = pathOptimizationStats.translatedPaths
+        reportData.scaledGroupsFlattened = pathOptimizationStats.scaledGroupsFlattened
+        reportData.scaledPaths = pathOptimizationStats.scaledPaths
+        reportData.scaledStrokeWidths = pathOptimizationStats.scaledStrokeWidths
+        reportData.scaleGroupsPreservedForSize = pathOptimizationStats.scaleGroupsPreservedForSize
+        reportData.nonUniformScaleGroupsFlattened = pathOptimizationStats.nonUniformScaleGroupsFlattened
+        reportData.nonUniformScaledPaths = pathOptimizationStats.nonUniformScaledPaths
+        reportData.nonUniformScaleGroupsPreservedForSize = pathOptimizationStats.nonUniformScaleGroupsPreservedForSize
+        reportData.rotationGroupsFlattened = pathOptimizationStats.rotationGroupsFlattened
+        reportData.rotatedPaths = pathOptimizationStats.rotatedPaths
+        reportData.rotationGroupsPreservedForSize = pathOptimizationStats.rotationGroupsPreservedForSize
+        reportData.identityTransformAttributesRemoved = pathOptimizationStats.identityTransformAttributesRemoved
+        reportData.nestedTransformGroupsComposed = pathOptimizationStats.nestedTransformGroupsComposed
+        reportData.transformAttributesCanonicalized = pathOptimizationStats.transformAttributesCanonicalized
+        reportData.zeroPivotAttributesRemoved = pathOptimizationStats.zeroPivotAttributesRemoved
+        reportData.transformGroupsReordered = pathOptimizationStats.transformGroupsReordered
+        reportData.optimizerIdempotenceVerified = pathOptimizationStats.optimizerIdempotenceVerified
+        reportData.optimizerReachedFixedPoint = pathOptimizationStats.optimizerReachedFixedPoint
+        reportData.optimizerStabilityPasses = pathOptimizationStats.optimizerStabilityPasses
+        reportData.optimizerValidationNanos = pathOptimizationStats.optimizerValidationNanos
+        reportData.optimizerProductionPassNanos = pathOptimizationStats.optimizerProductionPassNanos
+        reportData.optimizerIdempotencePassNanos = pathOptimizationStats.optimizerIdempotencePassNanos
+        reportData.optimizerFixedPointPassNanos = pathOptimizationStats.optimizerFixedPointPassNanos
+        reportData.optimizerValidationPathCacheHits = pathOptimizationStats.optimizerValidationPathCacheHits
+        reportData.optimizerValidationPathCacheMisses = pathOptimizationStats.optimizerValidationPathCacheMisses
+        reportData.optimizerValidationPasses = pathOptimizationStats.optimizerValidationPasses
+        reportData.optimizerFirstPassChangedXml = pathOptimizationStats.optimizerFirstPassChangedXml
+        reportData.optimizerSecondPassChangedXml = pathOptimizationStats.optimizerSecondPassChangedXml
+        reportData.optimizerThirdPassChangedXml = pathOptimizationStats.optimizerThirdPassChangedXml
+        reportData.finalOutputValidationPassed = pathOptimizationStats.finalOutputValidationPassed
+        reportData.finalOutputValidationNanos = pathOptimizationStats.finalOutputValidationNanos
+        reportData.validatedPathDataCount = pathOptimizationStats.validatedPathDataCount
+        reportData.invalidPathDataCount = pathOptimizationStats.invalidPathDataCount
+        reportData.nonFiniteNumberCount = pathOptimizationStats.nonFiniteNumberCount
+        reportData.malformedStructureCount = pathOptimizationStats.malformedStructureCount
+        reportData.invalidViewportCount = pathOptimizationStats.invalidViewportCount
+        reportData.unsupportedOutputConstructCount = pathOptimizationStats.unsupportedOutputConstructCount
+        reportData.shorterCommandFormsSelected = pathOptimizationStats.shorterCommandFormsSelected
+        reportData.relativeCommandsSelected = pathOptimizationStats.relativeCommandsSelected
+        reportData.axisCommandsSelected = pathOptimizationStats.axisCommandsSelected
+        reportData.sourceSvgCharacters = svg.length
+        reportData.optimizedXmlCharactersBefore = pathOptimizationStats.xmlCharactersBefore
+        reportData.optimizedXmlCharactersAfter = pathOptimizationStats.xmlCharactersAfter
+        reportData.styleResolutionNanos = styleResolutionNanos
+        reportData.svgParsingNanos = svgParsingNanos
+        reportData.treeConversionNanos = treeConversionNanos
+        reportData.outputOptimizationNanos = outputOptimizationNanos
+        reportData.optimizationPathSyntaxNanos = pathOptimizationStats.pathSyntaxOptimizationNanos
+        reportData.optimizationPathTokenizationNanos = pathOptimizationStats.pathTokenizationNormalizationNanos
+        reportData.optimizationPathGeometryCleanupNanos = pathOptimizationStats.pathGeometryCleanupNanos
+        reportData.optimizationPathRedundantSegmentCleanupNanos = pathOptimizationStats.pathRedundantSegmentCleanupNanos
+        reportData.optimizationPathArcCleanupNanos = pathOptimizationStats.pathArcCleanupNanos
+        reportData.optimizationPathCurveSimplificationNanos = pathOptimizationStats.pathCurveSimplificationNanos
+        reportData.optimizationPathCollinearConsolidationNanos = pathOptimizationStats.pathCollinearConsolidationNanos
+        reportData.optimizationPathCommandMinimizationNanos = pathOptimizationStats.pathCommandMinimizationNanos
+        reportData.optimizationPathCommandLocalShorteningNanos = pathOptimizationStats.pathCommandLocalShorteningNanos
+        reportData.optimizationPathCommandGlobalParseSetupNanos = pathOptimizationStats.pathCommandGlobalParseSetupNanos
+        reportData.optimizationPathCommandGlobalCandidateGenerationNanos = pathOptimizationStats.pathCommandGlobalCandidateGenerationNanos
+        reportData.optimizationPathCommandGlobalDynamicProgrammingNanos = pathOptimizationStats.pathCommandGlobalDynamicProgrammingNanos
+        reportData.optimizationPathNumericSerializationNanos = pathOptimizationStats.pathNumericSerializationNanos
+        reportData.optimizationColorNormalizationNanos = pathOptimizationStats.colorNormalizationNanos
+        reportData.optimizationPruningCleanupNanos = pathOptimizationStats.pruningAndGroupCleanupNanos
+        reportData.optimizationTransformsNanos = pathOptimizationStats.transformOptimizationNanos
+        reportData.optimizationTransformIdentityCompositionNanos = pathOptimizationStats.transformIdentityCompositionNanos
+        reportData.optimizationTransformFactoringFlatteningNanos = pathOptimizationStats.transformFactoringFlatteningNanos
+        reportData.optimizationTransformScaleFlatteningNanos = pathOptimizationStats.transformScaleFlatteningNanos
+        reportData.optimizationTransformUniformScaleFlatteningNanos = pathOptimizationStats.transformUniformScaleFlatteningNanos
+        reportData.optimizationTransformNonUniformScaleFlatteningNanos = pathOptimizationStats.transformNonUniformScaleFlatteningNanos
+        reportData.optimizationTransformRotationTranslationNanos = pathOptimizationStats.transformRotationTranslationNanos
+        reportData.optimizationTransformCanonicalizationNanos = pathOptimizationStats.transformCanonicalizationNanos
+        reportData.optimizationDeduplicationNanos = pathOptimizationStats.deduplicationAndMergeNanos
+        reportData.optimizationNumericCleanupNanos = pathOptimizationStats.numericCleanupNanos
+        reportData.optimizationFormattingNanos = pathOptimizationStats.finalFormattingNanos
+        reportData.optimizationPathSyntaxCharactersSaved = pathOptimizationStats.pathSyntaxCharactersSaved
+        reportData.optimizationPruningCleanupCharactersSaved = pathOptimizationStats.pruningCleanupCharactersSaved
+        reportData.optimizationTransformCharactersSaved = pathOptimizationStats.transformCharactersSaved
+        reportData.optimizationDeduplicationCharactersSaved = pathOptimizationStats.deduplicationCharactersSaved
+        reportData.optimizationNumericCleanupCharactersSaved = pathOptimizationStats.numericCleanupCharactersSaved
+        reportData.optimizationFormattingCharactersSaved = pathOptimizationStats.formattingCharactersSaved
+        reportData.reportAnalysisNanos = reportAnalysisNanos
+        reportData.reportGenerationNanos = 0
+        reportData.elapsedNanos = elapsedNanos
+        reportData.elapsedMs = elapsedMs
+
         val report = SvgConversionReporter.buildReport(
-            data = SvgConversionReportData(
-                convertedPathCount = convertedPathCount,
-                convertedOriginalPathCount = convertedOriginalPathCount,
-                convertedBasicShapeCount = convertedBasicShapeCount,
-                basicShapeBreakdown = basicShapeBreakdown,
-                definitionDrawableElementCount = definitionDrawableElementCount,
-                visibleDrawableElementCount = visibleDrawableElementCount,
-                drawableValidPathCount = drawableValidPathCount,
-                emptyPathCount = emptyPathCount,
-                generatedGroupCount = generatedGroupCount,
-                useCount = useCount,
-                resolvedUseExpansions = SvgTreeConverter.resolvedUseExpansions,
-                unresolvedUseReferences = unresolvedUseReferences,
-                symbolCount = symbolCount,
-                gradientFallbackColorCount = gradientFallbackColors.size,
-                patternApproximationCount = patternFallbackColors.size,
-                patternApproximationStats = patternApproximationStats,
-                patternTileExpansionCount = SvgTreeConverter.patternTileExpansions,
-                patternTilePathCount = SvgTreeConverter.patternTilePathsEmitted,
-                markerDefinitionCount = markerDefinitions.size,
-                appliedMarkers = SvgTreeConverter.appliedMarkers,
-                clipPathCount = clipPathData.size,
-                clipPathReferenceCount = clipPathReferenceCount,
-                appliedClipPaths = SvgTreeConverter.appliedClipPaths,
-                maskPathCount = maskPathData.size,
-                maskReferenceCount = maskReferenceCount,
-                appliedMasks = SvgTreeConverter.appliedMasks,
-                dashedStrokesDetected = SvgTreeConverter.dashedStrokesDetected,
-                dashedStrokesApproximated = SvgTreeConverter.dashedStrokesApproximated,
-                invalidDashArrays = SvgTreeConverter.invalidDashArrays,
-                dashSolidFallbacks = SvgTreeConverter.dashSolidFallbacks,
-                oddDashListsDuplicated = SvgTreeConverter.oddDashListsDuplicated,
-                invalidDashOffsetFallbacks = SvgTreeConverter.invalidDashOffsetFallbacks,
-                dashOffsetsNormalized = SvgTreeConverter.dashOffsetsNormalized,
-                dashTransformExactCompensations = SvgTreeConverter.dashTransformExactCompensations,
-                dashTransformApproximateCompensations = SvgTreeConverter.dashTransformApproximateCompensations,
-                nonScalingStrokesDetected = SvgTreeConverter.nonScalingStrokesDetected,
-                nonScalingStrokesCompensated = SvgTreeConverter.nonScalingStrokesCompensated,
-                nonScalingStrokesUncertain = SvgTreeConverter.nonScalingStrokesUncertain,
-                displayNoneElementsSkipped = SvgTreeConverter.displayNoneElementsSkipped,
-                visibilityHiddenElementsSkipped = SvgTreeConverter.visibilityHiddenElementsSkipped,
-                nestedSvgViewportCount = SvgTreeConverter.nestedSvgViewports,
-                nestedSvgViewportClipCount = SvgTreeConverter.nestedSvgViewportClips,
-                nestedSvgPercentageViewportCount = SvgTreeConverter.nestedSvgPercentageViewports,
-                nestedSvgOverflowHiddenCount = SvgTreeConverter.nestedSvgOverflowHidden,
-                nestedSvgOverflowVisibleCount = SvgTreeConverter.nestedSvgOverflowVisible,
-                nestedSvgOverflowAutoCount = SvgTreeConverter.nestedSvgOverflowAuto,
-                nestedSvgOverflowScrollCount = SvgTreeConverter.nestedSvgOverflowScroll,
-                nestedSvgOverflowUnsupportedCount = SvgTreeConverter.nestedSvgOverflowUnsupported,
-                filterDefinitionCount = filterDefinitionCount,
-                filterReferenceCount = filterReferenceCount,
-                textElementCount = textElementCount,
-                tspanElementCount = tspanElementCount,
-                textPathElementCount = textPathElementCount,
-                textElementsApproximated = SvgTreeConverter.textElementsApproximated,
-                textElementsConvertedToPaths = SvgTreeConverter.textElementsConvertedToPaths,
-                textGlyphPathsEmitted = SvgTreeConverter.textGlyphPathsEmitted,
-                textGlyphSpecificAdvances = SvgTreeConverter.textGlyphSpecificAdvances,
-                textDefaultFontAdvances = SvgTreeConverter.textDefaultFontAdvances,
-                textMissingGlyphFallbacks = SvgTreeConverter.textMissingGlyphFallbacks,
-                textGlyphNameLookups = SvgTreeConverter.textGlyphNameLookups,
-                textHorizontalKerningPairs = SvgTreeConverter.textHorizontalKerningPairs,
-                textVerticalKerningPairs = SvgTreeConverter.textVerticalKerningPairs,
-                textHorizontalKerningPairsMatched = SvgTreeConverter.textHorizontalKerningPairsMatched,
-                textVerticalKerningPairsMatched = SvgTreeConverter.textVerticalKerningPairsMatched,
-                textKerningAdjustmentsApplied = SvgTreeConverter.textKerningAdjustmentsApplied,
-                textLengthSpacingAdjustments = SvgTreeConverter.textLengthSpacingAdjustments,
-                textLengthSpacingAndGlyphsAdjustments = SvgTreeConverter.textLengthSpacingAndGlyphsAdjustments,
-                textGlyphRotationsApplied = SvgTreeConverter.textGlyphRotationsApplied,
-                textLetterSpacingAdjustmentsApplied = SvgTreeConverter.textLetterSpacingAdjustmentsApplied,
-                textWordSpacingAdjustmentsApplied = SvgTreeConverter.textWordSpacingAdjustmentsApplied,
-                textDecorationPathsEmitted = SvgTreeConverter.textDecorationPathsEmitted,
-                textBidiRunsReordered = SvgTreeConverter.textBidiRunsReordered,
-                textDirections = SvgTreeConverter.textDirections,
-                textUnicodeBidiModes = SvgTreeConverter.textUnicodeBidiModes,
-                textPathsConverted = SvgTreeConverter.textPathsConverted,
-                textPathGlyphsEmitted = SvgTreeConverter.textPathGlyphsEmitted,
-                textFontFamilies = SvgTreeConverter.textFontFamilies,
-                textFontWeights = SvgTreeConverter.textFontWeights,
-                verticalWritingTextCount = textLayoutStats.verticalTextCount,
-                writingModes = textLayoutStats.writingModes,
-                textAnchors = textLayoutStats.textAnchors,
-                dominantBaselines = textLayoutStats.dominantBaselines,
-                alignmentBaselines = textLayoutStats.alignmentBaselines,
-                baselineShifts = textLayoutStats.baselineShifts,
-                lengthAdjustModes = textLayoutStats.lengthAdjustModes,
-                textPathMethods = textLayoutStats.textPathMethods,
-                svgFontGlyphCount = svgFontGlyphCount,
-                contextPaintApproximationCount = contextPaintApproximationCount,
-                cssImportRuleCount = cssImportRuleCount,
-                cssImportedInlineRuleCount = cssImportedInlineRuleCount,
-                cssExternalImportCount = cssExternalImportCount,
-                imageStats = imageStats,
-                styleAttributeCount = styleAttributeCount,
-                presentationStyleAttributeCount = presentationStyleAttributeCount,
-                warningCount = warningCount,
-                unsupportedWarnings = unsupported,
-                unsupportedMatrixTransforms = SvgTransformParser.unsupportedMatrixTransforms,
-                supportedMatrixTransforms = SvgTransformParser.supportedMatrixTransforms,
-                matrixCount = matrixCount,
-                translateCount = generatedTranslateCount,
-                scaleCount = generatedScaleCount,
-                rotateCount = generatedRotateCount,
-                conversionProfile = conversionProfile,
-                outputDpSize = outputDpSize,
-                viewportWidth = viewportWidth,
-                viewportHeight = viewportHeight,
-                pathDataOptimizedCount = pathOptimizationStats.pathCount,
-                pathDataCharactersBefore = pathOptimizationStats.charactersBefore,
-                pathDataCharactersAfter = pathOptimizationStats.charactersAfter,
-                pathDataRepeatedCommandsRemoved =
-                    pathOptimizationStats.repeatedCommandsRemoved,
-                redundantNonDrawingSegmentsRemoved =
-                    pathOptimizationStats.redundantNonDrawingSegmentsRemoved,
-                collinearLineSegmentsConsolidated =
-                    pathOptimizationStats.collinearLineSegmentsConsolidated,
-                straightBezierCurvesSimplified =
-                    pathOptimizationStats.straightBezierCurvesSimplified,
-                degenerateArcsSimplified =
-                    pathOptimizationStats.degenerateArcsSimplified,
-                smoothBezierShorthandsSelected =
-                    pathOptimizationStats.smoothBezierShorthandsSelected,
-                cubicCurvesReducedToQuadratic =
-                    pathOptimizationStats.cubicCurvesReducedToQuadratic,
-                arcRotationsCanonicalized =
-                    pathOptimizationStats.arcRotationsCanonicalized,
-                arcRadiiCanonicalized =
-                    pathOptimizationStats.arcRadiiCanonicalized,
-                arcHalfTurnRotationsReduced =
-                    pathOptimizationStats.arcHalfTurnRotationsReduced,
-                arcAxesSwappedForSize =
-                    pathOptimizationStats.arcAxesSwappedForSize,
-                arcRepresentationsGloballyMinimized =
-                    pathOptimizationStats.arcRepresentationsGloballyMinimized,
-                commandSequencesGloballyMinimized =
-                    pathOptimizationStats.commandSequencesGloballyMinimized,
-                implicitLineTosAfterMoveSelected =
-                    pathOptimizationStats.implicitLineTosAfterMoveSelected,
-                repeatedShorthandCurveCommandsOmitted =
-                    pathOptimizationStats.repeatedShorthandCurveCommandsOmitted,
-                repeatedFullCurveCommandsOmitted =
-                    pathOptimizationStats.repeatedFullCurveCommandsOmitted,
-                repeatedArcCommandsOmitted =
-                    pathOptimizationStats.repeatedArcCommandsOmitted,
-                scientificNotationValuesSelected =
-                    pathOptimizationStats.scientificNotationValuesSelected,
-                globallyOptimizedNumericPaths =
-                    pathOptimizationStats.globallyOptimizedNumericPaths,
-                pathDataNumbersNormalized = pathOptimizationStats.numbersNormalized,
-                emptyPathDataRemoved = pathOptimizationStats.emptyPathDataRemoved,
-                moveOnlyPathsRemoved = pathOptimizationStats.moveOnlyPathsRemoved,
-                invisiblePathsRemoved = pathOptimizationStats.invisiblePathsRemoved,
-                emptyGroupsRemoved = pathOptimizationStats.emptyGroupsRemoved,
-                redundantGroupsFlattened = pathOptimizationStats.redundantGroupsFlattened,
-                commonTranslationGroupsFactored =
-                    pathOptimizationStats.commonTranslationGroupsFactored,
-                adjacentGroupsCoalesced = pathOptimizationStats.adjacentGroupsCoalesced,
-                compatiblePathsMerged = pathOptimizationStats.compatiblePathsMerged,
-                exactDuplicatePathsRemoved = pathOptimizationStats.exactDuplicatePathsRemoved,
-                translatedGroupsFlattened = pathOptimizationStats.translatedGroupsFlattened,
-                translatedPaths = pathOptimizationStats.translatedPaths,
-                scaledGroupsFlattened = pathOptimizationStats.scaledGroupsFlattened,
-                scaledPaths = pathOptimizationStats.scaledPaths,
-                scaledStrokeWidths = pathOptimizationStats.scaledStrokeWidths,
-                scaleGroupsPreservedForSize =
-                    pathOptimizationStats.scaleGroupsPreservedForSize,
-                nonUniformScaleGroupsFlattened =
-                    pathOptimizationStats.nonUniformScaleGroupsFlattened,
-                nonUniformScaledPaths =
-                    pathOptimizationStats.nonUniformScaledPaths,
-                nonUniformScaleGroupsPreservedForSize =
-                    pathOptimizationStats.nonUniformScaleGroupsPreservedForSize,
-                rotationGroupsFlattened =
-                    pathOptimizationStats.rotationGroupsFlattened,
-                rotatedPaths =
-                    pathOptimizationStats.rotatedPaths,
-                rotationGroupsPreservedForSize =
-                    pathOptimizationStats.rotationGroupsPreservedForSize,
-                identityTransformAttributesRemoved = pathOptimizationStats.identityTransformAttributesRemoved,
-                nestedTransformGroupsComposed = pathOptimizationStats.nestedTransformGroupsComposed,
-                transformAttributesCanonicalized = pathOptimizationStats.transformAttributesCanonicalized,
-                zeroPivotAttributesRemoved = pathOptimizationStats.zeroPivotAttributesRemoved,
-                transformGroupsReordered = pathOptimizationStats.transformGroupsReordered,
-                optimizerIdempotenceVerified =
-                    pathOptimizationStats.optimizerIdempotenceVerified,
-                optimizerReachedFixedPoint =
-                    pathOptimizationStats.optimizerReachedFixedPoint,
-                optimizerStabilityPasses =
-                    pathOptimizationStats.optimizerStabilityPasses,
-                optimizerValidationNanos =
-                    pathOptimizationStats.optimizerValidationNanos,
-                optimizerProductionPassNanos =
-                    pathOptimizationStats.optimizerProductionPassNanos,
-                optimizerIdempotencePassNanos =
-                    pathOptimizationStats.optimizerIdempotencePassNanos,
-                optimizerFixedPointPassNanos =
-                    pathOptimizationStats.optimizerFixedPointPassNanos,
-                optimizerValidationPathCacheHits =
-                    pathOptimizationStats.optimizerValidationPathCacheHits,
-                optimizerValidationPathCacheMisses =
-                    pathOptimizationStats.optimizerValidationPathCacheMisses,
-                optimizerValidationPasses =
-                    pathOptimizationStats.optimizerValidationPasses,
-                optimizerFirstPassChangedXml =
-                    pathOptimizationStats.optimizerFirstPassChangedXml,
-                optimizerSecondPassChangedXml =
-                    pathOptimizationStats.optimizerSecondPassChangedXml,
-                optimizerThirdPassChangedXml =
-                    pathOptimizationStats.optimizerThirdPassChangedXml,
-                finalOutputValidationPassed =
-                    pathOptimizationStats.finalOutputValidationPassed,
-                finalOutputValidationNanos =
-                    pathOptimizationStats.finalOutputValidationNanos,
-                validatedPathDataCount =
-                    pathOptimizationStats.validatedPathDataCount,
-                invalidPathDataCount =
-                    pathOptimizationStats.invalidPathDataCount,
-                nonFiniteNumberCount =
-                    pathOptimizationStats.nonFiniteNumberCount,
-                malformedStructureCount =
-                    pathOptimizationStats.malformedStructureCount,
-                invalidViewportCount =
-                    pathOptimizationStats.invalidViewportCount,
-                unsupportedOutputConstructCount =
-                    pathOptimizationStats.unsupportedOutputConstructCount,
-                shorterCommandFormsSelected = pathOptimizationStats.shorterCommandFormsSelected,
-                relativeCommandsSelected = pathOptimizationStats.relativeCommandsSelected,
-                axisCommandsSelected = pathOptimizationStats.axisCommandsSelected,
-                sourceSvgCharacters = svg.length,
-                optimizedXmlCharactersBefore = pathOptimizationStats.xmlCharactersBefore,
-                optimizedXmlCharactersAfter = pathOptimizationStats.xmlCharactersAfter,
-                styleResolutionNanos = styleResolutionNanos,
-                svgParsingNanos = svgParsingNanos,
-                treeConversionNanos = treeConversionNanos,
-                outputOptimizationNanos = outputOptimizationNanos,
-                optimizationPathSyntaxNanos =
-                    pathOptimizationStats.pathSyntaxOptimizationNanos,
-                optimizationPathTokenizationNanos =
-                    pathOptimizationStats.pathTokenizationNormalizationNanos,
-                optimizationPathGeometryCleanupNanos =
-                    pathOptimizationStats.pathGeometryCleanupNanos,
-                optimizationPathRedundantSegmentCleanupNanos =
-                    pathOptimizationStats.pathRedundantSegmentCleanupNanos,
-                optimizationPathArcCleanupNanos =
-                    pathOptimizationStats.pathArcCleanupNanos,
-                optimizationPathCurveSimplificationNanos =
-                    pathOptimizationStats.pathCurveSimplificationNanos,
-                optimizationPathCollinearConsolidationNanos =
-                    pathOptimizationStats.pathCollinearConsolidationNanos,
-                optimizationPathCommandMinimizationNanos =
-                    pathOptimizationStats.pathCommandMinimizationNanos,
-                optimizationPathCommandLocalShorteningNanos =
-                    pathOptimizationStats.pathCommandLocalShorteningNanos,
-                optimizationPathCommandGlobalParseSetupNanos =
-                    pathOptimizationStats.pathCommandGlobalParseSetupNanos,
-                optimizationPathCommandGlobalCandidateGenerationNanos =
-                    pathOptimizationStats.pathCommandGlobalCandidateGenerationNanos,
-                optimizationPathCommandGlobalDynamicProgrammingNanos =
-                    pathOptimizationStats.pathCommandGlobalDynamicProgrammingNanos,
-                optimizationPathNumericSerializationNanos =
-                    pathOptimizationStats.pathNumericSerializationNanos,
-                optimizationColorNormalizationNanos =
-                    pathOptimizationStats.colorNormalizationNanos,
-                optimizationPruningCleanupNanos =
-                    pathOptimizationStats.pruningAndGroupCleanupNanos,
-                optimizationTransformsNanos =
-                    pathOptimizationStats.transformOptimizationNanos,
-                optimizationTransformIdentityCompositionNanos =
-                    pathOptimizationStats.transformIdentityCompositionNanos,
-                optimizationTransformFactoringFlatteningNanos =
-                    pathOptimizationStats.transformFactoringFlatteningNanos,
-                optimizationTransformScaleFlatteningNanos =
-                    pathOptimizationStats.transformScaleFlatteningNanos,
-                optimizationTransformUniformScaleFlatteningNanos =
-                    pathOptimizationStats.transformUniformScaleFlatteningNanos,
-                optimizationTransformNonUniformScaleFlatteningNanos =
-                    pathOptimizationStats.transformNonUniformScaleFlatteningNanos,
-                optimizationTransformRotationTranslationNanos =
-                    pathOptimizationStats.transformRotationTranslationNanos,
-                optimizationTransformCanonicalizationNanos =
-                    pathOptimizationStats.transformCanonicalizationNanos,
-                optimizationDeduplicationNanos =
-                    pathOptimizationStats.deduplicationAndMergeNanos,
-                optimizationNumericCleanupNanos =
-                    pathOptimizationStats.numericCleanupNanos,
-                optimizationFormattingNanos =
-                    pathOptimizationStats.finalFormattingNanos,
-                optimizationPathSyntaxCharactersSaved =
-                    pathOptimizationStats.pathSyntaxCharactersSaved,
-                optimizationPruningCleanupCharactersSaved =
-                    pathOptimizationStats.pruningCleanupCharactersSaved,
-                optimizationTransformCharactersSaved =
-                    pathOptimizationStats.transformCharactersSaved,
-                optimizationDeduplicationCharactersSaved =
-                    pathOptimizationStats.deduplicationCharactersSaved,
-                optimizationNumericCleanupCharactersSaved =
-                    pathOptimizationStats.numericCleanupCharactersSaved,
-                optimizationFormattingCharactersSaved =
-                    pathOptimizationStats.formattingCharactersSaved,
-                reportAnalysisNanos = reportAnalysisNanos,
-                reportGenerationNanos = 0,
-                elapsedNanos = elapsedNanos,
-                elapsedMs = elapsedMs
-            ),
+            data = reportData,
             conversionStartNanos = startTime
         )
 
