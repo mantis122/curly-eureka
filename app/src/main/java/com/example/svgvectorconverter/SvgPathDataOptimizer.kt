@@ -5017,27 +5017,60 @@ internal object SvgPathDataOptimizer {
                 System.nanoTime() - redundantSegmentCleanupStartTime
         }
 
-        val arcCleanupStartTime = System.nanoTime()
-        val arcRadiusCanonicalization = canonicalizeArcRadii(
-            redundantCleanup.pathData
-        )
-        val arcCanonicalization = canonicalizeArcRotations(
-            arcRadiusCanonicalization.pathData
-        )
-        val arcGlobalMinimization = globallyMinimizeArcRepresentations(
-            arcCanonicalization.pathData
-        )
-        val arcHalfTurnReduction = reduceArcRotationsByHalfTurns(
-            arcGlobalMinimization.pathData
-        )
-        val arcAxisMinimization = minimizeArcAxisRepresentation(
-            arcHalfTurnReduction.pathData
-        )
-        val degenerateArcCleanup = simplifyDegenerateArcs(
-            arcAxisMinimization.pathData
-        )
-        profiling?.let {
-            it.arcCleanupNanos += System.nanoTime() - arcCleanupStartTime
+        // G2.5: Arc-specific cleanup is a pure no-op when the tokenized path
+        // contains no elliptical-arc command. Avoid reparsing the same path
+        // through six arc-only passes in that common case. The eligibility
+        // decision is made from the already validated token stream above, so
+        // malformed input retains the existing conservative early-return path.
+        val hasArcCommands = matches.any { match ->
+            val token = match.value
+            isCommand(token) && token[0].uppercaseChar() == 'A'
+        }
+
+        val arcRadiusCanonicalization: ArcRadiusCanonicalizationResult
+        val arcCanonicalization: ArcRotationCanonicalizationResult
+        val arcGlobalMinimization: ArcGlobalMinimizationResult
+        val arcHalfTurnReduction: ArcHalfTurnReductionResult
+        val arcAxisMinimization: ArcAxisMinimizationResult
+        val degenerateArcCleanup: DegenerateArcCleanupResult
+
+        if (hasArcCommands) {
+            val arcCleanupStartTime = System.nanoTime()
+            arcRadiusCanonicalization = canonicalizeArcRadii(
+                redundantCleanup.pathData
+            )
+            arcCanonicalization = canonicalizeArcRotations(
+                arcRadiusCanonicalization.pathData
+            )
+            arcGlobalMinimization = globallyMinimizeArcRepresentations(
+                arcCanonicalization.pathData
+            )
+            arcHalfTurnReduction = reduceArcRotationsByHalfTurns(
+                arcGlobalMinimization.pathData
+            )
+            arcAxisMinimization = minimizeArcAxisRepresentation(
+                arcHalfTurnReduction.pathData
+            )
+            degenerateArcCleanup = simplifyDegenerateArcs(
+                arcAxisMinimization.pathData
+            )
+            profiling?.let {
+                it.arcCleanupNanos += System.nanoTime() - arcCleanupStartTime
+            }
+        } else {
+            val unchangedPathData = redundantCleanup.pathData
+            arcRadiusCanonicalization =
+                ArcRadiusCanonicalizationResult(unchangedPathData, 0)
+            arcCanonicalization =
+                ArcRotationCanonicalizationResult(unchangedPathData, 0)
+            arcGlobalMinimization =
+                ArcGlobalMinimizationResult(unchangedPathData, 0)
+            arcHalfTurnReduction =
+                ArcHalfTurnReductionResult(unchangedPathData, 0)
+            arcAxisMinimization =
+                ArcAxisMinimizationResult(unchangedPathData, 0)
+            degenerateArcCleanup =
+                DegenerateArcCleanupResult(unchangedPathData, 0)
         }
 
         val curveSimplificationStartTime = System.nanoTime()
