@@ -49,6 +49,13 @@ internal object SvgPathDataOptimizer {
         val stateCreationNanos: Long = 0,
         val bestStateComparisonNanos: Long = 0,
         val reconstructionNanos: Long = 0,
+        val stateKeyCreationNanos: Long = 0,
+        val stateStringConcatenationNanos: Long = 0,
+        val stateMetadataPropagationNanos: Long = 0,
+        val statePathAllocationNanos: Long = 0,
+        val bestStateMapLookupNanos: Long = 0,
+        val bestStateDecisionNanos: Long = 0,
+        val bestStateReplacementNanos: Long = 0,
         val segmentEncodingRequests: Int = 0,
         val segmentEncodingCacheHits: Int = 0,
         val segmentEncodingUniqueKeys: Int = 0
@@ -796,6 +803,13 @@ internal object SvgPathDataOptimizer {
                     stateCreationNanos = pathProfiling.commandGlobalStateCreationNanos,
                     bestStateComparisonNanos = pathProfiling.commandGlobalBestStateComparisonNanos,
                     reconstructionNanos = pathProfiling.commandGlobalReconstructionNanos,
+                    stateKeyCreationNanos = pathProfiling.commandGlobalStateKeyCreationNanos,
+                    stateStringConcatenationNanos = pathProfiling.commandGlobalStateStringConcatenationNanos,
+                    stateMetadataPropagationNanos = pathProfiling.commandGlobalStateMetadataPropagationNanos,
+                    statePathAllocationNanos = pathProfiling.commandGlobalStatePathAllocationNanos,
+                    bestStateMapLookupNanos = pathProfiling.commandGlobalBestStateMapLookupNanos,
+                    bestStateDecisionNanos = pathProfiling.commandGlobalBestStateDecisionNanos,
+                    bestStateReplacementNanos = pathProfiling.commandGlobalBestStateReplacementNanos,
                     segmentEncodingRequests = pathProfiling.commandGlobalSegmentEncodingRequests,
                     segmentEncodingCacheHits = pathProfiling.commandGlobalSegmentEncodingCacheHits,
                     segmentEncodingUniqueKeys = pathProfiling.commandGlobalSegmentEncodingUniqueKeys
@@ -5002,6 +5016,13 @@ internal object SvgPathDataOptimizer {
         var commandGlobalStateCreationNanos: Long = 0,
         var commandGlobalBestStateComparisonNanos: Long = 0,
         var commandGlobalReconstructionNanos: Long = 0,
+        var commandGlobalStateKeyCreationNanos: Long = 0,
+        var commandGlobalStateStringConcatenationNanos: Long = 0,
+        var commandGlobalStateMetadataPropagationNanos: Long = 0,
+        var commandGlobalStatePathAllocationNanos: Long = 0,
+        var commandGlobalBestStateMapLookupNanos: Long = 0,
+        var commandGlobalBestStateDecisionNanos: Long = 0,
+        var commandGlobalBestStateReplacementNanos: Long = 0,
         var commandGlobalSegmentEncodingRequests: Int = 0,
         var commandGlobalSegmentEncodingCacheHits: Int = 0,
         var commandGlobalSegmentEncodingUniqueKeys: Int = 0,
@@ -6867,6 +6888,8 @@ internal object SvgPathDataOptimizer {
                     )
 
                     val stateCreationStartTime = System.nanoTime()
+
+                    val stateKeyStartTime = System.nanoTime()
                     val nextState = CommandSequenceState(
                         previousCommand = candidate.command,
                         previousNumber = candidate.values
@@ -6874,38 +6897,80 @@ internal object SvgPathDataOptimizer {
                             ?.let(::formatBigDecimal),
                         previousAxisDirection = candidate.axisDirection
                     )
+                    profiling?.let {
+                        it.commandGlobalStateKeyCreationNanos +=
+                            System.nanoTime() - stateKeyStartTime
+                    }
+
+                    val stringConcatenationStartTime = System.nanoTime()
+                    val nextText = path.text + encoded
+                    profiling?.let {
+                        it.commandGlobalStateStringConcatenationNanos +=
+                            System.nanoTime() - stringConcatenationStartTime
+                    }
+
+                    val metadataStartTime = System.nanoTime()
+                    val nextImplicitLineToCount =
+                        path.implicitLineToCount +
+                            if (implicitLineAfterMove) 1 else 0
+                    val nextRepeatedShorthandCount =
+                        path.repeatedShorthandCount +
+                            if (repeatedShorthandCommand) 1 else 0
+                    val nextRepeatedFullCurveCount =
+                        path.repeatedFullCurveCount +
+                            if (repeatedFullCurveCommand) 1 else 0
+                    val nextRepeatedArcCount =
+                        path.repeatedArcCount +
+                            if (repeatedArcCommand) 1 else 0
+                    profiling?.let {
+                        it.commandGlobalStateMetadataPropagationNanos +=
+                            System.nanoTime() - metadataStartTime
+                    }
+
+                    val pathAllocationStartTime = System.nanoTime()
                     val next = CommandSequencePath(
-                        text = path.text + encoded,
+                        text = nextText,
                         state = nextState,
-                        implicitLineToCount =
-                            path.implicitLineToCount +
-                                if (implicitLineAfterMove) 1 else 0,
-                        repeatedShorthandCount =
-                            path.repeatedShorthandCount +
-                                if (repeatedShorthandCommand) 1 else 0,
-                        repeatedFullCurveCount =
-                            path.repeatedFullCurveCount +
-                                if (repeatedFullCurveCommand) 1 else 0,
-                        repeatedArcCount =
-                            path.repeatedArcCount +
-                                if (repeatedArcCommand) 1 else 0
+                        implicitLineToCount = nextImplicitLineToCount,
+                        repeatedShorthandCount = nextRepeatedShorthandCount,
+                        repeatedFullCurveCount = nextRepeatedFullCurveCount,
+                        repeatedArcCount = nextRepeatedArcCount
                     )
                     profiling?.let {
+                        it.commandGlobalStatePathAllocationNanos +=
+                            System.nanoTime() - pathAllocationStartTime
                         it.commandGlobalStateCreationNanos +=
                             System.nanoTime() - stateCreationStartTime
                     }
 
                     val comparisonStartTime = System.nanoTime()
+                    val lookupStartTime = System.nanoTime()
                     val existing = nextPaths[nextState]
-                    if (
+                    profiling?.let {
+                        it.commandGlobalBestStateMapLookupNanos +=
+                            System.nanoTime() - lookupStartTime
+                    }
+
+                    val decisionStartTime = System.nanoTime()
+                    val shouldReplace =
                         existing == null ||
-                        next.text.length < existing.text.length ||
-                        (
-                            next.text.length == existing.text.length &&
-                            next.text < existing.text
-                        )
-                    ) {
+                            next.text.length < existing.text.length ||
+                            (
+                                next.text.length == existing.text.length &&
+                                next.text < existing.text
+                            )
+                    profiling?.let {
+                        it.commandGlobalBestStateDecisionNanos +=
+                            System.nanoTime() - decisionStartTime
+                    }
+
+                    if (shouldReplace) {
+                        val replacementStartTime = System.nanoTime()
                         nextPaths[nextState] = next
+                        profiling?.let {
+                            it.commandGlobalBestStateReplacementNanos +=
+                                System.nanoTime() - replacementStartTime
+                        }
                     }
                     profiling?.let {
                         it.commandGlobalBestStateComparisonNanos +=

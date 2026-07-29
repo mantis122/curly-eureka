@@ -250,6 +250,13 @@ class SvgConversionReportData {
     var optimizationPathCommandGlobalStateCreationNanos: Long = 0
     var optimizationPathCommandGlobalBestStateComparisonNanos: Long = 0
     var optimizationPathCommandGlobalReconstructionNanos: Long = 0
+    var optimizationPathCommandGlobalStateKeyCreationNanos: Long = 0
+    var optimizationPathCommandGlobalStateStringConcatenationNanos: Long = 0
+    var optimizationPathCommandGlobalStateMetadataPropagationNanos: Long = 0
+    var optimizationPathCommandGlobalStatePathAllocationNanos: Long = 0
+    var optimizationPathCommandGlobalBestStateMapLookupNanos: Long = 0
+    var optimizationPathCommandGlobalBestStateDecisionNanos: Long = 0
+    var optimizationPathCommandGlobalBestStateReplacementNanos: Long = 0
     var optimizationPathCommandGlobalSegmentEncodingRequests: Int = 0
     var optimizationPathCommandGlobalSegmentEncodingCacheHits: Int = 0
     var optimizationPathCommandGlobalSegmentEncodingUniqueKeys: Int = 0
@@ -1487,6 +1494,33 @@ object SvgConversionReporter {
                                 data.optimizationPathCommandGlobalReconstructionNanos
                         )
                     )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "State creation and path extension",
+                        parentNanos = data.optimizationPathCommandGlobalStateCreationNanos,
+                        stages = listOf(
+                            "State-key creation" to
+                                data.optimizationPathCommandGlobalStateKeyCreationNanos,
+                            "Partial-string concatenation" to
+                                data.optimizationPathCommandGlobalStateStringConcatenationNanos,
+                            "Metadata propagation" to
+                                data.optimizationPathCommandGlobalStateMetadataPropagationNanos,
+                            "Path-state object allocation" to
+                                data.optimizationPathCommandGlobalStatePathAllocationNanos
+                        )
+                    )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Best-state comparison",
+                        parentNanos = data.optimizationPathCommandGlobalBestStateComparisonNanos,
+                        stages = listOf(
+                            "State-map lookup" to
+                                data.optimizationPathCommandGlobalBestStateMapLookupNanos,
+                            "Best-state decision" to
+                                data.optimizationPathCommandGlobalBestStateDecisionNanos,
+                            "Best-state replacement" to
+                                data.optimizationPathCommandGlobalBestStateReplacementNanos
+                        )
+                    )
+
                     if (data.optimizationPathCommandGlobalSegmentEncodingRequests > 0) {
                         val requests = data.optimizationPathCommandGlobalSegmentEncodingRequests
                         val hits = data.optimizationPathCommandGlobalSegmentEncodingCacheHits

@@ -425,6 +425,13 @@ object SvgToVectorConverter {
         reportData.optimizationPathCommandGlobalStateCreationNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateCreationNanos
         reportData.optimizationPathCommandGlobalBestStateComparisonNanos = pathOptimizationStats.pathCommandGlobalProfiling.bestStateComparisonNanos
         reportData.optimizationPathCommandGlobalReconstructionNanos = pathOptimizationStats.pathCommandGlobalProfiling.reconstructionNanos
+        reportData.optimizationPathCommandGlobalStateKeyCreationNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateKeyCreationNanos
+        reportData.optimizationPathCommandGlobalStateStringConcatenationNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateStringConcatenationNanos
+        reportData.optimizationPathCommandGlobalStateMetadataPropagationNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateMetadataPropagationNanos
+        reportData.optimizationPathCommandGlobalStatePathAllocationNanos = pathOptimizationStats.pathCommandGlobalProfiling.statePathAllocationNanos
+        reportData.optimizationPathCommandGlobalBestStateMapLookupNanos = pathOptimizationStats.pathCommandGlobalProfiling.bestStateMapLookupNanos
+        reportData.optimizationPathCommandGlobalBestStateDecisionNanos = pathOptimizationStats.pathCommandGlobalProfiling.bestStateDecisionNanos
+        reportData.optimizationPathCommandGlobalBestStateReplacementNanos = pathOptimizationStats.pathCommandGlobalProfiling.bestStateReplacementNanos
         reportData.optimizationPathCommandGlobalSegmentEncodingRequests = pathOptimizationStats.pathCommandGlobalProfiling.segmentEncodingRequests
         reportData.optimizationPathCommandGlobalSegmentEncodingCacheHits = pathOptimizationStats.pathCommandGlobalProfiling.segmentEncodingCacheHits
         reportData.optimizationPathCommandGlobalSegmentEncodingUniqueKeys = pathOptimizationStats.pathCommandGlobalProfiling.segmentEncodingUniqueKeys
