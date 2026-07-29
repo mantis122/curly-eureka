@@ -50,12 +50,19 @@ internal object SvgPathDataOptimizer {
         val bestStateComparisonNanos: Long = 0,
         val reconstructionNanos: Long = 0,
         val stateKeyCreationNanos: Long = 0,
+        val stateKeyFieldPreparationNanos: Long = 0,
+        val stateKeyAllocationNanos: Long = 0,
         val stateStringConcatenationNanos: Long = 0,
         val stateMetadataPropagationNanos: Long = 0,
         val statePathAllocationNanos: Long = 0,
         val bestStateMapLookupNanos: Long = 0,
         val bestStateDecisionNanos: Long = 0,
         val bestStateReplacementNanos: Long = 0,
+        val stateMapLookupCalls: Int = 0,
+        val stateMapLookupHits: Int = 0,
+        val stateMapLookupMisses: Int = 0,
+        val stateMapInsertions: Int = 0,
+        val stateMapReplacements: Int = 0,
         val segmentEncodingRequests: Int = 0,
         val segmentEncodingCacheHits: Int = 0,
         val segmentEncodingUniqueKeys: Int = 0
@@ -804,12 +811,19 @@ internal object SvgPathDataOptimizer {
                     bestStateComparisonNanos = pathProfiling.commandGlobalBestStateComparisonNanos,
                     reconstructionNanos = pathProfiling.commandGlobalReconstructionNanos,
                     stateKeyCreationNanos = pathProfiling.commandGlobalStateKeyCreationNanos,
+                    stateKeyFieldPreparationNanos = pathProfiling.commandGlobalStateKeyFieldPreparationNanos,
+                    stateKeyAllocationNanos = pathProfiling.commandGlobalStateKeyAllocationNanos,
                     stateStringConcatenationNanos = pathProfiling.commandGlobalStateStringConcatenationNanos,
                     stateMetadataPropagationNanos = pathProfiling.commandGlobalStateMetadataPropagationNanos,
                     statePathAllocationNanos = pathProfiling.commandGlobalStatePathAllocationNanos,
                     bestStateMapLookupNanos = pathProfiling.commandGlobalBestStateMapLookupNanos,
                     bestStateDecisionNanos = pathProfiling.commandGlobalBestStateDecisionNanos,
                     bestStateReplacementNanos = pathProfiling.commandGlobalBestStateReplacementNanos,
+                    stateMapLookupCalls = pathProfiling.commandGlobalStateMapLookupCalls,
+                    stateMapLookupHits = pathProfiling.commandGlobalStateMapLookupHits,
+                    stateMapLookupMisses = pathProfiling.commandGlobalStateMapLookupMisses,
+                    stateMapInsertions = pathProfiling.commandGlobalStateMapInsertions,
+                    stateMapReplacements = pathProfiling.commandGlobalStateMapReplacements,
                     segmentEncodingRequests = pathProfiling.commandGlobalSegmentEncodingRequests,
                     segmentEncodingCacheHits = pathProfiling.commandGlobalSegmentEncodingCacheHits,
                     segmentEncodingUniqueKeys = pathProfiling.commandGlobalSegmentEncodingUniqueKeys
@@ -5017,12 +5031,19 @@ internal object SvgPathDataOptimizer {
         var commandGlobalBestStateComparisonNanos: Long = 0,
         var commandGlobalReconstructionNanos: Long = 0,
         var commandGlobalStateKeyCreationNanos: Long = 0,
+        var commandGlobalStateKeyFieldPreparationNanos: Long = 0,
+        var commandGlobalStateKeyAllocationNanos: Long = 0,
         var commandGlobalStateStringConcatenationNanos: Long = 0,
         var commandGlobalStateMetadataPropagationNanos: Long = 0,
         var commandGlobalStatePathAllocationNanos: Long = 0,
         var commandGlobalBestStateMapLookupNanos: Long = 0,
         var commandGlobalBestStateDecisionNanos: Long = 0,
         var commandGlobalBestStateReplacementNanos: Long = 0,
+        var commandGlobalStateMapLookupCalls: Int = 0,
+        var commandGlobalStateMapLookupHits: Int = 0,
+        var commandGlobalStateMapLookupMisses: Int = 0,
+        var commandGlobalStateMapInsertions: Int = 0,
+        var commandGlobalStateMapReplacements: Int = 0,
         var commandGlobalSegmentEncodingRequests: Int = 0,
         var commandGlobalSegmentEncodingCacheHits: Int = 0,
         var commandGlobalSegmentEncodingUniqueKeys: Int = 0,
@@ -6890,14 +6911,26 @@ internal object SvgPathDataOptimizer {
                     val stateCreationStartTime = System.nanoTime()
 
                     val stateKeyStartTime = System.nanoTime()
+                    val keyFieldPreparationStartTime = System.nanoTime()
+                    val nextPreviousCommand = candidate.command
+                    val nextPreviousNumber = candidate.values
+                        .lastOrNull()
+                        ?.let(::formatBigDecimal)
+                    val nextPreviousAxisDirection = candidate.axisDirection
+                    profiling?.let {
+                        it.commandGlobalStateKeyFieldPreparationNanos +=
+                            System.nanoTime() - keyFieldPreparationStartTime
+                    }
+
+                    val keyAllocationStartTime = System.nanoTime()
                     val nextState = CommandSequenceState(
-                        previousCommand = candidate.command,
-                        previousNumber = candidate.values
-                            .lastOrNull()
-                            ?.let(::formatBigDecimal),
-                        previousAxisDirection = candidate.axisDirection
+                        previousCommand = nextPreviousCommand,
+                        previousNumber = nextPreviousNumber,
+                        previousAxisDirection = nextPreviousAxisDirection
                     )
                     profiling?.let {
+                        it.commandGlobalStateKeyAllocationNanos +=
+                            System.nanoTime() - keyAllocationStartTime
                         it.commandGlobalStateKeyCreationNanos +=
                             System.nanoTime() - stateKeyStartTime
                     }
@@ -6949,6 +6982,12 @@ internal object SvgPathDataOptimizer {
                     profiling?.let {
                         it.commandGlobalBestStateMapLookupNanos +=
                             System.nanoTime() - lookupStartTime
+                        it.commandGlobalStateMapLookupCalls += 1
+                        if (existing == null) {
+                            it.commandGlobalStateMapLookupMisses += 1
+                        } else {
+                            it.commandGlobalStateMapLookupHits += 1
+                        }
                     }
 
                     val decisionStartTime = System.nanoTime()
@@ -6970,6 +7009,11 @@ internal object SvgPathDataOptimizer {
                         profiling?.let {
                             it.commandGlobalBestStateReplacementNanos +=
                                 System.nanoTime() - replacementStartTime
+                            if (existing == null) {
+                                it.commandGlobalStateMapInsertions += 1
+                            } else {
+                                it.commandGlobalStateMapReplacements += 1
+                            }
                         }
                     }
                     profiling?.let {

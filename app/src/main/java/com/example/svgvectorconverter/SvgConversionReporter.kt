@@ -251,12 +251,19 @@ class SvgConversionReportData {
     var optimizationPathCommandGlobalBestStateComparisonNanos: Long = 0
     var optimizationPathCommandGlobalReconstructionNanos: Long = 0
     var optimizationPathCommandGlobalStateKeyCreationNanos: Long = 0
+    var optimizationPathCommandGlobalStateKeyFieldPreparationNanos: Long = 0
+    var optimizationPathCommandGlobalStateKeyAllocationNanos: Long = 0
     var optimizationPathCommandGlobalStateStringConcatenationNanos: Long = 0
     var optimizationPathCommandGlobalStateMetadataPropagationNanos: Long = 0
     var optimizationPathCommandGlobalStatePathAllocationNanos: Long = 0
     var optimizationPathCommandGlobalBestStateMapLookupNanos: Long = 0
     var optimizationPathCommandGlobalBestStateDecisionNanos: Long = 0
     var optimizationPathCommandGlobalBestStateReplacementNanos: Long = 0
+    var optimizationPathCommandGlobalStateMapLookupCalls: Int = 0
+    var optimizationPathCommandGlobalStateMapLookupHits: Int = 0
+    var optimizationPathCommandGlobalStateMapLookupMisses: Int = 0
+    var optimizationPathCommandGlobalStateMapInsertions: Int = 0
+    var optimizationPathCommandGlobalStateMapReplacements: Int = 0
     var optimizationPathCommandGlobalSegmentEncodingRequests: Int = 0
     var optimizationPathCommandGlobalSegmentEncodingCacheHits: Int = 0
     var optimizationPathCommandGlobalSegmentEncodingUniqueKeys: Int = 0
@@ -1509,6 +1516,16 @@ object SvgConversionReporter {
                         )
                     )
                     appendDeepTimingBreakdown(
+                        parentLabel = "State-key creation",
+                        parentNanos = data.optimizationPathCommandGlobalStateKeyCreationNanos,
+                        stages = listOf(
+                            "Key-field preparation" to
+                                data.optimizationPathCommandGlobalStateKeyFieldPreparationNanos,
+                            "Composite key allocation" to
+                                data.optimizationPathCommandGlobalStateKeyAllocationNanos
+                        )
+                    )
+                    appendDeepTimingBreakdown(
                         parentLabel = "Best-state comparison",
                         parentNanos = data.optimizationPathCommandGlobalBestStateComparisonNanos,
                         stages = listOf(
@@ -1520,6 +1537,22 @@ object SvgConversionReporter {
                                 data.optimizationPathCommandGlobalBestStateReplacementNanos
                         )
                     )
+
+                    if (data.optimizationPathCommandGlobalStateMapLookupCalls > 0) {
+                        val lookups = data.optimizationPathCommandGlobalStateMapLookupCalls
+                        val hits = data.optimizationPathCommandGlobalStateMapLookupHits
+                        val misses = data.optimizationPathCommandGlobalStateMapLookupMisses
+                        val hitRate = hits.toDouble() * 100.0 / lookups.toDouble()
+                        append("      ▫ DP state-map access\n")
+                        append("        · Lookup calls: ").append(lookups).append('\n')
+                        append("        · Existing-state hits: ").append(hits)
+                            .append(" (").append(String.format(java.util.Locale.US, "%.1f%%", hitRate)).append(")\n")
+                        append("        · New-state misses: ").append(misses).append('\n')
+                        append("        · New-state inserts: ")
+                            .append(data.optimizationPathCommandGlobalStateMapInsertions).append('\n')
+                        append("        · Existing-state replacements: ")
+                            .append(data.optimizationPathCommandGlobalStateMapReplacements).append('\n')
+                    }
 
                     if (data.optimizationPathCommandGlobalSegmentEncodingRequests > 0) {
                         val requests = data.optimizationPathCommandGlobalSegmentEncodingRequests
