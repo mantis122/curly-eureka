@@ -35,7 +35,10 @@ internal object SvgPathDataOptimizer {
         val commandOmissionNanos: Long = 0,
         val stringConstructionNanos: Long = 0,
         val winnerSelectionNanos: Long = 0,
-        val stateBookkeepingNanos: Long = 0
+        val stateBookkeepingNanos: Long = 0,
+        val numericSerializationCalls: Int = 0,
+        val numericSerializationCacheHits: Int = 0,
+        val numericSerializationUniqueValues: Int = 0
     )
 
     data class Stats(
@@ -763,7 +766,10 @@ internal object SvgPathDataOptimizer {
                     commandOmissionNanos = pathProfiling.commandLocalCommandOmissionNanos,
                     stringConstructionNanos = pathProfiling.commandLocalStringConstructionNanos,
                     winnerSelectionNanos = pathProfiling.commandLocalWinnerSelectionNanos,
-                    stateBookkeepingNanos = pathProfiling.commandLocalStateBookkeepingNanos
+                    stateBookkeepingNanos = pathProfiling.commandLocalStateBookkeepingNanos,
+                    numericSerializationCalls = pathProfiling.commandLocalNumericSerializationCalls,
+                    numericSerializationCacheHits = pathProfiling.commandLocalNumericSerializationCacheHits,
+                    numericSerializationUniqueValues = pathProfiling.commandLocalNumericSerializationUniqueValues
                 ),
                 pathCommandGlobalParseSetupNanos = pathProfiling.commandGlobalParseSetupNanos,
                 pathCommandGlobalCandidateGenerationNanos =
@@ -4960,6 +4966,9 @@ internal object SvgPathDataOptimizer {
         var commandLocalStringConstructionNanos: Long = 0,
         var commandLocalWinnerSelectionNanos: Long = 0,
         var commandLocalStateBookkeepingNanos: Long = 0,
+        var commandLocalNumericSerializationCalls: Int = 0,
+        var commandLocalNumericSerializationCacheHits: Int = 0,
+        var commandLocalNumericSerializationUniqueValues: Int = 0,
         var commandGlobalParseSetupNanos: Long = 0,
         var commandGlobalCandidateGenerationNanos: Long = 0,
         var commandGlobalDynamicProgrammingNanos: Long = 0,
@@ -7048,6 +7057,11 @@ internal object SvgPathDataOptimizer {
         var axisSelected = 0
         var smoothShorthandsSelected = 0
 
+        // G2.9: exact, scale-sensitive memoization scoped to this local-command pass.
+        // formatPathNumber is pure for a given BigDecimal input, so a cache hit
+        // reuses only the exact spelling that the existing serializer already produced.
+        val localNumberSerializationCache = HashMap<BigDecimal, String>()
+
         profiling?.let {
             it.commandLocalParseSetupNanos +=
                 System.nanoTime() - parseSetupStartTime
@@ -7160,7 +7174,8 @@ internal object SvgPathDataOptimizer {
                 previousOutputCommand,
                 previousOutputNumber,
                 forceCommand = originalCommand.uppercaseChar() == 'M',
-                localProfiling = profiling
+                localProfiling = profiling,
+                localNumberSerializationCache = localNumberSerializationCache
             )
 
             val encodedCandidates = candidates
@@ -7200,7 +7215,8 @@ internal object SvgPathDataOptimizer {
                         forceCommand =
                             candidateUpper == 'M' ||
                                 forceAxisBoundary,
-                        localProfiling = profiling
+                        localProfiling = profiling,
+                        localNumberSerializationCache = localNumberSerializationCache
                     )
                     Triple(candidate, encoded, encoded.length)
                 }
@@ -7850,7 +7866,8 @@ internal object SvgPathDataOptimizer {
         previousNumber: String?,
         forceCommand: Boolean,
         allowImplicitLineAfterMove: Boolean = false,
-        localProfiling: PathSyntaxProfiling? = null
+        localProfiling: PathSyntaxProfiling? = null,
+        localNumberSerializationCache: MutableMap<BigDecimal, String>? = null
     ): String {
         val omissionStartTime = System.nanoTime()
         val repeatsSameCommand =
@@ -7872,7 +7889,27 @@ internal object SvgPathDataOptimizer {
         if (values.isEmpty()) return commandPrefix
 
         val numericStartTime = System.nanoTime()
-        val numbers = values.map(::formatPathNumber)
+        val numbers = values.map { value ->
+            localProfiling?.commandLocalNumericSerializationCalls =
+                (localProfiling?.commandLocalNumericSerializationCalls ?: 0) + 1
+
+            if (localNumberSerializationCache == null) {
+                formatPathNumber(value)
+            } else {
+                val cached = localNumberSerializationCache[value]
+                if (cached != null) {
+                    localProfiling?.commandLocalNumericSerializationCacheHits =
+                        (localProfiling?.commandLocalNumericSerializationCacheHits ?: 0) + 1
+                    cached
+                } else {
+                    formatPathNumber(value).also { encoded ->
+                        localNumberSerializationCache[value] = encoded
+                        localProfiling?.commandLocalNumericSerializationUniqueValues =
+                            (localProfiling?.commandLocalNumericSerializationUniqueValues ?: 0) + 1
+                    }
+                }
+            }
+        }
         localProfiling?.let {
             it.commandLocalNumericSerializationNanos +=
                 System.nanoTime() - numericStartTime

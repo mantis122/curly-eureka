@@ -413,6 +413,9 @@ object SvgToVectorConverter {
         reportData.optimizationPathCommandLocalStringConstructionNanos = pathOptimizationStats.pathCommandLocalProfiling.stringConstructionNanos
         reportData.optimizationPathCommandLocalWinnerSelectionNanos = pathOptimizationStats.pathCommandLocalProfiling.winnerSelectionNanos
         reportData.optimizationPathCommandLocalStateBookkeepingNanos = pathOptimizationStats.pathCommandLocalProfiling.stateBookkeepingNanos
+        reportData.optimizationPathCommandLocalNumericSerializationCalls = pathOptimizationStats.pathCommandLocalProfiling.numericSerializationCalls
+        reportData.optimizationPathCommandLocalNumericSerializationCacheHits = pathOptimizationStats.pathCommandLocalProfiling.numericSerializationCacheHits
+        reportData.optimizationPathCommandLocalNumericSerializationUniqueValues = pathOptimizationStats.pathCommandLocalProfiling.numericSerializationUniqueValues
         reportData.optimizationPathCommandGlobalParseSetupNanos = pathOptimizationStats.pathCommandGlobalParseSetupNanos
         reportData.optimizationPathCommandGlobalCandidateGenerationNanos = pathOptimizationStats.pathCommandGlobalCandidateGenerationNanos
         reportData.optimizationPathCommandGlobalDynamicProgrammingNanos = pathOptimizationStats.pathCommandGlobalDynamicProgrammingNanos

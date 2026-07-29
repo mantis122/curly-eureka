@@ -238,6 +238,9 @@ class SvgConversionReportData {
     var optimizationPathCommandLocalStringConstructionNanos: Long = 0
     var optimizationPathCommandLocalWinnerSelectionNanos: Long = 0
     var optimizationPathCommandLocalStateBookkeepingNanos: Long = 0
+    var optimizationPathCommandLocalNumericSerializationCalls: Int = 0
+    var optimizationPathCommandLocalNumericSerializationCacheHits: Int = 0
+    var optimizationPathCommandLocalNumericSerializationUniqueValues: Int = 0
     var optimizationPathCommandGlobalParseSetupNanos: Long = 0
     var optimizationPathCommandGlobalCandidateGenerationNanos: Long = 0
     var optimizationPathCommandGlobalDynamicProgrammingNanos: Long = 0
@@ -1492,6 +1495,18 @@ object SvgConversionReporter {
                                 data.optimizationPathCommandLocalWinnerSelectionNanos
                         )
                     )
+
+                    if (data.optimizationPathCommandLocalNumericSerializationCalls > 0) {
+                        val calls = data.optimizationPathCommandLocalNumericSerializationCalls
+                        val hits = data.optimizationPathCommandLocalNumericSerializationCacheHits
+                        val unique = data.optimizationPathCommandLocalNumericSerializationUniqueValues
+                        val hitRate = hits.toDouble() * 100.0 / calls.toDouble()
+                        append("      ▫ Numeric serialization reuse\n")
+                        append("        · Calls: ").append(calls).append('\n')
+                        append("        · Cache hits: ").append(hits)
+                            .append(" (").append(String.format(java.util.Locale.US, "%.1f%%", hitRate)).append(")\n")
+                        append("        · Unique exact values: ").append(unique).append('\n')
+                    }
                 }
                 "Transform optimization" -> {
                     appendNestedTimingBreakdown(
