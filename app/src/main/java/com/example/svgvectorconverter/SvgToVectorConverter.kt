@@ -444,10 +444,30 @@ object SvgToVectorConverter {
                 outputOptimizationNanos = outputOptimizationNanos,
                 optimizationPathSyntaxNanos =
                     pathOptimizationStats.pathSyntaxOptimizationNanos,
+                optimizationPathTokenizationNanos =
+                    pathOptimizationStats.pathTokenizationNormalizationNanos,
+                optimizationPathGeometryCleanupNanos =
+                    pathOptimizationStats.pathGeometryCleanupNanos,
+                optimizationPathCommandMinimizationNanos =
+                    pathOptimizationStats.pathCommandMinimizationNanos,
+                optimizationPathNumericSerializationNanos =
+                    pathOptimizationStats.pathNumericSerializationNanos,
+                optimizationColorNormalizationNanos =
+                    pathOptimizationStats.colorNormalizationNanos,
                 optimizationPruningCleanupNanos =
                     pathOptimizationStats.pruningAndGroupCleanupNanos,
                 optimizationTransformsNanos =
                     pathOptimizationStats.transformOptimizationNanos,
+                optimizationTransformIdentityCompositionNanos =
+                    pathOptimizationStats.transformIdentityCompositionNanos,
+                optimizationTransformFactoringFlatteningNanos =
+                    pathOptimizationStats.transformFactoringFlatteningNanos,
+                optimizationTransformScaleFlatteningNanos =
+                    pathOptimizationStats.transformScaleFlatteningNanos,
+                optimizationTransformRotationTranslationNanos =
+                    pathOptimizationStats.transformRotationTranslationNanos,
+                optimizationTransformCanonicalizationNanos =
+                    pathOptimizationStats.transformCanonicalizationNanos,
                 optimizationDeduplicationNanos =
                     pathOptimizationStats.deduplicationAndMergeNanos,
                 optimizationNumericCleanupNanos =
