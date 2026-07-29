@@ -419,6 +419,12 @@ object SvgToVectorConverter {
         reportData.optimizationPathCommandGlobalParseSetupNanos = pathOptimizationStats.pathCommandGlobalParseSetupNanos
         reportData.optimizationPathCommandGlobalCandidateGenerationNanos = pathOptimizationStats.pathCommandGlobalCandidateGenerationNanos
         reportData.optimizationPathCommandGlobalDynamicProgrammingNanos = pathOptimizationStats.pathCommandGlobalDynamicProgrammingNanos
+        reportData.optimizationPathCommandGlobalTransitionEvaluationNanos = pathOptimizationStats.pathCommandGlobalProfiling.transitionEvaluationNanos
+        reportData.optimizationPathCommandGlobalSeparatorOmissionCostNanos = pathOptimizationStats.pathCommandGlobalProfiling.separatorOmissionCostNanos
+        reportData.optimizationPathCommandGlobalSegmentEncodingNanos = pathOptimizationStats.pathCommandGlobalProfiling.segmentEncodingNanos
+        reportData.optimizationPathCommandGlobalStateCreationNanos = pathOptimizationStats.pathCommandGlobalProfiling.stateCreationNanos
+        reportData.optimizationPathCommandGlobalBestStateComparisonNanos = pathOptimizationStats.pathCommandGlobalProfiling.bestStateComparisonNanos
+        reportData.optimizationPathCommandGlobalReconstructionNanos = pathOptimizationStats.pathCommandGlobalProfiling.reconstructionNanos
         reportData.optimizationPathNumericSerializationNanos = pathOptimizationStats.pathNumericSerializationNanos
         reportData.optimizationColorNormalizationNanos = pathOptimizationStats.colorNormalizationNanos
         reportData.optimizationPruningCleanupNanos = pathOptimizationStats.pruningAndGroupCleanupNanos

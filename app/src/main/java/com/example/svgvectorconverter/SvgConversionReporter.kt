@@ -244,6 +244,12 @@ class SvgConversionReportData {
     var optimizationPathCommandGlobalParseSetupNanos: Long = 0
     var optimizationPathCommandGlobalCandidateGenerationNanos: Long = 0
     var optimizationPathCommandGlobalDynamicProgrammingNanos: Long = 0
+    var optimizationPathCommandGlobalTransitionEvaluationNanos: Long = 0
+    var optimizationPathCommandGlobalSeparatorOmissionCostNanos: Long = 0
+    var optimizationPathCommandGlobalSegmentEncodingNanos: Long = 0
+    var optimizationPathCommandGlobalStateCreationNanos: Long = 0
+    var optimizationPathCommandGlobalBestStateComparisonNanos: Long = 0
+    var optimizationPathCommandGlobalReconstructionNanos: Long = 0
     var optimizationPathNumericSerializationNanos: Long = 0
     var optimizationColorNormalizationNanos: Long = 0
     var optimizationPruningCleanupNanos: Long = 0
@@ -1458,6 +1464,24 @@ object SvgConversionReporter {
                                 data.optimizationPathCommandGlobalCandidateGenerationNanos,
                             "Global dynamic programming" to
                                 data.optimizationPathCommandGlobalDynamicProgrammingNanos
+                        )
+                    )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Global dynamic programming",
+                        parentNanos = data.optimizationPathCommandGlobalDynamicProgrammingNanos,
+                        stages = listOf(
+                            "Transition evaluation" to
+                                data.optimizationPathCommandGlobalTransitionEvaluationNanos,
+                            "Separator / command-omission costs" to
+                                data.optimizationPathCommandGlobalSeparatorOmissionCostNanos,
+                            "Segment number/string encoding" to
+                                data.optimizationPathCommandGlobalSegmentEncodingNanos,
+                            "State creation and path extension" to
+                                data.optimizationPathCommandGlobalStateCreationNanos,
+                            "Best-state comparison" to
+                                data.optimizationPathCommandGlobalBestStateComparisonNanos,
+                            "Final selection and reconstruction" to
+                                data.optimizationPathCommandGlobalReconstructionNanos
                         )
                     )
                     appendDeepTimingBreakdown(

@@ -41,6 +41,15 @@ internal object SvgPathDataOptimizer {
         val numericSerializationUniqueValues: Int = 0
     )
 
+
+    data class CommandGlobalProfilingStats(
+        val transitionEvaluationNanos: Long = 0,
+        val separatorOmissionCostNanos: Long = 0,
+        val segmentEncodingNanos: Long = 0,
+        val stateCreationNanos: Long = 0,
+        val bestStateComparisonNanos: Long = 0,
+        val reconstructionNanos: Long = 0
+    )
     data class Stats(
         val pathCount: Int = 0,
         val charactersBefore: Int = 0,
@@ -132,6 +141,7 @@ internal object SvgPathDataOptimizer {
         val pathCommandGlobalParseSetupNanos: Long = 0,
         val pathCommandGlobalCandidateGenerationNanos: Long = 0,
         val pathCommandGlobalDynamicProgrammingNanos: Long = 0,
+        val pathCommandGlobalProfiling: CommandGlobalProfilingStats = CommandGlobalProfilingStats(),
         val pathNumericSerializationNanos: Long = 0,
         val colorNormalizationNanos: Long = 0,
         val pruningAndGroupCleanupNanos: Long = 0,
@@ -776,6 +786,14 @@ internal object SvgPathDataOptimizer {
                     pathProfiling.commandGlobalCandidateGenerationNanos,
                 pathCommandGlobalDynamicProgrammingNanos =
                     pathProfiling.commandGlobalDynamicProgrammingNanos,
+                pathCommandGlobalProfiling = CommandGlobalProfilingStats(
+                    transitionEvaluationNanos = pathProfiling.commandGlobalTransitionEvaluationNanos,
+                    separatorOmissionCostNanos = pathProfiling.commandGlobalSeparatorOmissionCostNanos,
+                    segmentEncodingNanos = pathProfiling.commandGlobalSegmentEncodingNanos,
+                    stateCreationNanos = pathProfiling.commandGlobalStateCreationNanos,
+                    bestStateComparisonNanos = pathProfiling.commandGlobalBestStateComparisonNanos,
+                    reconstructionNanos = pathProfiling.commandGlobalReconstructionNanos
+                ),
                 pathNumericSerializationNanos = pathProfiling.numericSerializationNanos,
                 colorNormalizationNanos = colorNormalizationNanos,
                 pruningAndGroupCleanupNanos = pruningAndGroupCleanupNanos,
@@ -4972,6 +4990,12 @@ internal object SvgPathDataOptimizer {
         var commandGlobalParseSetupNanos: Long = 0,
         var commandGlobalCandidateGenerationNanos: Long = 0,
         var commandGlobalDynamicProgrammingNanos: Long = 0,
+        var commandGlobalTransitionEvaluationNanos: Long = 0,
+        var commandGlobalSeparatorOmissionCostNanos: Long = 0,
+        var commandGlobalSegmentEncodingNanos: Long = 0,
+        var commandGlobalStateCreationNanos: Long = 0,
+        var commandGlobalBestStateComparisonNanos: Long = 0,
+        var commandGlobalReconstructionNanos: Long = 0,
         var numericSerializationNanos: Long = 0
     )
 
@@ -6775,6 +6799,7 @@ internal object SvgPathDataOptimizer {
 
             for ((_, path) in paths) {
                 for (candidate in uniqueCandidates) {
+                    val transitionEvaluationStartTime = System.nanoTime()
                     val forceAxisBoundary =
                         candidate.command.uppercaseChar() in
                             charArrayOf('H', 'V') &&
@@ -6802,6 +6827,10 @@ internal object SvgPathDataOptimizer {
                     val repeatedArcCommand =
                         path.state.previousCommand == candidate.command &&
                             candidate.command.uppercaseChar() == 'A'
+                    profiling?.let {
+                        it.commandGlobalTransitionEvaluationNanos +=
+                            System.nanoTime() - transitionEvaluationStartTime
+                    }
 
                     val encoded = encodeSegment(
                         command = candidate.command,
@@ -6811,9 +6840,11 @@ internal object SvgPathDataOptimizer {
                         forceCommand =
                             candidate.command.uppercaseChar() == 'M' ||
                                 forceAxisBoundary,
-                        allowImplicitLineAfterMove = true
+                        allowImplicitLineAfterMove = true,
+                        globalProfiling = profiling
                     )
 
+                    val stateCreationStartTime = System.nanoTime()
                     val nextState = CommandSequenceState(
                         previousCommand = candidate.command,
                         previousNumber = candidate.values
@@ -6837,7 +6868,12 @@ internal object SvgPathDataOptimizer {
                             path.repeatedArcCount +
                                 if (repeatedArcCommand) 1 else 0
                     )
+                    profiling?.let {
+                        it.commandGlobalStateCreationNanos +=
+                            System.nanoTime() - stateCreationStartTime
+                    }
 
+                    val comparisonStartTime = System.nanoTime()
                     val existing = nextPaths[nextState]
                     if (
                         existing == null ||
@@ -6848,6 +6884,10 @@ internal object SvgPathDataOptimizer {
                         )
                     ) {
                         nextPaths[nextState] = next
+                    }
+                    profiling?.let {
+                        it.commandGlobalBestStateComparisonNanos +=
+                            System.nanoTime() - comparisonStartTime
                     }
                 }
             }
@@ -6887,6 +6927,7 @@ internal object SvgPathDataOptimizer {
             }
         }
 
+        val reconstructionStartTime = System.nanoTime()
         val best = paths.values.minWithOrNull(
             compareBy<CommandSequencePath> { it.text.length }
                 .thenBy { it.text }
@@ -6914,7 +6955,7 @@ internal object SvgPathDataOptimizer {
                     0
                 }
 
-        return if (
+        val result = if (
             selectedText.length < pathData.length &&
             parseNormalizedSegments(selectedText) != null
         ) {
@@ -6929,6 +6970,13 @@ internal object SvgPathDataOptimizer {
         } else {
             GlobalCommandSequenceResult(pathData, 0, 0, 0, 0, 0)
         }
+        profiling?.let {
+            val reconstructionElapsedNanos =
+                System.nanoTime() - reconstructionStartTime
+            it.commandGlobalReconstructionNanos += reconstructionElapsedNanos
+            it.commandGlobalDynamicProgrammingNanos += reconstructionElapsedNanos
+        }
+        return result
     }
 
     /**
@@ -7867,7 +7915,8 @@ internal object SvgPathDataOptimizer {
         forceCommand: Boolean,
         allowImplicitLineAfterMove: Boolean = false,
         localProfiling: PathSyntaxProfiling? = null,
-        localNumberSerializationCache: MutableMap<BigDecimal, String>? = null
+        localNumberSerializationCache: MutableMap<BigDecimal, String>? = null,
+        globalProfiling: PathSyntaxProfiling? = null
     ): String {
         val omissionStartTime = System.nanoTime()
         val repeatsSameCommand =
@@ -7882,9 +7931,12 @@ internal object SvgPathDataOptimizer {
                 command.uppercaseChar() != 'Z' &&
                 (repeatsSameCommand || isImplicitLineAfterMove)
         val commandPrefix = if (canOmit) "" else command.toString()
+        val omissionElapsedNanos = System.nanoTime() - omissionStartTime
         localProfiling?.let {
-            it.commandLocalCommandOmissionNanos +=
-                System.nanoTime() - omissionStartTime
+            it.commandLocalCommandOmissionNanos += omissionElapsedNanos
+        }
+        globalProfiling?.let {
+            it.commandGlobalSeparatorOmissionCostNanos += omissionElapsedNanos
         }
         if (values.isEmpty()) return commandPrefix
 
@@ -7910,9 +7962,12 @@ internal object SvgPathDataOptimizer {
                 }
             }
         }
+        val numericElapsedNanos = System.nanoTime() - numericStartTime
         localProfiling?.let {
-            it.commandLocalNumericSerializationNanos +=
-                System.nanoTime() - numericStartTime
+            it.commandLocalNumericSerializationNanos += numericElapsedNanos
+        }
+        globalProfiling?.let {
+            it.commandGlobalSegmentEncodingNanos += numericElapsedNanos
         }
 
         val separatorStartTime = System.nanoTime()
@@ -7921,9 +7976,12 @@ internal object SvgPathDataOptimizer {
             previousNumber != null &&
             needsNumberSeparator(previousNumber, numbers.first())
         ) "," else ""
+        val separatorElapsedNanos = System.nanoTime() - separatorStartTime
         localProfiling?.let {
-            it.commandLocalSeparatorCalculationNanos +=
-                System.nanoTime() - separatorStartTime
+            it.commandLocalSeparatorCalculationNanos += separatorElapsedNanos
+        }
+        globalProfiling?.let {
+            it.commandGlobalSeparatorOmissionCostNanos += separatorElapsedNanos
         }
 
         val constructionStartTime = System.nanoTime()
@@ -7933,9 +7991,15 @@ internal object SvgPathDataOptimizer {
                     val bodySeparatorStartTime = System.nanoTime()
                     val needsSeparator =
                         needsNumberSeparator(numbers[index - 1], number)
+                    val bodySeparatorElapsedNanos =
+                        System.nanoTime() - bodySeparatorStartTime
                     localProfiling?.let {
                         it.commandLocalSeparatorCalculationNanos +=
-                            System.nanoTime() - bodySeparatorStartTime
+                            bodySeparatorElapsedNanos
+                    }
+                    globalProfiling?.let {
+                        it.commandGlobalSeparatorOmissionCostNanos +=
+                            bodySeparatorElapsedNanos
                     }
                     if (needsSeparator) append(',')
                 }
@@ -7943,9 +8007,12 @@ internal object SvgPathDataOptimizer {
             }
         }
         val result = commandPrefix + boundarySeparator + body
+        val constructionElapsedNanos = System.nanoTime() - constructionStartTime
         localProfiling?.let {
-            it.commandLocalStringConstructionNanos +=
-                System.nanoTime() - constructionStartTime
+            it.commandLocalStringConstructionNanos += constructionElapsedNanos
+        }
+        globalProfiling?.let {
+            it.commandGlobalSegmentEncodingNanos += constructionElapsedNanos
         }
         return result
     }
