@@ -221,6 +221,10 @@ data class SvgConversionReportData(
     val optimizationPathSyntaxNanos: Long = 0,
     val optimizationPathTokenizationNanos: Long = 0,
     val optimizationPathGeometryCleanupNanos: Long = 0,
+    val optimizationPathRedundantSegmentCleanupNanos: Long = 0,
+    val optimizationPathArcCleanupNanos: Long = 0,
+    val optimizationPathCurveSimplificationNanos: Long = 0,
+    val optimizationPathCollinearConsolidationNanos: Long = 0,
     val optimizationPathCommandMinimizationNanos: Long = 0,
     val optimizationPathNumericSerializationNanos: Long = 0,
     val optimizationColorNormalizationNanos: Long = 0,
@@ -229,6 +233,8 @@ data class SvgConversionReportData(
     val optimizationTransformIdentityCompositionNanos: Long = 0,
     val optimizationTransformFactoringFlatteningNanos: Long = 0,
     val optimizationTransformScaleFlatteningNanos: Long = 0,
+    val optimizationTransformUniformScaleFlatteningNanos: Long = 0,
+    val optimizationTransformNonUniformScaleFlatteningNanos: Long = 0,
     val optimizationTransformRotationTranslationNanos: Long = 0,
     val optimizationTransformCanonicalizationNanos: Long = 0,
     val optimizationDeduplicationNanos: Long = 0,
@@ -1374,37 +1380,84 @@ object SvgConversionReporter {
             appendLine("• $label: ${formatNanosAsMilliseconds(durationNanos)} ($percentage)")
 
             when (label) {
-                "Path syntax and colors" -> appendNestedTimingBreakdown(
-                    parentNanos = durationNanos,
-                    stages = listOf(
-                        "Tokenization and normalization" to
-                            data.optimizationPathTokenizationNanos,
-                        "Geometry cleanup" to
-                            data.optimizationPathGeometryCleanupNanos,
-                        "Command minimization" to
-                            data.optimizationPathCommandMinimizationNanos,
-                        "Global numeric serialization" to
-                            data.optimizationPathNumericSerializationNanos,
-                        "Color normalization" to
-                            data.optimizationColorNormalizationNanos
+                "Path syntax and colors" -> {
+                    appendNestedTimingBreakdown(
+                        parentNanos = durationNanos,
+                        stages = listOf(
+                            "Tokenization and normalization" to
+                                data.optimizationPathTokenizationNanos,
+                            "Geometry cleanup" to
+                                data.optimizationPathGeometryCleanupNanos,
+                            "Command minimization" to
+                                data.optimizationPathCommandMinimizationNanos,
+                            "Global numeric serialization" to
+                                data.optimizationPathNumericSerializationNanos,
+                            "Color normalization" to
+                                data.optimizationColorNormalizationNanos
+                        )
                     )
-                )
-                "Transform optimization" -> appendNestedTimingBreakdown(
-                    parentNanos = durationNanos,
-                    stages = listOf(
-                        "Identity cleanup and composition" to
-                            data.optimizationTransformIdentityCompositionNanos,
-                        "Factoring and group flattening" to
-                            data.optimizationTransformFactoringFlatteningNanos,
-                        "Scale flattening" to
-                            data.optimizationTransformScaleFlatteningNanos,
-                        "Rotation and translation flattening" to
-                            data.optimizationTransformRotationTranslationNanos,
-                        "Coalescing and canonicalization" to
-                            data.optimizationTransformCanonicalizationNanos
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Geometry cleanup",
+                        parentNanos = data.optimizationPathGeometryCleanupNanos,
+                        stages = listOf(
+                            "Redundant-segment cleanup" to
+                                data.optimizationPathRedundantSegmentCleanupNanos,
+                            "Arc normalization and minimization" to
+                                data.optimizationPathArcCleanupNanos,
+                            "Curve simplification" to
+                                data.optimizationPathCurveSimplificationNanos,
+                            "Collinear-line consolidation" to
+                                data.optimizationPathCollinearConsolidationNanos
+                        )
                     )
-                )
+                }
+                "Transform optimization" -> {
+                    appendNestedTimingBreakdown(
+                        parentNanos = durationNanos,
+                        stages = listOf(
+                            "Identity cleanup and composition" to
+                                data.optimizationTransformIdentityCompositionNanos,
+                            "Factoring and group flattening" to
+                                data.optimizationTransformFactoringFlatteningNanos,
+                            "Scale flattening" to
+                                data.optimizationTransformScaleFlatteningNanos,
+                            "Rotation and translation flattening" to
+                                data.optimizationTransformRotationTranslationNanos,
+                            "Coalescing and canonicalization" to
+                                data.optimizationTransformCanonicalizationNanos
+                        )
+                    )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Scale flattening",
+                        parentNanos = data.optimizationTransformScaleFlatteningNanos,
+                        stages = listOf(
+                            "Uniform positive scale" to
+                                data.optimizationTransformUniformScaleFlatteningNanos,
+                            "Non-uniform fill-only scale" to
+                                data.optimizationTransformNonUniformScaleFlatteningNanos
+                        )
+                    )
+                }
             }
+        }
+    }
+
+    private fun StringBuilder.appendDeepTimingBreakdown(
+        parentLabel: String,
+        parentNanos: Long,
+        stages: List<Pair<String, Long>>
+    ) {
+        if (parentNanos <= 0L) return
+        val measuredStages = stages.filter { (_, durationNanos) -> durationNanos > 0L }
+        if (measuredStages.isEmpty()) return
+
+        appendLine("    ▫ $parentLabel detail")
+        measuredStages.forEach { (label, durationNanos) ->
+            val percentage = nanosPercentageLabel(durationNanos, parentNanos)
+            appendLine(
+                "      · $label: ${formatNanosAsMilliseconds(durationNanos)} " +
+                    "($percentage of $parentLabel)"
+            )
         }
     }
 

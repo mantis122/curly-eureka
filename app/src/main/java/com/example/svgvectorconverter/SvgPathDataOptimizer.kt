@@ -105,6 +105,10 @@ internal object SvgPathDataOptimizer {
         val pathSyntaxOptimizationNanos: Long = 0,
         val pathTokenizationNormalizationNanos: Long = 0,
         val pathGeometryCleanupNanos: Long = 0,
+        val pathRedundantSegmentCleanupNanos: Long = 0,
+        val pathArcCleanupNanos: Long = 0,
+        val pathCurveSimplificationNanos: Long = 0,
+        val pathCollinearConsolidationNanos: Long = 0,
         val pathCommandMinimizationNanos: Long = 0,
         val pathNumericSerializationNanos: Long = 0,
         val colorNormalizationNanos: Long = 0,
@@ -113,6 +117,8 @@ internal object SvgPathDataOptimizer {
         val transformIdentityCompositionNanos: Long = 0,
         val transformFactoringFlatteningNanos: Long = 0,
         val transformScaleFlatteningNanos: Long = 0,
+        val transformUniformScaleFlatteningNanos: Long = 0,
+        val transformNonUniformScaleFlatteningNanos: Long = 0,
         val transformRotationTranslationNanos: Long = 0,
         val transformCanonicalizationNanos: Long = 0,
         val deduplicationAndMergeNanos: Long = 0,
@@ -551,9 +557,15 @@ internal object SvgPathDataOptimizer {
             System.nanoTime() - factoringFlatteningStartTime
 
         val scaleFlatteningStartTime = System.nanoTime()
+        val uniformScaleFlatteningStartTime = System.nanoTime()
         val scaleFlattening = flattenUniformPositiveScaleGroups(groupFlattening.xml)
+        val transformUniformScaleFlatteningNanos =
+            System.nanoTime() - uniformScaleFlatteningStartTime
+        val nonUniformScaleFlatteningStartTime = System.nanoTime()
         val nonUniformScaleFlattening =
             flattenNonUniformPositiveScaleFillOnlyGroups(scaleFlattening.xml)
+        val transformNonUniformScaleFlatteningNanos =
+            System.nanoTime() - nonUniformScaleFlatteningStartTime
         val transformScaleFlatteningNanos =
             System.nanoTime() - scaleFlatteningStartTime
 
@@ -712,6 +724,13 @@ internal object SvgPathDataOptimizer {
                 pathTokenizationNormalizationNanos =
                     pathProfiling.tokenizationNormalizationNanos,
                 pathGeometryCleanupNanos = pathProfiling.geometryCleanupNanos,
+                pathRedundantSegmentCleanupNanos =
+                    pathProfiling.redundantSegmentCleanupNanos,
+                pathArcCleanupNanos = pathProfiling.arcCleanupNanos,
+                pathCurveSimplificationNanos =
+                    pathProfiling.curveSimplificationNanos,
+                pathCollinearConsolidationNanos =
+                    pathProfiling.collinearConsolidationNanos,
                 pathCommandMinimizationNanos = pathProfiling.commandMinimizationNanos,
                 pathNumericSerializationNanos = pathProfiling.numericSerializationNanos,
                 colorNormalizationNanos = colorNormalizationNanos,
@@ -720,6 +739,10 @@ internal object SvgPathDataOptimizer {
                 transformIdentityCompositionNanos = transformIdentityCompositionNanos,
                 transformFactoringFlatteningNanos = transformFactoringFlatteningNanos,
                 transformScaleFlatteningNanos = transformScaleFlatteningNanos,
+                transformUniformScaleFlatteningNanos =
+                    transformUniformScaleFlatteningNanos,
+                transformNonUniformScaleFlatteningNanos =
+                    transformNonUniformScaleFlatteningNanos,
                 transformRotationTranslationNanos = transformRotationTranslationNanos,
                 transformCanonicalizationNanos = transformCanonicalizationNanos,
                 deduplicationAndMergeNanos = deduplicationAndMergeNanos,
@@ -4882,6 +4905,10 @@ internal object SvgPathDataOptimizer {
     private data class PathSyntaxProfiling(
         var tokenizationNormalizationNanos: Long = 0,
         var geometryCleanupNanos: Long = 0,
+        var redundantSegmentCleanupNanos: Long = 0,
+        var arcCleanupNanos: Long = 0,
+        var curveSimplificationNanos: Long = 0,
+        var collinearConsolidationNanos: Long = 0,
         var commandMinimizationNanos: Long = 0,
         var numericSerializationNanos: Long = 0
     )
@@ -4980,9 +5007,17 @@ internal object SvgPathDataOptimizer {
         }
 
         val geometryCleanupStartTime = System.nanoTime()
+
+        val redundantSegmentCleanupStartTime = System.nanoTime()
         val redundantCleanup = removeRedundantNonDrawingSegments(
             output.toString()
         )
+        profiling?.let {
+            it.redundantSegmentCleanupNanos +=
+                System.nanoTime() - redundantSegmentCleanupStartTime
+        }
+
+        val arcCleanupStartTime = System.nanoTime()
         val arcRadiusCanonicalization = canonicalizeArcRadii(
             redundantCleanup.pathData
         )
@@ -5001,16 +5036,29 @@ internal object SvgPathDataOptimizer {
         val degenerateArcCleanup = simplifyDegenerateArcs(
             arcAxisMinimization.pathData
         )
+        profiling?.let {
+            it.arcCleanupNanos += System.nanoTime() - arcCleanupStartTime
+        }
+
+        val curveSimplificationStartTime = System.nanoTime()
         val cubicToQuadraticCleanup = reduceExactCubicCurvesToQuadratic(
             degenerateArcCleanup.pathData
         )
         val straightBezierCleanup = simplifyStraightBezierCurves(
             cubicToQuadraticCleanup.pathData
         )
+        profiling?.let {
+            it.curveSimplificationNanos +=
+                System.nanoTime() - curveSimplificationStartTime
+        }
+
+        val collinearConsolidationStartTime = System.nanoTime()
         val collinearCleanup = consolidateConsecutiveCollinearLineRuns(
             straightBezierCleanup.pathData
         )
         profiling?.let {
+            it.collinearConsolidationNanos +=
+                System.nanoTime() - collinearConsolidationStartTime
             it.geometryCleanupNanos += System.nanoTime() - geometryCleanupStartTime
         }
 

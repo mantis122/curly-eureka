@@ -448,6 +448,14 @@ object SvgToVectorConverter {
                     pathOptimizationStats.pathTokenizationNormalizationNanos,
                 optimizationPathGeometryCleanupNanos =
                     pathOptimizationStats.pathGeometryCleanupNanos,
+                optimizationPathRedundantSegmentCleanupNanos =
+                    pathOptimizationStats.pathRedundantSegmentCleanupNanos,
+                optimizationPathArcCleanupNanos =
+                    pathOptimizationStats.pathArcCleanupNanos,
+                optimizationPathCurveSimplificationNanos =
+                    pathOptimizationStats.pathCurveSimplificationNanos,
+                optimizationPathCollinearConsolidationNanos =
+                    pathOptimizationStats.pathCollinearConsolidationNanos,
                 optimizationPathCommandMinimizationNanos =
                     pathOptimizationStats.pathCommandMinimizationNanos,
                 optimizationPathNumericSerializationNanos =
@@ -464,6 +472,10 @@ object SvgToVectorConverter {
                     pathOptimizationStats.transformFactoringFlatteningNanos,
                 optimizationTransformScaleFlatteningNanos =
                     pathOptimizationStats.transformScaleFlatteningNanos,
+                optimizationTransformUniformScaleFlatteningNanos =
+                    pathOptimizationStats.transformUniformScaleFlatteningNanos,
+                optimizationTransformNonUniformScaleFlatteningNanos =
+                    pathOptimizationStats.transformNonUniformScaleFlatteningNanos,
                 optimizationTransformRotationTranslationNanos =
                     pathOptimizationStats.transformRotationTranslationNanos,
                 optimizationTransformCanonicalizationNanos =
