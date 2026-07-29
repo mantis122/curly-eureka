@@ -250,6 +250,9 @@ class SvgConversionReportData {
     var optimizationPathCommandGlobalStateCreationNanos: Long = 0
     var optimizationPathCommandGlobalBestStateComparisonNanos: Long = 0
     var optimizationPathCommandGlobalReconstructionNanos: Long = 0
+    var optimizationPathCommandGlobalSegmentEncodingRequests: Int = 0
+    var optimizationPathCommandGlobalSegmentEncodingCacheHits: Int = 0
+    var optimizationPathCommandGlobalSegmentEncodingUniqueKeys: Int = 0
     var optimizationPathNumericSerializationNanos: Long = 0
     var optimizationColorNormalizationNanos: Long = 0
     var optimizationPruningCleanupNanos: Long = 0
@@ -1484,6 +1487,18 @@ object SvgConversionReporter {
                                 data.optimizationPathCommandGlobalReconstructionNanos
                         )
                     )
+                    if (data.optimizationPathCommandGlobalSegmentEncodingRequests > 0) {
+                        val requests = data.optimizationPathCommandGlobalSegmentEncodingRequests
+                        val hits = data.optimizationPathCommandGlobalSegmentEncodingCacheHits
+                        val unique = data.optimizationPathCommandGlobalSegmentEncodingUniqueKeys
+                        val hitRate = hits.toDouble() * 100.0 / requests.toDouble()
+                        append("      ▫ Global segment encoding reuse\n")
+                        append("        · Encoding requests: ").append(requests).append('\n')
+                        append("        · Cache hits: ").append(hits)
+                            .append(" (").append(String.format(java.util.Locale.US, "%.1f%%", hitRate)).append(")\n")
+                        append("        · Unique encodings: ").append(unique).append('\n')
+                    }
+
                     appendDeepTimingBreakdown(
                         parentLabel = "Local command shortening",
                         parentNanos = data.optimizationPathCommandLocalShorteningNanos,

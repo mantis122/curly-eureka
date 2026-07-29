@@ -48,7 +48,10 @@ internal object SvgPathDataOptimizer {
         val segmentEncodingNanos: Long = 0,
         val stateCreationNanos: Long = 0,
         val bestStateComparisonNanos: Long = 0,
-        val reconstructionNanos: Long = 0
+        val reconstructionNanos: Long = 0,
+        val segmentEncodingRequests: Int = 0,
+        val segmentEncodingCacheHits: Int = 0,
+        val segmentEncodingUniqueKeys: Int = 0
     )
     data class Stats(
         val pathCount: Int = 0,
@@ -792,7 +795,10 @@ internal object SvgPathDataOptimizer {
                     segmentEncodingNanos = pathProfiling.commandGlobalSegmentEncodingNanos,
                     stateCreationNanos = pathProfiling.commandGlobalStateCreationNanos,
                     bestStateComparisonNanos = pathProfiling.commandGlobalBestStateComparisonNanos,
-                    reconstructionNanos = pathProfiling.commandGlobalReconstructionNanos
+                    reconstructionNanos = pathProfiling.commandGlobalReconstructionNanos,
+                    segmentEncodingRequests = pathProfiling.commandGlobalSegmentEncodingRequests,
+                    segmentEncodingCacheHits = pathProfiling.commandGlobalSegmentEncodingCacheHits,
+                    segmentEncodingUniqueKeys = pathProfiling.commandGlobalSegmentEncodingUniqueKeys
                 ),
                 pathNumericSerializationNanos = pathProfiling.numericSerializationNanos,
                 colorNormalizationNanos = colorNormalizationNanos,
@@ -4996,6 +5002,9 @@ internal object SvgPathDataOptimizer {
         var commandGlobalStateCreationNanos: Long = 0,
         var commandGlobalBestStateComparisonNanos: Long = 0,
         var commandGlobalReconstructionNanos: Long = 0,
+        var commandGlobalSegmentEncodingRequests: Int = 0,
+        var commandGlobalSegmentEncodingCacheHits: Int = 0,
+        var commandGlobalSegmentEncodingUniqueKeys: Int = 0,
         var numericSerializationNanos: Long = 0
     )
 
@@ -6667,6 +6676,13 @@ internal object SvgPathDataOptimizer {
         val axisDirection: Int?
     )
 
+    private data class GlobalSegmentEncodingCacheKey(
+        val command: Char,
+        val values: List<BigDecimal>,
+        val commandOmitted: Boolean,
+        val previousNumberWhenOmitted: String?
+    )
+
     private data class CommandSequencePath(
         val text: String,
         val state: CommandSequenceState,
@@ -6708,6 +6724,11 @@ internal object SvgPathDataOptimizer {
             it.commandGlobalParseSetupNanos +=
                 System.nanoTime() - parseSetupStartTime
         }
+
+        // G2.11: exact, run-local reuse of complete segment encodings.
+        // The key includes every input that can affect encodeSegment output.
+        val segmentEncodingCache =
+            mutableMapOf<GlobalSegmentEncodingCacheKey, String>()
 
         var currentX = BigDecimal.ZERO
         var currentY = BigDecimal.ZERO
@@ -6841,7 +6862,8 @@ internal object SvgPathDataOptimizer {
                             candidate.command.uppercaseChar() == 'M' ||
                                 forceAxisBoundary,
                         allowImplicitLineAfterMove = true,
-                        globalProfiling = profiling
+                        globalProfiling = profiling,
+                        globalSegmentEncodingCache = segmentEncodingCache
                     )
 
                     val stateCreationStartTime = System.nanoTime()
@@ -7916,7 +7938,8 @@ internal object SvgPathDataOptimizer {
         allowImplicitLineAfterMove: Boolean = false,
         localProfiling: PathSyntaxProfiling? = null,
         localNumberSerializationCache: MutableMap<BigDecimal, String>? = null,
-        globalProfiling: PathSyntaxProfiling? = null
+        globalProfiling: PathSyntaxProfiling? = null,
+        globalSegmentEncodingCache: MutableMap<GlobalSegmentEncodingCacheKey, String>? = null
     ): String {
         val omissionStartTime = System.nanoTime()
         val repeatsSameCommand =
@@ -7938,7 +7961,40 @@ internal object SvgPathDataOptimizer {
         globalProfiling?.let {
             it.commandGlobalSeparatorOmissionCostNanos += omissionElapsedNanos
         }
-        if (values.isEmpty()) return commandPrefix
+
+        // G2.11: encodeSegment output depends only on the selected command,
+        // exact operands, whether the command letter is omitted, and (only
+        // when omitted) the previous numeric spelling used at the boundary.
+        val globalCacheKey = if (globalSegmentEncodingCache != null) {
+            globalProfiling?.commandGlobalSegmentEncodingRequests =
+                (globalProfiling?.commandGlobalSegmentEncodingRequests ?: 0) + 1
+            GlobalSegmentEncodingCacheKey(
+                command = command,
+                values = values.toList(),
+                commandOmitted = canOmit,
+                previousNumberWhenOmitted = if (canOmit) previousNumber else null
+            )
+        } else {
+            null
+        }
+
+        if (globalCacheKey != null) {
+            val cached = globalSegmentEncodingCache?.get(globalCacheKey)
+            if (cached != null) {
+                globalProfiling?.commandGlobalSegmentEncodingCacheHits =
+                    (globalProfiling?.commandGlobalSegmentEncodingCacheHits ?: 0) + 1
+                return cached
+            }
+        }
+
+        if (values.isEmpty()) {
+            if (globalCacheKey != null && globalSegmentEncodingCache != null) {
+                globalSegmentEncodingCache[globalCacheKey] = commandPrefix
+                globalProfiling?.commandGlobalSegmentEncodingUniqueKeys =
+                    (globalProfiling?.commandGlobalSegmentEncodingUniqueKeys ?: 0) + 1
+            }
+            return commandPrefix
+        }
 
         val numericStartTime = System.nanoTime()
         val numbers = values.map { value ->
@@ -8013,6 +8069,11 @@ internal object SvgPathDataOptimizer {
         }
         globalProfiling?.let {
             it.commandGlobalSegmentEncodingNanos += constructionElapsedNanos
+        }
+        if (globalCacheKey != null && globalSegmentEncodingCache != null) {
+            globalSegmentEncodingCache[globalCacheKey] = result
+            globalProfiling?.commandGlobalSegmentEncodingUniqueKeys =
+                (globalProfiling?.commandGlobalSegmentEncodingUniqueKeys ?: 0) + 1
         }
         return result
     }
