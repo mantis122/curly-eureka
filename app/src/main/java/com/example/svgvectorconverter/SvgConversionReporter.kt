@@ -441,18 +441,46 @@ object SvgConversionReporter {
     ): String {
         val reportStartNanos = System.nanoTime()
         val performanceMarker = "__SVG_CONVERTER_PERFORMANCE__"
-        val aggregateWarningCount = aggregateWarningCount(data)
+        val reportWithoutPerformance = buildString {
+            appendReportBody(data, performanceMarker)
+        }
+    
 
+        val reportGenerationNanos =
+            (System.nanoTime() - reportStartNanos).coerceAtLeast(0L)
+        val elapsedNanos = conversionStartNanos
+            ?.let { (System.nanoTime() - it).coerceAtLeast(0L) }
+            ?: data.elapsedNanos
+        val elapsedMs = elapsedNanos / 1_000_000L
+
+        val timedData = data.copy(
+            reportGenerationNanos = reportGenerationNanos,
+            elapsedNanos = elapsedNanos,
+            elapsedMs = elapsedMs
+        )
+        val performance = buildString { appendPerformanceBreakdown(timedData) }.trimEnd()
+        return reportWithoutPerformance.replace(performanceMarker, performance)
+    }
+
+    /**
+     * Appends the main report body outside buildReport so Android's DEX
+     * verifier does not have to verify one extremely large register-heavy
+     * method. This is a reporting-only extraction; output ordering and text
+     * remain unchanged.
+     */
+    private fun StringBuilder.appendReportBody(
+        data: SvgConversionReportData,
+        performanceMarker: String
+    ) {
+        val aggregateWarningCount = aggregateWarningCount(data)
         val summaryTitle =
             if (aggregateWarningCount == 0)
                 "🟢 Conversion Successful"
             else
                 "🟡 Conversion Completed With Warnings"
-
         val drawablePathWord =
             if (data.convertedPathCount == 1) "path" else "paths"
 
-        val reportWithoutPerformance = buildString {
             appendLine(summaryTitle)
             appendLine("${data.convertedPathCount} drawable $drawablePathWord created")
 
@@ -1111,23 +1139,7 @@ object SvgConversionReporter {
                     appendLine("⚠ $it")
                 }
             }
-        }
-    
-
-        val reportGenerationNanos =
-            (System.nanoTime() - reportStartNanos).coerceAtLeast(0L)
-        val elapsedNanos = conversionStartNanos
-            ?.let { (System.nanoTime() - it).coerceAtLeast(0L) }
-            ?: data.elapsedNanos
-        val elapsedMs = elapsedNanos / 1_000_000L
-
-        val timedData = data.copy(
-            reportGenerationNanos = reportGenerationNanos,
-            elapsedNanos = elapsedNanos,
-            elapsedMs = elapsedMs
-        )
-        val performance = buildString { appendPerformanceBreakdown(timedData) }.trimEnd()
-        return reportWithoutPerformance.replace(performanceMarker, performance)
+        
     }
 
 
