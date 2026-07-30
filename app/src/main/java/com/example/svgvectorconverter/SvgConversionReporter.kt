@@ -336,6 +336,15 @@ class SvgConversionReportData {
     var optimizationTransformUniformScalePostScaleNarrowDifferent: Int = 0
     var optimizationTransformUniformScalePostScaleNarrowFullOnlySavings: Int = 0
     var optimizationTransformUniformScalePostScaleNarrowOnlySavings: Int = 0
+    var optimizationTransformUniformScalePostScaleP6Attempts: Int = 0
+    var optimizationTransformUniformScalePostScaleP6Accepted: Int = 0
+    var optimizationTransformUniformScalePostScaleP6Fallbacks: Int = 0
+    var optimizationTransformUniformScalePostScaleP6ParserFallbacks: Int = 0
+    var optimizationTransformUniformScalePostScaleP6SemanticFallbacks: Int = 0
+    var optimizationTransformUniformScalePostScaleP6InternalFallbacks: Int = 0
+    var optimizationTransformUniformScalePostScaleP6OptimizationNanos: Long = 0
+    var optimizationTransformUniformScalePostScaleP6ValidationNanos: Long = 0
+    var optimizationTransformUniformScalePostScaleFullFallbackNanos: Long = 0
     var optimizationTransformUniformScaleStrokeAdjustmentNanos: Long = 0
     var optimizationTransformUniformScaleCanonicalizationCostingNanos: Long = 0
     var optimizationTransformUniformScaleXmlReplacementNanos: Long = 0
@@ -1901,6 +1910,51 @@ object SvgConversionReporter {
             data.optimizationTransformUniformScalePostScaleNumericChanged,
             data.optimizationTransformUniformScalePostScaleNumericCharsSaved
         )
+
+        val p6Attempts = data.optimizationTransformUniformScalePostScaleP6Attempts
+        if (p6Attempts > 0) {
+            append("\n")
+            append("      ▫ Guarded P6 post-scale production\n")
+            append("        · P6 attempts: ").append(p6Attempts).append('\n')
+            append("        · P6 accepted: ")
+                .append(data.optimizationTransformUniformScalePostScaleP6Accepted)
+                .append('\n')
+            append("        · Full-optimizer fallbacks: ")
+                .append(data.optimizationTransformUniformScalePostScaleP6Fallbacks)
+                .append('\n')
+            if (data.optimizationTransformUniformScalePostScaleP6ParserFallbacks > 0) {
+                append("          ◦ Parser validation: ")
+                    .append(data.optimizationTransformUniformScalePostScaleP6ParserFallbacks)
+                    .append('\n')
+            }
+            if (data.optimizationTransformUniformScalePostScaleP6SemanticFallbacks > 0) {
+                append("          ◦ Geometry validation: ")
+                    .append(data.optimizationTransformUniformScalePostScaleP6SemanticFallbacks)
+                    .append('\n')
+            }
+            if (data.optimizationTransformUniformScalePostScaleP6InternalFallbacks > 0) {
+                append("          ◦ Internal failure: ")
+                    .append(data.optimizationTransformUniformScalePostScaleP6InternalFallbacks)
+                    .append('\n')
+            }
+            append("        · P6 optimization time: ")
+                .append(formatPerformanceDuration(
+                    data.optimizationTransformUniformScalePostScaleP6OptimizationNanos
+                ))
+                .append('\n')
+            append("        · P6 validation time: ")
+                .append(formatPerformanceDuration(
+                    data.optimizationTransformUniformScalePostScaleP6ValidationNanos
+                ))
+                .append('\n')
+            if (data.optimizationTransformUniformScalePostScaleFullFallbackNanos > 0L) {
+                append("        · Full fallback time: ")
+                    .append(formatPerformanceDuration(
+                        data.optimizationTransformUniformScalePostScaleFullFallbackNanos
+                    ))
+                    .append('\n')
+            }
+        }
 
         val compared = data.optimizationTransformUniformScalePostScaleNarrowCompared
         if (compared > 0) {

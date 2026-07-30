@@ -132,6 +132,15 @@ internal object SvgPathDataOptimizer {
         val postScaleNarrowDifferent: Int = 0,
         val postScaleNarrowFullOnlySavings: Int = 0,
         val postScaleNarrowOnlySavings: Int = 0,
+        val postScaleP6Attempts: Int = 0,
+        val postScaleP6Accepted: Int = 0,
+        val postScaleP6Fallbacks: Int = 0,
+        val postScaleP6ParserFallbacks: Int = 0,
+        val postScaleP6SemanticFallbacks: Int = 0,
+        val postScaleP6InternalFallbacks: Int = 0,
+        val postScaleP6OptimizationNanos: Long = 0,
+        val postScaleP6ValidationNanos: Long = 0,
+        val postScaleFullFallbackNanos: Long = 0,
         val strokeAdjustmentNanos: Long = 0,
         val canonicalizationCostingNanos: Long = 0,
         val xmlReplacementNanos: Long = 0,
@@ -2752,6 +2761,15 @@ internal object SvgPathDataOptimizer {
         var postScaleNarrowDifferent: Int = 0
         var postScaleNarrowFullOnlySavings: Int = 0
         var postScaleNarrowOnlySavings: Int = 0
+        var postScaleP6Attempts: Int = 0
+        var postScaleP6Accepted: Int = 0
+        var postScaleP6Fallbacks: Int = 0
+        var postScaleP6ParserFallbacks: Int = 0
+        var postScaleP6SemanticFallbacks: Int = 0
+        var postScaleP6InternalFallbacks: Int = 0
+        var postScaleP6OptimizationNanos: Long = 0
+        var postScaleP6ValidationNanos: Long = 0
+        var postScaleFullFallbackNanos: Long = 0
         var strokeAdjustmentNanos: Long = 0
         var canonicalizationCostingNanos: Long = 0
         var xmlReplacementNanos: Long = 0
@@ -2865,6 +2883,15 @@ internal object SvgPathDataOptimizer {
             postScaleNarrowDifferent = postScaleNarrowDifferent,
             postScaleNarrowFullOnlySavings = postScaleNarrowFullOnlySavings,
             postScaleNarrowOnlySavings = postScaleNarrowOnlySavings,
+            postScaleP6Attempts = postScaleP6Attempts,
+            postScaleP6Accepted = postScaleP6Accepted,
+            postScaleP6Fallbacks = postScaleP6Fallbacks,
+            postScaleP6ParserFallbacks = postScaleP6ParserFallbacks,
+            postScaleP6SemanticFallbacks = postScaleP6SemanticFallbacks,
+            postScaleP6InternalFallbacks = postScaleP6InternalFallbacks,
+            postScaleP6OptimizationNanos = postScaleP6OptimizationNanos,
+            postScaleP6ValidationNanos = postScaleP6ValidationNanos,
+            postScaleFullFallbackNanos = postScaleFullFallbackNanos,
             strokeAdjustmentNanos = strokeAdjustmentNanos,
             canonicalizationCostingNanos = canonicalizationCostingNanos,
             xmlReplacementNanos = xmlReplacementNanos,
@@ -3491,35 +3518,70 @@ internal object SvgPathDataOptimizer {
 
         val rawScaledPath = output.toString()
         val normalizationStart = System.nanoTime()
-        val normalized = optimizePathData(
-            rawScaledPath,
-            contribution = profiling
-        ).pathData
+
+        // G2.27: P6 is now the guarded production post-scale pipeline.
+        // G2.26 proved byte-for-byte equivalence with the full optimizer across
+        // 100,000 deterministic scale-heavy stress cases. We still validate the
+        // candidate here and conservatively fall back to the complete optimizer
+        // whenever parsing, sampled geometry, or internal execution is uncertain.
+        profiling?.postScaleP6Attempts = (profiling?.postScaleP6Attempts ?: 0) + 1
+
+        var fallbackReason: String? = null
+        val p6Start = System.nanoTime()
+        val p6Candidate = try {
+            optimizePostScaleStageAddbackForComparison(
+                rawScaledPath,
+                PostScaleAddbackPipeline.P6_COLLINEAR
+            )
+        } catch (_: Throwable) {
+            fallbackReason = "internal"
+            null
+        }
+        profiling?.postScaleP6OptimizationNanos =
+            (profiling?.postScaleP6OptimizationNanos ?: 0L) +
+                (System.nanoTime() - p6Start)
+
+        val validationStart = System.nanoTime()
+        if (fallbackReason == null) {
+            if (p6Candidate == null || parseNormalizedSegments(p6Candidate) == null) {
+                fallbackReason = "parser"
+            } else if (!sampledPathGeometryEquivalent(rawScaledPath, p6Candidate)) {
+                fallbackReason = "semantic"
+            }
+        }
+        profiling?.postScaleP6ValidationNanos =
+            (profiling?.postScaleP6ValidationNanos ?: 0L) +
+                (System.nanoTime() - validationStart)
+
+        val normalized = if (fallbackReason == null && p6Candidate != null) {
+            profiling?.postScaleP6Accepted = (profiling?.postScaleP6Accepted ?: 0) + 1
+            p6Candidate
+        } else {
+            profiling?.postScaleP6Fallbacks = (profiling?.postScaleP6Fallbacks ?: 0) + 1
+            when (fallbackReason) {
+                "parser" -> profiling?.postScaleP6ParserFallbacks =
+                    (profiling?.postScaleP6ParserFallbacks ?: 0) + 1
+                "semantic" -> profiling?.postScaleP6SemanticFallbacks =
+                    (profiling?.postScaleP6SemanticFallbacks ?: 0) + 1
+                else -> profiling?.postScaleP6InternalFallbacks =
+                    (profiling?.postScaleP6InternalFallbacks ?: 0) + 1
+            }
+            val fallbackStart = System.nanoTime()
+            val full = optimizePathData(
+                rawScaledPath,
+                contribution = profiling
+            ).pathData
+            profiling?.postScaleFullFallbackNanos =
+                (profiling?.postScaleFullFallbackNanos ?: 0L) +
+                    (System.nanoTime() - fallbackStart)
+            full
+        }
+
         profiling?.let {
             it.postScaleOptimizationCalls++
             it.postScaleRawChars += rawScaledPath.length
             it.postScaleFinalChars += normalized.length
             if (normalized == rawScaledPath) it.postScaleOptimizationUnchanged++
-        }
-
-        // G2.24: side-by-side experiment only. The full optimizer above remains
-        // authoritative; the narrowed result is measured and compared but is
-        // never returned or used by any size/geometry decision.
-        val narrowStart = System.nanoTime()
-        val narrowed = optimizePostScaleNarrowedForComparison(rawScaledPath)
-        profiling?.let { stats ->
-            stats.postScaleNarrowComparisonNanos += System.nanoTime() - narrowStart
-            if (narrowed != null) {
-                stats.postScaleNarrowCompared++
-                if (narrowed == normalized) {
-                    stats.postScaleNarrowIdentical++
-                } else {
-                    stats.postScaleNarrowDifferent++
-                    val delta = narrowed.length - normalized.length
-                    if (delta > 0) stats.postScaleNarrowFullOnlySavings += delta
-                    else if (delta < 0) stats.postScaleNarrowOnlySavings += -delta
-                }
-            }
         }
 
         profiling?.scalePathNormalizationNanos =

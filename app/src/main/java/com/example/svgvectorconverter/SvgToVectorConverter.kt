@@ -511,6 +511,15 @@ object SvgToVectorConverter {
         reportData.optimizationTransformUniformScalePostScaleNarrowDifferent = pathOptimizationStats.transformUniformScaleProfiling.postScaleNarrowDifferent
         reportData.optimizationTransformUniformScalePostScaleNarrowFullOnlySavings = pathOptimizationStats.transformUniformScaleProfiling.postScaleNarrowFullOnlySavings
         reportData.optimizationTransformUniformScalePostScaleNarrowOnlySavings = pathOptimizationStats.transformUniformScaleProfiling.postScaleNarrowOnlySavings
+        reportData.optimizationTransformUniformScalePostScaleP6Attempts = pathOptimizationStats.transformUniformScaleProfiling.postScaleP6Attempts
+        reportData.optimizationTransformUniformScalePostScaleP6Accepted = pathOptimizationStats.transformUniformScaleProfiling.postScaleP6Accepted
+        reportData.optimizationTransformUniformScalePostScaleP6Fallbacks = pathOptimizationStats.transformUniformScaleProfiling.postScaleP6Fallbacks
+        reportData.optimizationTransformUniformScalePostScaleP6ParserFallbacks = pathOptimizationStats.transformUniformScaleProfiling.postScaleP6ParserFallbacks
+        reportData.optimizationTransformUniformScalePostScaleP6SemanticFallbacks = pathOptimizationStats.transformUniformScaleProfiling.postScaleP6SemanticFallbacks
+        reportData.optimizationTransformUniformScalePostScaleP6InternalFallbacks = pathOptimizationStats.transformUniformScaleProfiling.postScaleP6InternalFallbacks
+        reportData.optimizationTransformUniformScalePostScaleP6OptimizationNanos = pathOptimizationStats.transformUniformScaleProfiling.postScaleP6OptimizationNanos
+        reportData.optimizationTransformUniformScalePostScaleP6ValidationNanos = pathOptimizationStats.transformUniformScaleProfiling.postScaleP6ValidationNanos
+        reportData.optimizationTransformUniformScalePostScaleFullFallbackNanos = pathOptimizationStats.transformUniformScaleProfiling.postScaleFullFallbackNanos
         reportData.optimizationTransformUniformScaleStrokeAdjustmentNanos = pathOptimizationStats.transformUniformScaleProfiling.strokeAdjustmentNanos
         reportData.optimizationTransformUniformScaleCanonicalizationCostingNanos = pathOptimizationStats.transformUniformScaleProfiling.canonicalizationCostingNanos
         reportData.optimizationTransformUniformScaleXmlReplacementNanos = pathOptimizationStats.transformUniformScaleProfiling.xmlReplacementNanos
