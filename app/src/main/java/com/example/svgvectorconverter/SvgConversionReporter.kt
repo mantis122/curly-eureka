@@ -303,6 +303,7 @@ class SvgConversionReportData {
     var optimizationTransformUniformScaleFlatteningNanos: Long = 0
     var optimizationTransformUniformScaleGroupDiscoveryNanos: Long = 0
     var optimizationTransformUniformScaleEligibilityChecksNanos: Long = 0
+    var optimizationTransformUniformScaleEarlySizeSignalNanos: Long = 0
     var optimizationTransformUniformScalePathScalingNanos: Long = 0
     var optimizationTransformUniformScaleStrokeAdjustmentNanos: Long = 0
     var optimizationTransformUniformScaleCanonicalizationCostingNanos: Long = 0
@@ -310,6 +311,21 @@ class SvgConversionReportData {
     var optimizationTransformUniformScaleCandidatesConsidered: Int = 0
     var optimizationTransformUniformScaleCandidatesRejected: Int = 0
     var optimizationTransformUniformScaleProposalsAccepted: Int = 0
+    var optimizationTransformUniformScaleEarlySizeProfiledCandidates: Int = 0
+    var optimizationTransformUniformScaleEarlySizeAcceptedCandidates: Int = 0
+    var optimizationTransformUniformScaleEarlySizeRejectedCandidates: Int = 0
+    var optimizationTransformUniformScaleEarlySizeAcceptedTransformAttributeChars: Int = 0
+    var optimizationTransformUniformScaleEarlySizeAcceptedFixedGroupMarkupChars: Int = 0
+    var optimizationTransformUniformScaleEarlySizeAcceptedPathCount: Int = 0
+    var optimizationTransformUniformScaleEarlySizeAcceptedOperandCount: Int = 0
+    var optimizationTransformUniformScaleEarlySizeAcceptedPathDataChars: Int = 0
+    var optimizationTransformUniformScaleEarlySizeAcceptedStrokeWidthDeltaChars: Int = 0
+    var optimizationTransformUniformScaleEarlySizeRejectedTransformAttributeChars: Int = 0
+    var optimizationTransformUniformScaleEarlySizeRejectedFixedGroupMarkupChars: Int = 0
+    var optimizationTransformUniformScaleEarlySizeRejectedPathCount: Int = 0
+    var optimizationTransformUniformScaleEarlySizeRejectedOperandCount: Int = 0
+    var optimizationTransformUniformScaleEarlySizeRejectedPathDataChars: Int = 0
+    var optimizationTransformUniformScaleEarlySizeRejectedStrokeWidthDeltaChars: Int = 0
     var optimizationTransformNonUniformScaleFlatteningNanos: Long = 0
     var optimizationTransformRotationTranslationNanos: Long = 0
     var optimizationTransformCanonicalizationNanos: Long = 0
@@ -1725,6 +1741,8 @@ object SvgConversionReporter {
                                 data.optimizationTransformUniformScaleGroupDiscoveryNanos,
                             "Eligibility and safety checks" to
                                 data.optimizationTransformUniformScaleEligibilityChecksNanos,
+                            "Early size-signal collection" to
+                                data.optimizationTransformUniformScaleEarlySizeSignalNanos,
                             "Path scaling and normalization" to
                                 data.optimizationTransformUniformScalePathScalingNanos,
                             "Stroke-width adjustment" to
@@ -1744,9 +1762,67 @@ object SvgConversionReporter {
                         append("        · Proposals accepted: ")
                             .append(data.optimizationTransformUniformScaleProposalsAccepted).append('\n')
                     }
+                    appendUniformScaleEarlySizeSignals(data)
                 }
             }
         }
+    }
+
+    private fun StringBuilder.appendUniformScaleEarlySizeSignals(
+        data: SvgConversionReportData
+    ) {
+        val profiled = data.optimizationTransformUniformScaleEarlySizeProfiledCandidates
+        if (profiled <= 0) return
+
+        append("      ▫ Uniform scale early size signals (profiling only)\n")
+        append("        · Profiled candidates: ").append(profiled).append('\n')
+
+        fun appendAverages(
+            label: String,
+            count: Int,
+            transformChars: Int,
+            fixedMarkupChars: Int,
+            pathCount: Int,
+            operandCount: Int,
+            pathDataChars: Int,
+            strokeDeltaChars: Int
+        ) {
+            if (count <= 0) return
+            fun average(total: Int): String =
+                String.format(java.util.Locale.US, "%.1f", total.toDouble() / count.toDouble())
+
+            append("        · ").append(label).append(": ").append(count).append('\n')
+            append("          ◦ Transform-attribute chars removable: ")
+                .append(average(transformChars)).append(" avg\n")
+            append("          ◦ Fixed group-markup chars removable: ")
+                .append(average(fixedMarkupChars)).append(" avg\n")
+            append("          ◦ Paths: ").append(average(pathCount)).append(" avg\n")
+            append("          ◦ Numeric operands: ").append(average(operandCount)).append(" avg\n")
+            append("          ◦ Current pathData chars: ").append(average(pathDataChars)).append(" avg\n")
+            append("          ◦ Exact stroke-width value-length delta: ")
+                .append(average(strokeDeltaChars)).append(" avg\n")
+        }
+
+        appendAverages(
+            label = "Accepted candidates",
+            count = data.optimizationTransformUniformScaleEarlySizeAcceptedCandidates,
+            transformChars = data.optimizationTransformUniformScaleEarlySizeAcceptedTransformAttributeChars,
+            fixedMarkupChars = data.optimizationTransformUniformScaleEarlySizeAcceptedFixedGroupMarkupChars,
+            pathCount = data.optimizationTransformUniformScaleEarlySizeAcceptedPathCount,
+            operandCount = data.optimizationTransformUniformScaleEarlySizeAcceptedOperandCount,
+            pathDataChars = data.optimizationTransformUniformScaleEarlySizeAcceptedPathDataChars,
+            strokeDeltaChars = data.optimizationTransformUniformScaleEarlySizeAcceptedStrokeWidthDeltaChars
+        )
+        appendAverages(
+            label = "Rejected candidates",
+            count = data.optimizationTransformUniformScaleEarlySizeRejectedCandidates,
+            transformChars = data.optimizationTransformUniformScaleEarlySizeRejectedTransformAttributeChars,
+            fixedMarkupChars = data.optimizationTransformUniformScaleEarlySizeRejectedFixedGroupMarkupChars,
+            pathCount = data.optimizationTransformUniformScaleEarlySizeRejectedPathCount,
+            operandCount = data.optimizationTransformUniformScaleEarlySizeRejectedOperandCount,
+            pathDataChars = data.optimizationTransformUniformScaleEarlySizeRejectedPathDataChars,
+            strokeDeltaChars = data.optimizationTransformUniformScaleEarlySizeRejectedStrokeWidthDeltaChars
+        )
     }
 
     private fun StringBuilder.appendCurveReuseProfiling(

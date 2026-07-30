@@ -99,13 +99,29 @@ internal object SvgPathDataOptimizer {
     data class UniformScaleProfilingStats(
         val groupDiscoveryNanos: Long = 0,
         val eligibilityChecksNanos: Long = 0,
+        val earlySizeSignalNanos: Long = 0,
         val pathScalingNanos: Long = 0,
         val strokeAdjustmentNanos: Long = 0,
         val canonicalizationCostingNanos: Long = 0,
         val xmlReplacementNanos: Long = 0,
         val candidatesConsidered: Int = 0,
         val candidatesRejected: Int = 0,
-        val proposalsAccepted: Int = 0
+        val proposalsAccepted: Int = 0,
+        val earlySizeProfiledCandidates: Int = 0,
+        val earlySizeAcceptedCandidates: Int = 0,
+        val earlySizeRejectedCandidates: Int = 0,
+        val earlySizeAcceptedTransformAttributeChars: Int = 0,
+        val earlySizeAcceptedFixedGroupMarkupChars: Int = 0,
+        val earlySizeAcceptedPathCount: Int = 0,
+        val earlySizeAcceptedOperandCount: Int = 0,
+        val earlySizeAcceptedPathDataChars: Int = 0,
+        val earlySizeAcceptedStrokeWidthDeltaChars: Int = 0,
+        val earlySizeRejectedTransformAttributeChars: Int = 0,
+        val earlySizeRejectedFixedGroupMarkupChars: Int = 0,
+        val earlySizeRejectedPathCount: Int = 0,
+        val earlySizeRejectedOperandCount: Int = 0,
+        val earlySizeRejectedPathDataChars: Int = 0,
+        val earlySizeRejectedStrokeWidthDeltaChars: Int = 0
     )
 
     data class Stats(
@@ -2605,9 +2621,19 @@ internal object SvgPathDataOptimizer {
      * multiplied by the scale factor. Positive uniform scale preserves
      * arc sweep direction, stroke joins/caps, and path winding.
      */
+    private data class UniformScaleEarlySizeSignal(
+        val transformAttributeChars: Int,
+        val fixedGroupMarkupChars: Int,
+        val pathCount: Int,
+        val operandCount: Int,
+        val pathDataChars: Int,
+        val strokeWidthDeltaChars: Int
+    )
+
     private class MutableUniformScaleProfiling {
         var groupDiscoveryNanos: Long = 0
         var eligibilityChecksNanos: Long = 0
+        var earlySizeSignalNanos: Long = 0
         var pathScalingNanos: Long = 0
         var strokeAdjustmentNanos: Long = 0
         var canonicalizationCostingNanos: Long = 0
@@ -2615,17 +2641,111 @@ internal object SvgPathDataOptimizer {
         var candidatesConsidered: Int = 0
         var candidatesRejected: Int = 0
         var proposalsAccepted: Int = 0
+        var earlySizeProfiledCandidates: Int = 0
+        var earlySizeAcceptedCandidates: Int = 0
+        var earlySizeRejectedCandidates: Int = 0
+        var earlySizeAcceptedTransformAttributeChars: Int = 0
+        var earlySizeAcceptedFixedGroupMarkupChars: Int = 0
+        var earlySizeAcceptedPathCount: Int = 0
+        var earlySizeAcceptedOperandCount: Int = 0
+        var earlySizeAcceptedPathDataChars: Int = 0
+        var earlySizeAcceptedStrokeWidthDeltaChars: Int = 0
+        var earlySizeRejectedTransformAttributeChars: Int = 0
+        var earlySizeRejectedFixedGroupMarkupChars: Int = 0
+        var earlySizeRejectedPathCount: Int = 0
+        var earlySizeRejectedOperandCount: Int = 0
+        var earlySizeRejectedPathDataChars: Int = 0
+        var earlySizeRejectedStrokeWidthDeltaChars: Int = 0
+
+        fun recordEarlySizeSignal(signal: UniformScaleEarlySizeSignal, accepted: Boolean) {
+            earlySizeProfiledCandidates++
+            if (accepted) {
+                earlySizeAcceptedCandidates++
+                earlySizeAcceptedTransformAttributeChars += signal.transformAttributeChars
+                earlySizeAcceptedFixedGroupMarkupChars += signal.fixedGroupMarkupChars
+                earlySizeAcceptedPathCount += signal.pathCount
+                earlySizeAcceptedOperandCount += signal.operandCount
+                earlySizeAcceptedPathDataChars += signal.pathDataChars
+                earlySizeAcceptedStrokeWidthDeltaChars += signal.strokeWidthDeltaChars
+            } else {
+                earlySizeRejectedCandidates++
+                earlySizeRejectedTransformAttributeChars += signal.transformAttributeChars
+                earlySizeRejectedFixedGroupMarkupChars += signal.fixedGroupMarkupChars
+                earlySizeRejectedPathCount += signal.pathCount
+                earlySizeRejectedOperandCount += signal.operandCount
+                earlySizeRejectedPathDataChars += signal.pathDataChars
+                earlySizeRejectedStrokeWidthDeltaChars += signal.strokeWidthDeltaChars
+            }
+        }
 
         fun snapshot() = UniformScaleProfilingStats(
             groupDiscoveryNanos = groupDiscoveryNanos,
             eligibilityChecksNanos = eligibilityChecksNanos,
+            earlySizeSignalNanos = earlySizeSignalNanos,
             pathScalingNanos = pathScalingNanos,
             strokeAdjustmentNanos = strokeAdjustmentNanos,
             canonicalizationCostingNanos = canonicalizationCostingNanos,
             xmlReplacementNanos = xmlReplacementNanos,
             candidatesConsidered = candidatesConsidered,
             candidatesRejected = candidatesRejected,
-            proposalsAccepted = proposalsAccepted
+            proposalsAccepted = proposalsAccepted,
+            earlySizeProfiledCandidates = earlySizeProfiledCandidates,
+            earlySizeAcceptedCandidates = earlySizeAcceptedCandidates,
+            earlySizeRejectedCandidates = earlySizeRejectedCandidates,
+            earlySizeAcceptedTransformAttributeChars = earlySizeAcceptedTransformAttributeChars,
+            earlySizeAcceptedFixedGroupMarkupChars = earlySizeAcceptedFixedGroupMarkupChars,
+            earlySizeAcceptedPathCount = earlySizeAcceptedPathCount,
+            earlySizeAcceptedOperandCount = earlySizeAcceptedOperandCount,
+            earlySizeAcceptedPathDataChars = earlySizeAcceptedPathDataChars,
+            earlySizeAcceptedStrokeWidthDeltaChars = earlySizeAcceptedStrokeWidthDeltaChars,
+            earlySizeRejectedTransformAttributeChars = earlySizeRejectedTransformAttributeChars,
+            earlySizeRejectedFixedGroupMarkupChars = earlySizeRejectedFixedGroupMarkupChars,
+            earlySizeRejectedPathCount = earlySizeRejectedPathCount,
+            earlySizeRejectedOperandCount = earlySizeRejectedOperandCount,
+            earlySizeRejectedPathDataChars = earlySizeRejectedPathDataChars,
+            earlySizeRejectedStrokeWidthDeltaChars = earlySizeRejectedStrokeWidthDeltaChars
+        )
+    }
+
+    private fun collectUniformScaleEarlySizeSignal(
+        openingTag: String,
+        body: String,
+        scale: UniformScale
+    ): UniformScaleEarlySizeSignal {
+        val transformAttributeChars = androidAttributeRegex.findAll(openingTag)
+            .sumOf { it.value.length }
+        val wrapperCost = stableXmlPayloadCost("$openingTag\n</group>")
+        val fixedGroupMarkupChars = (wrapperCost - transformAttributeChars).coerceAtLeast(0)
+
+        var pathCount = 0
+        var operandCount = 0
+        var pathDataChars = 0
+        var strokeWidthDeltaChars = 0
+
+        pathElementRegex.findAll(body).forEach { match ->
+            pathCount++
+            val element = match.value
+            val pathData = attributeValue(element, "android:pathData").orEmpty()
+            pathDataChars += pathData.length
+            operandCount += tokenRegex.findAll(pathData).count { token ->
+                token.value.length != 1 || !token.value[0].isLetter()
+            }
+
+            val strokeWidth = attributeValue(element, "android:strokeWidth")
+            val numericWidth = strokeWidth?.trim()?.toBigDecimalOrNull()
+            if (strokeWidth != null && numericWidth != null) {
+                val scaledWidth = formatBigDecimal(numericWidth.multiply(scale.factor))
+                strokeWidthDeltaChars += scaledWidth.length - strokeWidth.trim().length
+            }
+        }
+
+        return UniformScaleEarlySizeSignal(
+            transformAttributeChars = transformAttributeChars,
+            fixedGroupMarkupChars = fixedGroupMarkupChars,
+            pathCount = pathCount,
+            operandCount = operandCount,
+            pathDataChars = pathDataChars,
+            strokeWidthDeltaChars = strokeWidthDeltaChars
         )
     }
 
@@ -2694,6 +2814,16 @@ internal object SvgPathDataOptimizer {
                     profiling?.eligibilityChecksNanos =
                         (profiling?.eligibilityChecksNanos ?: 0L) + (System.nanoTime() - eligibilityStart)
 
+                    val earlySizeSignalStart = System.nanoTime()
+                    val earlySizeSignal = collectUniformScaleEarlySizeSignal(
+                        openingTag = openingTag,
+                        body = body,
+                        scale = scale
+                    )
+                    profiling?.earlySizeSignalNanos =
+                        (profiling?.earlySizeSignalNanos ?: 0L) +
+                            (System.nanoTime() - earlySizeSignalStart)
+
                     var scaledCount = 0
                     var strokeCount = 0
                     var failed = false
@@ -2755,6 +2885,7 @@ internal object SvgPathDataOptimizer {
 
                     if (failed || scaledCount == 0) {
                         profiling?.candidatesRejected = (profiling?.candidatesRejected ?: 0) + 1
+                        profiling?.recordEarlySizeSignal(earlySizeSignal, accepted = false)
                         rejectedGroupSignatures += signature
                         return@firstNotNullOfOrNull null
                     }
@@ -2794,11 +2925,13 @@ internal object SvgPathDataOptimizer {
                         pathDataGrowth > allowedPathDataGrowth
                     ) {
                         profiling?.candidatesRejected = (profiling?.candidatesRejected ?: 0) + 1
+                        profiling?.recordEarlySizeSignal(earlySizeSignal, accepted = false)
                         rejectedGroupSignatures += signature
                         return@firstNotNullOfOrNull null
                     }
 
                     profiling?.proposalsAccepted = (profiling?.proposalsAccepted ?: 0) + 1
+                    profiling?.recordEarlySizeSignal(earlySizeSignal, accepted = true)
                     ScaleFlatteningProposal(
                         range = range,
                         replacement = replacement,
