@@ -476,6 +476,15 @@ object SvgToVectorConverter {
         reportData.optimizationTransformFactoringFlatteningNanos = pathOptimizationStats.transformFactoringFlatteningNanos
         reportData.optimizationTransformScaleFlatteningNanos = pathOptimizationStats.transformScaleFlatteningNanos
         reportData.optimizationTransformUniformScaleFlatteningNanos = pathOptimizationStats.transformUniformScaleFlatteningNanos
+        reportData.optimizationTransformUniformScaleGroupDiscoveryNanos = pathOptimizationStats.transformUniformScaleProfiling.groupDiscoveryNanos
+        reportData.optimizationTransformUniformScaleEligibilityChecksNanos = pathOptimizationStats.transformUniformScaleProfiling.eligibilityChecksNanos
+        reportData.optimizationTransformUniformScalePathScalingNanos = pathOptimizationStats.transformUniformScaleProfiling.pathScalingNanos
+        reportData.optimizationTransformUniformScaleStrokeAdjustmentNanos = pathOptimizationStats.transformUniformScaleProfiling.strokeAdjustmentNanos
+        reportData.optimizationTransformUniformScaleCanonicalizationCostingNanos = pathOptimizationStats.transformUniformScaleProfiling.canonicalizationCostingNanos
+        reportData.optimizationTransformUniformScaleXmlReplacementNanos = pathOptimizationStats.transformUniformScaleProfiling.xmlReplacementNanos
+        reportData.optimizationTransformUniformScaleCandidatesConsidered = pathOptimizationStats.transformUniformScaleProfiling.candidatesConsidered
+        reportData.optimizationTransformUniformScaleCandidatesRejected = pathOptimizationStats.transformUniformScaleProfiling.candidatesRejected
+        reportData.optimizationTransformUniformScaleProposalsAccepted = pathOptimizationStats.transformUniformScaleProfiling.proposalsAccepted
         reportData.optimizationTransformNonUniformScaleFlatteningNanos = pathOptimizationStats.transformNonUniformScaleFlatteningNanos
         reportData.optimizationTransformRotationTranslationNanos = pathOptimizationStats.transformRotationTranslationNanos
         reportData.optimizationTransformCanonicalizationNanos = pathOptimizationStats.transformCanonicalizationNanos

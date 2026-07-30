@@ -96,6 +96,18 @@ internal object SvgPathDataOptimizer {
         val rebuildRejectedForSize: Int = 0
     )
 
+    data class UniformScaleProfilingStats(
+        val groupDiscoveryNanos: Long = 0,
+        val eligibilityChecksNanos: Long = 0,
+        val pathScalingNanos: Long = 0,
+        val strokeAdjustmentNanos: Long = 0,
+        val canonicalizationCostingNanos: Long = 0,
+        val xmlReplacementNanos: Long = 0,
+        val candidatesConsidered: Int = 0,
+        val candidatesRejected: Int = 0,
+        val proposalsAccepted: Int = 0
+    )
+
     data class Stats(
         val pathCount: Int = 0,
         val charactersBefore: Int = 0,
@@ -197,6 +209,7 @@ internal object SvgPathDataOptimizer {
         val transformFactoringFlatteningNanos: Long = 0,
         val transformScaleFlatteningNanos: Long = 0,
         val transformUniformScaleFlatteningNanos: Long = 0,
+        val transformUniformScaleProfiling: UniformScaleProfilingStats = UniformScaleProfilingStats(),
         val transformNonUniformScaleFlatteningNanos: Long = 0,
         val transformRotationTranslationNanos: Long = 0,
         val transformCanonicalizationNanos: Long = 0,
@@ -636,8 +649,12 @@ internal object SvgPathDataOptimizer {
             System.nanoTime() - factoringFlatteningStartTime
 
         val scaleFlatteningStartTime = System.nanoTime()
+        val uniformScaleProfiling = MutableUniformScaleProfiling()
         val uniformScaleFlatteningStartTime = System.nanoTime()
-        val scaleFlattening = flattenUniformPositiveScaleGroups(groupFlattening.xml)
+        val scaleFlattening = flattenUniformPositiveScaleGroups(
+            groupFlattening.xml,
+            uniformScaleProfiling
+        )
         val transformUniformScaleFlatteningNanos =
             System.nanoTime() - uniformScaleFlatteningStartTime
         val nonUniformScaleFlatteningStartTime = System.nanoTime()
@@ -895,6 +912,7 @@ internal object SvgPathDataOptimizer {
                 transformScaleFlatteningNanos = transformScaleFlatteningNanos,
                 transformUniformScaleFlatteningNanos =
                     transformUniformScaleFlatteningNanos,
+                transformUniformScaleProfiling = uniformScaleProfiling.snapshot(),
                 transformNonUniformScaleFlatteningNanos =
                     transformNonUniformScaleFlatteningNanos,
                 transformRotationTranslationNanos = transformRotationTranslationNanos,
@@ -2587,6 +2605,30 @@ internal object SvgPathDataOptimizer {
      * multiplied by the scale factor. Positive uniform scale preserves
      * arc sweep direction, stroke joins/caps, and path winding.
      */
+    private class MutableUniformScaleProfiling {
+        var groupDiscoveryNanos: Long = 0
+        var eligibilityChecksNanos: Long = 0
+        var pathScalingNanos: Long = 0
+        var strokeAdjustmentNanos: Long = 0
+        var canonicalizationCostingNanos: Long = 0
+        var xmlReplacementNanos: Long = 0
+        var candidatesConsidered: Int = 0
+        var candidatesRejected: Int = 0
+        var proposalsAccepted: Int = 0
+
+        fun snapshot() = UniformScaleProfilingStats(
+            groupDiscoveryNanos = groupDiscoveryNanos,
+            eligibilityChecksNanos = eligibilityChecksNanos,
+            pathScalingNanos = pathScalingNanos,
+            strokeAdjustmentNanos = strokeAdjustmentNanos,
+            canonicalizationCostingNanos = canonicalizationCostingNanos,
+            xmlReplacementNanos = xmlReplacementNanos,
+            candidatesConsidered = candidatesConsidered,
+            candidatesRejected = candidatesRejected,
+            proposalsAccepted = proposalsAccepted
+        )
+    }
+
     private data class ScaleFlatteningProposal(
         val range: GroupRange,
         val replacement: String,
@@ -2605,7 +2647,10 @@ internal object SvgPathDataOptimizer {
      * size comparison ignores indentation and blank presentation lines so that
      * the final pretty-printer cannot influence the decision.
      */
-    private fun flattenUniformPositiveScaleGroups(xml: String): ScaleFlatteningResult {
+    private fun flattenUniformPositiveScaleGroups(
+        xml: String,
+        profiling: MutableUniformScaleProfiling? = null
+    ): ScaleFlatteningResult {
         var current = xml
         var groupsFlattened = 0
         var pathsScaled = 0
@@ -2613,27 +2658,41 @@ internal object SvgPathDataOptimizer {
         val rejectedGroupSignatures = mutableSetOf<String>()
 
         while (true) {
-            val proposal = findMatchedGroups(current)
-                .asSequence()
+            val discoveryStart = System.nanoTime()
+            val matchedGroups = findMatchedGroups(current)
                 // Process eligible nested groups from the inside out. A parent
                 // may become eligible after a child has been flattened.
                 .sortedBy { it.end - it.start }
+            profiling?.groupDiscoveryNanos =
+                (profiling?.groupDiscoveryNanos ?: 0L) + (System.nanoTime() - discoveryStart)
+
+            val proposal = matchedGroups.asSequence()
                 .firstNotNullOfOrNull { range ->
+                    profiling?.candidatesConsidered = (profiling?.candidatesConsidered ?: 0) + 1
+                    val eligibilityStart = System.nanoTime()
                     val originalFragment = current.substring(range.start, range.end)
                     val signature = stableFragmentSignature(originalFragment)
                     if (signature in rejectedGroupSignatures) {
+                        profiling?.eligibilityChecksNanos =
+                            (profiling?.eligibilityChecksNanos ?: 0L) + (System.nanoTime() - eligibilityStart)
+                        profiling?.candidatesRejected = (profiling?.candidatesRejected ?: 0) + 1
                         return@firstNotNullOfOrNull null
                     }
 
                     val openingTag = current.substring(range.start, range.openingEnd)
                     val body = current.substring(range.openingEnd, range.closingStart)
                     val scale = uniformScaleForGroup(openingTag)
-                        ?: return@firstNotNullOfOrNull null
-                    if (!isDirectSimplePathBody(body) ||
+                    if (scale == null ||
+                        !isDirectSimplePathBody(body) ||
                         !allExplicitStrokeWidthsAreNumeric(body)
                     ) {
+                        profiling?.eligibilityChecksNanos =
+                            (profiling?.eligibilityChecksNanos ?: 0L) + (System.nanoTime() - eligibilityStart)
+                        profiling?.candidatesRejected = (profiling?.candidatesRejected ?: 0) + 1
                         return@firstNotNullOfOrNull null
                     }
+                    profiling?.eligibilityChecksNanos =
+                        (profiling?.eligibilityChecksNanos ?: 0L) + (System.nanoTime() - eligibilityStart)
 
                     var scaledCount = 0
                     var strokeCount = 0
@@ -2655,6 +2714,7 @@ internal object SvgPathDataOptimizer {
                             return@replace element
                         }
 
+                        val pathScalingStart = System.nanoTime()
                         val scaledPathData = scalePathData(
                             pathData = pathData,
                             factor = scale.factor,
@@ -2663,12 +2723,15 @@ internal object SvgPathDataOptimizer {
                             translateX = scale.translateX,
                             translateY = scale.translateY
                         )
+                        profiling?.pathScalingNanos =
+                            (profiling?.pathScalingNanos ?: 0L) + (System.nanoTime() - pathScalingStart)
                         if (scaledPathData == null) {
                             failed = true
                             return@replace element
                         }
 
                         var updated = replacePathData(element, scaledPathData)
+                        val strokeStart = System.nanoTime()
                         val strokeWidth = attributeValue(updated, "android:strokeWidth")
                         if (strokeWidth != null) {
                             val numericWidth = strokeWidth.trim().toBigDecimalOrNull()
@@ -2683,12 +2746,15 @@ internal object SvgPathDataOptimizer {
                             )
                             strokeCount++
                         }
+                        profiling?.strokeAdjustmentNanos =
+                            (profiling?.strokeAdjustmentNanos ?: 0L) + (System.nanoTime() - strokeStart)
 
                         scaledCount++
                         updated
                     }
 
                     if (failed || scaledCount == 0) {
+                        profiling?.candidatesRejected = (profiling?.candidatesRejected ?: 0) + 1
                         rejectedGroupSignatures += signature
                         return@firstNotNullOfOrNull null
                     }
@@ -2697,6 +2763,7 @@ internal object SvgPathDataOptimizer {
 
                     // Compare the same final decimal spelling that the complete
                     // optimization pipeline will emit.
+                    val costingStart = System.nanoTime()
                     val canonicalOriginal =
                         canonicalizePathDecimalPrecision(originalFragment).xml
                     val canonicalReplacement =
@@ -2720,14 +2787,18 @@ internal object SvgPathDataOptimizer {
                         replacementPathDataCost - originalPathDataCost
                     val allowedPathDataGrowth =
                         maxOf(8, originalPathDataCost / 10)
+                    profiling?.canonicalizationCostingNanos =
+                        (profiling?.canonicalizationCostingNanos ?: 0L) + (System.nanoTime() - costingStart)
 
                     if (replacementCost >= originalCost ||
                         pathDataGrowth > allowedPathDataGrowth
                     ) {
+                        profiling?.candidatesRejected = (profiling?.candidatesRejected ?: 0) + 1
                         rejectedGroupSignatures += signature
                         return@firstNotNullOfOrNull null
                     }
 
+                    profiling?.proposalsAccepted = (profiling?.proposalsAccepted ?: 0) + 1
                     ScaleFlatteningProposal(
                         range = range,
                         replacement = replacement,
@@ -2746,11 +2817,14 @@ internal object SvgPathDataOptimizer {
                 )
             }
 
+            val replacementStart = System.nanoTime()
             current = buildString(current.length) {
                 append(current, 0, proposal.range.start)
                 append(proposal.replacement)
                 append(current, proposal.range.end, current.length)
             }
+            profiling?.xmlReplacementNanos =
+                (profiling?.xmlReplacementNanos ?: 0L) + (System.nanoTime() - replacementStart)
             groupsFlattened++
             pathsScaled += proposal.scaledPaths
             strokeWidthsScaled += proposal.scaledStrokeWidths

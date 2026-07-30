@@ -301,6 +301,15 @@ class SvgConversionReportData {
     var optimizationTransformFactoringFlatteningNanos: Long = 0
     var optimizationTransformScaleFlatteningNanos: Long = 0
     var optimizationTransformUniformScaleFlatteningNanos: Long = 0
+    var optimizationTransformUniformScaleGroupDiscoveryNanos: Long = 0
+    var optimizationTransformUniformScaleEligibilityChecksNanos: Long = 0
+    var optimizationTransformUniformScalePathScalingNanos: Long = 0
+    var optimizationTransformUniformScaleStrokeAdjustmentNanos: Long = 0
+    var optimizationTransformUniformScaleCanonicalizationCostingNanos: Long = 0
+    var optimizationTransformUniformScaleXmlReplacementNanos: Long = 0
+    var optimizationTransformUniformScaleCandidatesConsidered: Int = 0
+    var optimizationTransformUniformScaleCandidatesRejected: Int = 0
+    var optimizationTransformUniformScaleProposalsAccepted: Int = 0
     var optimizationTransformNonUniformScaleFlatteningNanos: Long = 0
     var optimizationTransformRotationTranslationNanos: Long = 0
     var optimizationTransformCanonicalizationNanos: Long = 0
@@ -1708,6 +1717,33 @@ object SvgConversionReporter {
                                 data.optimizationTransformNonUniformScaleFlatteningNanos
                         )
                     )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Uniform positive scale",
+                        parentNanos = data.optimizationTransformUniformScaleFlatteningNanos,
+                        stages = listOf(
+                            "Group discovery" to
+                                data.optimizationTransformUniformScaleGroupDiscoveryNanos,
+                            "Eligibility and safety checks" to
+                                data.optimizationTransformUniformScaleEligibilityChecksNanos,
+                            "Path scaling and normalization" to
+                                data.optimizationTransformUniformScalePathScalingNanos,
+                            "Stroke-width adjustment" to
+                                data.optimizationTransformUniformScaleStrokeAdjustmentNanos,
+                            "Canonicalization and size gating" to
+                                data.optimizationTransformUniformScaleCanonicalizationCostingNanos,
+                            "XML replacement" to
+                                data.optimizationTransformUniformScaleXmlReplacementNanos
+                        )
+                    )
+                    if (data.optimizationTransformUniformScaleCandidatesConsidered > 0) {
+                        append("      ▫ Uniform scale candidate flow\n")
+                        append("        · Candidates considered: ")
+                            .append(data.optimizationTransformUniformScaleCandidatesConsidered).append('\n')
+                        append("        · Candidates rejected: ")
+                            .append(data.optimizationTransformUniformScaleCandidatesRejected).append('\n')
+                        append("        · Proposals accepted: ")
+                            .append(data.optimizationTransformUniformScaleProposalsAccepted).append('\n')
+                    }
                 }
             }
         }
