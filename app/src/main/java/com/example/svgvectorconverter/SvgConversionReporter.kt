@@ -196,6 +196,23 @@ class SvgConversionReportData {
     var optimizerFixedPointPassNanos: Long = 0
     var optimizerValidationPathCacheHits: Int = 0
     var optimizerValidationPathCacheMisses: Int = 0
+    var optimizerIdempotencePathSyntaxNanos: Long = 0
+    var optimizerIdempotencePathTokenizationNormalizationNanos: Long = 0
+    var optimizerIdempotencePathGeometryCleanupNanos: Long = 0
+    var optimizerIdempotencePathCommandMinimizationNanos: Long = 0
+    var optimizerIdempotencePathNumericSerializationNanos: Long = 0
+    var optimizerIdempotenceColorNormalizationNanos: Long = 0
+    var optimizerIdempotencePruningGroupCleanupNanos: Long = 0
+    var optimizerIdempotenceTransformOptimizationNanos: Long = 0
+    var optimizerIdempotenceDeduplicationMergeNanos: Long = 0
+    var optimizerIdempotenceNumericCleanupNanos: Long = 0
+    var optimizerIdempotenceFinalFormattingNanos: Long = 0
+    var optimizerIdempotenceEqualityComparisonNanos: Long = 0
+    var optimizerIdempotencePathsExamined: Int = 0
+    var optimizerIdempotencePathCacheHits: Int = 0
+    var optimizerIdempotencePathCacheMisses: Int = 0
+    var optimizerIdempotenceXmlCharactersBefore: Int = 0
+    var optimizerIdempotenceXmlCharactersAfter: Int = 0
     var optimizerValidationPasses: Int = 0
     var optimizerFirstPassChangedXml: Boolean = false
     var optimizerSecondPassChangedXml: Boolean = false
@@ -1341,6 +1358,63 @@ object SvgConversionReporter {
                 )
             }
         }
+        val idempotenceStages = listOf(
+            "Path syntax and colors" to data.optimizerIdempotencePathSyntaxNanos,
+            "Pruning and group cleanup" to data.optimizerIdempotencePruningGroupCleanupNanos,
+            "Transform optimization" to data.optimizerIdempotenceTransformOptimizationNanos,
+            "Deduplication and merging" to data.optimizerIdempotenceDeduplicationMergeNanos,
+            "Numeric cleanup" to data.optimizerIdempotenceNumericCleanupNanos,
+            "Final XML formatting" to data.optimizerIdempotenceFinalFormattingNanos,
+            "Final equality comparison" to data.optimizerIdempotenceEqualityComparisonNanos
+        ).filter { (_, durationNanos) -> durationNanos > 0L }
+
+        if (idempotenceStages.isNotEmpty()) {
+            appendLine()
+            appendLine("Idempotence pass breakdown")
+            val measuredNanos = idempotenceStages.sumOf { it.second }
+            idempotenceStages.forEach { (label, durationNanos) ->
+                val percentage = nanosPercentageLabel(durationNanos, measuredNanos)
+                appendLine(
+                    "• $label: ${formatNanosAsMilliseconds(durationNanos)} ($percentage)"
+                )
+                if (label == "Path syntax and colors") {
+                    appendNestedTimingBreakdown(
+                        parentNanos = durationNanos,
+                        stages = listOf(
+                            "Tokenization and normalization" to
+                                data.optimizerIdempotencePathTokenizationNormalizationNanos,
+                            "Geometry cleanup" to
+                                data.optimizerIdempotencePathGeometryCleanupNanos,
+                            "Command minimization" to
+                                data.optimizerIdempotencePathCommandMinimizationNanos,
+                            "Global numeric serialization" to
+                                data.optimizerIdempotencePathNumericSerializationNanos,
+                            "Color normalization" to
+                                data.optimizerIdempotenceColorNormalizationNanos
+                        )
+                    )
+                }
+            }
+            appendLine("• Paths examined: ${data.optimizerIdempotencePathsExamined}")
+            val secondPassLookups =
+                data.optimizerIdempotencePathCacheHits +
+                    data.optimizerIdempotencePathCacheMisses
+            if (secondPassLookups > 0) {
+                appendLine(
+                    "• Second-pass path cache: " +
+                        "${data.optimizerIdempotencePathCacheHits} reused, " +
+                        "${data.optimizerIdempotencePathCacheMisses} recomputed"
+                )
+            }
+            if (data.optimizerIdempotenceXmlCharactersBefore > 0) {
+                appendLine(
+                    "• Idempotence XML size: " +
+                        "${data.optimizerIdempotenceXmlCharactersBefore} → " +
+                        "${data.optimizerIdempotenceXmlCharactersAfter} characters"
+                )
+            }
+        }
+
         appendLine(
             "• Validation time: " +
                 formatNanosAsMilliseconds(data.optimizerValidationNanos)

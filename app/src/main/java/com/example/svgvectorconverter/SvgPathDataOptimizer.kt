@@ -123,6 +123,26 @@ internal object SvgPathDataOptimizer {
         val proposalsAccepted: Int = 0,
     )
 
+    data class IdempotenceProfilingStats(
+        val pathSyntaxNanos: Long = 0,
+        val pathTokenizationNormalizationNanos: Long = 0,
+        val pathGeometryCleanupNanos: Long = 0,
+        val pathCommandMinimizationNanos: Long = 0,
+        val pathNumericSerializationNanos: Long = 0,
+        val colorNormalizationNanos: Long = 0,
+        val pruningAndGroupCleanupNanos: Long = 0,
+        val transformOptimizationNanos: Long = 0,
+        val deduplicationAndMergeNanos: Long = 0,
+        val numericCleanupNanos: Long = 0,
+        val finalFormattingNanos: Long = 0,
+        val equalityComparisonNanos: Long = 0,
+        val pathsExamined: Int = 0,
+        val pathCacheHits: Int = 0,
+        val pathCacheMisses: Int = 0,
+        val xmlCharactersBefore: Int = 0,
+        val xmlCharactersAfter: Int = 0
+    )
+
     data class Stats(
         val pathCount: Int = 0,
         val charactersBefore: Int = 0,
@@ -186,6 +206,7 @@ internal object SvgPathDataOptimizer {
         val optimizerFixedPointPassNanos: Long = 0,
         val optimizerValidationPathCacheHits: Int = 0,
         val optimizerValidationPathCacheMisses: Int = 0,
+        val idempotenceProfiling: IdempotenceProfilingStats = IdempotenceProfilingStats(),
         val optimizerValidationPasses: Int = 0,
         val optimizerFirstPassChangedXml: Boolean = false,
         val optimizerSecondPassChangedXml: Boolean = false,
@@ -314,6 +335,8 @@ internal object SvgPathDataOptimizer {
         )
         val firstPassNanos = System.nanoTime() - firstPassStartTime
 
+        val secondPassCacheHitsBefore = pathCache.validationHits
+        val secondPassCacheMissesBefore = pathCache.validationMisses
         val secondPassStartTime = System.nanoTime()
         val secondPass = optimizeVectorXmlSinglePass(
             xml = firstPass.xml,
@@ -321,8 +344,41 @@ internal object SvgPathDataOptimizer {
             validationPass = true
         )
         val secondPassNanos = System.nanoTime() - secondPassStartTime
+        val secondPassCacheHits =
+            pathCache.validationHits - secondPassCacheHitsBefore
+        val secondPassCacheMisses =
+            pathCache.validationMisses - secondPassCacheMissesBefore
+        val equalityComparisonStartTime = System.nanoTime()
+        val secondPassMatchesFirst = secondPass.xml == firstPass.xml
+        val equalityComparisonNanos =
+            System.nanoTime() - equalityComparisonStartTime
+        val idempotenceProfiling = IdempotenceProfilingStats(
+            pathSyntaxNanos = secondPass.stats.pathSyntaxOptimizationNanos,
+            pathTokenizationNormalizationNanos =
+                secondPass.stats.pathTokenizationNormalizationNanos,
+            pathGeometryCleanupNanos = secondPass.stats.pathGeometryCleanupNanos,
+            pathCommandMinimizationNanos =
+                secondPass.stats.pathCommandMinimizationNanos,
+            pathNumericSerializationNanos =
+                secondPass.stats.pathNumericSerializationNanos,
+            colorNormalizationNanos = secondPass.stats.colorNormalizationNanos,
+            pruningAndGroupCleanupNanos =
+                secondPass.stats.pruningAndGroupCleanupNanos,
+            transformOptimizationNanos =
+                secondPass.stats.transformOptimizationNanos,
+            deduplicationAndMergeNanos =
+                secondPass.stats.deduplicationAndMergeNanos,
+            numericCleanupNanos = secondPass.stats.numericCleanupNanos,
+            finalFormattingNanos = secondPass.stats.finalFormattingNanos,
+            equalityComparisonNanos = equalityComparisonNanos,
+            pathsExamined = secondPass.stats.pathCount,
+            pathCacheHits = secondPassCacheHits,
+            pathCacheMisses = secondPassCacheMisses,
+            xmlCharactersBefore = secondPass.stats.xmlCharactersBefore,
+            xmlCharactersAfter = secondPass.stats.xmlCharactersAfter
+        )
 
-        if (secondPass.xml == firstPass.xml) {
+        if (secondPassMatchesFirst) {
             return attachFinalOutputValidation(
                 firstPass.copy(
                     stats = firstPass.stats.copy(
@@ -335,6 +391,7 @@ internal object SvgPathDataOptimizer {
                         optimizerFixedPointPassNanos = 0L,
                         optimizerValidationPathCacheHits = pathCache.validationHits,
                         optimizerValidationPathCacheMisses = pathCache.validationMisses,
+                        idempotenceProfiling = idempotenceProfiling,
                         optimizerValidationPasses = 2,
                         optimizerFirstPassChangedXml = firstPass.xml != xml,
                         optimizerSecondPassChangedXml = false,
@@ -369,6 +426,7 @@ internal object SvgPathDataOptimizer {
                     optimizerFixedPointPassNanos = thirdPassNanos,
                     optimizerValidationPathCacheHits = pathCache.validationHits,
                     optimizerValidationPathCacheMisses = pathCache.validationMisses,
+                    idempotenceProfiling = idempotenceProfiling,
                     optimizerValidationPasses = 3,
                     optimizerFirstPassChangedXml = firstPass.xml != xml,
                     optimizerSecondPassChangedXml = secondPass.xml != firstPass.xml,

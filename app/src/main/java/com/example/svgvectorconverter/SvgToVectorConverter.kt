@@ -371,6 +371,40 @@ object SvgToVectorConverter {
         reportData.optimizerFixedPointPassNanos = pathOptimizationStats.optimizerFixedPointPassNanos
         reportData.optimizerValidationPathCacheHits = pathOptimizationStats.optimizerValidationPathCacheHits
         reportData.optimizerValidationPathCacheMisses = pathOptimizationStats.optimizerValidationPathCacheMisses
+        reportData.optimizerIdempotencePathSyntaxNanos =
+            pathOptimizationStats.idempotenceProfiling.pathSyntaxNanos
+        reportData.optimizerIdempotencePathTokenizationNormalizationNanos =
+            pathOptimizationStats.idempotenceProfiling.pathTokenizationNormalizationNanos
+        reportData.optimizerIdempotencePathGeometryCleanupNanos =
+            pathOptimizationStats.idempotenceProfiling.pathGeometryCleanupNanos
+        reportData.optimizerIdempotencePathCommandMinimizationNanos =
+            pathOptimizationStats.idempotenceProfiling.pathCommandMinimizationNanos
+        reportData.optimizerIdempotencePathNumericSerializationNanos =
+            pathOptimizationStats.idempotenceProfiling.pathNumericSerializationNanos
+        reportData.optimizerIdempotenceColorNormalizationNanos =
+            pathOptimizationStats.idempotenceProfiling.colorNormalizationNanos
+        reportData.optimizerIdempotencePruningGroupCleanupNanos =
+            pathOptimizationStats.idempotenceProfiling.pruningAndGroupCleanupNanos
+        reportData.optimizerIdempotenceTransformOptimizationNanos =
+            pathOptimizationStats.idempotenceProfiling.transformOptimizationNanos
+        reportData.optimizerIdempotenceDeduplicationMergeNanos =
+            pathOptimizationStats.idempotenceProfiling.deduplicationAndMergeNanos
+        reportData.optimizerIdempotenceNumericCleanupNanos =
+            pathOptimizationStats.idempotenceProfiling.numericCleanupNanos
+        reportData.optimizerIdempotenceFinalFormattingNanos =
+            pathOptimizationStats.idempotenceProfiling.finalFormattingNanos
+        reportData.optimizerIdempotenceEqualityComparisonNanos =
+            pathOptimizationStats.idempotenceProfiling.equalityComparisonNanos
+        reportData.optimizerIdempotencePathsExamined =
+            pathOptimizationStats.idempotenceProfiling.pathsExamined
+        reportData.optimizerIdempotencePathCacheHits =
+            pathOptimizationStats.idempotenceProfiling.pathCacheHits
+        reportData.optimizerIdempotencePathCacheMisses =
+            pathOptimizationStats.idempotenceProfiling.pathCacheMisses
+        reportData.optimizerIdempotenceXmlCharactersBefore =
+            pathOptimizationStats.idempotenceProfiling.xmlCharactersBefore
+        reportData.optimizerIdempotenceXmlCharactersAfter =
+            pathOptimizationStats.idempotenceProfiling.xmlCharactersAfter
         reportData.optimizerValidationPasses = pathOptimizationStats.optimizerValidationPasses
         reportData.optimizerFirstPassChangedXml = pathOptimizationStats.optimizerFirstPassChangedXml
         reportData.optimizerSecondPassChangedXml = pathOptimizationStats.optimizerSecondPassChangedXml
