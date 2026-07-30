@@ -99,7 +99,6 @@ internal object SvgPathDataOptimizer {
     data class UniformScaleProfilingStats(
         val groupDiscoveryNanos: Long = 0,
         val eligibilityChecksNanos: Long = 0,
-        val earlySizeSignalNanos: Long = 0,
         val pathScalingNanos: Long = 0,
         val scalePathParseTokenizeNanos: Long = 0,
         val scalePathNumericParseNanos: Long = 0,
@@ -108,38 +107,13 @@ internal object SvgPathDataOptimizer {
         val scalePathNumberFormattingNanos: Long = 0,
         val scalePathReconstructionNanos: Long = 0,
         val scalePathNormalizationNanos: Long = 0,
-        val postScaleOptimizationCalls: Int = 0,
-        val postScaleOptimizationUnchanged: Int = 0,
-        val postScaleRawChars: Int = 0,
-        val postScaleFinalChars: Int = 0,
-        val postScaleSyntaxChanged: Int = 0,
-        val postScaleSyntaxCharsSaved: Int = 0,
-        val postScaleRedundantGeometryChanged: Int = 0,
-        val postScaleRedundantGeometryCharsSaved: Int = 0,
-        val postScaleArcChanged: Int = 0,
-        val postScaleArcCharsSaved: Int = 0,
-        val postScaleCurveChanged: Int = 0,
-        val postScaleCurveCharsSaved: Int = 0,
-        val postScaleCollinearChanged: Int = 0,
-        val postScaleCollinearCharsSaved: Int = 0,
-        val postScaleCommandChanged: Int = 0,
-        val postScaleCommandCharsSaved: Int = 0,
-        val postScaleNumericChanged: Int = 0,
-        val postScaleNumericCharsSaved: Int = 0,
-        val postScaleNarrowComparisonNanos: Long = 0,
-        val postScaleNarrowCompared: Int = 0,
-        val postScaleNarrowIdentical: Int = 0,
-        val postScaleNarrowDifferent: Int = 0,
-        val postScaleNarrowFullOnlySavings: Int = 0,
-        val postScaleNarrowOnlySavings: Int = 0,
         val postScaleP6Attempts: Int = 0,
         val postScaleP6Accepted: Int = 0,
         val postScaleP6Fallbacks: Int = 0,
         val postScaleP6ParserFallbacks: Int = 0,
-        val postScaleP6SemanticFallbacks: Int = 0,
         val postScaleP6InternalFallbacks: Int = 0,
         val postScaleP6OptimizationNanos: Long = 0,
-        val postScaleP6ValidationNanos: Long = 0,
+        val postScaleP6ParserValidationNanos: Long = 0,
         val postScaleFullFallbackNanos: Long = 0,
         val strokeAdjustmentNanos: Long = 0,
         val canonicalizationCostingNanos: Long = 0,
@@ -147,31 +121,6 @@ internal object SvgPathDataOptimizer {
         val candidatesConsidered: Int = 0,
         val candidatesRejected: Int = 0,
         val proposalsAccepted: Int = 0,
-        val earlySizeProfiledCandidates: Int = 0,
-        val earlySizeAcceptedCandidates: Int = 0,
-        val earlySizeRejectedCandidates: Int = 0,
-        val earlySizeAcceptedTransformAttributeChars: Int = 0,
-        val earlySizeAcceptedFixedGroupMarkupChars: Int = 0,
-        val earlySizeAcceptedPathCount: Int = 0,
-        val earlySizeAcceptedOperandCount: Int = 0,
-        val earlySizeAcceptedPathDataChars: Int = 0,
-        val earlySizeAcceptedStrokeWidthDeltaChars: Int = 0,
-        val earlySizeRejectedTransformAttributeChars: Int = 0,
-        val earlySizeRejectedFixedGroupMarkupChars: Int = 0,
-        val earlySizeRejectedPathCount: Int = 0,
-        val earlySizeRejectedOperandCount: Int = 0,
-        val earlySizeRejectedPathDataChars: Int = 0,
-        val earlySizeRejectedStrokeWidthDeltaChars: Int = 0,
-        val lowerBoundProfiledCandidates: Int = 0,
-        val lowerBoundAcceptedCandidates: Int = 0,
-        val lowerBoundRejectedCandidates: Int = 0,
-        val lowerBoundCurrentCostTotal: Int = 0,
-        val lowerBoundMinimumCostTotal: Int = 0,
-        val lowerBoundActualCandidateCostTotal: Int = 0,
-        val lowerBoundGapTotal: Int = 0,
-        val lowerBoundWouldRejectCount: Int = 0,
-        val lowerBoundFalseRejectCount: Int = 0,
-        val lowerBoundRejectedCaughtCount: Int = 0
     )
 
     data class Stats(
@@ -2671,64 +2620,9 @@ internal object SvgPathDataOptimizer {
      * multiplied by the scale factor. Positive uniform scale preserves
      * arc sweep direction, stroke joins/caps, and path winding.
      */
-    private data class UniformScaleEarlySizeSignal(
-        val transformAttributeChars: Int,
-        val fixedGroupMarkupChars: Int,
-        val pathCount: Int,
-        val operandCount: Int,
-        val pathDataChars: Int,
-        val strokeWidthDeltaChars: Int,
-        val minimumReplacementCost: Int,
-        val minimumPathDataCost: Int
-    )
-
-    private enum class PostScaleStage {
-        SYNTAX, REDUNDANT_GEOMETRY, ARC, CURVE, COLLINEAR, COMMAND, NUMERIC
-    }
-
-    private fun MutableUniformScaleProfiling.recordPostScaleStage(
-        before: String,
-        after: String,
-        stage: PostScaleStage
-    ) {
-        if (before == after) return
-        val saved = before.length - after.length
-        when (stage) {
-            PostScaleStage.SYNTAX -> {
-                postScaleSyntaxChanged++
-                postScaleSyntaxCharsSaved += saved
-            }
-            PostScaleStage.REDUNDANT_GEOMETRY -> {
-                postScaleRedundantGeometryChanged++
-                postScaleRedundantGeometryCharsSaved += saved
-            }
-            PostScaleStage.ARC -> {
-                postScaleArcChanged++
-                postScaleArcCharsSaved += saved
-            }
-            PostScaleStage.CURVE -> {
-                postScaleCurveChanged++
-                postScaleCurveCharsSaved += saved
-            }
-            PostScaleStage.COLLINEAR -> {
-                postScaleCollinearChanged++
-                postScaleCollinearCharsSaved += saved
-            }
-            PostScaleStage.COMMAND -> {
-                postScaleCommandChanged++
-                postScaleCommandCharsSaved += saved
-            }
-            PostScaleStage.NUMERIC -> {
-                postScaleNumericChanged++
-                postScaleNumericCharsSaved += saved
-            }
-        }
-    }
-
     private class MutableUniformScaleProfiling {
         var groupDiscoveryNanos: Long = 0
         var eligibilityChecksNanos: Long = 0
-        var earlySizeSignalNanos: Long = 0
         var pathScalingNanos: Long = 0
         var scalePathParseTokenizeNanos: Long = 0
         var scalePathNumericParseNanos: Long = 0
@@ -2737,38 +2631,13 @@ internal object SvgPathDataOptimizer {
         var scalePathNumberFormattingNanos: Long = 0
         var scalePathReconstructionNanos: Long = 0
         var scalePathNormalizationNanos: Long = 0
-        var postScaleOptimizationCalls: Int = 0
-        var postScaleOptimizationUnchanged: Int = 0
-        var postScaleRawChars: Int = 0
-        var postScaleFinalChars: Int = 0
-        var postScaleSyntaxChanged: Int = 0
-        var postScaleSyntaxCharsSaved: Int = 0
-        var postScaleRedundantGeometryChanged: Int = 0
-        var postScaleRedundantGeometryCharsSaved: Int = 0
-        var postScaleArcChanged: Int = 0
-        var postScaleArcCharsSaved: Int = 0
-        var postScaleCurveChanged: Int = 0
-        var postScaleCurveCharsSaved: Int = 0
-        var postScaleCollinearChanged: Int = 0
-        var postScaleCollinearCharsSaved: Int = 0
-        var postScaleCommandChanged: Int = 0
-        var postScaleCommandCharsSaved: Int = 0
-        var postScaleNumericChanged: Int = 0
-        var postScaleNumericCharsSaved: Int = 0
-        var postScaleNarrowComparisonNanos: Long = 0
-        var postScaleNarrowCompared: Int = 0
-        var postScaleNarrowIdentical: Int = 0
-        var postScaleNarrowDifferent: Int = 0
-        var postScaleNarrowFullOnlySavings: Int = 0
-        var postScaleNarrowOnlySavings: Int = 0
         var postScaleP6Attempts: Int = 0
         var postScaleP6Accepted: Int = 0
         var postScaleP6Fallbacks: Int = 0
         var postScaleP6ParserFallbacks: Int = 0
-        var postScaleP6SemanticFallbacks: Int = 0
         var postScaleP6InternalFallbacks: Int = 0
         var postScaleP6OptimizationNanos: Long = 0
-        var postScaleP6ValidationNanos: Long = 0
+        var postScaleP6ParserValidationNanos: Long = 0
         var postScaleFullFallbackNanos: Long = 0
         var strokeAdjustmentNanos: Long = 0
         var canonicalizationCostingNanos: Long = 0
@@ -2776,81 +2645,10 @@ internal object SvgPathDataOptimizer {
         var candidatesConsidered: Int = 0
         var candidatesRejected: Int = 0
         var proposalsAccepted: Int = 0
-        var earlySizeProfiledCandidates: Int = 0
-        var earlySizeAcceptedCandidates: Int = 0
-        var earlySizeRejectedCandidates: Int = 0
-        var earlySizeAcceptedTransformAttributeChars: Int = 0
-        var earlySizeAcceptedFixedGroupMarkupChars: Int = 0
-        var earlySizeAcceptedPathCount: Int = 0
-        var earlySizeAcceptedOperandCount: Int = 0
-        var earlySizeAcceptedPathDataChars: Int = 0
-        var earlySizeAcceptedStrokeWidthDeltaChars: Int = 0
-        var earlySizeRejectedTransformAttributeChars: Int = 0
-        var earlySizeRejectedFixedGroupMarkupChars: Int = 0
-        var earlySizeRejectedPathCount: Int = 0
-        var earlySizeRejectedOperandCount: Int = 0
-        var earlySizeRejectedPathDataChars: Int = 0
-        var earlySizeRejectedStrokeWidthDeltaChars: Int = 0
-        var lowerBoundProfiledCandidates: Int = 0
-        var lowerBoundAcceptedCandidates: Int = 0
-        var lowerBoundRejectedCandidates: Int = 0
-        var lowerBoundCurrentCostTotal: Int = 0
-        var lowerBoundMinimumCostTotal: Int = 0
-        var lowerBoundActualCandidateCostTotal: Int = 0
-        var lowerBoundGapTotal: Int = 0
-        var lowerBoundWouldRejectCount: Int = 0
-        var lowerBoundFalseRejectCount: Int = 0
-        var lowerBoundRejectedCaughtCount: Int = 0
-
-        fun recordLowerBoundOutcome(
-            signal: UniformScaleEarlySizeSignal,
-            currentCost: Int,
-            actualCandidateCost: Int,
-            actualAccepted: Boolean,
-            originalPathDataCost: Int,
-            allowedPathDataGrowth: Int
-        ) {
-            lowerBoundProfiledCandidates++
-            if (actualAccepted) lowerBoundAcceptedCandidates++ else lowerBoundRejectedCandidates++
-            lowerBoundCurrentCostTotal += currentCost
-            lowerBoundMinimumCostTotal += signal.minimumReplacementCost
-            lowerBoundActualCandidateCostTotal += actualCandidateCost
-            lowerBoundGapTotal += (actualCandidateCost - signal.minimumReplacementCost).coerceAtLeast(0)
-
-            val minimumPathDataGrowth = signal.minimumPathDataCost - originalPathDataCost
-            val wouldReject = signal.minimumReplacementCost >= currentCost ||
-                minimumPathDataGrowth > allowedPathDataGrowth
-            if (wouldReject) {
-                lowerBoundWouldRejectCount++
-                if (actualAccepted) lowerBoundFalseRejectCount++ else lowerBoundRejectedCaughtCount++
-            }
-        }
-
-        fun recordEarlySizeSignal(signal: UniformScaleEarlySizeSignal, accepted: Boolean) {
-            earlySizeProfiledCandidates++
-            if (accepted) {
-                earlySizeAcceptedCandidates++
-                earlySizeAcceptedTransformAttributeChars += signal.transformAttributeChars
-                earlySizeAcceptedFixedGroupMarkupChars += signal.fixedGroupMarkupChars
-                earlySizeAcceptedPathCount += signal.pathCount
-                earlySizeAcceptedOperandCount += signal.operandCount
-                earlySizeAcceptedPathDataChars += signal.pathDataChars
-                earlySizeAcceptedStrokeWidthDeltaChars += signal.strokeWidthDeltaChars
-            } else {
-                earlySizeRejectedCandidates++
-                earlySizeRejectedTransformAttributeChars += signal.transformAttributeChars
-                earlySizeRejectedFixedGroupMarkupChars += signal.fixedGroupMarkupChars
-                earlySizeRejectedPathCount += signal.pathCount
-                earlySizeRejectedOperandCount += signal.operandCount
-                earlySizeRejectedPathDataChars += signal.pathDataChars
-                earlySizeRejectedStrokeWidthDeltaChars += signal.strokeWidthDeltaChars
-            }
-        }
 
         fun snapshot() = UniformScaleProfilingStats(
             groupDiscoveryNanos = groupDiscoveryNanos,
             eligibilityChecksNanos = eligibilityChecksNanos,
-            earlySizeSignalNanos = earlySizeSignalNanos,
             pathScalingNanos = pathScalingNanos,
             scalePathParseTokenizeNanos = scalePathParseTokenizeNanos,
             scalePathNumericParseNanos = scalePathNumericParseNanos,
@@ -2859,38 +2657,13 @@ internal object SvgPathDataOptimizer {
             scalePathNumberFormattingNanos = scalePathNumberFormattingNanos,
             scalePathReconstructionNanos = scalePathReconstructionNanos,
             scalePathNormalizationNanos = scalePathNormalizationNanos,
-            postScaleOptimizationCalls = postScaleOptimizationCalls,
-            postScaleOptimizationUnchanged = postScaleOptimizationUnchanged,
-            postScaleRawChars = postScaleRawChars,
-            postScaleFinalChars = postScaleFinalChars,
-            postScaleSyntaxChanged = postScaleSyntaxChanged,
-            postScaleSyntaxCharsSaved = postScaleSyntaxCharsSaved,
-            postScaleRedundantGeometryChanged = postScaleRedundantGeometryChanged,
-            postScaleRedundantGeometryCharsSaved = postScaleRedundantGeometryCharsSaved,
-            postScaleArcChanged = postScaleArcChanged,
-            postScaleArcCharsSaved = postScaleArcCharsSaved,
-            postScaleCurveChanged = postScaleCurveChanged,
-            postScaleCurveCharsSaved = postScaleCurveCharsSaved,
-            postScaleCollinearChanged = postScaleCollinearChanged,
-            postScaleCollinearCharsSaved = postScaleCollinearCharsSaved,
-            postScaleCommandChanged = postScaleCommandChanged,
-            postScaleCommandCharsSaved = postScaleCommandCharsSaved,
-            postScaleNumericChanged = postScaleNumericChanged,
-            postScaleNumericCharsSaved = postScaleNumericCharsSaved,
-            postScaleNarrowComparisonNanos = postScaleNarrowComparisonNanos,
-            postScaleNarrowCompared = postScaleNarrowCompared,
-            postScaleNarrowIdentical = postScaleNarrowIdentical,
-            postScaleNarrowDifferent = postScaleNarrowDifferent,
-            postScaleNarrowFullOnlySavings = postScaleNarrowFullOnlySavings,
-            postScaleNarrowOnlySavings = postScaleNarrowOnlySavings,
             postScaleP6Attempts = postScaleP6Attempts,
             postScaleP6Accepted = postScaleP6Accepted,
             postScaleP6Fallbacks = postScaleP6Fallbacks,
             postScaleP6ParserFallbacks = postScaleP6ParserFallbacks,
-            postScaleP6SemanticFallbacks = postScaleP6SemanticFallbacks,
             postScaleP6InternalFallbacks = postScaleP6InternalFallbacks,
             postScaleP6OptimizationNanos = postScaleP6OptimizationNanos,
-            postScaleP6ValidationNanos = postScaleP6ValidationNanos,
+            postScaleP6ParserValidationNanos = postScaleP6ParserValidationNanos,
             postScaleFullFallbackNanos = postScaleFullFallbackNanos,
             strokeAdjustmentNanos = strokeAdjustmentNanos,
             canonicalizationCostingNanos = canonicalizationCostingNanos,
@@ -2898,95 +2671,6 @@ internal object SvgPathDataOptimizer {
             candidatesConsidered = candidatesConsidered,
             candidatesRejected = candidatesRejected,
             proposalsAccepted = proposalsAccepted,
-            earlySizeProfiledCandidates = earlySizeProfiledCandidates,
-            earlySizeAcceptedCandidates = earlySizeAcceptedCandidates,
-            earlySizeRejectedCandidates = earlySizeRejectedCandidates,
-            earlySizeAcceptedTransformAttributeChars = earlySizeAcceptedTransformAttributeChars,
-            earlySizeAcceptedFixedGroupMarkupChars = earlySizeAcceptedFixedGroupMarkupChars,
-            earlySizeAcceptedPathCount = earlySizeAcceptedPathCount,
-            earlySizeAcceptedOperandCount = earlySizeAcceptedOperandCount,
-            earlySizeAcceptedPathDataChars = earlySizeAcceptedPathDataChars,
-            earlySizeAcceptedStrokeWidthDeltaChars = earlySizeAcceptedStrokeWidthDeltaChars,
-            earlySizeRejectedTransformAttributeChars = earlySizeRejectedTransformAttributeChars,
-            earlySizeRejectedFixedGroupMarkupChars = earlySizeRejectedFixedGroupMarkupChars,
-            earlySizeRejectedPathCount = earlySizeRejectedPathCount,
-            earlySizeRejectedOperandCount = earlySizeRejectedOperandCount,
-            earlySizeRejectedPathDataChars = earlySizeRejectedPathDataChars,
-            earlySizeRejectedStrokeWidthDeltaChars = earlySizeRejectedStrokeWidthDeltaChars,
-            lowerBoundProfiledCandidates = lowerBoundProfiledCandidates,
-            lowerBoundAcceptedCandidates = lowerBoundAcceptedCandidates,
-            lowerBoundRejectedCandidates = lowerBoundRejectedCandidates,
-            lowerBoundCurrentCostTotal = lowerBoundCurrentCostTotal,
-            lowerBoundMinimumCostTotal = lowerBoundMinimumCostTotal,
-            lowerBoundActualCandidateCostTotal = lowerBoundActualCandidateCostTotal,
-            lowerBoundGapTotal = lowerBoundGapTotal,
-            lowerBoundWouldRejectCount = lowerBoundWouldRejectCount,
-            lowerBoundFalseRejectCount = lowerBoundFalseRejectCount,
-            lowerBoundRejectedCaughtCount = lowerBoundRejectedCaughtCount
-        )
-    }
-
-    private fun collectUniformScaleEarlySizeSignal(
-        openingTag: String,
-        body: String,
-        scale: UniformScale
-    ): UniformScaleEarlySizeSignal {
-        val transformAttributeChars = androidAttributeRegex.findAll(openingTag)
-            .sumOf { it.value.length }
-        val wrapperCost = stableXmlPayloadCost("$openingTag\n</group>")
-        val fixedGroupMarkupChars = (wrapperCost - transformAttributeChars).coerceAtLeast(0)
-
-        var pathCount = 0
-        var operandCount = 0
-        var pathDataChars = 0
-        var strokeWidthDeltaChars = 0
-        var strokeWidthValueChars = 0
-        var strokeWidthCount = 0
-
-        pathElementRegex.findAll(body).forEach { match ->
-            pathCount++
-            val element = match.value
-            val pathData = attributeValue(element, "android:pathData").orEmpty()
-            pathDataChars += pathData.length
-            operandCount += tokenRegex.findAll(pathData).count { token ->
-                token.value.length != 1 || !token.value[0].isLetter()
-            }
-
-            val strokeWidth = attributeValue(element, "android:strokeWidth")
-            val numericWidth = strokeWidth?.trim()?.toBigDecimalOrNull()
-            if (strokeWidth != null && numericWidth != null) {
-                val trimmedWidth = strokeWidth.trim()
-                strokeWidthValueChars += trimmedWidth.length
-                strokeWidthCount++
-                val scaledWidth = formatBigDecimal(numericWidth.multiply(scale.factor))
-                strokeWidthDeltaChars += scaledWidth.length - trimmedWidth.length
-            }
-        }
-
-        // G2.21: provable lower bound for the flattened replacement.
-        // Keep every non-pathData/non-stroke-value payload byte, then assume the
-        // mathematically smallest possible spelling for variable numeric data:
-        // one character per numeric operand, one mandatory command character per
-        // non-empty path, and one character per explicit strokeWidth value.
-        // Separators and all additional command letters are allowed to cost zero.
-        // This intentionally underestimates the candidate; it can miss early
-        // rejection opportunities, but it cannot falsely prove a candidate large.
-        val bodyCost = stableXmlPayloadCost(removeOneIndentLevel(body))
-        val minimumPathDataCost = operandCount + pathCount
-        val minimumReplacementCost = (
-            bodyCost - pathDataChars - strokeWidthValueChars +
-                minimumPathDataCost + strokeWidthCount
-            ).coerceAtLeast(0)
-
-        return UniformScaleEarlySizeSignal(
-            transformAttributeChars = transformAttributeChars,
-            fixedGroupMarkupChars = fixedGroupMarkupChars,
-            pathCount = pathCount,
-            operandCount = operandCount,
-            pathDataChars = pathDataChars,
-            strokeWidthDeltaChars = strokeWidthDeltaChars,
-            minimumReplacementCost = minimumReplacementCost,
-            minimumPathDataCost = minimumPathDataCost
         )
     }
 
@@ -3055,16 +2739,6 @@ internal object SvgPathDataOptimizer {
                     profiling?.eligibilityChecksNanos =
                         (profiling?.eligibilityChecksNanos ?: 0L) + (System.nanoTime() - eligibilityStart)
 
-                    val earlySizeSignalStart = System.nanoTime()
-                    val earlySizeSignal = collectUniformScaleEarlySizeSignal(
-                        openingTag = openingTag,
-                        body = body,
-                        scale = scale
-                    )
-                    profiling?.earlySizeSignalNanos =
-                        (profiling?.earlySizeSignalNanos ?: 0L) +
-                            (System.nanoTime() - earlySizeSignalStart)
-
                     var scaledCount = 0
                     var strokeCount = 0
                     var failed = false
@@ -3127,7 +2801,6 @@ internal object SvgPathDataOptimizer {
 
                     if (failed || scaledCount == 0) {
                         profiling?.candidatesRejected = (profiling?.candidatesRejected ?: 0) + 1
-                        profiling?.recordEarlySizeSignal(earlySizeSignal, accepted = false)
                         rejectedGroupSignatures += signature
                         return@firstNotNullOfOrNull null
                     }
@@ -3166,24 +2839,14 @@ internal object SvgPathDataOptimizer {
                     val acceptedByExistingGate =
                         replacementCost < originalCost &&
                             pathDataGrowth <= allowedPathDataGrowth
-                    profiling?.recordLowerBoundOutcome(
-                        signal = earlySizeSignal,
-                        currentCost = originalCost,
-                        actualCandidateCost = replacementCost,
-                        actualAccepted = acceptedByExistingGate,
-                        originalPathDataCost = originalPathDataCost,
-                        allowedPathDataGrowth = allowedPathDataGrowth
-                    )
 
                     if (!acceptedByExistingGate) {
                         profiling?.candidatesRejected = (profiling?.candidatesRejected ?: 0) + 1
-                        profiling?.recordEarlySizeSignal(earlySizeSignal, accepted = false)
                         rejectedGroupSignatures += signature
                         return@firstNotNullOfOrNull null
                     }
 
                     profiling?.proposalsAccepted = (profiling?.proposalsAccepted ?: 0) + 1
-                    profiling?.recordEarlySizeSignal(earlySizeSignal, accepted = true)
                     ScaleFlatteningProposal(
                         range = range,
                         replacement = replacement,
@@ -3519,11 +3182,10 @@ internal object SvgPathDataOptimizer {
         val rawScaledPath = output.toString()
         val normalizationStart = System.nanoTime()
 
-        // G2.27: P6 is now the guarded production post-scale pipeline.
-        // G2.26 proved byte-for-byte equivalence with the full optimizer across
-        // 100,000 deterministic scale-heavy stress cases. We still validate the
-        // candidate here and conservatively fall back to the complete optimizer
-        // whenever parsing, sampled geometry, or internal execution is uncertain.
+        // G2.28: P6 is the production post-scale pipeline. Two complete G2.26
+        // runs (200,000 deterministic scale-heavy cases total) reproduced the full
+        // optimizer byte-for-byte. Keep a cheap parser guard here and conservatively
+        // fall back to the complete optimizer on parser or internal failure.
         profiling?.postScaleP6Attempts = (profiling?.postScaleP6Attempts ?: 0) + 1
 
         var fallbackReason: String? = null
@@ -3542,15 +3204,13 @@ internal object SvgPathDataOptimizer {
                 (System.nanoTime() - p6Start)
 
         val validationStart = System.nanoTime()
-        if (fallbackReason == null) {
-            if (p6Candidate == null || parseNormalizedSegments(p6Candidate) == null) {
-                fallbackReason = "parser"
-            } else if (!sampledPathGeometryEquivalent(rawScaledPath, p6Candidate)) {
-                fallbackReason = "semantic"
-            }
+        if (fallbackReason == null &&
+            (p6Candidate == null || parseNormalizedSegments(p6Candidate) == null)
+        ) {
+            fallbackReason = "parser"
         }
-        profiling?.postScaleP6ValidationNanos =
-            (profiling?.postScaleP6ValidationNanos ?: 0L) +
+        profiling?.postScaleP6ParserValidationNanos =
+            (profiling?.postScaleP6ParserValidationNanos ?: 0L) +
                 (System.nanoTime() - validationStart)
 
         val normalized = if (fallbackReason == null && p6Candidate != null) {
@@ -3561,27 +3221,15 @@ internal object SvgPathDataOptimizer {
             when (fallbackReason) {
                 "parser" -> profiling?.postScaleP6ParserFallbacks =
                     (profiling?.postScaleP6ParserFallbacks ?: 0) + 1
-                "semantic" -> profiling?.postScaleP6SemanticFallbacks =
-                    (profiling?.postScaleP6SemanticFallbacks ?: 0) + 1
                 else -> profiling?.postScaleP6InternalFallbacks =
                     (profiling?.postScaleP6InternalFallbacks ?: 0) + 1
             }
             val fallbackStart = System.nanoTime()
-            val full = optimizePathData(
-                rawScaledPath,
-                contribution = profiling
-            ).pathData
+            val full = optimizePathData(rawScaledPath).pathData
             profiling?.postScaleFullFallbackNanos =
                 (profiling?.postScaleFullFallbackNanos ?: 0L) +
                     (System.nanoTime() - fallbackStart)
             full
-        }
-
-        profiling?.let {
-            it.postScaleOptimizationCalls++
-            it.postScaleRawChars += rawScaledPath.length
-            it.postScaleFinalChars += normalized.length
-            if (normalized == rawScaledPath) it.postScaleOptimizationUnchanged++
         }
 
         profiling?.scalePathNormalizationNanos =
@@ -6473,8 +6121,7 @@ internal object SvgPathDataOptimizer {
 
     private fun optimizePathData(
         pathData: String,
-        profiling: PathSyntaxProfiling? = null,
-        contribution: MutableUniformScaleProfiling? = null
+        profiling: PathSyntaxProfiling? = null
     ): PathResult {
         val tokenizationStartTime = System.nanoTime()
         val matches = tokenRegex.findAll(pathData).toList()
@@ -6543,11 +6190,6 @@ internal object SvgPathDataOptimizer {
         }
 
         val syntaxNormalizedPath = output.toString()
-        contribution?.recordPostScaleStage(
-            before = pathData,
-            after = syntaxNormalizedPath,
-            stage = PostScaleStage.SYNTAX
-        )
 
         profiling?.let {
             it.tokenizationNormalizationNanos +=
@@ -6559,11 +6201,6 @@ internal object SvgPathDataOptimizer {
         val redundantSegmentCleanupStartTime = System.nanoTime()
         val redundantCleanup = removeRedundantNonDrawingSegments(
             syntaxNormalizedPath
-        )
-        contribution?.recordPostScaleStage(
-            before = syntaxNormalizedPath,
-            after = redundantCleanup.pathData,
-            stage = PostScaleStage.REDUNDANT_GEOMETRY
         )
         profiling?.let {
             it.redundantSegmentCleanupNanos +=
@@ -6626,12 +6263,6 @@ internal object SvgPathDataOptimizer {
                 DegenerateArcCleanupResult(unchangedPathData, 0)
         }
 
-        contribution?.recordPostScaleStage(
-            before = redundantCleanup.pathData,
-            after = degenerateArcCleanup.pathData,
-            stage = PostScaleStage.ARC
-        )
-
         val curveSimplificationStartTime = System.nanoTime()
         val cubicStartTime = System.nanoTime()
         val cubicToQuadraticCleanup = reduceExactCubicCurvesToQuadratic(
@@ -6661,20 +6292,9 @@ internal object SvgPathDataOptimizer {
                 System.nanoTime() - curveSimplificationStartTime
         }
 
-        contribution?.recordPostScaleStage(
-            before = degenerateArcCleanup.pathData,
-            after = straightBezierCleanup.pathData,
-            stage = PostScaleStage.CURVE
-        )
-
         val collinearConsolidationStartTime = System.nanoTime()
         val collinearCleanup = consolidateConsecutiveCollinearLineRuns(
             straightBezierCleanup.pathData
-        )
-        contribution?.recordPostScaleStage(
-            before = straightBezierCleanup.pathData,
-            after = collinearCleanup.pathData,
-            stage = PostScaleStage.COLLINEAR
         )
         profiling?.let {
             it.collinearConsolidationNanos +=
@@ -6696,11 +6316,6 @@ internal object SvgPathDataOptimizer {
             commandOptimization.pathData,
             profiling
         )
-        contribution?.recordPostScaleStage(
-            before = collinearCleanup.pathData,
-            after = globalCommandOptimization.pathData,
-            stage = PostScaleStage.COMMAND
-        )
         profiling?.let {
             it.commandMinimizationNanos +=
                 System.nanoTime() - commandMinimizationStartTime
@@ -6709,11 +6324,6 @@ internal object SvgPathDataOptimizer {
         val numericSerializationStartTime = System.nanoTime()
         val globalNumericOptimization = globallyOptimizeNumericSerialization(
             globalCommandOptimization.pathData
-        )
-        contribution?.recordPostScaleStage(
-            before = globalCommandOptimization.pathData,
-            after = globalNumericOptimization.pathData,
-            stage = PostScaleStage.NUMERIC
         )
         profiling?.let {
             it.numericSerializationNanos +=

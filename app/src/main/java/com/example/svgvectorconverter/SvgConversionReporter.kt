@@ -303,7 +303,6 @@ class SvgConversionReportData {
     var optimizationTransformUniformScaleFlatteningNanos: Long = 0
     var optimizationTransformUniformScaleGroupDiscoveryNanos: Long = 0
     var optimizationTransformUniformScaleEligibilityChecksNanos: Long = 0
-    var optimizationTransformUniformScaleEarlySizeSignalNanos: Long = 0
     var optimizationTransformUniformScalePathScalingNanos: Long = 0
     var optimizationTransformUniformScalePathParseTokenizeNanos: Long = 0
     var optimizationTransformUniformScalePathNumericParseNanos: Long = 0
@@ -312,38 +311,13 @@ class SvgConversionReportData {
     var optimizationTransformUniformScalePathNumberFormattingNanos: Long = 0
     var optimizationTransformUniformScalePathReconstructionNanos: Long = 0
     var optimizationTransformUniformScalePathNormalizationNanos: Long = 0
-    var optimizationTransformUniformScalePostScaleOptimizationCalls: Int = 0
-    var optimizationTransformUniformScalePostScaleOptimizationUnchanged: Int = 0
-    var optimizationTransformUniformScalePostScaleRawChars: Int = 0
-    var optimizationTransformUniformScalePostScaleFinalChars: Int = 0
-    var optimizationTransformUniformScalePostScaleSyntaxChanged: Int = 0
-    var optimizationTransformUniformScalePostScaleSyntaxCharsSaved: Int = 0
-    var optimizationTransformUniformScalePostScaleRedundantGeometryChanged: Int = 0
-    var optimizationTransformUniformScalePostScaleRedundantGeometryCharsSaved: Int = 0
-    var optimizationTransformUniformScalePostScaleArcChanged: Int = 0
-    var optimizationTransformUniformScalePostScaleArcCharsSaved: Int = 0
-    var optimizationTransformUniformScalePostScaleCurveChanged: Int = 0
-    var optimizationTransformUniformScalePostScaleCurveCharsSaved: Int = 0
-    var optimizationTransformUniformScalePostScaleCollinearChanged: Int = 0
-    var optimizationTransformUniformScalePostScaleCollinearCharsSaved: Int = 0
-    var optimizationTransformUniformScalePostScaleCommandChanged: Int = 0
-    var optimizationTransformUniformScalePostScaleCommandCharsSaved: Int = 0
-    var optimizationTransformUniformScalePostScaleNumericChanged: Int = 0
-    var optimizationTransformUniformScalePostScaleNumericCharsSaved: Int = 0
-    var optimizationTransformUniformScalePostScaleNarrowComparisonNanos: Long = 0
-    var optimizationTransformUniformScalePostScaleNarrowCompared: Int = 0
-    var optimizationTransformUniformScalePostScaleNarrowIdentical: Int = 0
-    var optimizationTransformUniformScalePostScaleNarrowDifferent: Int = 0
-    var optimizationTransformUniformScalePostScaleNarrowFullOnlySavings: Int = 0
-    var optimizationTransformUniformScalePostScaleNarrowOnlySavings: Int = 0
     var optimizationTransformUniformScalePostScaleP6Attempts: Int = 0
     var optimizationTransformUniformScalePostScaleP6Accepted: Int = 0
     var optimizationTransformUniformScalePostScaleP6Fallbacks: Int = 0
     var optimizationTransformUniformScalePostScaleP6ParserFallbacks: Int = 0
-    var optimizationTransformUniformScalePostScaleP6SemanticFallbacks: Int = 0
     var optimizationTransformUniformScalePostScaleP6InternalFallbacks: Int = 0
     var optimizationTransformUniformScalePostScaleP6OptimizationNanos: Long = 0
-    var optimizationTransformUniformScalePostScaleP6ValidationNanos: Long = 0
+    var optimizationTransformUniformScalePostScaleP6ParserValidationNanos: Long = 0
     var optimizationTransformUniformScalePostScaleFullFallbackNanos: Long = 0
     var optimizationTransformUniformScaleStrokeAdjustmentNanos: Long = 0
     var optimizationTransformUniformScaleCanonicalizationCostingNanos: Long = 0
@@ -351,31 +325,6 @@ class SvgConversionReportData {
     var optimizationTransformUniformScaleCandidatesConsidered: Int = 0
     var optimizationTransformUniformScaleCandidatesRejected: Int = 0
     var optimizationTransformUniformScaleProposalsAccepted: Int = 0
-    var optimizationTransformUniformScaleEarlySizeProfiledCandidates: Int = 0
-    var optimizationTransformUniformScaleEarlySizeAcceptedCandidates: Int = 0
-    var optimizationTransformUniformScaleEarlySizeRejectedCandidates: Int = 0
-    var optimizationTransformUniformScaleEarlySizeAcceptedTransformAttributeChars: Int = 0
-    var optimizationTransformUniformScaleEarlySizeAcceptedFixedGroupMarkupChars: Int = 0
-    var optimizationTransformUniformScaleEarlySizeAcceptedPathCount: Int = 0
-    var optimizationTransformUniformScaleEarlySizeAcceptedOperandCount: Int = 0
-    var optimizationTransformUniformScaleEarlySizeAcceptedPathDataChars: Int = 0
-    var optimizationTransformUniformScaleEarlySizeAcceptedStrokeWidthDeltaChars: Int = 0
-    var optimizationTransformUniformScaleEarlySizeRejectedTransformAttributeChars: Int = 0
-    var optimizationTransformUniformScaleEarlySizeRejectedFixedGroupMarkupChars: Int = 0
-    var optimizationTransformUniformScaleEarlySizeRejectedPathCount: Int = 0
-    var optimizationTransformUniformScaleEarlySizeRejectedOperandCount: Int = 0
-    var optimizationTransformUniformScaleEarlySizeRejectedPathDataChars: Int = 0
-    var optimizationTransformUniformScaleEarlySizeRejectedStrokeWidthDeltaChars: Int = 0
-    var optimizationTransformUniformScaleLowerBoundProfiledCandidates: Int = 0
-    var optimizationTransformUniformScaleLowerBoundAcceptedCandidates: Int = 0
-    var optimizationTransformUniformScaleLowerBoundRejectedCandidates: Int = 0
-    var optimizationTransformUniformScaleLowerBoundCurrentCostTotal: Int = 0
-    var optimizationTransformUniformScaleLowerBoundMinimumCostTotal: Int = 0
-    var optimizationTransformUniformScaleLowerBoundActualCandidateCostTotal: Int = 0
-    var optimizationTransformUniformScaleLowerBoundGapTotal: Int = 0
-    var optimizationTransformUniformScaleLowerBoundWouldRejectCount: Int = 0
-    var optimizationTransformUniformScaleLowerBoundFalseRejectCount: Int = 0
-    var optimizationTransformUniformScaleLowerBoundRejectedCaughtCount: Int = 0
     var optimizationTransformNonUniformScaleFlatteningNanos: Long = 0
     var optimizationTransformRotationTranslationNanos: Long = 0
     var optimizationTransformCanonicalizationNanos: Long = 0
@@ -1791,8 +1740,6 @@ object SvgConversionReporter {
                                 data.optimizationTransformUniformScaleGroupDiscoveryNanos,
                             "Eligibility and safety checks" to
                                 data.optimizationTransformUniformScaleEligibilityChecksNanos,
-                            "Early size-signal collection" to
-                                data.optimizationTransformUniformScaleEarlySizeSignalNanos,
                             "Path scaling and normalization" to
                                 data.optimizationTransformUniformScalePathScalingNanos,
                             "Stroke-width adjustment" to
@@ -1821,13 +1768,13 @@ object SvgConversionReporter {
                                 data.optimizationTransformUniformScalePathNormalizationNanos
                         )
                     )
-                    appendPostScaleOptimizationContribution(data)
                     if (data.optimizationTransformUniformScalePathArcHandlingNanos > 0L) {
                         append("      ▫ Arc-specific scaling subset\n")
                         append("        · Arc parameter handling: ")
                             .append(formatNanosAsMilliseconds(data.optimizationTransformUniformScalePathArcHandlingNanos))
                             .append('\n')
                     }
+                    appendP6ProductionProfiling(data)
                     if (data.optimizationTransformUniformScaleCandidatesConsidered > 0) {
                         append("      ▫ Uniform scale candidate flow\n")
                         append("        · Candidates considered: ")
@@ -1837,241 +1784,52 @@ object SvgConversionReporter {
                         append("        · Proposals accepted: ")
                             .append(data.optimizationTransformUniformScaleProposalsAccepted).append('\n')
                     }
-                    appendUniformScaleEarlySizeSignals(data)
-                    appendUniformScaleLowerBoundProfiling(data)
                 }
             }
         }
     }
 
-    private fun StringBuilder.appendPostScaleOptimizationContribution(
+    private fun StringBuilder.appendP6ProductionProfiling(
         data: SvgConversionReportData
     ) {
-        val calls = data.optimizationTransformUniformScalePostScaleOptimizationCalls
-        if (calls <= 0) return
+        val attempts = data.optimizationTransformUniformScalePostScaleP6Attempts
+        if (attempts <= 0) return
 
-        append("      ▫ Post-scale optimizer contribution (profiling only)\n")
-        append("        · Optimizer calls: ").append(calls).append('\n')
-        append("        · Raw scaled path chars: ")
-            .append(data.optimizationTransformUniformScalePostScaleRawChars).append('\n')
-        append("        · Final optimized path chars: ")
-            .append(data.optimizationTransformUniformScalePostScaleFinalChars).append('\n')
-        append("        · Net characters saved: ")
-            .append(data.optimizationTransformUniformScalePostScaleRawChars -
-                data.optimizationTransformUniformScalePostScaleFinalChars)
+        append("      ▫ P6 post-scale production\n")
+        append("        · P6 attempts: ").append(attempts).append('\n')
+        append("        · P6 accepted: ")
+            .append(data.optimizationTransformUniformScalePostScaleP6Accepted)
             .append('\n')
-        append("        · Full optimizer produced no change: ")
-            .append(data.optimizationTransformUniformScalePostScaleOptimizationUnchanged)
+        append("        · Full-optimizer fallbacks: ")
+            .append(data.optimizationTransformUniformScalePostScaleP6Fallbacks)
             .append('\n')
-
-        fun appendStage(label: String, changed: Int, saved: Int) {
-            append("        · ").append(label).append(": ")
-                .append(changed).append(" changed")
-            if (changed > 0 || saved != 0) {
-                append(", ")
-                if (saved >= 0) append(saved).append(" chars saved")
-                else append(-saved).append(" chars added")
-            }
-            append('\n')
+        if (data.optimizationTransformUniformScalePostScaleP6ParserFallbacks > 0) {
+            append("          ◦ Parser validation: ")
+                .append(data.optimizationTransformUniformScalePostScaleP6ParserFallbacks)
+                .append('\n')
         }
-
-        appendStage(
-            "Initial syntax / numeric normalization",
-            data.optimizationTransformUniformScalePostScaleSyntaxChanged,
-            data.optimizationTransformUniformScalePostScaleSyntaxCharsSaved
-        )
-        appendStage(
-            "Redundant geometry cleanup",
-            data.optimizationTransformUniformScalePostScaleRedundantGeometryChanged,
-            data.optimizationTransformUniformScalePostScaleRedundantGeometryCharsSaved
-        )
-        appendStage(
-            "Arc cleanup",
-            data.optimizationTransformUniformScalePostScaleArcChanged,
-            data.optimizationTransformUniformScalePostScaleArcCharsSaved
-        )
-        appendStage(
-            "Curve simplification",
-            data.optimizationTransformUniformScalePostScaleCurveChanged,
-            data.optimizationTransformUniformScalePostScaleCurveCharsSaved
-        )
-        appendStage(
-            "Collinear-line consolidation",
-            data.optimizationTransformUniformScalePostScaleCollinearChanged,
-            data.optimizationTransformUniformScalePostScaleCollinearCharsSaved
-        )
-        appendStage(
-            "Command minimization",
-            data.optimizationTransformUniformScalePostScaleCommandChanged,
-            data.optimizationTransformUniformScalePostScaleCommandCharsSaved
-        )
-        appendStage(
-            "Global numeric serialization",
-            data.optimizationTransformUniformScalePostScaleNumericChanged,
-            data.optimizationTransformUniformScalePostScaleNumericCharsSaved
-        )
-
-        val p6Attempts = data.optimizationTransformUniformScalePostScaleP6Attempts
-        if (p6Attempts > 0) {
-            append("\n")
-            append("      ▫ Guarded P6 post-scale production\n")
-            append("        · P6 attempts: ").append(p6Attempts).append('\n')
-            append("        · P6 accepted: ")
-                .append(data.optimizationTransformUniformScalePostScaleP6Accepted)
+        if (data.optimizationTransformUniformScalePostScaleP6InternalFallbacks > 0) {
+            append("          ◦ Internal failure: ")
+                .append(data.optimizationTransformUniformScalePostScaleP6InternalFallbacks)
                 .append('\n')
-            append("        · Full-optimizer fallbacks: ")
-                .append(data.optimizationTransformUniformScalePostScaleP6Fallbacks)
-                .append('\n')
-            if (data.optimizationTransformUniformScalePostScaleP6ParserFallbacks > 0) {
-                append("          ◦ Parser validation: ")
-                    .append(data.optimizationTransformUniformScalePostScaleP6ParserFallbacks)
-                    .append('\n')
-            }
-            if (data.optimizationTransformUniformScalePostScaleP6SemanticFallbacks > 0) {
-                append("          ◦ Geometry validation: ")
-                    .append(data.optimizationTransformUniformScalePostScaleP6SemanticFallbacks)
-                    .append('\n')
-            }
-            if (data.optimizationTransformUniformScalePostScaleP6InternalFallbacks > 0) {
-                append("          ◦ Internal failure: ")
-                    .append(data.optimizationTransformUniformScalePostScaleP6InternalFallbacks)
-                    .append('\n')
-            }
-            append("        · P6 optimization time: ")
+        }
+        append("        · P6 optimization time: ")
+            .append(formatPerformanceDuration(
+                data.optimizationTransformUniformScalePostScaleP6OptimizationNanos
+            ))
+            .append('\n')
+        append("        · Parser validation time: ")
+            .append(formatPerformanceDuration(
+                data.optimizationTransformUniformScalePostScaleP6ParserValidationNanos
+            ))
+            .append('\n')
+        if (data.optimizationTransformUniformScalePostScaleFullFallbackNanos > 0L) {
+            append("        · Full fallback time: ")
                 .append(formatPerformanceDuration(
-                    data.optimizationTransformUniformScalePostScaleP6OptimizationNanos
+                    data.optimizationTransformUniformScalePostScaleFullFallbackNanos
                 ))
                 .append('\n')
-            append("        · P6 validation time: ")
-                .append(formatPerformanceDuration(
-                    data.optimizationTransformUniformScalePostScaleP6ValidationNanos
-                ))
-                .append('\n')
-            if (data.optimizationTransformUniformScalePostScaleFullFallbackNanos > 0L) {
-                append("        · Full fallback time: ")
-                    .append(formatPerformanceDuration(
-                        data.optimizationTransformUniformScalePostScaleFullFallbackNanos
-                    ))
-                    .append('\n')
-            }
         }
-
-        val compared = data.optimizationTransformUniformScalePostScaleNarrowCompared
-        if (compared > 0) {
-            append("\n")
-            append("      ▫ Full vs narrowed post-scale comparison (profiling only)\n")
-            append("        · Paths compared: ").append(compared).append('\n')
-            append("        · Byte-identical results: ")
-                .append(data.optimizationTransformUniformScalePostScaleNarrowIdentical)
-                .append('\n')
-            append("        · Differences: ")
-                .append(data.optimizationTransformUniformScalePostScaleNarrowDifferent)
-                .append('\n')
-            append("        · Full-only savings: ")
-                .append(data.optimizationTransformUniformScalePostScaleNarrowFullOnlySavings)
-                .append(" chars\n")
-            append("        · Narrow-only savings: ")
-                .append(data.optimizationTransformUniformScalePostScaleNarrowOnlySavings)
-                .append(" chars\n")
-            append("        · Narrowed comparison time: ")
-                .append(formatPerformanceDuration(
-                    data.optimizationTransformUniformScalePostScaleNarrowComparisonNanos
-                ))
-                .append('\n')
-            append("        · Production output: full optimizer remains authoritative\n")
-        }
-    }
-
-    private fun StringBuilder.appendUniformScaleEarlySizeSignals(
-        data: SvgConversionReportData
-    ) {
-        val profiled = data.optimizationTransformUniformScaleEarlySizeProfiledCandidates
-        if (profiled <= 0) return
-
-        append("      ▫ Uniform scale early size signals (profiling only)\n")
-        append("        · Profiled candidates: ").append(profiled).append('\n')
-
-        fun appendAverages(
-            label: String,
-            count: Int,
-            transformChars: Int,
-            fixedMarkupChars: Int,
-            pathCount: Int,
-            operandCount: Int,
-            pathDataChars: Int,
-            strokeDeltaChars: Int
-        ) {
-            if (count <= 0) return
-            fun average(total: Int): String =
-                String.format(java.util.Locale.US, "%.1f", total.toDouble() / count.toDouble())
-
-            append("        · ").append(label).append(": ").append(count).append('\n')
-            append("          ◦ Transform-attribute chars removable: ")
-                .append(average(transformChars)).append(" avg\n")
-            append("          ◦ Fixed group-markup chars removable: ")
-                .append(average(fixedMarkupChars)).append(" avg\n")
-            append("          ◦ Paths: ").append(average(pathCount)).append(" avg\n")
-            append("          ◦ Numeric operands: ").append(average(operandCount)).append(" avg\n")
-            append("          ◦ Current pathData chars: ").append(average(pathDataChars)).append(" avg\n")
-            append("          ◦ Exact stroke-width value-length delta: ")
-                .append(average(strokeDeltaChars)).append(" avg\n")
-        }
-
-        appendAverages(
-            label = "Accepted candidates",
-            count = data.optimizationTransformUniformScaleEarlySizeAcceptedCandidates,
-            transformChars = data.optimizationTransformUniformScaleEarlySizeAcceptedTransformAttributeChars,
-            fixedMarkupChars = data.optimizationTransformUniformScaleEarlySizeAcceptedFixedGroupMarkupChars,
-            pathCount = data.optimizationTransformUniformScaleEarlySizeAcceptedPathCount,
-            operandCount = data.optimizationTransformUniformScaleEarlySizeAcceptedOperandCount,
-            pathDataChars = data.optimizationTransformUniformScaleEarlySizeAcceptedPathDataChars,
-            strokeDeltaChars = data.optimizationTransformUniformScaleEarlySizeAcceptedStrokeWidthDeltaChars
-        )
-        appendAverages(
-            label = "Rejected candidates",
-            count = data.optimizationTransformUniformScaleEarlySizeRejectedCandidates,
-            transformChars = data.optimizationTransformUniformScaleEarlySizeRejectedTransformAttributeChars,
-            fixedMarkupChars = data.optimizationTransformUniformScaleEarlySizeRejectedFixedGroupMarkupChars,
-            pathCount = data.optimizationTransformUniformScaleEarlySizeRejectedPathCount,
-            operandCount = data.optimizationTransformUniformScaleEarlySizeRejectedOperandCount,
-            pathDataChars = data.optimizationTransformUniformScaleEarlySizeRejectedPathDataChars,
-            strokeDeltaChars = data.optimizationTransformUniformScaleEarlySizeRejectedStrokeWidthDeltaChars
-        )
-    }
-
-    private fun StringBuilder.appendUniformScaleLowerBoundProfiling(
-        data: SvgConversionReportData
-    ) {
-        val count = data.optimizationTransformUniformScaleLowerBoundProfiledCandidates
-        if (count <= 0) return
-
-        fun average(total: Int): String =
-            String.format(java.util.Locale.US, "%.1f", total.toDouble() / count.toDouble())
-
-        append("      ▫ Provable serialized-size lower bound (profiling only)\n")
-        append("        · Profiled candidates: ").append(count).append('\n')
-        append("        · Actual accepted: ")
-            .append(data.optimizationTransformUniformScaleLowerBoundAcceptedCandidates).append('\n')
-        append("        · Actual rejected: ")
-            .append(data.optimizationTransformUniformScaleLowerBoundRejectedCandidates).append('\n')
-        append("        · Exact current payload cost: ")
-            .append(average(data.optimizationTransformUniformScaleLowerBoundCurrentCostTotal))
-            .append(" avg chars\n")
-        append("        · Provable minimum candidate cost: ")
-            .append(average(data.optimizationTransformUniformScaleLowerBoundMinimumCostTotal))
-            .append(" avg chars\n")
-        append("        · Actual final candidate cost: ")
-            .append(average(data.optimizationTransformUniformScaleLowerBoundActualCandidateCostTotal))
-            .append(" avg chars\n")
-        append("        · Lower-bound gap to actual candidate: ")
-            .append(average(data.optimizationTransformUniformScaleLowerBoundGapTotal))
-            .append(" avg chars\n")
-        append("        · Would provably reject early: ")
-            .append(data.optimizationTransformUniformScaleLowerBoundWouldRejectCount).append('\n')
-        append("          ◦ Actual rejected caught: ")
-            .append(data.optimizationTransformUniformScaleLowerBoundRejectedCaughtCount).append('\n')
-        append("          ◦ False rejections of accepted candidates: ")
-            .append(data.optimizationTransformUniformScaleLowerBoundFalseRejectCount).append('\n')
     }
 
     private fun StringBuilder.appendCurveReuseProfiling(
