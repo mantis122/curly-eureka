@@ -501,6 +501,16 @@ object SvgToVectorConverter {
         reportData.optimizationTransformUniformScaleEarlySizeRejectedOperandCount = pathOptimizationStats.transformUniformScaleProfiling.earlySizeRejectedOperandCount
         reportData.optimizationTransformUniformScaleEarlySizeRejectedPathDataChars = pathOptimizationStats.transformUniformScaleProfiling.earlySizeRejectedPathDataChars
         reportData.optimizationTransformUniformScaleEarlySizeRejectedStrokeWidthDeltaChars = pathOptimizationStats.transformUniformScaleProfiling.earlySizeRejectedStrokeWidthDeltaChars
+        reportData.optimizationTransformUniformScaleLowerBoundProfiledCandidates = pathOptimizationStats.transformUniformScaleProfiling.lowerBoundProfiledCandidates
+        reportData.optimizationTransformUniformScaleLowerBoundAcceptedCandidates = pathOptimizationStats.transformUniformScaleProfiling.lowerBoundAcceptedCandidates
+        reportData.optimizationTransformUniformScaleLowerBoundRejectedCandidates = pathOptimizationStats.transformUniformScaleProfiling.lowerBoundRejectedCandidates
+        reportData.optimizationTransformUniformScaleLowerBoundCurrentCostTotal = pathOptimizationStats.transformUniformScaleProfiling.lowerBoundCurrentCostTotal
+        reportData.optimizationTransformUniformScaleLowerBoundMinimumCostTotal = pathOptimizationStats.transformUniformScaleProfiling.lowerBoundMinimumCostTotal
+        reportData.optimizationTransformUniformScaleLowerBoundActualCandidateCostTotal = pathOptimizationStats.transformUniformScaleProfiling.lowerBoundActualCandidateCostTotal
+        reportData.optimizationTransformUniformScaleLowerBoundGapTotal = pathOptimizationStats.transformUniformScaleProfiling.lowerBoundGapTotal
+        reportData.optimizationTransformUniformScaleLowerBoundWouldRejectCount = pathOptimizationStats.transformUniformScaleProfiling.lowerBoundWouldRejectCount
+        reportData.optimizationTransformUniformScaleLowerBoundFalseRejectCount = pathOptimizationStats.transformUniformScaleProfiling.lowerBoundFalseRejectCount
+        reportData.optimizationTransformUniformScaleLowerBoundRejectedCaughtCount = pathOptimizationStats.transformUniformScaleProfiling.lowerBoundRejectedCaughtCount
         reportData.optimizationTransformNonUniformScaleFlatteningNanos = pathOptimizationStats.transformNonUniformScaleFlatteningNanos
         reportData.optimizationTransformRotationTranslationNanos = pathOptimizationStats.transformRotationTranslationNanos
         reportData.optimizationTransformCanonicalizationNanos = pathOptimizationStats.transformCanonicalizationNanos

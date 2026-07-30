@@ -326,6 +326,16 @@ class SvgConversionReportData {
     var optimizationTransformUniformScaleEarlySizeRejectedOperandCount: Int = 0
     var optimizationTransformUniformScaleEarlySizeRejectedPathDataChars: Int = 0
     var optimizationTransformUniformScaleEarlySizeRejectedStrokeWidthDeltaChars: Int = 0
+    var optimizationTransformUniformScaleLowerBoundProfiledCandidates: Int = 0
+    var optimizationTransformUniformScaleLowerBoundAcceptedCandidates: Int = 0
+    var optimizationTransformUniformScaleLowerBoundRejectedCandidates: Int = 0
+    var optimizationTransformUniformScaleLowerBoundCurrentCostTotal: Int = 0
+    var optimizationTransformUniformScaleLowerBoundMinimumCostTotal: Int = 0
+    var optimizationTransformUniformScaleLowerBoundActualCandidateCostTotal: Int = 0
+    var optimizationTransformUniformScaleLowerBoundGapTotal: Int = 0
+    var optimizationTransformUniformScaleLowerBoundWouldRejectCount: Int = 0
+    var optimizationTransformUniformScaleLowerBoundFalseRejectCount: Int = 0
+    var optimizationTransformUniformScaleLowerBoundRejectedCaughtCount: Int = 0
     var optimizationTransformNonUniformScaleFlatteningNanos: Long = 0
     var optimizationTransformRotationTranslationNanos: Long = 0
     var optimizationTransformCanonicalizationNanos: Long = 0
@@ -1763,6 +1773,7 @@ object SvgConversionReporter {
                             .append(data.optimizationTransformUniformScaleProposalsAccepted).append('\n')
                     }
                     appendUniformScaleEarlySizeSignals(data)
+                    appendUniformScaleLowerBoundProfiling(data)
                 }
             }
         }
@@ -1823,6 +1834,41 @@ object SvgConversionReporter {
             pathDataChars = data.optimizationTransformUniformScaleEarlySizeRejectedPathDataChars,
             strokeDeltaChars = data.optimizationTransformUniformScaleEarlySizeRejectedStrokeWidthDeltaChars
         )
+    }
+
+    private fun StringBuilder.appendUniformScaleLowerBoundProfiling(
+        data: SvgConversionReportData
+    ) {
+        val count = data.optimizationTransformUniformScaleLowerBoundProfiledCandidates
+        if (count <= 0) return
+
+        fun average(total: Int): String =
+            String.format(java.util.Locale.US, "%.1f", total.toDouble() / count.toDouble())
+
+        append("      ▫ Provable serialized-size lower bound (profiling only)\n")
+        append("        · Profiled candidates: ").append(count).append('\n')
+        append("        · Actual accepted: ")
+            .append(data.optimizationTransformUniformScaleLowerBoundAcceptedCandidates).append('\n')
+        append("        · Actual rejected: ")
+            .append(data.optimizationTransformUniformScaleLowerBoundRejectedCandidates).append('\n')
+        append("        · Exact current payload cost: ")
+            .append(average(data.optimizationTransformUniformScaleLowerBoundCurrentCostTotal))
+            .append(" avg chars\n")
+        append("        · Provable minimum candidate cost: ")
+            .append(average(data.optimizationTransformUniformScaleLowerBoundMinimumCostTotal))
+            .append(" avg chars\n")
+        append("        · Actual final candidate cost: ")
+            .append(average(data.optimizationTransformUniformScaleLowerBoundActualCandidateCostTotal))
+            .append(" avg chars\n")
+        append("        · Lower-bound gap to actual candidate: ")
+            .append(average(data.optimizationTransformUniformScaleLowerBoundGapTotal))
+            .append(" avg chars\n")
+        append("        · Would provably reject early: ")
+            .append(data.optimizationTransformUniformScaleLowerBoundWouldRejectCount).append('\n')
+        append("          ◦ Actual rejected caught: ")
+            .append(data.optimizationTransformUniformScaleLowerBoundRejectedCaughtCount).append('\n')
+        append("          ◦ False rejections of accepted candidates: ")
+            .append(data.optimizationTransformUniformScaleLowerBoundFalseRejectCount).append('\n')
     }
 
     private fun StringBuilder.appendCurveReuseProfiling(

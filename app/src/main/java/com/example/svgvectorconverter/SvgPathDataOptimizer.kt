@@ -121,7 +121,17 @@ internal object SvgPathDataOptimizer {
         val earlySizeRejectedPathCount: Int = 0,
         val earlySizeRejectedOperandCount: Int = 0,
         val earlySizeRejectedPathDataChars: Int = 0,
-        val earlySizeRejectedStrokeWidthDeltaChars: Int = 0
+        val earlySizeRejectedStrokeWidthDeltaChars: Int = 0,
+        val lowerBoundProfiledCandidates: Int = 0,
+        val lowerBoundAcceptedCandidates: Int = 0,
+        val lowerBoundRejectedCandidates: Int = 0,
+        val lowerBoundCurrentCostTotal: Int = 0,
+        val lowerBoundMinimumCostTotal: Int = 0,
+        val lowerBoundActualCandidateCostTotal: Int = 0,
+        val lowerBoundGapTotal: Int = 0,
+        val lowerBoundWouldRejectCount: Int = 0,
+        val lowerBoundFalseRejectCount: Int = 0,
+        val lowerBoundRejectedCaughtCount: Int = 0
     )
 
     data class Stats(
@@ -2627,7 +2637,9 @@ internal object SvgPathDataOptimizer {
         val pathCount: Int,
         val operandCount: Int,
         val pathDataChars: Int,
-        val strokeWidthDeltaChars: Int
+        val strokeWidthDeltaChars: Int,
+        val minimumReplacementCost: Int,
+        val minimumPathDataCost: Int
     )
 
     private class MutableUniformScaleProfiling {
@@ -2656,6 +2668,40 @@ internal object SvgPathDataOptimizer {
         var earlySizeRejectedOperandCount: Int = 0
         var earlySizeRejectedPathDataChars: Int = 0
         var earlySizeRejectedStrokeWidthDeltaChars: Int = 0
+        var lowerBoundProfiledCandidates: Int = 0
+        var lowerBoundAcceptedCandidates: Int = 0
+        var lowerBoundRejectedCandidates: Int = 0
+        var lowerBoundCurrentCostTotal: Int = 0
+        var lowerBoundMinimumCostTotal: Int = 0
+        var lowerBoundActualCandidateCostTotal: Int = 0
+        var lowerBoundGapTotal: Int = 0
+        var lowerBoundWouldRejectCount: Int = 0
+        var lowerBoundFalseRejectCount: Int = 0
+        var lowerBoundRejectedCaughtCount: Int = 0
+
+        fun recordLowerBoundOutcome(
+            signal: UniformScaleEarlySizeSignal,
+            currentCost: Int,
+            actualCandidateCost: Int,
+            actualAccepted: Boolean,
+            originalPathDataCost: Int,
+            allowedPathDataGrowth: Int
+        ) {
+            lowerBoundProfiledCandidates++
+            if (actualAccepted) lowerBoundAcceptedCandidates++ else lowerBoundRejectedCandidates++
+            lowerBoundCurrentCostTotal += currentCost
+            lowerBoundMinimumCostTotal += signal.minimumReplacementCost
+            lowerBoundActualCandidateCostTotal += actualCandidateCost
+            lowerBoundGapTotal += (actualCandidateCost - signal.minimumReplacementCost).coerceAtLeast(0)
+
+            val minimumPathDataGrowth = signal.minimumPathDataCost - originalPathDataCost
+            val wouldReject = signal.minimumReplacementCost >= currentCost ||
+                minimumPathDataGrowth > allowedPathDataGrowth
+            if (wouldReject) {
+                lowerBoundWouldRejectCount++
+                if (actualAccepted) lowerBoundFalseRejectCount++ else lowerBoundRejectedCaughtCount++
+            }
+        }
 
         fun recordEarlySizeSignal(signal: UniformScaleEarlySizeSignal, accepted: Boolean) {
             earlySizeProfiledCandidates++
@@ -2703,7 +2749,17 @@ internal object SvgPathDataOptimizer {
             earlySizeRejectedPathCount = earlySizeRejectedPathCount,
             earlySizeRejectedOperandCount = earlySizeRejectedOperandCount,
             earlySizeRejectedPathDataChars = earlySizeRejectedPathDataChars,
-            earlySizeRejectedStrokeWidthDeltaChars = earlySizeRejectedStrokeWidthDeltaChars
+            earlySizeRejectedStrokeWidthDeltaChars = earlySizeRejectedStrokeWidthDeltaChars,
+            lowerBoundProfiledCandidates = lowerBoundProfiledCandidates,
+            lowerBoundAcceptedCandidates = lowerBoundAcceptedCandidates,
+            lowerBoundRejectedCandidates = lowerBoundRejectedCandidates,
+            lowerBoundCurrentCostTotal = lowerBoundCurrentCostTotal,
+            lowerBoundMinimumCostTotal = lowerBoundMinimumCostTotal,
+            lowerBoundActualCandidateCostTotal = lowerBoundActualCandidateCostTotal,
+            lowerBoundGapTotal = lowerBoundGapTotal,
+            lowerBoundWouldRejectCount = lowerBoundWouldRejectCount,
+            lowerBoundFalseRejectCount = lowerBoundFalseRejectCount,
+            lowerBoundRejectedCaughtCount = lowerBoundRejectedCaughtCount
         )
     }
 
@@ -2721,6 +2777,8 @@ internal object SvgPathDataOptimizer {
         var operandCount = 0
         var pathDataChars = 0
         var strokeWidthDeltaChars = 0
+        var strokeWidthValueChars = 0
+        var strokeWidthCount = 0
 
         pathElementRegex.findAll(body).forEach { match ->
             pathCount++
@@ -2734,10 +2792,28 @@ internal object SvgPathDataOptimizer {
             val strokeWidth = attributeValue(element, "android:strokeWidth")
             val numericWidth = strokeWidth?.trim()?.toBigDecimalOrNull()
             if (strokeWidth != null && numericWidth != null) {
+                val trimmedWidth = strokeWidth.trim()
+                strokeWidthValueChars += trimmedWidth.length
+                strokeWidthCount++
                 val scaledWidth = formatBigDecimal(numericWidth.multiply(scale.factor))
-                strokeWidthDeltaChars += scaledWidth.length - strokeWidth.trim().length
+                strokeWidthDeltaChars += scaledWidth.length - trimmedWidth.length
             }
         }
+
+        // G2.21: provable lower bound for the flattened replacement.
+        // Keep every non-pathData/non-stroke-value payload byte, then assume the
+        // mathematically smallest possible spelling for variable numeric data:
+        // one character per numeric operand, one mandatory command character per
+        // non-empty path, and one character per explicit strokeWidth value.
+        // Separators and all additional command letters are allowed to cost zero.
+        // This intentionally underestimates the candidate; it can miss early
+        // rejection opportunities, but it cannot falsely prove a candidate large.
+        val bodyCost = stableXmlPayloadCost(removeOneIndentLevel(body))
+        val minimumPathDataCost = operandCount + pathCount
+        val minimumReplacementCost = (
+            bodyCost - pathDataChars - strokeWidthValueChars +
+                minimumPathDataCost + strokeWidthCount
+            ).coerceAtLeast(0)
 
         return UniformScaleEarlySizeSignal(
             transformAttributeChars = transformAttributeChars,
@@ -2745,7 +2821,9 @@ internal object SvgPathDataOptimizer {
             pathCount = pathCount,
             operandCount = operandCount,
             pathDataChars = pathDataChars,
-            strokeWidthDeltaChars = strokeWidthDeltaChars
+            strokeWidthDeltaChars = strokeWidthDeltaChars,
+            minimumReplacementCost = minimumReplacementCost,
+            minimumPathDataCost = minimumPathDataCost
         )
     }
 
@@ -2921,9 +2999,19 @@ internal object SvgPathDataOptimizer {
                     profiling?.canonicalizationCostingNanos =
                         (profiling?.canonicalizationCostingNanos ?: 0L) + (System.nanoTime() - costingStart)
 
-                    if (replacementCost >= originalCost ||
-                        pathDataGrowth > allowedPathDataGrowth
-                    ) {
+                    val acceptedByExistingGate =
+                        replacementCost < originalCost &&
+                            pathDataGrowth <= allowedPathDataGrowth
+                    profiling?.recordLowerBoundOutcome(
+                        signal = earlySizeSignal,
+                        currentCost = originalCost,
+                        actualCandidateCost = replacementCost,
+                        actualAccepted = acceptedByExistingGate,
+                        originalPathDataCost = originalPathDataCost,
+                        allowedPathDataGrowth = allowedPathDataGrowth
+                    )
+
+                    if (!acceptedByExistingGate) {
                         profiling?.candidatesRejected = (profiling?.candidatesRejected ?: 0) + 1
                         profiling?.recordEarlySizeSignal(earlySizeSignal, accepted = false)
                         rejectedGroupSignatures += signature
