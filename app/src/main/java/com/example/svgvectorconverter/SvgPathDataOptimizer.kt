@@ -5409,6 +5409,357 @@ internal object SvgPathDataOptimizer {
         )
     }
 
+    data class PostScaleDifferentialWitness(
+        val caseIndex: Int,
+        val scaleFactor: String,
+        val pivotX: String,
+        val pivotY: String,
+        val translateX: String,
+        val translateY: String,
+        val sourcePathData: String,
+        val rawScaledPathData: String,
+        val fullPathData: String,
+        val narrowedPathData: String,
+        val geometryMismatch: Boolean
+    )
+
+    data class PostScaleDifferentialSearchResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val invalidGeneratedCases: Int,
+        val byteIdenticalCount: Int,
+        val byteDifferenceCount: Int,
+        val canonicalDifferenceCount: Int,
+        val geometryMismatchCount: Int,
+        val equalLengthDifferenceCount: Int,
+        val fullShorterCount: Int,
+        val narrowedShorterCount: Int,
+        val elapsedNanos: Long,
+        val witnesses: List<PostScaleDifferentialWitness>
+    ) {
+        val elapsedMilliseconds: Double
+            get() = elapsedNanos / 1_000_000.0
+
+        fun toPlainTextReport(): String = buildString {
+            appendLine("G2.25 full vs narrowed post-scale differential stress search")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $invalidGeneratedCases")
+            appendLine("Byte-identical results: $byteIdenticalCount")
+            appendLine("Byte differences: $byteDifferenceCount")
+            appendLine("Canonical representation differences: $canonicalDifferenceCount")
+            appendLine("Sampled geometry mismatches: $geometryMismatchCount")
+            appendLine("Equal-length spelling differences: $equalLengthDifferenceCount")
+            appendLine("Full optimizer shorter: $fullShorterCount")
+            appendLine("Narrowed optimizer shorter: $narrowedShorterCount")
+            appendLine(
+                "Elapsed: " +
+                    String.format(java.util.Locale.US, "%.2f ms", elapsedMilliseconds)
+            )
+            appendLine()
+
+            when {
+                geometryMismatchCount > 0 -> {
+                    appendLine("RESULT: sampled geometry mismatches were detected.")
+                    appendLine(
+                        "Recommendation: do not activate the narrowed production pipeline. " +
+                            "Investigate every geometry mismatch first."
+                    )
+                }
+
+                byteDifferenceCount > 0 -> {
+                    appendLine("RESULT: geometry matched, but byte differences were found.")
+                    appendLine(
+                        "Recommendation: keep the full optimizer authoritative until the " +
+                            "serialization differences are understood."
+                    )
+                }
+
+                else -> {
+                    appendLine("RESULT: full and narrowed post-scale outputs were byte-identical.")
+                    appendLine(
+                        "Recommendation: the narrowed pipeline is a strong candidate for a " +
+                            "guarded production trial after the locked regression suite."
+                    )
+                }
+            }
+
+            if (witnesses.isNotEmpty()) {
+                appendLine()
+                appendLine("Witnesses")
+                witnesses.forEachIndexed { index, witness ->
+                    appendLine()
+                    appendLine("${index + 1}. Case ${witness.caseIndex}")
+                    appendLine("   Geometry mismatch: ${witness.geometryMismatch}")
+                    appendLine("   Scale: ${witness.scaleFactor}")
+                    appendLine("   Pivot: ${witness.pivotX},${witness.pivotY}")
+                    appendLine("   Translate: ${witness.translateX},${witness.translateY}")
+                    appendLine("   Source: ${witness.sourcePathData}")
+                    appendLine("   Raw scaled: ${witness.rawScaledPathData}")
+                    appendLine("   Full: ${witness.fullPathData}")
+                    appendLine("   Narrowed: ${witness.narrowedPathData}")
+                }
+            }
+        }
+    }
+
+    /**
+     * G2.25 Developer Tools diagnostic: differentially stress-tests the full
+     * post-scale optimizer against the G2.24 narrowed post-scale pipeline.
+     * Production conversion never calls this method.
+     */
+    fun runPostScaleDifferentialStressSearch(
+        caseCount: Int = 25_000,
+        seed: Long = 0x6215_2026L,
+        maximumWitnesses: Int = 20
+    ): PostScaleDifferentialSearchResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        require(maximumWitnesses >= 0) { "maximumWitnesses must be non-negative" }
+
+        val started = System.nanoTime()
+        val random = Random(seed)
+        val witnesses = mutableListOf<PostScaleDifferentialWitness>()
+
+        var generatedCases = 0
+        var validCases = 0
+        var invalidGeneratedCases = 0
+        var byteIdenticalCount = 0
+        var byteDifferenceCount = 0
+        var canonicalDifferenceCount = 0
+        var geometryMismatchCount = 0
+        var equalLengthDifferenceCount = 0
+        var fullShorterCount = 0
+        var narrowedShorterCount = 0
+
+        repeat(caseCount) { caseIndex ->
+            generatedCases++
+            val source = generateDifferentialStressPath(random)
+            val factor = randomPositiveScaleFactor(random)
+            val pivotX = randomTransformNumber(random)
+            val pivotY = randomTransformNumber(random)
+            val translateX = randomTransformNumber(random)
+            val translateY = randomTransformNumber(random)
+
+            val rawScaled = scalePathDataForDifferentialSearch(
+                source,
+                factor,
+                pivotX,
+                pivotY,
+                translateX,
+                translateY
+            )
+
+            if (rawScaled == null) {
+                invalidGeneratedCases++
+                return@repeat
+            }
+
+            val full = optimizePathData(rawScaled).pathData
+            val narrowed = optimizePostScaleNarrowedForComparison(rawScaled)
+            if (narrowed == null) {
+                invalidGeneratedCases++
+                return@repeat
+            }
+
+            val fullSemantics = canonicalPathSemantics(full)
+            val narrowedSemantics = canonicalPathSemantics(narrowed)
+            if (fullSemantics == null || narrowedSemantics == null) {
+                invalidGeneratedCases++
+                return@repeat
+            }
+
+            val canonicalDifference = fullSemantics != narrowedSemantics
+            if (canonicalDifference) canonicalDifferenceCount++
+
+            val geometryMismatch =
+                canonicalDifference && !sampledPathGeometryEquivalent(full, narrowed)
+
+            validCases++
+            if (geometryMismatch) geometryMismatchCount++
+
+            if (full == narrowed) {
+                byteIdenticalCount++
+            } else {
+                byteDifferenceCount++
+                when {
+                    full.length < narrowed.length -> fullShorterCount++
+                    narrowed.length < full.length -> narrowedShorterCount++
+                    else -> equalLengthDifferenceCount++
+                }
+            }
+
+            if (geometryMismatch || full != narrowed) {
+                val witness = PostScaleDifferentialWitness(
+                    caseIndex = caseIndex + 1,
+                    scaleFactor = formatBigDecimal(factor),
+                    pivotX = formatBigDecimal(pivotX),
+                    pivotY = formatBigDecimal(pivotY),
+                    translateX = formatBigDecimal(translateX),
+                    translateY = formatBigDecimal(translateY),
+                    sourcePathData = source,
+                    rawScaledPathData = rawScaled,
+                    fullPathData = full,
+                    narrowedPathData = narrowed,
+                    geometryMismatch = geometryMismatch
+                )
+
+                if (witnesses.size < maximumWitnesses) {
+                    witnesses += witness
+                } else if (geometryMismatch) {
+                    val replaceIndex = witnesses.indexOfFirst { !it.geometryMismatch }
+                    if (replaceIndex >= 0) witnesses[replaceIndex] = witness
+                }
+            }
+        }
+
+        return PostScaleDifferentialSearchResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generatedCases,
+            validCases = validCases,
+            invalidGeneratedCases = invalidGeneratedCases,
+            byteIdenticalCount = byteIdenticalCount,
+            byteDifferenceCount = byteDifferenceCount,
+            canonicalDifferenceCount = canonicalDifferenceCount,
+            geometryMismatchCount = geometryMismatchCount,
+            equalLengthDifferenceCount = equalLengthDifferenceCount,
+            fullShorterCount = fullShorterCount,
+            narrowedShorterCount = narrowedShorterCount,
+            elapsedNanos = System.nanoTime() - started,
+            witnesses = witnesses
+        )
+    }
+
+    private fun sampledPathGeometryEquivalent(first: String, second: String): Boolean {
+        val firstMeasured = SvgPathSampler.measure(first, curveSteps = 64) ?: return false
+        val secondMeasured = SvgPathSampler.measure(second, curveSteps = 64) ?: return false
+
+        fun closeEnough(a: Float, b: Float): Boolean {
+            val scale = maxOf(1.0f, kotlin.math.abs(a), kotlin.math.abs(b))
+            return kotlin.math.abs(a - b) <= 0.0005f * scale
+        }
+
+        if (!closeEnough(firstMeasured.length, secondMeasured.length)) return false
+
+        val sampleCount = 96
+        for (index in 0..sampleCount) {
+            val fraction = index.toFloat() / sampleCount.toFloat()
+            val firstSample = firstMeasured.sample(firstMeasured.length * fraction) ?: return false
+            val secondSample = secondMeasured.sample(secondMeasured.length * fraction) ?: return false
+            if (!closeEnough(firstSample.x, secondSample.x) ||
+                !closeEnough(firstSample.y, secondSample.y)
+            ) return false
+        }
+        return true
+    }
+
+    private fun randomPositiveScaleFactor(random: Random): BigDecimal {
+        val common = listOf(
+            "0.1", "0.125", "0.25", "0.3333333333333333", "0.5", "0.75",
+            "1", "1.25", "1.5", "2", "2.5", "3", "4", "8", "10",
+            "0.000001", "100000"
+        )
+        return if (random.nextInt(100) < 70) {
+            BigDecimal(common[random.nextInt(common.size)])
+        } else {
+            BigDecimal(random.nextInt(1, 10_001)).movePointLeft(random.nextInt(1, 5))
+        }
+    }
+
+    private fun randomTransformNumber(random: Random): BigDecimal {
+        return if (random.nextInt(100) < 45) BigDecimal.ZERO else randomStressNumber(random)
+    }
+
+    private fun scalePathDataForDifferentialSearch(
+        pathData: String,
+        factor: BigDecimal,
+        pivotX: BigDecimal,
+        pivotY: BigDecimal,
+        translateX: BigDecimal,
+        translateY: BigDecimal
+    ): String? {
+        if (factor.compareTo(BigDecimal.ZERO) <= 0) return null
+        val tokens = tokenRegex.findAll(pathData).map { it.value }.toList()
+        if (tokens.isEmpty()) return null
+        val segments = parseNormalizedSegmentsFromTokens(tokens) ?: return null
+        if (segments.isEmpty()) return null
+
+        fun scaledX(value: BigDecimal): BigDecimal =
+            pivotX.add(value.subtract(pivotX).multiply(factor)).add(translateX)
+        fun scaledY(value: BigDecimal): BigDecimal =
+            pivotY.add(value.subtract(pivotY).multiply(factor)).add(translateY)
+
+        val output = StringBuilder(pathData.length + 24)
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val absolute = absoluteValuesFor(segment, currentX, currentY)
+            val scaled = when (upper) {
+                'M', 'L', 'T' -> listOf(scaledX(absolute[0]), scaledY(absolute[1]))
+                'H' -> listOf(scaledX(absolute[0]))
+                'V' -> listOf(scaledY(absolute[0]))
+                'C' -> listOf(
+                    scaledX(absolute[0]), scaledY(absolute[1]),
+                    scaledX(absolute[2]), scaledY(absolute[3]),
+                    scaledX(absolute[4]), scaledY(absolute[5])
+                )
+                'S', 'Q' -> listOf(
+                    scaledX(absolute[0]), scaledY(absolute[1]),
+                    scaledX(absolute[2]), scaledY(absolute[3])
+                )
+                'A' -> listOf(
+                    absolute[0].multiply(factor),
+                    absolute[1].multiply(factor),
+                    absolute[2], absolute[3], absolute[4],
+                    scaledX(absolute[5]), scaledY(absolute[6])
+                )
+                'Z' -> emptyList()
+                else -> return null
+            }
+
+            output.append(upper)
+            scaled.forEachIndexed { index, value ->
+                if (index > 0) output.append(',')
+                output.append(formatBigDecimal(value))
+            }
+
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
+                    if (upper == 'M') {
+                        subpathX = currentX
+                        subpathY = currentY
+                    }
+                }
+                'H' -> currentX = absolute[0]
+                'V' -> currentY = absolute[0]
+                'C', 'S', 'Q' -> {
+                    currentX = absolute[absolute.size - 2]
+                    currentY = absolute[absolute.size - 1]
+                }
+                'A' -> {
+                    currentX = absolute[5]
+                    currentY = absolute[6]
+                }
+                'Z' -> {
+                    currentX = subpathX
+                    currentY = subpathY
+                }
+            }
+        }
+        return output.toString()
+    }
+
     private fun generateDifferentialStressPath(
         random: Random
     ): String {

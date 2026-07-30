@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var reportActionsRow: LinearLayout
     private var currentRegressionReport = ""
     private var currentDifferentialSearchReport = ""
+    private var currentPostScaleDifferentialReport = ""
 
     private fun makeButton(
         label: String,
@@ -159,6 +160,19 @@ class MainActivity : ComponentActivity() {
                 currentDifferentialSearchReport
             )
             toast("Differential search report saved")
+        }
+    }
+
+    private val savePostScaleDifferentialReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentPostScaleDifferentialReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(
+                this,
+                uri,
+                currentPostScaleDifferentialReport
+            )
+            toast("G2.25 differential search report saved")
         }
     }
 
@@ -723,6 +737,30 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        val postScaleDifferentialButton =
+            makeButton("Run G2.25 Post-Scale Differential Search") {
+                runPostScaleDifferentialSearch()
+            }
+        layout.addView(
+            postScaleDifferentialButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Generates deterministic transform-heavy paths, applies
+                positive uniform scales, then compares the current full
+                post-scale optimizer with the G2.24 narrowed pipeline.
+                Checks both byte equality and canonical path geometry.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
         val diagnosticsHeading = makeText(
             "Future Diagnostics",
             16f,
@@ -942,6 +980,195 @@ class MainActivity : ComponentActivity() {
             )
         )
         toast("Differential search report copied")
+    }
+
+    private fun runPostScaleDifferentialSearch() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+
+        val progressBar = ProgressBar(this)
+        val statusText = makeText(
+            "Generating, scaling, and comparing deterministic paths…",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply {
+            setPadding(0, 24, 0, 0)
+        }
+
+        val detailText = makeText(
+            "Compares full and narrowed post-scale optimization off the UI thread.",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply {
+            setPadding(0, 12, 0, 0)
+        }
+
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(detailText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G2.25 Post-Scale Differential Search")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgPostScaleDifferentialSearch.runDefault()
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("G2.25 automated post-scale differential stress search")
+                    appendLine()
+                    appendLine("RESULT: The search could not be completed.")
+                    appendLine()
+                    appendLine(throwable.message ?: throwable::class.java.simpleName)
+                    appendLine()
+                    appendLine(
+                        "Check that SvgPostScaleDifferentialSearch.kt and the " +
+                            "G2.25 SvgPathDataOptimizer.kt are included in the app."
+                    )
+                }
+            }
+
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentPostScaleDifferentialReport = report
+                    showPostScaleDifferentialResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showPostScaleDifferentialResultsDialog(report: String) {
+        val failed = report.contains("could not be completed")
+        val geometryMismatch =
+            report.contains("Sampled geometry mismatches:") &&
+                !report.contains("Sampled geometry mismatches: 0")
+        val byteDifference =
+            report.contains("Byte differences:") &&
+                !report.contains("Byte differences: 0")
+
+        val summaryText: String
+        val summaryColor: Int
+
+        when {
+            failed -> {
+                summaryText = "✕ Search could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+
+            geometryMismatch -> {
+                summaryText = "⚠ Sampled geometry mismatches detected"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+
+            byteDifference -> {
+                summaryText = "⚠ Full/narrowed serialization differences detected"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+
+            else -> {
+                summaryText = "✓ Full and narrowed outputs matched"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+
+        layout.addView(
+            makeText(
+                summaryText,
+                18f,
+                summaryColor,
+                Gravity.START,
+                paddingBottom = 16
+            )
+        )
+
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+
+        val reportScroll = ScrollView(this).apply {
+            addView(reportView)
+        }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val copyButton = makeButton("Copy Results") {
+            copyPostScaleDifferentialReport()
+        }
+        val saveButton = makeButton("Save .txt") {
+            savePostScaleDifferentialReport.launch(
+                "g2_25_post_scale_differential_search_report.txt"
+            )
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+
+        val rerunButton = makeButton("Run Again") {
+            runPostScaleDifferentialSearch()
+        }
+        layout.addView(
+            rerunButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G2.25 Differential Search Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+
+        dialog.show()
+    }
+
+    private fun copyPostScaleDifferentialReport() {
+        if (currentPostScaleDifferentialReport.isBlank()) {
+            toast("No G2.25 differential search report to copy")
+            return
+        }
+
+        val clipboard =
+            getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "g2_25_post_scale_differential_search_report.txt",
+                currentPostScaleDifferentialReport
+            )
+        )
+        toast("G2.25 differential search report copied")
     }
 
     private fun runBundledRegressionSuite() {
