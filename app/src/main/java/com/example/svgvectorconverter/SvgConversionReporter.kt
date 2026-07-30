@@ -1720,8 +1720,8 @@ object SvgConversionReporter {
 
         append("\nCurve parse / rebuild reuse\n")
         append("• Curve parse calls: ${data.optimizationCurveParseCalls}\n")
-        append("• Duplicate parse inputs: ${data.optimizationCurveDuplicateParseInputs}\n")
-        append("• Second-pass re-parses of unchanged input: ${data.optimizationCurveSecondPassReparsedUnchangedInput}\n")
+        append("• Duplicate second-pass parses avoided: ${data.optimizationCurveDuplicateParseInputs}\n")
+        append("• Parsed representations reused by second pass: ${data.optimizationCurveSecondPassReparsedUnchangedInput}\n")
         append("• Paths changed by cubic → quadratic: ${data.optimizationCurveCubicChangedPaths}\n")
         append("• Paths changed by straight Bézier → line: ${data.optimizationCurveStraightChangedPaths}\n")
         append("• Rebuild attempts: ${data.optimizationCurveRebuildAttempts}\n")

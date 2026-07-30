@@ -5300,15 +5300,22 @@ internal object SvgPathDataOptimizer {
             degenerateArcCleanup.pathData, profiling
         )
         profiling?.let { it.curveCubicToQuadraticNanos += System.nanoTime() - cubicStartTime }
-        if (profiling != null &&
+        val reusableCurveSegments = if (
             cubicToQuadraticCleanup.pathData == degenerateArcCleanup.pathData
         ) {
+            cubicToQuadraticCleanup.reusableSegments
+        } else {
+            null
+        }
+        if (profiling != null && reusableCurveSegments != null) {
             profiling.curveDuplicateParseInputs += 1
             profiling.curveSecondPassReparsedUnchangedInput += 1
         }
         val straightStartTime = System.nanoTime()
         val straightBezierCleanup = simplifyStraightBezierCurves(
-            cubicToQuadraticCleanup.pathData, profiling
+            cubicToQuadraticCleanup.pathData,
+            profiling,
+            preParsedSegments = reusableCurveSegments
         )
         profiling?.let {
             it.curveStraightBezierNanos += System.nanoTime() - straightStartTime
@@ -6084,7 +6091,8 @@ internal object SvgPathDataOptimizer {
 
     private data class CubicToQuadraticCleanupResult(
         val pathData: String,
-        val reducedCount: Int
+        val reducedCount: Int,
+        val reusableSegments: List<ParsedSegment>? = null
     )
 
     /**
@@ -6111,7 +6119,7 @@ internal object SvgPathDataOptimizer {
             ?: return CubicToQuadraticCleanupResult(pathData, 0)
         if (segments.isEmpty()) {
             profiling?.let { it.curveCubicParseSetupNanos += System.nanoTime() - parseStart }
-            return CubicToQuadraticCleanupResult(pathData, 0)
+            return CubicToQuadraticCleanupResult(pathData, 0, segments)
         }
         profiling?.let { it.curveCubicParseSetupNanos += System.nanoTime() - parseStart }
         val scanStart = System.nanoTime()
@@ -6219,7 +6227,7 @@ internal object SvgPathDataOptimizer {
 
         profiling?.let { it.curveCubicScanNanos += System.nanoTime() - scanStart }
         if (reduced == 0) {
-            return CubicToQuadraticCleanupResult(pathData, 0)
+            return CubicToQuadraticCleanupResult(pathData, 0, segments)
         }
 
         profiling?.let { it.curveRebuildAttempts += 1 }
@@ -6254,10 +6262,11 @@ internal object SvgPathDataOptimizer {
         return if (accepted) {
             CubicToQuadraticCleanupResult(
                 pathData = rebuilt,
-                reducedCount = reduced
+                reducedCount = reduced,
+                reusableSegments = null
             )
         } else {
-            CubicToQuadraticCleanupResult(pathData, 0)
+            CubicToQuadraticCleanupResult(pathData, 0, segments)
         }
     }
 
@@ -6412,12 +6421,17 @@ internal object SvgPathDataOptimizer {
      */
     private fun simplifyStraightBezierCurves(
         pathData: String,
-        profiling: PathSyntaxProfiling? = null
+        profiling: PathSyntaxProfiling? = null,
+        preParsedSegments: List<ParsedSegment>? = null
     ): StraightBezierCleanupResult {
-        profiling?.let { it.curveParseCalls += 1 }
         val parseStart = System.nanoTime()
-        val segments = parseNormalizedSegments(pathData)
-            ?: return StraightBezierCleanupResult(pathData, 0)
+        val segments = if (preParsedSegments != null) {
+            preParsedSegments
+        } else {
+            profiling?.let { it.curveParseCalls += 1 }
+            parseNormalizedSegments(pathData)
+                ?: return StraightBezierCleanupResult(pathData, 0)
+        }
         if (segments.isEmpty()) {
             profiling?.let { it.curveStraightParseSetupNanos += System.nanoTime() - parseStart }
             return StraightBezierCleanupResult(pathData, 0)
