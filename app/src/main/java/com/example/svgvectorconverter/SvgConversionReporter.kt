@@ -1904,8 +1904,7 @@ object SvgConversionReporter {
 
         val compared = data.optimizationTransformUniformScalePostScaleNarrowCompared
         if (compared > 0) {
-            append("
-")
+            append("\n")
             append("      ▫ Full vs narrowed post-scale comparison (profiling only)\n")
             append("        · Paths compared: ").append(compared).append('\n')
             append("        · Byte-identical results: ")
