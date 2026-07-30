@@ -1534,11 +1534,12 @@ object SvgConversionReporter {
                         stages = listOf(
                             "Previous-command state" to
                                 data.optimizationPathCommandGlobalStateKeyPreviousCommandNanos,
-                            "Previous-number formatting" to
+                            "Previous-number state reuse" to
                                 data.optimizationPathCommandGlobalStateKeyPreviousNumberNanos,
                             "Previous-axis-direction state" to
                                 data.optimizationPathCommandGlobalStateKeyAxisDirectionNanos
-                        )
+                        ),
+                        showZeroStages = true
                     )
                     appendDeepTimingBreakdown(
                         parentLabel = "Best-state comparison",
@@ -1663,20 +1664,38 @@ object SvgConversionReporter {
     private fun StringBuilder.appendDeepTimingBreakdown(
         parentLabel: String,
         parentNanos: Long,
-        stages: List<Pair<String, Long>>
+        stages: List<Pair<String, Long>>,
+        showZeroStages: Boolean = false
     ) {
         if (parentNanos <= 0L) return
-        val measuredStages = stages.filter { (_, durationNanos) -> durationNanos > 0L }
+        val measuredStages = if (showZeroStages) {
+            stages
+        } else {
+            stages.filter { (_, durationNanos) -> durationNanos > 0L }
+        }
         if (measuredStages.isEmpty()) return
 
         appendLine("    ▫ $parentLabel detail")
         measuredStages.forEach { (label, durationNanos) ->
             val percentage = nanosPercentageLabel(durationNanos, parentNanos)
             appendLine(
-                "      · $label: ${formatNanosAsMilliseconds(durationNanos)} " +
+                "      · $label: ${formatDeepProfileDuration(durationNanos)} " +
                     "($percentage of $parentLabel)"
             )
         }
+    }
+
+    private fun formatDeepProfileDuration(durationNanos: Long): String {
+        if (durationNanos <= 0L) return "0 ms"
+        if (durationNanos < 1_000L) return "<0.001 ms"
+        if (durationNanos < 100_000L) {
+            return String.format(
+                java.util.Locale.US,
+                "%.3f ms",
+                durationNanos / 1_000_000.0
+            )
+        }
+        return formatNanosAsMilliseconds(durationNanos)
     }
 
     private fun StringBuilder.appendNestedTimingBreakdown(

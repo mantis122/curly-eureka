@@ -6724,7 +6724,11 @@ internal object SvgPathDataOptimizer {
     private data class CommandSequenceCandidate(
         val command: Char,
         val values: List<BigDecimal>,
-        val axisDirection: Int?
+        val axisDirection: Int?,
+        // G2.15: exact carry-forward of the canonical previous-number key
+        // spelling. This is the same formatBigDecimal() result that was
+        // previously recomputed once for every reachable DP state.
+        val previousNumberState: String?
     )
 
     private data class GlobalSegmentEncodingCacheKey(
@@ -6830,7 +6834,8 @@ internal object SvgPathDataOptimizer {
                 candidates += CommandSequenceCandidate(
                     command = command,
                     values = values,
-                    axisDirection = direction
+                    axisDirection = direction,
+                    previousNumberState = values.lastOrNull()?.let(::formatBigDecimal)
                 )
             }
 
@@ -6930,9 +6935,10 @@ internal object SvgPathDataOptimizer {
                     }
 
                     val previousNumberStartTime = System.nanoTime()
-                    val nextPreviousNumber = candidate.values
-                        .lastOrNull()
-                        ?.let(::formatBigDecimal)
+                    // G2.15: reuse the exact canonical spelling prepared once
+                    // for this candidate instead of re-running
+                    // formatBigDecimal() for every reachable source state.
+                    val nextPreviousNumber = candidate.previousNumberState
                     profiling?.let {
                         it.commandGlobalStateKeyPreviousNumberNanos +=
                             System.nanoTime() - previousNumberStartTime
