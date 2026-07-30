@@ -3248,18 +3248,50 @@ internal object SvgPathDataOptimizer {
     }
 
     /**
-     * G2.24 profiling-only narrowed post-scale pipeline.
+     * G2.26 comparison-only post-scale stage-addback pipeline.
      *
-     * This deliberately mirrors only the two families that G2.23 showed were
-     * potentially relevant after uniform positive scaling:
-     * 1) the existing initial syntax / exact numeric normalization; and
-     * 2) the existing local + global command minimizers.
-     *
-     * The result is NEVER used as production output in G2.24. The full
-     * optimizePathData() result remains authoritative and this helper exists
-     * only for byte-for-byte side-by-side comparison.
+     * The full optimizer remains production-authoritative. These candidate
+     * pipelines deliberately reuse the exact production stage functions in
+     * their production order, omitting only stages not enabled by [pipeline].
      */
-    private fun optimizePostScaleNarrowedForComparison(pathData: String): String? {
+    private enum class PostScaleAddbackPipeline(
+        val displayName: String,
+        val includeRedundantGeometry: Boolean,
+        val includeArcCleanup: Boolean,
+        val includeCurveCleanup: Boolean,
+        val includeCollinearCleanup: Boolean,
+        val includeGlobalNumeric: Boolean
+    ) {
+        P1_COMMAND_ONLY(
+            "P1 Syntax + command minimization",
+            false, false, false, false, false
+        ),
+        P2_ARC(
+            "P2 P1 + arc cleanup",
+            false, true, false, false, false
+        ),
+        P3_ARC_NUMERIC(
+            "P3 P2 + global numeric serialization",
+            false, true, false, false, true
+        ),
+        P4_REDUNDANT_ARC_NUMERIC(
+            "P4 P3 + redundant geometry cleanup",
+            true, true, false, false, true
+        ),
+        P5_CURVE(
+            "P5 P4 + curve simplification",
+            true, true, true, false, true
+        ),
+        P6_COLLINEAR(
+            "P6 P5 + collinear consolidation",
+            true, true, true, true, true
+        )
+    }
+
+    private fun optimizePostScaleStageAddbackForComparison(
+        pathData: String,
+        pipeline: PostScaleAddbackPipeline
+    ): String? {
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) return pathData.trim()
 
@@ -3272,19 +3304,17 @@ internal object SvgPathDataOptimizer {
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) return null
 
-        val output = StringBuilder(pathData.length)
+        val syntaxOutput = StringBuilder(pathData.length)
         var activeCommand: Char? = null
         var previousWasNumber = false
-
         for (match in matches) {
             val token = match.value
             if (isCommand(token)) {
                 val command = token[0]
                 val canUseImplicitRepeat =
                     activeCommand == command && command !in charArrayOf('M', 'm', 'Z', 'z')
-
                 if (!canUseImplicitRepeat) {
-                    output.append(command)
+                    syntaxOutput.append(command)
                     previousWasNumber = false
                 }
                 activeCommand = command
@@ -3292,15 +3322,64 @@ internal object SvgPathDataOptimizer {
                 val normalized = token.toBigDecimalOrNull()
                     ?.let(::formatPathNumber)
                     ?: normalizeNumber(token)
-                if (previousWasNumber) output.append(',')
-                output.append(normalized)
+                if (previousWasNumber) syntaxOutput.append(',')
+                syntaxOutput.append(normalized)
                 previousWasNumber = true
             }
         }
 
-        val commandOptimization = shortenPathCommands(output.toString())
-        return globallyMinimizeCommandSequence(commandOptimization.pathData).pathData
+        var current = syntaxOutput.toString()
+
+        if (pipeline.includeRedundantGeometry) {
+            current = removeRedundantNonDrawingSegments(current).pathData
+        }
+
+        if (pipeline.includeArcCleanup) {
+            val hasArcCommands = matches.any { match ->
+                val token = match.value
+                isCommand(token) && token[0].uppercaseChar() == 'A'
+            }
+            if (hasArcCommands) {
+                current = canonicalizeArcRadii(current).pathData
+                current = canonicalizeArcRotations(current).pathData
+                current = globallyMinimizeArcRepresentations(current).pathData
+                current = reduceArcRotationsByHalfTurns(current).pathData
+                current = minimizeArcAxisRepresentation(current).pathData
+                current = simplifyDegenerateArcs(current).pathData
+            }
+        }
+
+        if (pipeline.includeCurveCleanup) {
+            val cubic = reduceExactCubicCurvesToQuadratic(current, null)
+            val reusableSegments = if (cubic.pathData == current) cubic.reusableSegments else null
+            current = simplifyStraightBezierCurves(
+                cubic.pathData,
+                null,
+                preParsedSegments = reusableSegments
+            ).pathData
+        }
+
+        if (pipeline.includeCollinearCleanup) {
+            current = consolidateConsecutiveCollinearLineRuns(current).pathData
+        }
+
+        current = shortenPathCommands(current, null).pathData
+        current = globallyMinimizeCommandSequence(current, null).pathData
+
+        if (pipeline.includeGlobalNumeric) {
+            current = globallyOptimizeNumericSerialization(current).pathData
+        }
+
+        return current
     }
+
+    /** G2.24/G2.25 baseline retained for the existing Developer Tools search. */
+    private fun optimizePostScaleNarrowedForComparison(pathData: String): String? =
+        optimizePostScaleStageAddbackForComparison(
+            pathData,
+            PostScaleAddbackPipeline.P1_COMMAND_ONLY
+        )
+
 
     private fun scalePathData(
         pathData: String,
@@ -5632,6 +5711,282 @@ internal object SvgPathDataOptimizer {
             narrowedShorterCount = narrowedShorterCount,
             elapsedNanos = System.nanoTime() - started,
             witnesses = witnesses
+        )
+    }
+
+    data class PostScaleStageAddbackWitness(
+        val pipelineName: String,
+        val caseIndex: Int,
+        val scaleFactor: String,
+        val sourcePathData: String,
+        val rawScaledPathData: String,
+        val fullPathData: String,
+        val candidatePathData: String,
+        val sampledGeometryMismatch: Boolean
+    )
+
+    data class PostScaleStageAddbackPipelineResult(
+        val pipelineName: String,
+        val comparedCases: Int,
+        val byteIdenticalCount: Int,
+        val byteDifferenceCount: Int,
+        val canonicalDifferenceCount: Int,
+        val geometrySamplesChecked: Int,
+        val sampledGeometryMismatchCount: Int,
+        val equalLengthDifferenceCount: Int,
+        val fullShorterCount: Int,
+        val candidateShorterCount: Int,
+        val candidateNanos: Long,
+        val witnesses: List<PostScaleStageAddbackWitness>
+    ) {
+        val candidateMilliseconds: Double
+            get() = candidateNanos / 1_000_000.0
+    }
+
+    data class PostScaleStageAddbackSearchResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val invalidGeneratedCases: Int,
+        val fullOptimizerNanos: Long,
+        val elapsedNanos: Long,
+        val pipelineResults: List<PostScaleStageAddbackPipelineResult>
+    ) {
+        val elapsedMilliseconds: Double
+            get() = elapsedNanos / 1_000_000.0
+
+        fun toPlainTextReport(): String = buildString {
+            appendLine("G2.26 post-scale stage-addback differential stress search")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid source cases: $validCases")
+            appendLine("Rejected generated cases: $invalidGeneratedCases")
+            appendLine(
+                "Full optimizer time: " +
+                    String.format(java.util.Locale.US, "%.2f ms", fullOptimizerNanos / 1_000_000.0)
+            )
+            appendLine(
+                "Elapsed: " +
+                    String.format(java.util.Locale.US, "%.2f ms", elapsedMilliseconds)
+            )
+
+            pipelineResults.forEach { result ->
+                appendLine()
+                appendLine(result.pipelineName)
+                appendLine("  Compared: ${result.comparedCases}")
+                appendLine("  Byte-identical: ${result.byteIdenticalCount}")
+                appendLine("  Byte differences: ${result.byteDifferenceCount}")
+                appendLine("  Canonical differences: ${result.canonicalDifferenceCount}")
+                appendLine("  Geometry samples checked: ${result.geometrySamplesChecked}")
+                appendLine("  Sampled geometry mismatches: ${result.sampledGeometryMismatchCount}")
+                appendLine("  Equal-length differences: ${result.equalLengthDifferenceCount}")
+                appendLine("  Full optimizer shorter: ${result.fullShorterCount}")
+                appendLine("  Candidate shorter: ${result.candidateShorterCount}")
+                appendLine(
+                    "  Candidate time: " +
+                        String.format(java.util.Locale.US, "%.2f ms", result.candidateMilliseconds)
+                )
+            }
+
+            val exact = pipelineResults.firstOrNull {
+                it.comparedCases == validCases &&
+                    it.byteDifferenceCount == 0
+            }
+            appendLine()
+            when {
+                exact != null -> {
+                    appendLine("RESULT: an exact stage-addback pipeline was found.")
+                    appendLine("Smallest exact pipeline: ${exact.pipelineName}")
+                    appendLine(
+                        "Recommendation: validate this pipeline with the locked suite and a " +
+                            "dedicated production-fallback trial before activation."
+                    )
+                }
+                else -> {
+                    appendLine("RESULT: no tested reduced pipeline was byte-identical on this seed.")
+                    appendLine(
+                        "Recommendation: keep the full post-scale optimizer authoritative and " +
+                            "inspect the earliest remaining difference class."
+                    )
+                }
+            }
+
+            val witnessList = pipelineResults.flatMap { it.witnesses }
+            if (witnessList.isNotEmpty()) {
+                appendLine()
+                appendLine("Witnesses")
+                witnessList.forEachIndexed { index, witness ->
+                    appendLine()
+                    appendLine("${index + 1}. ${witness.pipelineName} — case ${witness.caseIndex}")
+                    appendLine("   Sampled geometry mismatch: ${witness.sampledGeometryMismatch}")
+                    appendLine("   Scale: ${witness.scaleFactor}")
+                    appendLine("   Source: ${witness.sourcePathData}")
+                    appendLine("   Raw scaled: ${witness.rawScaledPathData}")
+                    appendLine("   Full: ${witness.fullPathData}")
+                    appendLine("   Candidate: ${witness.candidatePathData}")
+                }
+            }
+        }
+    }
+
+    /**
+     * G2.26 Developer Tools diagnostic. Evaluates progressively richer
+     * post-scale pipelines against the unchanged full optimizer over one
+     * deterministic generated corpus.
+     *
+     * Geometry sampling is intentionally bounded per pipeline because exact
+     * byte identity is the production-switch criterion; sampling is diagnostic
+     * context for non-identical candidates, not an acceptance substitute.
+     */
+    fun runPostScaleStageAddbackStressSearch(
+        caseCount: Int = 25_000,
+        seed: Long = 0x6216_2026L,
+        maximumWitnessesPerPipeline: Int = 2,
+        maximumGeometrySamplesPerPipeline: Int = 2_000
+    ): PostScaleStageAddbackSearchResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        require(maximumWitnessesPerPipeline >= 0) { "maximumWitnessesPerPipeline must be non-negative" }
+        require(maximumGeometrySamplesPerPipeline >= 0) { "maximumGeometrySamplesPerPipeline must be non-negative" }
+
+        data class MutablePipelineStats(
+            var compared: Int = 0,
+            var identical: Int = 0,
+            var differences: Int = 0,
+            var canonicalDifferences: Int = 0,
+            var geometrySamples: Int = 0,
+            var geometryMismatches: Int = 0,
+            var equalLength: Int = 0,
+            var fullShorter: Int = 0,
+            var candidateShorter: Int = 0,
+            var nanos: Long = 0,
+            val witnesses: MutableList<PostScaleStageAddbackWitness> = mutableListOf()
+        )
+
+        val started = System.nanoTime()
+        val random = Random(seed)
+        val pipelines = PostScaleAddbackPipeline.entries
+        val stats = pipelines.associateWith { MutablePipelineStats() }
+
+        var generatedCases = 0
+        var validCases = 0
+        var invalidGeneratedCases = 0
+        var fullOptimizerNanos = 0L
+
+        repeat(caseCount) { caseIndex ->
+            generatedCases++
+            val source = generateDifferentialStressPath(random)
+            val factor = randomPositiveScaleFactor(random)
+            val pivotX = randomTransformNumber(random)
+            val pivotY = randomTransformNumber(random)
+            val translateX = randomTransformNumber(random)
+            val translateY = randomTransformNumber(random)
+
+            val rawScaled = scalePathDataForDifferentialSearch(
+                source,
+                factor,
+                pivotX,
+                pivotY,
+                translateX,
+                translateY
+            )
+            if (rawScaled == null) {
+                invalidGeneratedCases++
+                return@repeat
+            }
+
+            val fullStart = System.nanoTime()
+            val full = optimizePathData(rawScaled).pathData
+            fullOptimizerNanos += System.nanoTime() - fullStart
+            val fullSemantics = canonicalPathSemantics(full)
+            if (fullSemantics == null) {
+                invalidGeneratedCases++
+                return@repeat
+            }
+
+            validCases++
+            pipelines.forEach { pipeline ->
+                val pipelineStats = stats.getValue(pipeline)
+                val candidateStart = System.nanoTime()
+                val candidate = optimizePostScaleStageAddbackForComparison(rawScaled, pipeline)
+                pipelineStats.nanos += System.nanoTime() - candidateStart
+                if (candidate == null) return@forEach
+
+                val candidateSemantics = canonicalPathSemantics(candidate) ?: return@forEach
+                pipelineStats.compared++
+
+                val identical = candidate == full
+                if (identical) {
+                    pipelineStats.identical++
+                } else {
+                    pipelineStats.differences++
+                    when {
+                        full.length < candidate.length -> pipelineStats.fullShorter++
+                        candidate.length < full.length -> pipelineStats.candidateShorter++
+                        else -> pipelineStats.equalLength++
+                    }
+                }
+
+                val canonicalDifference = candidateSemantics != fullSemantics
+                if (canonicalDifference) pipelineStats.canonicalDifferences++
+
+                var sampledMismatch = false
+                if (
+                    canonicalDifference &&
+                    pipelineStats.geometrySamples < maximumGeometrySamplesPerPipeline
+                ) {
+                    pipelineStats.geometrySamples++
+                    sampledMismatch = !sampledPathGeometryEquivalent(full, candidate)
+                    if (sampledMismatch) pipelineStats.geometryMismatches++
+                }
+
+                if (
+                    !identical &&
+                    pipelineStats.witnesses.size < maximumWitnessesPerPipeline
+                ) {
+                    pipelineStats.witnesses += PostScaleStageAddbackWitness(
+                        pipelineName = pipeline.displayName,
+                        caseIndex = caseIndex + 1,
+                        scaleFactor = formatBigDecimal(factor),
+                        sourcePathData = source,
+                        rawScaledPathData = rawScaled,
+                        fullPathData = full,
+                        candidatePathData = candidate,
+                        sampledGeometryMismatch = sampledMismatch
+                    )
+                }
+            }
+        }
+
+        val results = pipelines.map { pipeline ->
+            val s = stats.getValue(pipeline)
+            PostScaleStageAddbackPipelineResult(
+                pipelineName = pipeline.displayName,
+                comparedCases = s.compared,
+                byteIdenticalCount = s.identical,
+                byteDifferenceCount = s.differences,
+                canonicalDifferenceCount = s.canonicalDifferences,
+                geometrySamplesChecked = s.geometrySamples,
+                sampledGeometryMismatchCount = s.geometryMismatches,
+                equalLengthDifferenceCount = s.equalLength,
+                fullShorterCount = s.fullShorter,
+                candidateShorterCount = s.candidateShorter,
+                candidateNanos = s.nanos,
+                witnesses = s.witnesses.toList()
+            )
+        }
+
+        return PostScaleStageAddbackSearchResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generatedCases,
+            validCases = validCases,
+            invalidGeneratedCases = invalidGeneratedCases,
+            fullOptimizerNanos = fullOptimizerNanos,
+            elapsedNanos = System.nanoTime() - started,
+            pipelineResults = results
         )
     }
 

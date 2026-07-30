@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
     private var currentRegressionReport = ""
     private var currentDifferentialSearchReport = ""
     private var currentPostScaleDifferentialReport = ""
+    private var currentPostScaleStageAddbackReport = ""
 
     private fun makeButton(
         label: String,
@@ -173,6 +174,19 @@ class MainActivity : ComponentActivity() {
                 currentPostScaleDifferentialReport
             )
             toast("G2.25 differential search report saved")
+        }
+    }
+
+    private val savePostScaleStageAddbackReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentPostScaleStageAddbackReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(
+                this,
+                uri,
+                currentPostScaleStageAddbackReport
+            )
+            toast("G2.26 stage-addback report saved")
         }
     }
 
@@ -761,6 +775,31 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        val postScaleStageAddbackButton =
+            makeButton("Run G2.26 Stage-Addback Differential Search") {
+                runPostScaleStageAddbackSearch()
+            }
+        layout.addView(
+            postScaleStageAddbackButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Reuses the G2.25 deterministic transform-heavy corpus and
+                compares progressively richer post-scale optimizer pipelines.
+                The full optimizer remains authoritative. Exact byte equality
+                is the production-switch criterion; geometry sampling is
+                bounded diagnostic context for non-identical candidates.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
         val diagnosticsHeading = makeText(
             "Future Diagnostics",
             16f,
@@ -1169,6 +1208,156 @@ class MainActivity : ComponentActivity() {
             )
         )
         toast("G2.25 differential search report copied")
+    }
+
+    private fun runPostScaleStageAddbackSearch() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+
+        val progressBar = ProgressBar(this)
+        val statusText = makeText(
+            "Testing progressive post-scale pipelines…",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 24, 0, 0) }
+
+        val detailText = makeText(
+            "Runs 100,000 deterministic source cases off the UI thread.",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 12, 0, 0) }
+
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(detailText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G2.26 Stage-Addback Differential Search")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgPostScaleStageAddbackSearch.runDefault()
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("G2.26 automated post-scale stage-addback differential stress search")
+                    appendLine()
+                    appendLine("RESULT: The search could not be completed.")
+                    appendLine()
+                    appendLine(throwable.message ?: throwable::class.java.simpleName)
+                    appendLine()
+                    appendLine(
+                        "Check that SvgPostScaleStageAddbackSearch.kt and the G2.26 " +
+                            "SvgPathDataOptimizer.kt are included in the app."
+                    )
+                }
+            }
+
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentPostScaleStageAddbackReport = report
+                    showPostScaleStageAddbackResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showPostScaleStageAddbackResultsDialog(report: String) {
+        val failed = report.contains("could not be completed")
+        val exact = report.contains("RESULT: an exact stage-addback pipeline was found across every seed.")
+
+        val summaryText: String
+        val summaryColor: Int
+        when {
+            failed -> {
+                summaryText = "✕ Search could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+            exact -> {
+                summaryText = "✓ Exact reduced pipeline found"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+            else -> {
+                summaryText = "⚠ No exact reduced pipeline found"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+        layout.addView(
+            makeText(summaryText, 18f, summaryColor, Gravity.START, paddingBottom = 16)
+        )
+
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        val reportScroll = ScrollView(this).apply { addView(reportView) }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val copyButton = makeButton("Copy Results") { copyPostScaleStageAddbackReport() }
+        val saveButton = makeButton("Save .txt") {
+            savePostScaleStageAddbackReport.launch(
+                "g2_26_post_scale_stage_addback_search_report.txt"
+            )
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+
+        val rerunButton = makeButton("Run Again") { runPostScaleStageAddbackSearch() }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G2.26 Stage-Addback Search Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+        dialog.show()
+    }
+
+    private fun copyPostScaleStageAddbackReport() {
+        if (currentPostScaleStageAddbackReport.isBlank()) {
+            toast("No G2.26 stage-addback report to copy")
+            return
+        }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "g2_26_post_scale_stage_addback_search_report.txt",
+                currentPostScaleStageAddbackReport
+            )
+        )
+        toast("G2.26 stage-addback report copied")
     }
 
     private fun runBundledRegressionSuite() {
