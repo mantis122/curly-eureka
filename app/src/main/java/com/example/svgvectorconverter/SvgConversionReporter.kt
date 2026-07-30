@@ -305,6 +305,13 @@ class SvgConversionReportData {
     var optimizationTransformUniformScaleEligibilityChecksNanos: Long = 0
     var optimizationTransformUniformScaleEarlySizeSignalNanos: Long = 0
     var optimizationTransformUniformScalePathScalingNanos: Long = 0
+    var optimizationTransformUniformScalePathParseTokenizeNanos: Long = 0
+    var optimizationTransformUniformScalePathNumericParseNanos: Long = 0
+    var optimizationTransformUniformScalePathCoordinateMathNanos: Long = 0
+    var optimizationTransformUniformScalePathArcHandlingNanos: Long = 0
+    var optimizationTransformUniformScalePathNumberFormattingNanos: Long = 0
+    var optimizationTransformUniformScalePathReconstructionNanos: Long = 0
+    var optimizationTransformUniformScalePathNormalizationNanos: Long = 0
     var optimizationTransformUniformScaleStrokeAdjustmentNanos: Long = 0
     var optimizationTransformUniformScaleCanonicalizationCostingNanos: Long = 0
     var optimizationTransformUniformScaleXmlReplacementNanos: Long = 0
@@ -1763,6 +1770,30 @@ object SvgConversionReporter {
                                 data.optimizationTransformUniformScaleXmlReplacementNanos
                         )
                     )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Path scaling and normalization",
+                        parentNanos = data.optimizationTransformUniformScalePathScalingNanos,
+                        stages = listOf(
+                            "Tokenization" to
+                                data.optimizationTransformUniformScalePathParseTokenizeNanos,
+                            "Numeric parsing / segment construction" to
+                                data.optimizationTransformUniformScalePathNumericParseNanos,
+                            "Coordinate transformation" to
+                                data.optimizationTransformUniformScalePathCoordinateMathNanos,
+                            "Number formatting" to
+                                data.optimizationTransformUniformScalePathNumberFormattingNanos,
+                            "Path reconstruction" to
+                                data.optimizationTransformUniformScalePathReconstructionNanos,
+                            "Final path normalization / optimization" to
+                                data.optimizationTransformUniformScalePathNormalizationNanos
+                        )
+                    )
+                    if (data.optimizationTransformUniformScalePathArcHandlingNanos > 0L) {
+                        append("      ▫ Arc-specific scaling subset\n")
+                        append("        · Arc parameter handling: ")
+                            .append(formatNanosAsMilliseconds(data.optimizationTransformUniformScalePathArcHandlingNanos))
+                            .append('\n')
+                    }
                     if (data.optimizationTransformUniformScaleCandidatesConsidered > 0) {
                         append("      ▫ Uniform scale candidate flow\n")
                         append("        · Candidates considered: ")

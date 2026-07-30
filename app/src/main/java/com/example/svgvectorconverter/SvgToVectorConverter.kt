@@ -480,6 +480,13 @@ object SvgToVectorConverter {
         reportData.optimizationTransformUniformScaleEligibilityChecksNanos = pathOptimizationStats.transformUniformScaleProfiling.eligibilityChecksNanos
         reportData.optimizationTransformUniformScaleEarlySizeSignalNanos = pathOptimizationStats.transformUniformScaleProfiling.earlySizeSignalNanos
         reportData.optimizationTransformUniformScalePathScalingNanos = pathOptimizationStats.transformUniformScaleProfiling.pathScalingNanos
+        reportData.optimizationTransformUniformScalePathParseTokenizeNanos = pathOptimizationStats.transformUniformScaleProfiling.scalePathParseTokenizeNanos
+        reportData.optimizationTransformUniformScalePathNumericParseNanos = pathOptimizationStats.transformUniformScaleProfiling.scalePathNumericParseNanos
+        reportData.optimizationTransformUniformScalePathCoordinateMathNanos = pathOptimizationStats.transformUniformScaleProfiling.scalePathCoordinateMathNanos
+        reportData.optimizationTransformUniformScalePathArcHandlingNanos = pathOptimizationStats.transformUniformScaleProfiling.scalePathArcHandlingNanos
+        reportData.optimizationTransformUniformScalePathNumberFormattingNanos = pathOptimizationStats.transformUniformScaleProfiling.scalePathNumberFormattingNanos
+        reportData.optimizationTransformUniformScalePathReconstructionNanos = pathOptimizationStats.transformUniformScaleProfiling.scalePathReconstructionNanos
+        reportData.optimizationTransformUniformScalePathNormalizationNanos = pathOptimizationStats.transformUniformScaleProfiling.scalePathNormalizationNanos
         reportData.optimizationTransformUniformScaleStrokeAdjustmentNanos = pathOptimizationStats.transformUniformScaleProfiling.strokeAdjustmentNanos
         reportData.optimizationTransformUniformScaleCanonicalizationCostingNanos = pathOptimizationStats.transformUniformScaleProfiling.canonicalizationCostingNanos
         reportData.optimizationTransformUniformScaleXmlReplacementNanos = pathOptimizationStats.transformUniformScaleProfiling.xmlReplacementNanos

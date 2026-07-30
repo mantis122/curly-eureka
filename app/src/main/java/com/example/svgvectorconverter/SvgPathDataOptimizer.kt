@@ -101,6 +101,13 @@ internal object SvgPathDataOptimizer {
         val eligibilityChecksNanos: Long = 0,
         val earlySizeSignalNanos: Long = 0,
         val pathScalingNanos: Long = 0,
+        val scalePathParseTokenizeNanos: Long = 0,
+        val scalePathNumericParseNanos: Long = 0,
+        val scalePathCoordinateMathNanos: Long = 0,
+        val scalePathArcHandlingNanos: Long = 0,
+        val scalePathNumberFormattingNanos: Long = 0,
+        val scalePathReconstructionNanos: Long = 0,
+        val scalePathNormalizationNanos: Long = 0,
         val strokeAdjustmentNanos: Long = 0,
         val canonicalizationCostingNanos: Long = 0,
         val xmlReplacementNanos: Long = 0,
@@ -2647,6 +2654,13 @@ internal object SvgPathDataOptimizer {
         var eligibilityChecksNanos: Long = 0
         var earlySizeSignalNanos: Long = 0
         var pathScalingNanos: Long = 0
+        var scalePathParseTokenizeNanos: Long = 0
+        var scalePathNumericParseNanos: Long = 0
+        var scalePathCoordinateMathNanos: Long = 0
+        var scalePathArcHandlingNanos: Long = 0
+        var scalePathNumberFormattingNanos: Long = 0
+        var scalePathReconstructionNanos: Long = 0
+        var scalePathNormalizationNanos: Long = 0
         var strokeAdjustmentNanos: Long = 0
         var canonicalizationCostingNanos: Long = 0
         var xmlReplacementNanos: Long = 0
@@ -2729,6 +2743,13 @@ internal object SvgPathDataOptimizer {
             eligibilityChecksNanos = eligibilityChecksNanos,
             earlySizeSignalNanos = earlySizeSignalNanos,
             pathScalingNanos = pathScalingNanos,
+            scalePathParseTokenizeNanos = scalePathParseTokenizeNanos,
+            scalePathNumericParseNanos = scalePathNumericParseNanos,
+            scalePathCoordinateMathNanos = scalePathCoordinateMathNanos,
+            scalePathArcHandlingNanos = scalePathArcHandlingNanos,
+            scalePathNumberFormattingNanos = scalePathNumberFormattingNanos,
+            scalePathReconstructionNanos = scalePathReconstructionNanos,
+            scalePathNormalizationNanos = scalePathNormalizationNanos,
             strokeAdjustmentNanos = strokeAdjustmentNanos,
             canonicalizationCostingNanos = canonicalizationCostingNanos,
             xmlReplacementNanos = xmlReplacementNanos,
@@ -2929,7 +2950,8 @@ internal object SvgPathDataOptimizer {
                             pivotX = scale.pivotX,
                             pivotY = scale.pivotY,
                             translateX = scale.translateX,
-                            translateY = scale.translateY
+                            translateY = scale.translateY,
+                            profiling = profiling
                         )
                         profiling?.pathScalingNanos =
                             (profiling?.pathScalingNanos ?: 0L) + (System.nanoTime() - pathScalingStart)
@@ -3116,9 +3138,19 @@ internal object SvgPathDataOptimizer {
         pivotX: BigDecimal,
         pivotY: BigDecimal,
         translateX: BigDecimal,
-        translateY: BigDecimal
+        translateY: BigDecimal,
+        profiling: MutableUniformScaleProfiling? = null
     ): String? {
-        val segments = parseNormalizedSegments(pathData) ?: return null
+        val parseStart = System.nanoTime()
+        val tokens = tokenRegex.findAll(pathData).map { it.value }.toList()
+        profiling?.scalePathParseTokenizeNanos =
+            (profiling?.scalePathParseTokenizeNanos ?: 0L) + (System.nanoTime() - parseStart)
+        if (tokens.isEmpty()) return null
+
+        val numericParseStart = System.nanoTime()
+        val segments = parseNormalizedSegmentsFromTokens(tokens) ?: return null
+        profiling?.scalePathNumericParseNanos =
+            (profiling?.scalePathNumericParseNanos ?: 0L) + (System.nanoTime() - numericParseStart)
         if (segments.isEmpty()) return null
 
         fun scaledX(value: BigDecimal): BigDecimal =
@@ -3134,6 +3166,7 @@ internal object SvgPathDataOptimizer {
 
         for (segment in segments) {
             val upper = segment.command.uppercaseChar()
+            val mathStart = System.nanoTime()
             val absolute = absoluteValuesFor(segment, currentX, currentY)
             val scaled = when (upper) {
                 'M', 'L', 'T' -> listOf(scaledX(absolute[0]), scaledY(absolute[1]))
@@ -3148,21 +3181,38 @@ internal object SvgPathDataOptimizer {
                     scaledX(absolute[0]), scaledY(absolute[1]),
                     scaledX(absolute[2]), scaledY(absolute[3])
                 )
-                'A' -> listOf(
-                    absolute[0].multiply(factor),
-                    absolute[1].multiply(factor),
-                    absolute[2], absolute[3], absolute[4],
-                    scaledX(absolute[5]), scaledY(absolute[6])
-                )
+                'A' -> {
+                    val arcStart = System.nanoTime()
+                    val result = listOf(
+                        absolute[0].multiply(factor),
+                        absolute[1].multiply(factor),
+                        absolute[2], absolute[3], absolute[4],
+                        scaledX(absolute[5]), scaledY(absolute[6])
+                    )
+                    profiling?.scalePathArcHandlingNanos =
+                        (profiling?.scalePathArcHandlingNanos ?: 0L) + (System.nanoTime() - arcStart)
+                    result
+                }
                 'Z' -> emptyList()
                 else -> return null
             }
+            profiling?.scalePathCoordinateMathNanos =
+                (profiling?.scalePathCoordinateMathNanos ?: 0L) + (System.nanoTime() - mathStart)
 
+            val reconstructionStart = System.nanoTime()
             output.append(upper)
             scaled.forEachIndexed { index, value ->
                 if (index > 0) output.append(',')
-                output.append(formatBigDecimal(value))
+                val formattingStart = System.nanoTime()
+                val formatted = formatBigDecimal(value)
+                profiling?.scalePathNumberFormattingNanos =
+                    (profiling?.scalePathNumberFormattingNanos ?: 0L) +
+                        (System.nanoTime() - formattingStart)
+                output.append(formatted)
             }
+            profiling?.scalePathReconstructionNanos =
+                (profiling?.scalePathReconstructionNanos ?: 0L) +
+                    (System.nanoTime() - reconstructionStart)
 
             when (upper) {
                 'M', 'L', 'T' -> {
@@ -3190,7 +3240,12 @@ internal object SvgPathDataOptimizer {
             }
         }
 
-        return optimizePathData(output.toString()).pathData
+        val normalizationStart = System.nanoTime()
+        val normalized = optimizePathData(output.toString()).pathData
+        profiling?.scalePathNormalizationNanos =
+            (profiling?.scalePathNormalizationNanos ?: 0L) +
+                (System.nanoTime() - normalizationStart)
+        return normalized
     }
 
 
@@ -8033,6 +8088,10 @@ internal object SvgPathDataOptimizer {
 
     private fun parseNormalizedSegments(pathData: String): List<ParsedSegment>? {
         val tokens = tokenRegex.findAll(pathData).map { it.value }.toList()
+        return parseNormalizedSegmentsFromTokens(tokens)
+    }
+
+    private fun parseNormalizedSegmentsFromTokens(tokens: List<String>): List<ParsedSegment>? {
         if (tokens.isEmpty()) return emptyList()
 
         val counts = mapOf(
