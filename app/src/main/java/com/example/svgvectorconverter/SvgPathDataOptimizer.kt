@@ -108,6 +108,24 @@ internal object SvgPathDataOptimizer {
         val scalePathNumberFormattingNanos: Long = 0,
         val scalePathReconstructionNanos: Long = 0,
         val scalePathNormalizationNanos: Long = 0,
+        val postScaleOptimizationCalls: Int = 0,
+        val postScaleOptimizationUnchanged: Int = 0,
+        val postScaleRawChars: Int = 0,
+        val postScaleFinalChars: Int = 0,
+        val postScaleSyntaxChanged: Int = 0,
+        val postScaleSyntaxCharsSaved: Int = 0,
+        val postScaleRedundantGeometryChanged: Int = 0,
+        val postScaleRedundantGeometryCharsSaved: Int = 0,
+        val postScaleArcChanged: Int = 0,
+        val postScaleArcCharsSaved: Int = 0,
+        val postScaleCurveChanged: Int = 0,
+        val postScaleCurveCharsSaved: Int = 0,
+        val postScaleCollinearChanged: Int = 0,
+        val postScaleCollinearCharsSaved: Int = 0,
+        val postScaleCommandChanged: Int = 0,
+        val postScaleCommandCharsSaved: Int = 0,
+        val postScaleNumericChanged: Int = 0,
+        val postScaleNumericCharsSaved: Int = 0,
         val strokeAdjustmentNanos: Long = 0,
         val canonicalizationCostingNanos: Long = 0,
         val xmlReplacementNanos: Long = 0,
@@ -2649,6 +2667,49 @@ internal object SvgPathDataOptimizer {
         val minimumPathDataCost: Int
     )
 
+    private enum class PostScaleStage {
+        SYNTAX, REDUNDANT_GEOMETRY, ARC, CURVE, COLLINEAR, COMMAND, NUMERIC
+    }
+
+    private fun MutableUniformScaleProfiling.recordPostScaleStage(
+        before: String,
+        after: String,
+        stage: PostScaleStage
+    ) {
+        if (before == after) return
+        val saved = before.length - after.length
+        when (stage) {
+            PostScaleStage.SYNTAX -> {
+                postScaleSyntaxChanged++
+                postScaleSyntaxCharsSaved += saved
+            }
+            PostScaleStage.REDUNDANT_GEOMETRY -> {
+                postScaleRedundantGeometryChanged++
+                postScaleRedundantGeometryCharsSaved += saved
+            }
+            PostScaleStage.ARC -> {
+                postScaleArcChanged++
+                postScaleArcCharsSaved += saved
+            }
+            PostScaleStage.CURVE -> {
+                postScaleCurveChanged++
+                postScaleCurveCharsSaved += saved
+            }
+            PostScaleStage.COLLINEAR -> {
+                postScaleCollinearChanged++
+                postScaleCollinearCharsSaved += saved
+            }
+            PostScaleStage.COMMAND -> {
+                postScaleCommandChanged++
+                postScaleCommandCharsSaved += saved
+            }
+            PostScaleStage.NUMERIC -> {
+                postScaleNumericChanged++
+                postScaleNumericCharsSaved += saved
+            }
+        }
+    }
+
     private class MutableUniformScaleProfiling {
         var groupDiscoveryNanos: Long = 0
         var eligibilityChecksNanos: Long = 0
@@ -2661,6 +2722,24 @@ internal object SvgPathDataOptimizer {
         var scalePathNumberFormattingNanos: Long = 0
         var scalePathReconstructionNanos: Long = 0
         var scalePathNormalizationNanos: Long = 0
+        var postScaleOptimizationCalls: Int = 0
+        var postScaleOptimizationUnchanged: Int = 0
+        var postScaleRawChars: Int = 0
+        var postScaleFinalChars: Int = 0
+        var postScaleSyntaxChanged: Int = 0
+        var postScaleSyntaxCharsSaved: Int = 0
+        var postScaleRedundantGeometryChanged: Int = 0
+        var postScaleRedundantGeometryCharsSaved: Int = 0
+        var postScaleArcChanged: Int = 0
+        var postScaleArcCharsSaved: Int = 0
+        var postScaleCurveChanged: Int = 0
+        var postScaleCurveCharsSaved: Int = 0
+        var postScaleCollinearChanged: Int = 0
+        var postScaleCollinearCharsSaved: Int = 0
+        var postScaleCommandChanged: Int = 0
+        var postScaleCommandCharsSaved: Int = 0
+        var postScaleNumericChanged: Int = 0
+        var postScaleNumericCharsSaved: Int = 0
         var strokeAdjustmentNanos: Long = 0
         var canonicalizationCostingNanos: Long = 0
         var xmlReplacementNanos: Long = 0
@@ -2750,6 +2829,24 @@ internal object SvgPathDataOptimizer {
             scalePathNumberFormattingNanos = scalePathNumberFormattingNanos,
             scalePathReconstructionNanos = scalePathReconstructionNanos,
             scalePathNormalizationNanos = scalePathNormalizationNanos,
+            postScaleOptimizationCalls = postScaleOptimizationCalls,
+            postScaleOptimizationUnchanged = postScaleOptimizationUnchanged,
+            postScaleRawChars = postScaleRawChars,
+            postScaleFinalChars = postScaleFinalChars,
+            postScaleSyntaxChanged = postScaleSyntaxChanged,
+            postScaleSyntaxCharsSaved = postScaleSyntaxCharsSaved,
+            postScaleRedundantGeometryChanged = postScaleRedundantGeometryChanged,
+            postScaleRedundantGeometryCharsSaved = postScaleRedundantGeometryCharsSaved,
+            postScaleArcChanged = postScaleArcChanged,
+            postScaleArcCharsSaved = postScaleArcCharsSaved,
+            postScaleCurveChanged = postScaleCurveChanged,
+            postScaleCurveCharsSaved = postScaleCurveCharsSaved,
+            postScaleCollinearChanged = postScaleCollinearChanged,
+            postScaleCollinearCharsSaved = postScaleCollinearCharsSaved,
+            postScaleCommandChanged = postScaleCommandChanged,
+            postScaleCommandCharsSaved = postScaleCommandCharsSaved,
+            postScaleNumericChanged = postScaleNumericChanged,
+            postScaleNumericCharsSaved = postScaleNumericCharsSaved,
             strokeAdjustmentNanos = strokeAdjustmentNanos,
             canonicalizationCostingNanos = canonicalizationCostingNanos,
             xmlReplacementNanos = xmlReplacementNanos,
@@ -3240,8 +3337,18 @@ internal object SvgPathDataOptimizer {
             }
         }
 
+        val rawScaledPath = output.toString()
         val normalizationStart = System.nanoTime()
-        val normalized = optimizePathData(output.toString()).pathData
+        val normalized = optimizePathData(
+            rawScaledPath,
+            contribution = profiling
+        ).pathData
+        profiling?.let {
+            it.postScaleOptimizationCalls++
+            it.postScaleRawChars += rawScaledPath.length
+            it.postScaleFinalChars += normalized.length
+            if (normalized == rawScaledPath) it.postScaleOptimizationUnchanged++
+        }
         profiling?.scalePathNormalizationNanos =
             (profiling?.scalePathNormalizationNanos ?: 0L) +
                 (System.nanoTime() - normalizationStart)
@@ -5504,7 +5611,8 @@ internal object SvgPathDataOptimizer {
 
     private fun optimizePathData(
         pathData: String,
-        profiling: PathSyntaxProfiling? = null
+        profiling: PathSyntaxProfiling? = null,
+        contribution: MutableUniformScaleProfiling? = null
     ): PathResult {
         val tokenizationStartTime = System.nanoTime()
         val matches = tokenRegex.findAll(pathData).toList()
@@ -5572,6 +5680,13 @@ internal object SvgPathDataOptimizer {
             }
         }
 
+        val syntaxNormalizedPath = output.toString()
+        contribution?.recordPostScaleStage(
+            before = pathData,
+            after = syntaxNormalizedPath,
+            stage = PostScaleStage.SYNTAX
+        )
+
         profiling?.let {
             it.tokenizationNormalizationNanos +=
                 System.nanoTime() - tokenizationStartTime
@@ -5581,7 +5696,12 @@ internal object SvgPathDataOptimizer {
 
         val redundantSegmentCleanupStartTime = System.nanoTime()
         val redundantCleanup = removeRedundantNonDrawingSegments(
-            output.toString()
+            syntaxNormalizedPath
+        )
+        contribution?.recordPostScaleStage(
+            before = syntaxNormalizedPath,
+            after = redundantCleanup.pathData,
+            stage = PostScaleStage.REDUNDANT_GEOMETRY
         )
         profiling?.let {
             it.redundantSegmentCleanupNanos +=
@@ -5644,6 +5764,12 @@ internal object SvgPathDataOptimizer {
                 DegenerateArcCleanupResult(unchangedPathData, 0)
         }
 
+        contribution?.recordPostScaleStage(
+            before = redundantCleanup.pathData,
+            after = degenerateArcCleanup.pathData,
+            stage = PostScaleStage.ARC
+        )
+
         val curveSimplificationStartTime = System.nanoTime()
         val cubicStartTime = System.nanoTime()
         val cubicToQuadraticCleanup = reduceExactCubicCurvesToQuadratic(
@@ -5673,9 +5799,20 @@ internal object SvgPathDataOptimizer {
                 System.nanoTime() - curveSimplificationStartTime
         }
 
+        contribution?.recordPostScaleStage(
+            before = degenerateArcCleanup.pathData,
+            after = straightBezierCleanup.pathData,
+            stage = PostScaleStage.CURVE
+        )
+
         val collinearConsolidationStartTime = System.nanoTime()
         val collinearCleanup = consolidateConsecutiveCollinearLineRuns(
             straightBezierCleanup.pathData
+        )
+        contribution?.recordPostScaleStage(
+            before = straightBezierCleanup.pathData,
+            after = collinearCleanup.pathData,
+            stage = PostScaleStage.COLLINEAR
         )
         profiling?.let {
             it.collinearConsolidationNanos +=
@@ -5697,6 +5834,11 @@ internal object SvgPathDataOptimizer {
             commandOptimization.pathData,
             profiling
         )
+        contribution?.recordPostScaleStage(
+            before = collinearCleanup.pathData,
+            after = globalCommandOptimization.pathData,
+            stage = PostScaleStage.COMMAND
+        )
         profiling?.let {
             it.commandMinimizationNanos +=
                 System.nanoTime() - commandMinimizationStartTime
@@ -5705,6 +5847,11 @@ internal object SvgPathDataOptimizer {
         val numericSerializationStartTime = System.nanoTime()
         val globalNumericOptimization = globallyOptimizeNumericSerialization(
             globalCommandOptimization.pathData
+        )
+        contribution?.recordPostScaleStage(
+            before = globalCommandOptimization.pathData,
+            after = globalNumericOptimization.pathData,
+            stage = PostScaleStage.NUMERIC
         )
         profiling?.let {
             it.numericSerializationNanos +=

@@ -312,6 +312,24 @@ class SvgConversionReportData {
     var optimizationTransformUniformScalePathNumberFormattingNanos: Long = 0
     var optimizationTransformUniformScalePathReconstructionNanos: Long = 0
     var optimizationTransformUniformScalePathNormalizationNanos: Long = 0
+    var optimizationTransformUniformScalePostScaleOptimizationCalls: Int = 0
+    var optimizationTransformUniformScalePostScaleOptimizationUnchanged: Int = 0
+    var optimizationTransformUniformScalePostScaleRawChars: Int = 0
+    var optimizationTransformUniformScalePostScaleFinalChars: Int = 0
+    var optimizationTransformUniformScalePostScaleSyntaxChanged: Int = 0
+    var optimizationTransformUniformScalePostScaleSyntaxCharsSaved: Int = 0
+    var optimizationTransformUniformScalePostScaleRedundantGeometryChanged: Int = 0
+    var optimizationTransformUniformScalePostScaleRedundantGeometryCharsSaved: Int = 0
+    var optimizationTransformUniformScalePostScaleArcChanged: Int = 0
+    var optimizationTransformUniformScalePostScaleArcCharsSaved: Int = 0
+    var optimizationTransformUniformScalePostScaleCurveChanged: Int = 0
+    var optimizationTransformUniformScalePostScaleCurveCharsSaved: Int = 0
+    var optimizationTransformUniformScalePostScaleCollinearChanged: Int = 0
+    var optimizationTransformUniformScalePostScaleCollinearCharsSaved: Int = 0
+    var optimizationTransformUniformScalePostScaleCommandChanged: Int = 0
+    var optimizationTransformUniformScalePostScaleCommandCharsSaved: Int = 0
+    var optimizationTransformUniformScalePostScaleNumericChanged: Int = 0
+    var optimizationTransformUniformScalePostScaleNumericCharsSaved: Int = 0
     var optimizationTransformUniformScaleStrokeAdjustmentNanos: Long = 0
     var optimizationTransformUniformScaleCanonicalizationCostingNanos: Long = 0
     var optimizationTransformUniformScaleXmlReplacementNanos: Long = 0
@@ -1788,6 +1806,7 @@ object SvgConversionReporter {
                                 data.optimizationTransformUniformScalePathNormalizationNanos
                         )
                     )
+                    appendPostScaleOptimizationContribution(data)
                     if (data.optimizationTransformUniformScalePathArcHandlingNanos > 0L) {
                         append("      ▫ Arc-specific scaling subset\n")
                         append("        · Arc parameter handling: ")
@@ -1808,6 +1827,74 @@ object SvgConversionReporter {
                 }
             }
         }
+    }
+
+    private fun StringBuilder.appendPostScaleOptimizationContribution(
+        data: SvgConversionReportData
+    ) {
+        val calls = data.optimizationTransformUniformScalePostScaleOptimizationCalls
+        if (calls <= 0) return
+
+        append("      ▫ Post-scale optimizer contribution (profiling only)\n")
+        append("        · Optimizer calls: ").append(calls).append('\n')
+        append("        · Raw scaled path chars: ")
+            .append(data.optimizationTransformUniformScalePostScaleRawChars).append('\n')
+        append("        · Final optimized path chars: ")
+            .append(data.optimizationTransformUniformScalePostScaleFinalChars).append('\n')
+        append("        · Net characters saved: ")
+            .append(data.optimizationTransformUniformScalePostScaleRawChars -
+                data.optimizationTransformUniformScalePostScaleFinalChars)
+            .append('\n')
+        append("        · Full optimizer produced no change: ")
+            .append(data.optimizationTransformUniformScalePostScaleOptimizationUnchanged)
+            .append('\n')
+
+        fun appendStage(label: String, changed: Int, saved: Int) {
+            append("        · ").append(label).append(": ")
+                .append(changed).append(" changed")
+            if (changed > 0 || saved != 0) {
+                append(", ")
+                if (saved >= 0) append(saved).append(" chars saved")
+                else append(-saved).append(" chars added")
+            }
+            append('\n')
+        }
+
+        appendStage(
+            "Initial syntax / numeric normalization",
+            data.optimizationTransformUniformScalePostScaleSyntaxChanged,
+            data.optimizationTransformUniformScalePostScaleSyntaxCharsSaved
+        )
+        appendStage(
+            "Redundant geometry cleanup",
+            data.optimizationTransformUniformScalePostScaleRedundantGeometryChanged,
+            data.optimizationTransformUniformScalePostScaleRedundantGeometryCharsSaved
+        )
+        appendStage(
+            "Arc cleanup",
+            data.optimizationTransformUniformScalePostScaleArcChanged,
+            data.optimizationTransformUniformScalePostScaleArcCharsSaved
+        )
+        appendStage(
+            "Curve simplification",
+            data.optimizationTransformUniformScalePostScaleCurveChanged,
+            data.optimizationTransformUniformScalePostScaleCurveCharsSaved
+        )
+        appendStage(
+            "Collinear-line consolidation",
+            data.optimizationTransformUniformScalePostScaleCollinearChanged,
+            data.optimizationTransformUniformScalePostScaleCollinearCharsSaved
+        )
+        appendStage(
+            "Command minimization",
+            data.optimizationTransformUniformScalePostScaleCommandChanged,
+            data.optimizationTransformUniformScalePostScaleCommandCharsSaved
+        )
+        appendStage(
+            "Global numeric serialization",
+            data.optimizationTransformUniformScalePostScaleNumericChanged,
+            data.optimizationTransformUniformScalePostScaleNumericCharsSaved
+        )
     }
 
     private fun StringBuilder.appendUniformScaleEarlySizeSignals(
