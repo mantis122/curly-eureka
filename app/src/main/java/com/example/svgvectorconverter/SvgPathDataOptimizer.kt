@@ -126,6 +126,12 @@ internal object SvgPathDataOptimizer {
         val postScaleCommandCharsSaved: Int = 0,
         val postScaleNumericChanged: Int = 0,
         val postScaleNumericCharsSaved: Int = 0,
+        val postScaleNarrowComparisonNanos: Long = 0,
+        val postScaleNarrowCompared: Int = 0,
+        val postScaleNarrowIdentical: Int = 0,
+        val postScaleNarrowDifferent: Int = 0,
+        val postScaleNarrowFullOnlySavings: Int = 0,
+        val postScaleNarrowOnlySavings: Int = 0,
         val strokeAdjustmentNanos: Long = 0,
         val canonicalizationCostingNanos: Long = 0,
         val xmlReplacementNanos: Long = 0,
@@ -2740,6 +2746,12 @@ internal object SvgPathDataOptimizer {
         var postScaleCommandCharsSaved: Int = 0
         var postScaleNumericChanged: Int = 0
         var postScaleNumericCharsSaved: Int = 0
+        var postScaleNarrowComparisonNanos: Long = 0
+        var postScaleNarrowCompared: Int = 0
+        var postScaleNarrowIdentical: Int = 0
+        var postScaleNarrowDifferent: Int = 0
+        var postScaleNarrowFullOnlySavings: Int = 0
+        var postScaleNarrowOnlySavings: Int = 0
         var strokeAdjustmentNanos: Long = 0
         var canonicalizationCostingNanos: Long = 0
         var xmlReplacementNanos: Long = 0
@@ -2847,6 +2859,12 @@ internal object SvgPathDataOptimizer {
             postScaleCommandCharsSaved = postScaleCommandCharsSaved,
             postScaleNumericChanged = postScaleNumericChanged,
             postScaleNumericCharsSaved = postScaleNumericCharsSaved,
+            postScaleNarrowComparisonNanos = postScaleNarrowComparisonNanos,
+            postScaleNarrowCompared = postScaleNarrowCompared,
+            postScaleNarrowIdentical = postScaleNarrowIdentical,
+            postScaleNarrowDifferent = postScaleNarrowDifferent,
+            postScaleNarrowFullOnlySavings = postScaleNarrowFullOnlySavings,
+            postScaleNarrowOnlySavings = postScaleNarrowOnlySavings,
             strokeAdjustmentNanos = strokeAdjustmentNanos,
             canonicalizationCostingNanos = canonicalizationCostingNanos,
             xmlReplacementNanos = xmlReplacementNanos,
@@ -3229,6 +3247,61 @@ internal object SvgPathDataOptimizer {
         return element.replaceRange(match.range, replacement)
     }
 
+    /**
+     * G2.24 profiling-only narrowed post-scale pipeline.
+     *
+     * This deliberately mirrors only the two families that G2.23 showed were
+     * potentially relevant after uniform positive scaling:
+     * 1) the existing initial syntax / exact numeric normalization; and
+     * 2) the existing local + global command minimizers.
+     *
+     * The result is NEVER used as production output in G2.24. The full
+     * optimizePathData() result remains authoritative and this helper exists
+     * only for byte-for-byte side-by-side comparison.
+     */
+    private fun optimizePostScaleNarrowedForComparison(pathData: String): String? {
+        val matches = tokenRegex.findAll(pathData).toList()
+        if (matches.isEmpty()) return pathData.trim()
+
+        var cursor = 0
+        for (match in matches) {
+            if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
+                return null
+            }
+            cursor = match.range.last + 1
+        }
+        if (!containsOnlySeparators(pathData.substring(cursor))) return null
+
+        val output = StringBuilder(pathData.length)
+        var activeCommand: Char? = null
+        var previousWasNumber = false
+
+        for (match in matches) {
+            val token = match.value
+            if (isCommand(token)) {
+                val command = token[0]
+                val canUseImplicitRepeat =
+                    activeCommand == command && command !in charArrayOf('M', 'm', 'Z', 'z')
+
+                if (!canUseImplicitRepeat) {
+                    output.append(command)
+                    previousWasNumber = false
+                }
+                activeCommand = command
+            } else {
+                val normalized = token.toBigDecimalOrNull()
+                    ?.let(::formatPathNumber)
+                    ?: normalizeNumber(token)
+                if (previousWasNumber) output.append(',')
+                output.append(normalized)
+                previousWasNumber = true
+            }
+        }
+
+        val commandOptimization = shortenPathCommands(output.toString())
+        return globallyMinimizeCommandSequence(commandOptimization.pathData).pathData
+    }
+
     private fun scalePathData(
         pathData: String,
         factor: BigDecimal,
@@ -3349,6 +3422,27 @@ internal object SvgPathDataOptimizer {
             it.postScaleFinalChars += normalized.length
             if (normalized == rawScaledPath) it.postScaleOptimizationUnchanged++
         }
+
+        // G2.24: side-by-side experiment only. The full optimizer above remains
+        // authoritative; the narrowed result is measured and compared but is
+        // never returned or used by any size/geometry decision.
+        val narrowStart = System.nanoTime()
+        val narrowed = optimizePostScaleNarrowedForComparison(rawScaledPath)
+        profiling?.let { stats ->
+            stats.postScaleNarrowComparisonNanos += System.nanoTime() - narrowStart
+            if (narrowed != null) {
+                stats.postScaleNarrowCompared++
+                if (narrowed == normalized) {
+                    stats.postScaleNarrowIdentical++
+                } else {
+                    stats.postScaleNarrowDifferent++
+                    val delta = narrowed.length - normalized.length
+                    if (delta > 0) stats.postScaleNarrowFullOnlySavings += delta
+                    else if (delta < 0) stats.postScaleNarrowOnlySavings += -delta
+                }
+            }
+        }
+
         profiling?.scalePathNormalizationNanos =
             (profiling?.scalePathNormalizationNanos ?: 0L) +
                 (System.nanoTime() - normalizationStart)

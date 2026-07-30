@@ -505,6 +505,12 @@ object SvgToVectorConverter {
         reportData.optimizationTransformUniformScalePostScaleCommandCharsSaved = pathOptimizationStats.transformUniformScaleProfiling.postScaleCommandCharsSaved
         reportData.optimizationTransformUniformScalePostScaleNumericChanged = pathOptimizationStats.transformUniformScaleProfiling.postScaleNumericChanged
         reportData.optimizationTransformUniformScalePostScaleNumericCharsSaved = pathOptimizationStats.transformUniformScaleProfiling.postScaleNumericCharsSaved
+        reportData.optimizationTransformUniformScalePostScaleNarrowComparisonNanos = pathOptimizationStats.transformUniformScaleProfiling.postScaleNarrowComparisonNanos
+        reportData.optimizationTransformUniformScalePostScaleNarrowCompared = pathOptimizationStats.transformUniformScaleProfiling.postScaleNarrowCompared
+        reportData.optimizationTransformUniformScalePostScaleNarrowIdentical = pathOptimizationStats.transformUniformScaleProfiling.postScaleNarrowIdentical
+        reportData.optimizationTransformUniformScalePostScaleNarrowDifferent = pathOptimizationStats.transformUniformScaleProfiling.postScaleNarrowDifferent
+        reportData.optimizationTransformUniformScalePostScaleNarrowFullOnlySavings = pathOptimizationStats.transformUniformScaleProfiling.postScaleNarrowFullOnlySavings
+        reportData.optimizationTransformUniformScalePostScaleNarrowOnlySavings = pathOptimizationStats.transformUniformScaleProfiling.postScaleNarrowOnlySavings
         reportData.optimizationTransformUniformScaleStrokeAdjustmentNanos = pathOptimizationStats.transformUniformScaleProfiling.strokeAdjustmentNanos
         reportData.optimizationTransformUniformScaleCanonicalizationCostingNanos = pathOptimizationStats.transformUniformScaleProfiling.canonicalizationCostingNanos
         reportData.optimizationTransformUniformScaleXmlReplacementNanos = pathOptimizationStats.transformUniformScaleProfiling.xmlReplacementNanos

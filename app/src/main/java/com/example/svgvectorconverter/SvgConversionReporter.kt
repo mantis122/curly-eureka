@@ -330,6 +330,12 @@ class SvgConversionReportData {
     var optimizationTransformUniformScalePostScaleCommandCharsSaved: Int = 0
     var optimizationTransformUniformScalePostScaleNumericChanged: Int = 0
     var optimizationTransformUniformScalePostScaleNumericCharsSaved: Int = 0
+    var optimizationTransformUniformScalePostScaleNarrowComparisonNanos: Long = 0
+    var optimizationTransformUniformScalePostScaleNarrowCompared: Int = 0
+    var optimizationTransformUniformScalePostScaleNarrowIdentical: Int = 0
+    var optimizationTransformUniformScalePostScaleNarrowDifferent: Int = 0
+    var optimizationTransformUniformScalePostScaleNarrowFullOnlySavings: Int = 0
+    var optimizationTransformUniformScalePostScaleNarrowOnlySavings: Int = 0
     var optimizationTransformUniformScaleStrokeAdjustmentNanos: Long = 0
     var optimizationTransformUniformScaleCanonicalizationCostingNanos: Long = 0
     var optimizationTransformUniformScaleXmlReplacementNanos: Long = 0
@@ -1895,6 +1901,32 @@ object SvgConversionReporter {
             data.optimizationTransformUniformScalePostScaleNumericChanged,
             data.optimizationTransformUniformScalePostScaleNumericCharsSaved
         )
+
+        val compared = data.optimizationTransformUniformScalePostScaleNarrowCompared
+        if (compared > 0) {
+            append("
+")
+            append("      ▫ Full vs narrowed post-scale comparison (profiling only)\n")
+            append("        · Paths compared: ").append(compared).append('\n')
+            append("        · Byte-identical results: ")
+                .append(data.optimizationTransformUniformScalePostScaleNarrowIdentical)
+                .append('\n')
+            append("        · Differences: ")
+                .append(data.optimizationTransformUniformScalePostScaleNarrowDifferent)
+                .append('\n')
+            append("        · Full-only savings: ")
+                .append(data.optimizationTransformUniformScalePostScaleNarrowFullOnlySavings)
+                .append(" chars\n")
+            append("        · Narrow-only savings: ")
+                .append(data.optimizationTransformUniformScalePostScaleNarrowOnlySavings)
+                .append(" chars\n")
+            append("        · Narrowed comparison time: ")
+                .append(formatPerformanceDuration(
+                    data.optimizationTransformUniformScalePostScaleNarrowComparisonNanos
+                ))
+                .append('\n')
+            append("        · Production output: full optimizer remains authoritative\n")
+        }
     }
 
     private fun StringBuilder.appendUniformScaleEarlySizeSignals(
