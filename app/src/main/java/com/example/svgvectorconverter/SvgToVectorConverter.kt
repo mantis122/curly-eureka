@@ -399,6 +399,14 @@ object SvgToVectorConverter {
         reportData.optimizationPathRedundantSegmentCleanupNanos = pathOptimizationStats.pathRedundantSegmentCleanupNanos
         reportData.optimizationPathArcCleanupNanos = pathOptimizationStats.pathArcCleanupNanos
         reportData.optimizationPathCurveSimplificationNanos = pathOptimizationStats.pathCurveSimplificationNanos
+        reportData.optimizationCurveCubicToQuadraticNanos = pathOptimizationStats.pathCurveSimplificationProfiling.cubicToQuadraticNanos
+        reportData.optimizationCurveCubicParseSetupNanos = pathOptimizationStats.pathCurveSimplificationProfiling.cubicParseSetupNanos
+        reportData.optimizationCurveCubicScanNanos = pathOptimizationStats.pathCurveSimplificationProfiling.cubicScanNanos
+        reportData.optimizationCurveCubicRebuildValidationNanos = pathOptimizationStats.pathCurveSimplificationProfiling.cubicRebuildValidationNanos
+        reportData.optimizationCurveStraightBezierNanos = pathOptimizationStats.pathCurveSimplificationProfiling.straightBezierNanos
+        reportData.optimizationCurveStraightParseSetupNanos = pathOptimizationStats.pathCurveSimplificationProfiling.straightParseSetupNanos
+        reportData.optimizationCurveStraightScanNanos = pathOptimizationStats.pathCurveSimplificationProfiling.straightScanNanos
+        reportData.optimizationCurveStraightRebuildValidationNanos = pathOptimizationStats.pathCurveSimplificationProfiling.straightRebuildValidationNanos
         reportData.optimizationPathCollinearConsolidationNanos = pathOptimizationStats.pathCollinearConsolidationNanos
         reportData.optimizationPathCommandMinimizationNanos = pathOptimizationStats.pathCommandMinimizationNanos
         reportData.optimizationPathCommandLocalShorteningNanos = pathOptimizationStats.pathCommandLocalShorteningNanos

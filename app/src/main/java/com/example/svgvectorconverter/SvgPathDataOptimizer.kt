@@ -70,6 +70,17 @@ internal object SvgPathDataOptimizer {
         val segmentEncodingCacheHits: Int = 0,
         val segmentEncodingUniqueKeys: Int = 0
     )
+    data class CurveSimplificationProfilingStats(
+        val cubicToQuadraticNanos: Long = 0,
+        val cubicParseSetupNanos: Long = 0,
+        val cubicScanNanos: Long = 0,
+        val cubicRebuildValidationNanos: Long = 0,
+        val straightBezierNanos: Long = 0,
+        val straightParseSetupNanos: Long = 0,
+        val straightScanNanos: Long = 0,
+        val straightRebuildValidationNanos: Long = 0
+    )
+
     data class Stats(
         val pathCount: Int = 0,
         val charactersBefore: Int = 0,
@@ -154,6 +165,7 @@ internal object SvgPathDataOptimizer {
         val pathRedundantSegmentCleanupNanos: Long = 0,
         val pathArcCleanupNanos: Long = 0,
         val pathCurveSimplificationNanos: Long = 0,
+        val pathCurveSimplificationProfiling: CurveSimplificationProfilingStats = CurveSimplificationProfilingStats(),
         val pathCollinearConsolidationNanos: Long = 0,
         val pathCommandMinimizationNanos: Long = 0,
         val pathCommandLocalShorteningNanos: Long = 0,
@@ -781,6 +793,16 @@ internal object SvgPathDataOptimizer {
                 pathArcCleanupNanos = pathProfiling.arcCleanupNanos,
                 pathCurveSimplificationNanos =
                     pathProfiling.curveSimplificationNanos,
+                pathCurveSimplificationProfiling = CurveSimplificationProfilingStats(
+                    cubicToQuadraticNanos = pathProfiling.curveCubicToQuadraticNanos,
+                    cubicParseSetupNanos = pathProfiling.curveCubicParseSetupNanos,
+                    cubicScanNanos = pathProfiling.curveCubicScanNanos,
+                    cubicRebuildValidationNanos = pathProfiling.curveCubicRebuildValidationNanos,
+                    straightBezierNanos = pathProfiling.curveStraightBezierNanos,
+                    straightParseSetupNanos = pathProfiling.curveStraightParseSetupNanos,
+                    straightScanNanos = pathProfiling.curveStraightScanNanos,
+                    straightRebuildValidationNanos = pathProfiling.curveStraightRebuildValidationNanos
+                ),
                 pathCollinearConsolidationNanos =
                     pathProfiling.collinearConsolidationNanos,
                 pathCommandMinimizationNanos = pathProfiling.commandMinimizationNanos,
@@ -5010,6 +5032,14 @@ internal object SvgPathDataOptimizer {
         var redundantSegmentCleanupNanos: Long = 0,
         var arcCleanupNanos: Long = 0,
         var curveSimplificationNanos: Long = 0,
+        var curveCubicToQuadraticNanos: Long = 0,
+        var curveCubicParseSetupNanos: Long = 0,
+        var curveCubicScanNanos: Long = 0,
+        var curveCubicRebuildValidationNanos: Long = 0,
+        var curveStraightBezierNanos: Long = 0,
+        var curveStraightParseSetupNanos: Long = 0,
+        var curveStraightScanNanos: Long = 0,
+        var curveStraightRebuildValidationNanos: Long = 0,
         var collinearConsolidationNanos: Long = 0,
         var commandMinimizationNanos: Long = 0,
         var commandLocalShorteningNanos: Long = 0,
@@ -5220,13 +5250,17 @@ internal object SvgPathDataOptimizer {
         }
 
         val curveSimplificationStartTime = System.nanoTime()
+        val cubicStartTime = System.nanoTime()
         val cubicToQuadraticCleanup = reduceExactCubicCurvesToQuadratic(
-            degenerateArcCleanup.pathData
+            degenerateArcCleanup.pathData, profiling
         )
+        profiling?.let { it.curveCubicToQuadraticNanos += System.nanoTime() - cubicStartTime }
+        val straightStartTime = System.nanoTime()
         val straightBezierCleanup = simplifyStraightBezierCurves(
-            cubicToQuadraticCleanup.pathData
+            cubicToQuadraticCleanup.pathData, profiling
         )
         profiling?.let {
+            it.curveStraightBezierNanos += System.nanoTime() - straightStartTime
             it.curveSimplificationNanos +=
                 System.nanoTime() - curveSimplificationStartTime
         }
@@ -6017,13 +6051,18 @@ internal object SvgPathDataOptimizer {
      * first control depends on previous command state.
      */
     private fun reduceExactCubicCurvesToQuadratic(
-        pathData: String
+        pathData: String,
+        profiling: PathSyntaxProfiling? = null
     ): CubicToQuadraticCleanupResult {
+        val parseStart = System.nanoTime()
         val segments = parseNormalizedSegments(pathData)
             ?: return CubicToQuadraticCleanupResult(pathData, 0)
         if (segments.isEmpty()) {
+            profiling?.let { it.curveCubicParseSetupNanos += System.nanoTime() - parseStart }
             return CubicToQuadraticCleanupResult(pathData, 0)
         }
+        profiling?.let { it.curveCubicParseSetupNanos += System.nanoTime() - parseStart }
+        val scanStart = System.nanoTime()
 
         val kept = mutableListOf<ParsedSegment>()
         var reduced = 0
@@ -6126,12 +6165,14 @@ internal object SvgPathDataOptimizer {
             }
         }
 
+        profiling?.let { it.curveCubicScanNanos += System.nanoTime() - scanStart }
         if (reduced == 0) {
             return CubicToQuadraticCleanupResult(pathData, 0)
         }
 
+        val rebuildStart = System.nanoTime()
         val rebuilt = encodeParsedSegments(kept)
-        return if (
+        val result = if (
             rebuilt.length <= pathData.length &&
             parseNormalizedSegments(rebuilt) != null
         ) {
@@ -6142,6 +6183,8 @@ internal object SvgPathDataOptimizer {
         } else {
             CubicToQuadraticCleanupResult(pathData, 0)
         }
+        profiling?.let { it.curveCubicRebuildValidationNanos += System.nanoTime() - rebuildStart }
+        return result
     }
 
     private data class DegenerateArcCleanupResult(
@@ -6294,13 +6337,18 @@ internal object SvgPathDataOptimizer {
      * controls, and any non-collinear curve are preserved.
      */
     private fun simplifyStraightBezierCurves(
-        pathData: String
+        pathData: String,
+        profiling: PathSyntaxProfiling? = null
     ): StraightBezierCleanupResult {
+        val parseStart = System.nanoTime()
         val segments = parseNormalizedSegments(pathData)
             ?: return StraightBezierCleanupResult(pathData, 0)
         if (segments.isEmpty()) {
+            profiling?.let { it.curveStraightParseSetupNanos += System.nanoTime() - parseStart }
             return StraightBezierCleanupResult(pathData, 0)
         }
+        profiling?.let { it.curveStraightParseSetupNanos += System.nanoTime() - parseStart }
+        val scanStart = System.nanoTime()
 
         val kept = mutableListOf<ParsedSegment>()
         var simplified = 0
@@ -6470,12 +6518,14 @@ internal object SvgPathDataOptimizer {
             }
         }
 
+        profiling?.let { it.curveStraightScanNanos += System.nanoTime() - scanStart }
         if (simplified == 0) {
             return StraightBezierCleanupResult(pathData, 0)
         }
 
+        val rebuildStart = System.nanoTime()
         val rebuilt = encodeParsedSegments(kept)
-        return if (
+        val result = if (
             rebuilt.length <= pathData.length &&
             parseNormalizedSegments(rebuilt) != null
         ) {
@@ -6486,6 +6536,8 @@ internal object SvgPathDataOptimizer {
         } else {
             StraightBezierCleanupResult(pathData, 0)
         }
+        profiling?.let { it.curveStraightRebuildValidationNanos += System.nanoTime() - rebuildStart }
+        return result
     }
 
     private data class CollinearLineCleanupResult(

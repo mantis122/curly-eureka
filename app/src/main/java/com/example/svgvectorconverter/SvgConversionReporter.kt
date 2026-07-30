@@ -224,6 +224,14 @@ class SvgConversionReportData {
     var optimizationPathRedundantSegmentCleanupNanos: Long = 0
     var optimizationPathArcCleanupNanos: Long = 0
     var optimizationPathCurveSimplificationNanos: Long = 0
+    var optimizationCurveCubicToQuadraticNanos: Long = 0
+    var optimizationCurveCubicParseSetupNanos: Long = 0
+    var optimizationCurveCubicScanNanos: Long = 0
+    var optimizationCurveCubicRebuildValidationNanos: Long = 0
+    var optimizationCurveStraightBezierNanos: Long = 0
+    var optimizationCurveStraightParseSetupNanos: Long = 0
+    var optimizationCurveStraightScanNanos: Long = 0
+    var optimizationCurveStraightRebuildValidationNanos: Long = 0
     var optimizationPathCollinearConsolidationNanos: Long = 0
     var optimizationPathCommandMinimizationNanos: Long = 0
     var optimizationPathCommandLocalShorteningNanos: Long = 0
@@ -1470,6 +1478,32 @@ object SvgConversionReporter {
                                 data.optimizationPathCurveSimplificationNanos,
                             "Collinear-line consolidation" to
                                 data.optimizationPathCollinearConsolidationNanos
+                        )
+                    )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Curve simplification",
+                        parentNanos = data.optimizationPathCurveSimplificationNanos,
+                        stages = listOf(
+                            "Exact cubic → quadratic" to data.optimizationCurveCubicToQuadraticNanos,
+                            "Straight Bézier → line" to data.optimizationCurveStraightBezierNanos
+                        )
+                    )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Exact cubic → quadratic",
+                        parentNanos = data.optimizationCurveCubicToQuadraticNanos,
+                        stages = listOf(
+                            "Parse and setup" to data.optimizationCurveCubicParseSetupNanos,
+                            "Segment scan / exact-equivalence checks" to data.optimizationCurveCubicScanNanos,
+                            "Rebuild and validation" to data.optimizationCurveCubicRebuildValidationNanos
+                        )
+                    )
+                    appendDeepTimingBreakdown(
+                        parentLabel = "Straight Bézier → line",
+                        parentNanos = data.optimizationCurveStraightBezierNanos,
+                        stages = listOf(
+                            "Parse and setup" to data.optimizationCurveStraightParseSetupNanos,
+                            "Segment scan / collinearity checks" to data.optimizationCurveStraightScanNanos,
+                            "Rebuild and validation" to data.optimizationCurveStraightRebuildValidationNanos
                         )
                     )
                     appendDeepTimingBreakdown(
