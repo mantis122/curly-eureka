@@ -228,10 +228,25 @@ class SvgConversionReportData {
     var optimizationCurveCubicParseSetupNanos: Long = 0
     var optimizationCurveCubicScanNanos: Long = 0
     var optimizationCurveCubicRebuildValidationNanos: Long = 0
+    var optimizationCurveCubicRebuildNanos: Long = 0
+    var optimizationCurveCubicValidationNanos: Long = 0
     var optimizationCurveStraightBezierNanos: Long = 0
     var optimizationCurveStraightParseSetupNanos: Long = 0
     var optimizationCurveStraightScanNanos: Long = 0
     var optimizationCurveStraightRebuildValidationNanos: Long = 0
+    var optimizationCurveStraightRebuildNanos: Long = 0
+    var optimizationCurveStraightValidationNanos: Long = 0
+    var optimizationCurveParseCalls: Int = 0
+    var optimizationCurveDuplicateParseInputs: Int = 0
+    var optimizationCurveSecondPassReparsedUnchangedInput: Int = 0
+    var optimizationCurveCubicChangedPaths: Int = 0
+    var optimizationCurveStraightChangedPaths: Int = 0
+    var optimizationCurveRebuildAttempts: Int = 0
+    var optimizationCurveRebuildNoOpResults: Int = 0
+    var optimizationCurveValidationCalls: Int = 0
+    var optimizationCurveValidationAccepted: Int = 0
+    var optimizationCurveValidationRejected: Int = 0
+    var optimizationCurveRebuildRejectedForSize: Int = 0
     var optimizationPathCollinearConsolidationNanos: Long = 0
     var optimizationPathCommandMinimizationNanos: Long = 0
     var optimizationPathCommandLocalShorteningNanos: Long = 0
@@ -1494,7 +1509,8 @@ object SvgConversionReporter {
                         stages = listOf(
                             "Parse and setup" to data.optimizationCurveCubicParseSetupNanos,
                             "Segment scan / exact-equivalence checks" to data.optimizationCurveCubicScanNanos,
-                            "Rebuild and validation" to data.optimizationCurveCubicRebuildValidationNanos
+                            "Rebuild" to data.optimizationCurveCubicRebuildNanos,
+                            "Validation / fallback" to data.optimizationCurveCubicValidationNanos
                         )
                     )
                     appendDeepTimingBreakdown(
@@ -1503,9 +1519,11 @@ object SvgConversionReporter {
                         stages = listOf(
                             "Parse and setup" to data.optimizationCurveStraightParseSetupNanos,
                             "Segment scan / collinearity checks" to data.optimizationCurveStraightScanNanos,
-                            "Rebuild and validation" to data.optimizationCurveStraightRebuildValidationNanos
+                            "Rebuild" to data.optimizationCurveStraightRebuildNanos,
+                            "Validation / fallback" to data.optimizationCurveStraightValidationNanos
                         )
                     )
+                    appendCurveReuseProfiling(data)
                     appendDeepTimingBreakdown(
                         parentLabel = "Command minimization",
                         parentNanos = data.optimizationPathCommandMinimizationNanos,
@@ -1693,6 +1711,25 @@ object SvgConversionReporter {
                 }
             }
         }
+    }
+
+    private fun StringBuilder.appendCurveReuseProfiling(
+        data: SvgConversionReportData
+    ) {
+        if (data.optimizationCurveParseCalls <= 0) return
+
+        append("\nCurve parse / rebuild reuse\n")
+        append("• Curve parse calls: ${data.optimizationCurveParseCalls}\n")
+        append("• Duplicate parse inputs: ${data.optimizationCurveDuplicateParseInputs}\n")
+        append("• Second-pass re-parses of unchanged input: ${data.optimizationCurveSecondPassReparsedUnchangedInput}\n")
+        append("• Paths changed by cubic → quadratic: ${data.optimizationCurveCubicChangedPaths}\n")
+        append("• Paths changed by straight Bézier → line: ${data.optimizationCurveStraightChangedPaths}\n")
+        append("• Rebuild attempts: ${data.optimizationCurveRebuildAttempts}\n")
+        append("• Rebuilds identical to input: ${data.optimizationCurveRebuildNoOpResults}\n")
+        append("• Validation calls: ${data.optimizationCurveValidationCalls}\n")
+        append("  ◦ Accepted: ${data.optimizationCurveValidationAccepted}\n")
+        append("  ◦ Rejected: ${data.optimizationCurveValidationRejected}\n")
+        append("• Rebuilds rejected for size before validation: ${data.optimizationCurveRebuildRejectedForSize}\n")
     }
 
     private fun StringBuilder.appendDeepTimingBreakdown(

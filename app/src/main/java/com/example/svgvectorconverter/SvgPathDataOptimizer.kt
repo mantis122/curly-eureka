@@ -75,10 +75,25 @@ internal object SvgPathDataOptimizer {
         val cubicParseSetupNanos: Long = 0,
         val cubicScanNanos: Long = 0,
         val cubicRebuildValidationNanos: Long = 0,
+        val cubicRebuildNanos: Long = 0,
+        val cubicValidationNanos: Long = 0,
         val straightBezierNanos: Long = 0,
         val straightParseSetupNanos: Long = 0,
         val straightScanNanos: Long = 0,
-        val straightRebuildValidationNanos: Long = 0
+        val straightRebuildValidationNanos: Long = 0,
+        val straightRebuildNanos: Long = 0,
+        val straightValidationNanos: Long = 0,
+        val parseCalls: Int = 0,
+        val duplicateParseInputs: Int = 0,
+        val secondPassReparsedUnchangedInput: Int = 0,
+        val cubicChangedPaths: Int = 0,
+        val straightChangedPaths: Int = 0,
+        val rebuildAttempts: Int = 0,
+        val rebuildNoOpResults: Int = 0,
+        val validationCalls: Int = 0,
+        val validationAccepted: Int = 0,
+        val validationRejected: Int = 0,
+        val rebuildRejectedForSize: Int = 0
     )
 
     data class Stats(
@@ -798,10 +813,25 @@ internal object SvgPathDataOptimizer {
                     cubicParseSetupNanos = pathProfiling.curveCubicParseSetupNanos,
                     cubicScanNanos = pathProfiling.curveCubicScanNanos,
                     cubicRebuildValidationNanos = pathProfiling.curveCubicRebuildValidationNanos,
+                    cubicRebuildNanos = pathProfiling.curveCubicRebuildNanos,
+                    cubicValidationNanos = pathProfiling.curveCubicValidationNanos,
                     straightBezierNanos = pathProfiling.curveStraightBezierNanos,
                     straightParseSetupNanos = pathProfiling.curveStraightParseSetupNanos,
                     straightScanNanos = pathProfiling.curveStraightScanNanos,
-                    straightRebuildValidationNanos = pathProfiling.curveStraightRebuildValidationNanos
+                    straightRebuildValidationNanos = pathProfiling.curveStraightRebuildValidationNanos,
+                    straightRebuildNanos = pathProfiling.curveStraightRebuildNanos,
+                    straightValidationNanos = pathProfiling.curveStraightValidationNanos,
+                    parseCalls = pathProfiling.curveParseCalls,
+                    duplicateParseInputs = pathProfiling.curveDuplicateParseInputs,
+                    secondPassReparsedUnchangedInput = pathProfiling.curveSecondPassReparsedUnchangedInput,
+                    cubicChangedPaths = pathProfiling.curveCubicChangedPaths,
+                    straightChangedPaths = pathProfiling.curveStraightChangedPaths,
+                    rebuildAttempts = pathProfiling.curveRebuildAttempts,
+                    rebuildNoOpResults = pathProfiling.curveRebuildNoOpResults,
+                    validationCalls = pathProfiling.curveValidationCalls,
+                    validationAccepted = pathProfiling.curveValidationAccepted,
+                    validationRejected = pathProfiling.curveValidationRejected,
+                    rebuildRejectedForSize = pathProfiling.curveRebuildRejectedForSize
                 ),
                 pathCollinearConsolidationNanos =
                     pathProfiling.collinearConsolidationNanos,
@@ -5036,10 +5066,25 @@ internal object SvgPathDataOptimizer {
         var curveCubicParseSetupNanos: Long = 0,
         var curveCubicScanNanos: Long = 0,
         var curveCubicRebuildValidationNanos: Long = 0,
+        var curveCubicRebuildNanos: Long = 0,
+        var curveCubicValidationNanos: Long = 0,
         var curveStraightBezierNanos: Long = 0,
         var curveStraightParseSetupNanos: Long = 0,
         var curveStraightScanNanos: Long = 0,
         var curveStraightRebuildValidationNanos: Long = 0,
+        var curveStraightRebuildNanos: Long = 0,
+        var curveStraightValidationNanos: Long = 0,
+        var curveParseCalls: Int = 0,
+        var curveDuplicateParseInputs: Int = 0,
+        var curveSecondPassReparsedUnchangedInput: Int = 0,
+        var curveCubicChangedPaths: Int = 0,
+        var curveStraightChangedPaths: Int = 0,
+        var curveRebuildAttempts: Int = 0,
+        var curveRebuildNoOpResults: Int = 0,
+        var curveValidationCalls: Int = 0,
+        var curveValidationAccepted: Int = 0,
+        var curveValidationRejected: Int = 0,
+        var curveRebuildRejectedForSize: Int = 0,
         var collinearConsolidationNanos: Long = 0,
         var commandMinimizationNanos: Long = 0,
         var commandLocalShorteningNanos: Long = 0,
@@ -5255,6 +5300,12 @@ internal object SvgPathDataOptimizer {
             degenerateArcCleanup.pathData, profiling
         )
         profiling?.let { it.curveCubicToQuadraticNanos += System.nanoTime() - cubicStartTime }
+        if (profiling != null &&
+            cubicToQuadraticCleanup.pathData == degenerateArcCleanup.pathData
+        ) {
+            profiling.curveDuplicateParseInputs += 1
+            profiling.curveSecondPassReparsedUnchangedInput += 1
+        }
         val straightStartTime = System.nanoTime()
         val straightBezierCleanup = simplifyStraightBezierCurves(
             cubicToQuadraticCleanup.pathData, profiling
@@ -6054,6 +6105,7 @@ internal object SvgPathDataOptimizer {
         pathData: String,
         profiling: PathSyntaxProfiling? = null
     ): CubicToQuadraticCleanupResult {
+        profiling?.let { it.curveParseCalls += 1 }
         val parseStart = System.nanoTime()
         val segments = parseNormalizedSegments(pathData)
             ?: return CubicToQuadraticCleanupResult(pathData, 0)
@@ -6170,12 +6222,36 @@ internal object SvgPathDataOptimizer {
             return CubicToQuadraticCleanupResult(pathData, 0)
         }
 
+        profiling?.let { it.curveRebuildAttempts += 1 }
         val rebuildStart = System.nanoTime()
         val rebuilt = encodeParsedSegments(kept)
-        val result = if (
-            rebuilt.length <= pathData.length &&
-            parseNormalizedSegments(rebuilt) != null
-        ) {
+        val rebuildElapsed = System.nanoTime() - rebuildStart
+        profiling?.let {
+            it.curveCubicRebuildNanos += rebuildElapsed
+            if (rebuilt == pathData) it.curveRebuildNoOpResults += 1
+        }
+
+        val validationStart = System.nanoTime()
+        val sizeEligible = rebuilt.length <= pathData.length
+        val parsedValidation = if (sizeEligible) {
+            profiling?.let { it.curveValidationCalls += 1 }
+            parseNormalizedSegments(rebuilt)
+        } else {
+            profiling?.let { it.curveRebuildRejectedForSize += 1 }
+            null
+        }
+        val accepted = sizeEligible && parsedValidation != null
+        val validationElapsed = System.nanoTime() - validationStart
+        profiling?.let {
+            it.curveCubicValidationNanos += validationElapsed
+            it.curveCubicRebuildValidationNanos += rebuildElapsed + validationElapsed
+            if (sizeEligible) {
+                if (accepted) it.curveValidationAccepted += 1
+                else it.curveValidationRejected += 1
+            }
+            if (accepted && rebuilt != pathData) it.curveCubicChangedPaths += 1
+        }
+        return if (accepted) {
             CubicToQuadraticCleanupResult(
                 pathData = rebuilt,
                 reducedCount = reduced
@@ -6183,8 +6259,6 @@ internal object SvgPathDataOptimizer {
         } else {
             CubicToQuadraticCleanupResult(pathData, 0)
         }
-        profiling?.let { it.curveCubicRebuildValidationNanos += System.nanoTime() - rebuildStart }
-        return result
     }
 
     private data class DegenerateArcCleanupResult(
@@ -6340,6 +6414,7 @@ internal object SvgPathDataOptimizer {
         pathData: String,
         profiling: PathSyntaxProfiling? = null
     ): StraightBezierCleanupResult {
+        profiling?.let { it.curveParseCalls += 1 }
         val parseStart = System.nanoTime()
         val segments = parseNormalizedSegments(pathData)
             ?: return StraightBezierCleanupResult(pathData, 0)
@@ -6523,12 +6598,36 @@ internal object SvgPathDataOptimizer {
             return StraightBezierCleanupResult(pathData, 0)
         }
 
+        profiling?.let { it.curveRebuildAttempts += 1 }
         val rebuildStart = System.nanoTime()
         val rebuilt = encodeParsedSegments(kept)
-        val result = if (
-            rebuilt.length <= pathData.length &&
-            parseNormalizedSegments(rebuilt) != null
-        ) {
+        val rebuildElapsed = System.nanoTime() - rebuildStart
+        profiling?.let {
+            it.curveStraightRebuildNanos += rebuildElapsed
+            if (rebuilt == pathData) it.curveRebuildNoOpResults += 1
+        }
+
+        val validationStart = System.nanoTime()
+        val sizeEligible = rebuilt.length <= pathData.length
+        val parsedValidation = if (sizeEligible) {
+            profiling?.let { it.curveValidationCalls += 1 }
+            parseNormalizedSegments(rebuilt)
+        } else {
+            profiling?.let { it.curveRebuildRejectedForSize += 1 }
+            null
+        }
+        val accepted = sizeEligible && parsedValidation != null
+        val validationElapsed = System.nanoTime() - validationStart
+        profiling?.let {
+            it.curveStraightValidationNanos += validationElapsed
+            it.curveStraightRebuildValidationNanos += rebuildElapsed + validationElapsed
+            if (sizeEligible) {
+                if (accepted) it.curveValidationAccepted += 1
+                else it.curveValidationRejected += 1
+            }
+            if (accepted && rebuilt != pathData) it.curveStraightChangedPaths += 1
+        }
+        return if (accepted) {
             StraightBezierCleanupResult(
                 pathData = rebuilt,
                 simplifiedCount = simplified
@@ -6536,8 +6635,6 @@ internal object SvgPathDataOptimizer {
         } else {
             StraightBezierCleanupResult(pathData, 0)
         }
-        profiling?.let { it.curveStraightRebuildValidationNanos += System.nanoTime() - rebuildStart }
-        return result
     }
 
     private data class CollinearLineCleanupResult(
