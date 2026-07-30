@@ -210,6 +210,8 @@ class SvgConversionReportData {
     var optimizerIdempotenceEqualityComparisonNanos: Long = 0
     var optimizerIdempotencePathsExamined: Int = 0
     var optimizerIdempotencePathCacheHits: Int = 0
+    var optimizerIdempotenceStableOutputCacheHits: Int = 0
+    var optimizerIdempotenceRegularCacheHits: Int = 0
     var optimizerIdempotencePathCacheMisses: Int = 0
     var optimizerIdempotenceXmlCharactersBefore: Int = 0
     var optimizerIdempotenceXmlCharactersAfter: Int = 0
@@ -1405,6 +1407,18 @@ object SvgConversionReporter {
                         "${data.optimizerIdempotencePathCacheHits} reused, " +
                         "${data.optimizerIdempotencePathCacheMisses} recomputed"
                 )
+                if (data.optimizerIdempotenceStableOutputCacheHits > 0) {
+                    appendLine(
+                        "  ◦ Stable pass-1 outputs reused: " +
+                            data.optimizerIdempotenceStableOutputCacheHits
+                    )
+                }
+                if (data.optimizerIdempotenceRegularCacheHits > 0) {
+                    appendLine(
+                        "  ◦ Ordinary duplicate-input cache hits: " +
+                            data.optimizerIdempotenceRegularCacheHits
+                    )
+                }
             }
             if (data.optimizerIdempotenceXmlCharactersBefore > 0) {
                 appendLine(

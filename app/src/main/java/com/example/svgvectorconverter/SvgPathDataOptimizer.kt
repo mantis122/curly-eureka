@@ -138,6 +138,8 @@ internal object SvgPathDataOptimizer {
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
         val pathCacheHits: Int = 0,
+        val stableOutputCacheHits: Int = 0,
+        val regularCacheHits: Int = 0,
         val pathCacheMisses: Int = 0,
         val xmlCharactersBefore: Int = 0,
         val xmlCharactersAfter: Int = 0
@@ -320,7 +322,10 @@ internal object SvgPathDataOptimizer {
 
     private data class PathOptimizationCache(
         val values: MutableMap<String, PathResult> = linkedMapOf(),
+        val stableOutputs: MutableMap<String, PathResult> = linkedMapOf(),
         var validationHits: Int = 0,
+        var validationStableOutputHits: Int = 0,
+        var validationRegularHits: Int = 0,
         var validationMisses: Int = 0
     )
 
@@ -336,6 +341,8 @@ internal object SvgPathDataOptimizer {
         val firstPassNanos = System.nanoTime() - firstPassStartTime
 
         val secondPassCacheHitsBefore = pathCache.validationHits
+        val secondPassStableHitsBefore = pathCache.validationStableOutputHits
+        val secondPassRegularHitsBefore = pathCache.validationRegularHits
         val secondPassCacheMissesBefore = pathCache.validationMisses
         val secondPassStartTime = System.nanoTime()
         val secondPass = optimizeVectorXmlSinglePass(
@@ -346,6 +353,10 @@ internal object SvgPathDataOptimizer {
         val secondPassNanos = System.nanoTime() - secondPassStartTime
         val secondPassCacheHits =
             pathCache.validationHits - secondPassCacheHitsBefore
+        val secondPassStableHits =
+            pathCache.validationStableOutputHits - secondPassStableHitsBefore
+        val secondPassRegularHits =
+            pathCache.validationRegularHits - secondPassRegularHitsBefore
         val secondPassCacheMisses =
             pathCache.validationMisses - secondPassCacheMissesBefore
         val equalityComparisonStartTime = System.nanoTime()
@@ -373,6 +384,8 @@ internal object SvgPathDataOptimizer {
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
             pathCacheHits = secondPassCacheHits,
+            stableOutputCacheHits = secondPassStableHits,
+            regularCacheHits = secondPassRegularHits,
             pathCacheMisses = secondPassCacheMisses,
             xmlCharactersBefore = secondPass.stats.xmlCharactersBefore,
             xmlCharactersAfter = secondPass.stats.xmlCharactersAfter
@@ -6165,17 +6178,63 @@ internal object SvgPathDataOptimizer {
         validationPass: Boolean,
         profiling: PathSyntaxProfiling? = null
     ): PathResult {
+        if (validationPass) {
+            val stable = cache.stableOutputs[pathData]
+            if (stable != null) {
+                cache.validationHits++
+                cache.validationStableOutputHits++
+                return stable
+            }
+        }
+
         val cached = cache.values[pathData]
         if (cached != null) {
-            if (validationPass) cache.validationHits++
+            if (validationPass) {
+                cache.validationHits++
+                cache.validationRegularHits++
+            }
             return cached
         }
 
         if (validationPass) cache.validationMisses++
         return optimizePathData(pathData, profiling).also { result ->
             cache.values[pathData] = result
+            if (!validationPass) {
+                cache.stableOutputs.putIfAbsent(
+                    result.pathData,
+                    stableReusePathResult(result.pathData)
+                )
+            }
         }
     }
+
+    private fun stableReusePathResult(pathData: String): PathResult =
+        PathResult(
+            pathData = pathData,
+            repeatedCommandsRemoved = 0,
+            redundantNonDrawingSegmentsRemoved = 0,
+            collinearLineSegmentsConsolidated = 0,
+            straightBezierCurvesSimplified = 0,
+            degenerateArcsSimplified = 0,
+            smoothBezierShorthandsSelected = 0,
+            cubicCurvesReducedToQuadratic = 0,
+            arcRotationsCanonicalized = 0,
+            arcRadiiCanonicalized = 0,
+            arcHalfTurnRotationsReduced = 0,
+            arcAxesSwappedForSize = 0,
+            arcRepresentationsGloballyMinimized = 0,
+            commandSequencesGloballyMinimized = 0,
+            implicitLineTosAfterMoveSelected = 0,
+            repeatedShorthandCurveCommandsOmitted = 0,
+            repeatedFullCurveCommandsOmitted = 0,
+            repeatedArcCommandsOmitted = 0,
+            scientificNotationValuesSelected = 0,
+            numbersNormalized = 0,
+            shorterCommandFormsSelected = 0,
+            relativeCommandsSelected = 0,
+            axisCommandsSelected = 0,
+            globallyOptimizedNumericPaths = 0
+        )
 
     private fun optimizePathData(
         pathData: String,

@@ -399,6 +399,10 @@ object SvgToVectorConverter {
             pathOptimizationStats.idempotenceProfiling.pathsExamined
         reportData.optimizerIdempotencePathCacheHits =
             pathOptimizationStats.idempotenceProfiling.pathCacheHits
+        reportData.optimizerIdempotenceStableOutputCacheHits =
+            pathOptimizationStats.idempotenceProfiling.stableOutputCacheHits
+        reportData.optimizerIdempotenceRegularCacheHits =
+            pathOptimizationStats.idempotenceProfiling.regularCacheHits
         reportData.optimizerIdempotencePathCacheMisses =
             pathOptimizationStats.idempotenceProfiling.pathCacheMisses
         reportData.optimizerIdempotenceXmlCharactersBefore =
