@@ -137,6 +137,7 @@ internal object SvgPathDataOptimizer {
         val finalFormattingNanos: Long = 0,
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
+        val finalPassStablePathsRegistered: Int = 0,
         val pathCacheHits: Int = 0,
         val stableOutputCacheHits: Int = 0,
         val regularCacheHits: Int = 0,
@@ -340,6 +341,14 @@ internal object SvgPathDataOptimizer {
         )
         val firstPassNanos = System.nanoTime() - firstPassStartTime
 
+        // G3.3: pass 1 can rewrite pathData after the initial path-syntax stage
+        // (for example during transform flattening). Register the exact final
+        // pathData spellings present in firstPass.xml as known-stable inputs
+        // for the idempotence pass. This changes only pass-2 work reuse; the
+        // production first-pass XML remains authoritative and unchanged.
+        val finalPassStablePathsRegistered =
+            registerFinalPassStablePaths(firstPass.xml, pathCache)
+
         val secondPassCacheHitsBefore = pathCache.validationHits
         val secondPassStableHitsBefore = pathCache.validationStableOutputHits
         val secondPassRegularHitsBefore = pathCache.validationRegularHits
@@ -383,6 +392,7 @@ internal object SvgPathDataOptimizer {
             finalFormattingNanos = secondPass.stats.finalFormattingNanos,
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
+            finalPassStablePathsRegistered = finalPassStablePathsRegistered,
             pathCacheHits = secondPassCacheHits,
             stableOutputCacheHits = secondPassStableHits,
             regularCacheHits = secondPassRegularHits,
@@ -6171,6 +6181,20 @@ internal object SvgPathDataOptimizer {
         var commandGlobalSegmentEncodingUniqueKeys: Int = 0,
         var numericSerializationNanos: Long = 0
     )
+
+    private fun registerFinalPassStablePaths(
+        xml: String,
+        cache: PathOptimizationCache
+    ): Int {
+        val finalPathData = linkedSetOf<String>()
+        pathDataAttributeRegex.findAll(xml).forEach { match ->
+            finalPathData += match.groupValues[1]
+        }
+        finalPathData.forEach { pathData ->
+            cache.stableOutputs[pathData] = stableReusePathResult(pathData)
+        }
+        return finalPathData.size
+    }
 
     private fun optimizePathDataCached(
         pathData: String,

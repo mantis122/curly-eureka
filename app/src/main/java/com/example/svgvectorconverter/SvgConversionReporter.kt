@@ -209,6 +209,7 @@ class SvgConversionReportData {
     var optimizerIdempotenceFinalFormattingNanos: Long = 0
     var optimizerIdempotenceEqualityComparisonNanos: Long = 0
     var optimizerIdempotencePathsExamined: Int = 0
+    var optimizerIdempotenceFinalPassStablePathsRegistered: Int = 0
     var optimizerIdempotencePathCacheHits: Int = 0
     var optimizerIdempotenceStableOutputCacheHits: Int = 0
     var optimizerIdempotenceRegularCacheHits: Int = 0
@@ -1398,6 +1399,12 @@ object SvgConversionReporter {
                 }
             }
             appendLine("• Paths examined: ${data.optimizerIdempotencePathsExamined}")
+            if (data.optimizerIdempotenceFinalPassStablePathsRegistered > 0) {
+                appendLine(
+                    "• Final pass-1 stable paths registered: " +
+                        data.optimizerIdempotenceFinalPassStablePathsRegistered
+                )
+            }
             val secondPassLookups =
                 data.optimizerIdempotencePathCacheHits +
                     data.optimizerIdempotencePathCacheMisses

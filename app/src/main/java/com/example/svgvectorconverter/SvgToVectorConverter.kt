@@ -397,6 +397,8 @@ object SvgToVectorConverter {
             pathOptimizationStats.idempotenceProfiling.equalityComparisonNanos
         reportData.optimizerIdempotencePathsExamined =
             pathOptimizationStats.idempotenceProfiling.pathsExamined
+        reportData.optimizerIdempotenceFinalPassStablePathsRegistered =
+            pathOptimizationStats.idempotenceProfiling.finalPassStablePathsRegistered
         reportData.optimizerIdempotencePathCacheHits =
             pathOptimizationStats.idempotenceProfiling.pathCacheHits
         reportData.optimizerIdempotenceStableOutputCacheHits =
