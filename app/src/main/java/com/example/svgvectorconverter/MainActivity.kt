@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
     private var currentPostScaleDifferentialReport = ""
     private var currentPostScaleStageAddbackReport = ""
     private var currentIdempotencePathReuseReport = ""
+    private var currentPathFixedPointReport = ""
 
     private fun makeButton(
         label: String,
@@ -201,6 +202,16 @@ class MainActivity : ComponentActivity() {
                 currentIdempotencePathReuseReport
             )
             toast("G3.4 differential search report saved")
+        }
+    }
+
+
+    private val savePathFixedPointReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentPathFixedPointReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(this, uri, currentPathFixedPointReport)
+            toast("G3.5 fixed-point report saved")
         }
     }
 
@@ -839,6 +850,28 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        val pathFixedPointButton =
+            makeButton("Run G3.5.1 Parallel Path Fixed-Point Investigation") {
+                runPathFixedPointInvestigationSearch()
+            }
+        layout.addView(pathFixedPointButton, LinearLayout.LayoutParams(-1, -2))
+
+        layout.addView(
+            makeText(
+                """
+                Generates 100,000 deterministic path stress cases. Each path
+                is optimized repeatedly and G3.5 records the first pass-2
+                stage that changes the pass-1 spelling. This identifies the
+                stage-order interaction preventing one-pass fixed points.
+                Production idempotence remains fully independent.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
         val diagnosticsHeading = makeText(
             "Future Diagnostics",
             16f,
@@ -1428,7 +1461,7 @@ class MainActivity : ComponentActivity() {
         ).apply { setPadding(0, 24, 0, 0) }
 
         val detailText = makeText(
-            "Seed 1 of 4  •  0 / 25,000 in current seed",
+            "Workers: starting…",
             13f,
             Color.GRAY,
             Gravity.CENTER
@@ -1470,14 +1503,12 @@ class MainActivity : ComponentActivity() {
                                 progress.completedCases,
                                 progress.totalCases
                             )
-                            detailText.text = String.format(
-                                java.util.Locale.US,
-                                "Seed %d of %d  •  %,d / %,d in current seed",
-                                progress.seedIndex,
-                                progress.seedCount,
-                                progress.currentSeedProcessed,
-                                progress.casesPerSeed
-                            )
+                            val seedProgress = progress.perSeedProcessed
+                                .mapIndexed { index, processed ->
+                                    "S${index + 1}: ${String.format(java.util.Locale.US, "%,d", processed)}"
+                                }
+                                .joinToString("  •  ")
+                            detailText.text = "Workers: ${progress.workerCount}  •  $seedProgress"
                         }
                     }
                 }
@@ -1597,6 +1628,179 @@ class MainActivity : ComponentActivity() {
             )
         )
         toast("G3.4 differential search report copied")
+    }
+
+
+    private fun runPathFixedPointInvestigationSearch() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+        val progressBar = ProgressBar(
+            this,
+            null,
+            android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            isIndeterminate = false
+            max = 100_000
+            progress = 0
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val statusText = makeText(
+            "Progress: 0.0%  •  0 / 100,000",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 24, 0, 0) }
+        val detailText = makeText(
+            "Workers: starting…",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 12, 0, 0) }
+        val noteText = makeText(
+            "Tracing the first pass-2 path stage that changes each pass-1 result.",
+            12f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 8, 0, 0) }
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(detailText)
+        progressLayout.addView(noteText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.5.1 Parallel Path Fixed-Point Investigation")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgPathFixedPointInvestigationSearch.runDefault { progress ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && progressDialog.isShowing) {
+                            progressBar.max = progress.totalCases.coerceAtLeast(1)
+                            progressBar.progress = progress.completedCases.coerceIn(0, progressBar.max)
+                            statusText.text = String.format(
+                                java.util.Locale.US,
+                                "Progress: %.1f%%  •  %,d / %,d",
+                                progress.percentComplete,
+                                progress.completedCases,
+                                progress.totalCases
+                            )
+                            val seedProgress = progress.perSeedProcessed
+                                .mapIndexed { index, processed ->
+                                    "S${index + 1}: ${String.format(java.util.Locale.US, "%,d", processed)}"
+                                }
+                                .joinToString("  •  ")
+                            detailText.text = "Workers: ${progress.workerCount}  •  $seedProgress"
+                        }
+                    }
+                }
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("G3.5 automated path optimizer fixed-point investigation")
+                    appendLine()
+                    appendLine("RESULT: The search could not be completed.")
+                    appendLine()
+                    appendLine(throwable.message ?: throwable::class.java.simpleName)
+                    appendLine()
+                    appendLine("Check that SvgPathFixedPointInvestigationSearch.kt and the G3.5 SvgPathDataOptimizer.kt are included in the app.")
+                }
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentPathFixedPointReport = report
+                    showPathFixedPointResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showPathFixedPointResultsDialog(report: String) {
+        val failed = report.contains("could not be completed")
+        val fixed = report.contains("RESULT: every generated path was a fixed point after one optimizer pass.")
+        val summaryText: String
+        val summaryColor: Int
+        when {
+            failed -> {
+                summaryText = "✕ Search could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+            fixed -> {
+                summaryText = "✓ One-pass path fixed point confirmed"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+            else -> {
+                summaryText = "⚠ Path fixed-point drift detected"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+        }
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+        layout.addView(makeText(summaryText, 18f, summaryColor, Gravity.START, paddingBottom = 16))
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        val reportScroll = ScrollView(this).apply { addView(reportView) }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+        val copyButton = makeButton("Copy Results") { copyPathFixedPointReport() }
+        val saveButton = makeButton("Save .txt") {
+            savePathFixedPointReport.launch("g3_5_path_fixed_point_investigation_report.txt")
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+        val rerunButton = makeButton("Run Again") { runPathFixedPointInvestigationSearch() }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.5.1 Parallel Path Fixed-Point Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+        dialog.show()
+    }
+
+    private fun copyPathFixedPointReport() {
+        if (currentPathFixedPointReport.isBlank()) {
+            toast("No G3.5 fixed-point report to copy")
+            return
+        }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "g3_5_path_fixed_point_investigation_report.txt",
+                currentPathFixedPointReport
+            )
+        )
+        toast("G3.5 fixed-point report copied")
     }
 
     private fun runBundledRegressionSuite() {

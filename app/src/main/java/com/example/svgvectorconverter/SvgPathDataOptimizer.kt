@@ -341,33 +341,23 @@ internal object SvgPathDataOptimizer {
         )
         val firstPassNanos = System.nanoTime() - firstPassStartTime
 
-        // G3.3: pass 1 can rewrite pathData after the initial path-syntax stage
-        // (for example during transform flattening). Register the exact final
-        // pathData spellings present in firstPass.xml as known-stable inputs
-        // for the idempotence pass. This changes only pass-2 work reuse; the
-        // production first-pass XML remains authoritative and unchanged.
-        val finalPassStablePathsRegistered =
-            registerFinalPassStablePaths(firstPass.xml, pathCache)
-
-        val secondPassCacheHitsBefore = pathCache.validationHits
-        val secondPassStableHitsBefore = pathCache.validationStableOutputHits
-        val secondPassRegularHitsBefore = pathCache.validationRegularHits
-        val secondPassCacheMissesBefore = pathCache.validationMisses
+        // G3.5 safety rollback: production idempotence validation performs a
+        // fully independent path recomputation. Stable-output reuse remains
+        // available only to the G3.4 developer diagnostic so it cannot mask a
+        // legitimate second-pass improvement.
+        val finalPassStablePathsRegistered = 0
+        val secondPassCache = PathOptimizationCache()
         val secondPassStartTime = System.nanoTime()
         val secondPass = optimizeVectorXmlSinglePass(
             xml = firstPass.xml,
-            pathCache = pathCache,
+            pathCache = secondPassCache,
             validationPass = true
         )
         val secondPassNanos = System.nanoTime() - secondPassStartTime
-        val secondPassCacheHits =
-            pathCache.validationHits - secondPassCacheHitsBefore
-        val secondPassStableHits =
-            pathCache.validationStableOutputHits - secondPassStableHitsBefore
-        val secondPassRegularHits =
-            pathCache.validationRegularHits - secondPassRegularHitsBefore
-        val secondPassCacheMisses =
-            pathCache.validationMisses - secondPassCacheMissesBefore
+        val secondPassCacheHits = secondPassCache.validationHits
+        val secondPassStableHits = secondPassCache.validationStableOutputHits
+        val secondPassRegularHits = secondPassCache.validationRegularHits
+        val secondPassCacheMisses = secondPassCache.validationMisses
         val equalityComparisonStartTime = System.nanoTime()
         val secondPassMatchesFirst = secondPass.xml == firstPass.xml
         val equalityComparisonNanos =
@@ -412,8 +402,8 @@ internal object SvgPathDataOptimizer {
                         optimizerProductionPassNanos = firstPassNanos,
                         optimizerIdempotencePassNanos = secondPassNanos,
                         optimizerFixedPointPassNanos = 0L,
-                        optimizerValidationPathCacheHits = pathCache.validationHits,
-                        optimizerValidationPathCacheMisses = pathCache.validationMisses,
+                        optimizerValidationPathCacheHits = secondPassCache.validationHits,
+                        optimizerValidationPathCacheMisses = secondPassCache.validationMisses,
                         idempotenceProfiling = idempotenceProfiling,
                         optimizerValidationPasses = 2,
                         optimizerFirstPassChangedXml = firstPass.xml != xml,
@@ -429,9 +419,10 @@ internal object SvgPathDataOptimizer {
         // original first-pass output so validation never silently changes
         // production behavior.
         val thirdPassStartTime = System.nanoTime()
+        val thirdPassCache = PathOptimizationCache()
         val thirdPass = optimizeVectorXmlSinglePass(
             xml = secondPass.xml,
-            pathCache = pathCache,
+            pathCache = thirdPassCache,
             validationPass = true
         )
         val thirdPassNanos = System.nanoTime() - thirdPassStartTime
@@ -447,8 +438,8 @@ internal object SvgPathDataOptimizer {
                     optimizerProductionPassNanos = firstPassNanos,
                     optimizerIdempotencePassNanos = secondPassNanos,
                     optimizerFixedPointPassNanos = thirdPassNanos,
-                    optimizerValidationPathCacheHits = pathCache.validationHits,
-                    optimizerValidationPathCacheMisses = pathCache.validationMisses,
+                    optimizerValidationPathCacheHits = secondPassCache.validationHits + thirdPassCache.validationHits,
+                    optimizerValidationPathCacheMisses = secondPassCache.validationMisses + thirdPassCache.validationMisses,
                     idempotenceProfiling = idempotenceProfiling,
                     optimizerValidationPasses = 3,
                     optimizerFirstPassChangedXml = firstPass.xml != xml,
@@ -5602,6 +5593,175 @@ internal object SvgPathDataOptimizer {
         )
     }
 
+
+    data class PathFixedPointWitness(
+        val caseNumber: Int,
+        val firstChangingStage: String,
+        val stabilizedOnThirdPass: Boolean,
+        val source: String,
+        val firstPass: String,
+        val secondPass: String,
+        val thirdPass: String,
+        val stageSnapshots: List<PathFixedPointStageSnapshot>
+    )
+
+    data class PathFixedPointInvestigationResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val rejectedGeneratedCases: Int,
+        val alreadyFixedAfterFirstPass: Int,
+        val secondPassChangedCases: Int,
+        val stabilizedOnThirdPass: Int,
+        val stillChangingAfterThirdPass: Int,
+        val firstChangingStageCounts: Map<String, Int>,
+        val elapsedNanos: Long,
+        val witnesses: List<PathFixedPointWitness>
+    ) {
+        fun toPlainTextReport(): String = buildString {
+            appendLine("G3.5 path optimizer fixed-point investigation")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $rejectedGeneratedCases")
+            appendLine("Already fixed after pass 1: $alreadyFixedAfterFirstPass")
+            appendLine("Changed on pass 2: $secondPassChangedCases")
+            appendLine("Stabilized on pass 3: $stabilizedOnThirdPass")
+            appendLine("Still changing after pass 3: $stillChangingAfterThirdPass")
+            appendLine("Elapsed: " + String.format(java.util.Locale.US, "%.2f ms", elapsedNanos / 1_000_000.0))
+            appendLine()
+            appendLine("First changing stage")
+            val orderedStages = listOf(
+                "Syntax normalization",
+                "Redundant geometry cleanup",
+                "Arc cleanup",
+                "Curve simplification",
+                "Collinear consolidation",
+                "Local command shortening",
+                "Global command minimization",
+                "Global numeric serialization",
+                "Unclassified"
+            )
+            orderedStages.forEach { stage ->
+                val count = firstChangingStageCounts[stage] ?: 0
+                if (count > 0) appendLine("• $stage: $count")
+            }
+            appendLine()
+            if (secondPassChangedCases == 0) {
+                appendLine("RESULT: every generated path was a fixed point after one optimizer pass.")
+            } else {
+                appendLine("RESULT: second-pass path changes were detected.")
+                appendLine("Recommendation: use the first-changing-stage distribution and witnesses to repair stage ordering rather than caching pass-1 output as stable.")
+            }
+            if (witnesses.isNotEmpty()) {
+                appendLine()
+                appendLine("Witnesses")
+                witnesses.forEachIndexed { index, witness ->
+                    appendLine()
+                    appendLine("${index + 1}. Case ${witness.caseNumber}")
+                    appendLine("   First changing stage: ${witness.firstChangingStage}")
+                    appendLine("   Stabilized on pass 3: ${witness.stabilizedOnThirdPass}")
+                    appendLine("   Source: ${witness.source}")
+                    appendLine("   Pass 1: ${witness.firstPass}")
+                    appendLine("   Pass 2: ${witness.secondPass}")
+                    appendLine("   Pass 3: ${witness.thirdPass}")
+                    appendLine("   Pass-2 stage trace:")
+                    var previous = witness.firstPass
+                    witness.stageSnapshots.forEach { snapshot ->
+                        if (snapshot.pathData != previous) {
+                            appendLine("     • ${snapshot.stage}: ${snapshot.pathData}")
+                        }
+                        previous = snapshot.pathData
+                    }
+                }
+            }
+        }
+    }
+
+    fun runPathFixedPointInvestigationStressSearch(
+        caseCount: Int,
+        seed: Long,
+        maximumWitnesses: Int = 10,
+        progressCallback: ((Int) -> Unit)? = null
+    ): PathFixedPointInvestigationResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        val started = System.nanoTime()
+        val random = Random(seed)
+        var generated = 0
+        var valid = 0
+        var rejected = 0
+        var fixed = 0
+        var changed = 0
+        var stabilizedThird = 0
+        var stillChanging = 0
+        val stageCounts = linkedMapOf<String, Int>()
+        val witnesses = mutableListOf<PathFixedPointWitness>()
+
+        repeat(caseCount) { caseIndex ->
+            generated++
+            val source = generateDifferentialStressPath(random)
+            try {
+                val first = optimizePathData(source).pathData
+                val trace = mutableListOf<PathFixedPointStageSnapshot>()
+                val second = optimizePathData(first, stageTrace = trace).pathData
+                valid++
+                if (second == first) {
+                    fixed++
+                } else {
+                    changed++
+                    var previous = first
+                    var firstStage = "Unclassified"
+                    for (snapshot in trace) {
+                        if (snapshot.pathData != previous) {
+                            firstStage = snapshot.stage
+                            break
+                        }
+                        previous = snapshot.pathData
+                    }
+                    stageCounts[firstStage] = (stageCounts[firstStage] ?: 0) + 1
+                    val third = optimizePathData(second).pathData
+                    val stabilized = third == second
+                    if (stabilized) stabilizedThird++ else stillChanging++
+                    if (witnesses.size < maximumWitnesses) {
+                        witnesses += PathFixedPointWitness(
+                            caseNumber = caseIndex + 1,
+                            firstChangingStage = firstStage,
+                            stabilizedOnThirdPass = stabilized,
+                            source = source,
+                            firstPass = first,
+                            secondPass = second,
+                            thirdPass = third,
+                            stageSnapshots = trace.toList()
+                        )
+                    }
+                }
+            } catch (_: Throwable) {
+                rejected++
+            }
+            val processed = caseIndex + 1
+            if (progressCallback != null && (processed == caseCount || processed % 250 == 0)) {
+                progressCallback(processed)
+            }
+        }
+        return PathFixedPointInvestigationResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generated,
+            validCases = valid,
+            rejectedGeneratedCases = rejected,
+            alreadyFixedAfterFirstPass = fixed,
+            secondPassChangedCases = changed,
+            stabilizedOnThirdPass = stabilizedThird,
+            stillChangingAfterThirdPass = stillChanging,
+            firstChangingStageCounts = stageCounts,
+            elapsedNanos = System.nanoTime() - started,
+            witnesses = witnesses
+        )
+    }
+
     private fun generateIdempotenceDifferentialVectorXml(random: Random): String {
         val pathCount = random.nextInt(1, 4)
         val body = buildString {
@@ -6518,9 +6678,15 @@ internal object SvgPathDataOptimizer {
             globallyOptimizedNumericPaths = 0
         )
 
+    data class PathFixedPointStageSnapshot(
+        val stage: String,
+        val pathData: String
+    )
+
     private fun optimizePathData(
         pathData: String,
-        profiling: PathSyntaxProfiling? = null
+        profiling: PathSyntaxProfiling? = null,
+        stageTrace: MutableList<PathFixedPointStageSnapshot>? = null
     ): PathResult {
         val tokenizationStartTime = System.nanoTime()
         val matches = tokenRegex.findAll(pathData).toList()
@@ -6589,6 +6755,7 @@ internal object SvgPathDataOptimizer {
         }
 
         val syntaxNormalizedPath = output.toString()
+        stageTrace?.add(PathFixedPointStageSnapshot("Syntax normalization", syntaxNormalizedPath))
 
         profiling?.let {
             it.tokenizationNormalizationNanos +=
@@ -6601,6 +6768,7 @@ internal object SvgPathDataOptimizer {
         val redundantCleanup = removeRedundantNonDrawingSegments(
             syntaxNormalizedPath
         )
+        stageTrace?.add(PathFixedPointStageSnapshot("Redundant geometry cleanup", redundantCleanup.pathData))
         profiling?.let {
             it.redundantSegmentCleanupNanos +=
                 System.nanoTime() - redundantSegmentCleanupStartTime
@@ -6662,6 +6830,8 @@ internal object SvgPathDataOptimizer {
                 DegenerateArcCleanupResult(unchangedPathData, 0)
         }
 
+        stageTrace?.add(PathFixedPointStageSnapshot("Arc cleanup", degenerateArcCleanup.pathData))
+
         val curveSimplificationStartTime = System.nanoTime()
         val cubicStartTime = System.nanoTime()
         val cubicToQuadraticCleanup = reduceExactCubicCurvesToQuadratic(
@@ -6691,6 +6861,8 @@ internal object SvgPathDataOptimizer {
                 System.nanoTime() - curveSimplificationStartTime
         }
 
+        stageTrace?.add(PathFixedPointStageSnapshot("Curve simplification", straightBezierCleanup.pathData))
+
         val collinearConsolidationStartTime = System.nanoTime()
         val collinearCleanup = consolidateConsecutiveCollinearLineRuns(
             straightBezierCleanup.pathData
@@ -6700,6 +6872,8 @@ internal object SvgPathDataOptimizer {
                 System.nanoTime() - collinearConsolidationStartTime
             it.geometryCleanupNanos += System.nanoTime() - geometryCleanupStartTime
         }
+
+        stageTrace?.add(PathFixedPointStageSnapshot("Collinear consolidation", collinearCleanup.pathData))
 
         val commandMinimizationStartTime = System.nanoTime()
         val localShorteningStartTime = System.nanoTime()
@@ -6711,10 +6885,12 @@ internal object SvgPathDataOptimizer {
             it.commandLocalShorteningNanos +=
                 System.nanoTime() - localShorteningStartTime
         }
+        stageTrace?.add(PathFixedPointStageSnapshot("Local command shortening", commandOptimization.pathData))
         val globalCommandOptimization = globallyMinimizeCommandSequence(
             commandOptimization.pathData,
             profiling
         )
+        stageTrace?.add(PathFixedPointStageSnapshot("Global command minimization", globalCommandOptimization.pathData))
         profiling?.let {
             it.commandMinimizationNanos +=
                 System.nanoTime() - commandMinimizationStartTime
@@ -6728,6 +6904,7 @@ internal object SvgPathDataOptimizer {
             it.numericSerializationNanos +=
                 System.nanoTime() - numericSerializationStartTime
         }
+        stageTrace?.add(PathFixedPointStageSnapshot("Global numeric serialization", globalNumericOptimization.pathData))
         return PathResult(
             pathData = globalNumericOptimization.pathData,
             repeatedCommandsRemoved = repeatedCommandsRemoved,
