@@ -1503,12 +1503,14 @@ class MainActivity : ComponentActivity() {
                                 progress.completedCases,
                                 progress.totalCases
                             )
-                            val seedProgress = progress.perSeedProcessed
-                                .mapIndexed { index, processed ->
-                                    "S${index + 1}: ${String.format(java.util.Locale.US, "%,d", processed)}"
-                                }
-                                .joinToString("  •  ")
-                            detailText.text = "Workers: ${progress.workerCount}  •  $seedProgress"
+                            detailText.text = String.format(
+                                java.util.Locale.US,
+                                "Seed %d of %d  •  %,d / %,d in current seed",
+                                progress.seedIndex,
+                                progress.seedCount,
+                                progress.currentSeedProcessed,
+                                progress.casesPerSeed
+                            )
                         }
                     }
                 }
