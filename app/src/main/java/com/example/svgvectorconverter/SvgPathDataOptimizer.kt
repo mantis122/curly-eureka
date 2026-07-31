@@ -5378,6 +5378,251 @@ internal object SvgPathDataOptimizer {
         }
     }
 
+    data class IdempotencePathReuseDifferentialWitness(
+        val caseIndex: Int,
+        val sourceXml: String,
+        val firstPassXml: String,
+        val independentSecondPassXml: String,
+        val reusedSecondPassXml: String,
+        val independentIdempotent: Boolean,
+        val reusedIdempotent: Boolean,
+        val stablePathsRegistered: Int,
+        val stableOutputHits: Int
+    )
+
+    data class IdempotencePathReuseDifferentialSearchResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val rejectedGeneratedCases: Int,
+        val byteIdenticalSecondPasses: Int,
+        val byteDifferentSecondPasses: Int,
+        val idempotenceDecisionMismatches: Int,
+        val independentIdempotentCount: Int,
+        val reuseIdempotentCount: Int,
+        val stablePathsRegistered: Int,
+        val stableOutputHits: Int,
+        val independentSecondPassNanos: Long,
+        val reusedSecondPassNanos: Long,
+        val elapsedNanos: Long,
+        val witnesses: List<IdempotencePathReuseDifferentialWitness>
+    ) {
+        val elapsedMilliseconds: Double
+            get() = elapsedNanos / 1_000_000.0
+
+        fun toPlainTextReport(): String = buildString {
+            appendLine("G3.4 stable-path reuse differential stress search")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $rejectedGeneratedCases")
+            appendLine("Byte-identical second passes: $byteIdenticalSecondPasses")
+            appendLine("Byte-different second passes: $byteDifferentSecondPasses")
+            appendLine("Idempotence decision mismatches: $idempotenceDecisionMismatches")
+            appendLine("Independent pass reported idempotent: $independentIdempotentCount")
+            appendLine("Reuse pass reported idempotent: $reuseIdempotentCount")
+            appendLine("Final pass-1 stable paths registered: $stablePathsRegistered")
+            appendLine("Stable-output cache hits: $stableOutputHits")
+            appendLine(
+                "Independent second-pass time: " +
+                    String.format(java.util.Locale.US, "%.2f ms", independentSecondPassNanos / 1_000_000.0)
+            )
+            appendLine(
+                "Reuse second-pass time: " +
+                    String.format(java.util.Locale.US, "%.2f ms", reusedSecondPassNanos / 1_000_000.0)
+            )
+            appendLine(
+                "Elapsed: " +
+                    String.format(java.util.Locale.US, "%.2f ms", elapsedMilliseconds)
+            )
+            appendLine()
+
+            if (byteDifferentSecondPasses == 0 && idempotenceDecisionMismatches == 0) {
+                appendLine("RESULT: stable-path reuse matched independent recomputation exactly.")
+                appendLine(
+                    "Recommendation: G3.3 is a strong candidate for permanent retention after " +
+                        "the locked regression suite remains clean."
+                )
+            } else {
+                appendLine("RESULT: stable-path reuse diverged from independent recomputation.")
+                appendLine(
+                    "Recommendation: do not make G3.3 permanent. Investigate every witness first."
+                )
+            }
+
+            if (witnesses.isNotEmpty()) {
+                appendLine()
+                appendLine("Witnesses")
+                witnesses.forEachIndexed { index, witness ->
+                    appendLine()
+                    appendLine("${index + 1}. Case ${witness.caseIndex}")
+                    appendLine("   Independent idempotent: ${witness.independentIdempotent}")
+                    appendLine("   Reuse idempotent: ${witness.reusedIdempotent}")
+                    appendLine("   Stable paths registered: ${witness.stablePathsRegistered}")
+                    appendLine("   Stable-output hits: ${witness.stableOutputHits}")
+                    appendLine("   Source XML: ${witness.sourceXml.replace('\n', ' ')}")
+                    appendLine("   First pass: ${witness.firstPassXml.replace('\n', ' ')}")
+                    appendLine("   Independent second pass: ${witness.independentSecondPassXml.replace('\n', ' ')}")
+                    appendLine("   Reuse second pass: ${witness.reusedSecondPassXml.replace('\n', ' ')}")
+                }
+            }
+        }
+    }
+
+    /**
+     * G3.4 Developer Tools diagnostic. Production conversion never calls this.
+     *
+     * Each generated VectorDrawable runs one common first pass. The resulting
+     * pass-1 XML is then validated two ways:
+     * 1) a fresh cache forces independent path recomputation on pass 2;
+     * 2) the G3.3 final-pass stable-output cache is allowed to serve pass 2.
+     *
+     * Exact second-pass XML and the idempotence verdict must agree.
+     */
+    fun runIdempotencePathReuseDifferentialStressSearch(
+        caseCount: Int = 25_000,
+        seed: Long = 0x6314_2026L,
+        maximumWitnesses: Int = 12
+    ): IdempotencePathReuseDifferentialSearchResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        require(maximumWitnesses >= 0) { "maximumWitnesses must be non-negative" }
+
+        val started = System.nanoTime()
+        val random = Random(seed)
+        val witnesses = mutableListOf<IdempotencePathReuseDifferentialWitness>()
+
+        var generatedCases = 0
+        var validCases = 0
+        var rejectedGeneratedCases = 0
+        var byteIdenticalSecondPasses = 0
+        var byteDifferentSecondPasses = 0
+        var idempotenceDecisionMismatches = 0
+        var independentIdempotentCount = 0
+        var reuseIdempotentCount = 0
+        var stablePathsRegisteredTotal = 0
+        var stableOutputHitsTotal = 0
+        var independentSecondPassNanos = 0L
+        var reusedSecondPassNanos = 0L
+
+        repeat(caseCount) { caseIndex ->
+            generatedCases++
+            val sourceXml = generateIdempotenceDifferentialVectorXml(random)
+
+            try {
+                val reuseCache = PathOptimizationCache()
+                val firstPass = optimizeVectorXmlSinglePass(
+                    xml = sourceXml,
+                    pathCache = reuseCache,
+                    validationPass = false
+                )
+                val stableRegistered = registerFinalPassStablePaths(firstPass.xml, reuseCache)
+
+                val independentStart = System.nanoTime()
+                val independentSecondPass = optimizeVectorXmlSinglePass(
+                    xml = firstPass.xml,
+                    pathCache = PathOptimizationCache(),
+                    validationPass = true
+                )
+                independentSecondPassNanos += System.nanoTime() - independentStart
+
+                val stableHitsBefore = reuseCache.validationStableOutputHits
+                val reuseStart = System.nanoTime()
+                val reusedSecondPass = optimizeVectorXmlSinglePass(
+                    xml = firstPass.xml,
+                    pathCache = reuseCache,
+                    validationPass = true
+                )
+                reusedSecondPassNanos += System.nanoTime() - reuseStart
+                val stableHits = reuseCache.validationStableOutputHits - stableHitsBefore
+
+                val independentIdempotent = independentSecondPass.xml == firstPass.xml
+                val reusedIdempotent = reusedSecondPass.xml == firstPass.xml
+                val byteIdentical = independentSecondPass.xml == reusedSecondPass.xml
+                val decisionMismatch = independentIdempotent != reusedIdempotent
+
+                validCases++
+                stablePathsRegisteredTotal += stableRegistered
+                stableOutputHitsTotal += stableHits
+                if (independentIdempotent) independentIdempotentCount++
+                if (reusedIdempotent) reuseIdempotentCount++
+                if (byteIdentical) byteIdenticalSecondPasses++ else byteDifferentSecondPasses++
+                if (decisionMismatch) idempotenceDecisionMismatches++
+
+                if ((!byteIdentical || decisionMismatch) && witnesses.size < maximumWitnesses) {
+                    witnesses += IdempotencePathReuseDifferentialWitness(
+                        caseIndex = caseIndex + 1,
+                        sourceXml = sourceXml,
+                        firstPassXml = firstPass.xml,
+                        independentSecondPassXml = independentSecondPass.xml,
+                        reusedSecondPassXml = reusedSecondPass.xml,
+                        independentIdempotent = independentIdempotent,
+                        reusedIdempotent = reusedIdempotent,
+                        stablePathsRegistered = stableRegistered,
+                        stableOutputHits = stableHits
+                    )
+                }
+            } catch (_: Throwable) {
+                rejectedGeneratedCases++
+            }
+        }
+
+        return IdempotencePathReuseDifferentialSearchResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generatedCases,
+            validCases = validCases,
+            rejectedGeneratedCases = rejectedGeneratedCases,
+            byteIdenticalSecondPasses = byteIdenticalSecondPasses,
+            byteDifferentSecondPasses = byteDifferentSecondPasses,
+            idempotenceDecisionMismatches = idempotenceDecisionMismatches,
+            independentIdempotentCount = independentIdempotentCount,
+            reuseIdempotentCount = reuseIdempotentCount,
+            stablePathsRegistered = stablePathsRegisteredTotal,
+            stableOutputHits = stableOutputHitsTotal,
+            independentSecondPassNanos = independentSecondPassNanos,
+            reusedSecondPassNanos = reusedSecondPassNanos,
+            elapsedNanos = System.nanoTime() - started,
+            witnesses = witnesses
+        )
+    }
+
+    private fun generateIdempotenceDifferentialVectorXml(random: Random): String {
+        val pathCount = random.nextInt(1, 4)
+        val body = buildString {
+            repeat(pathCount) { index ->
+                val pathData = generateDifferentialStressPath(random)
+                val path = "<path android:pathData=\"$pathData\" android:fillColor=\"#FF336699\"/>"
+
+                when (random.nextInt(5)) {
+                    0 -> {
+                        val factor = formatBigDecimal(randomPositiveScaleFactor(random))
+                        val pivotX = formatBigDecimal(randomTransformNumber(random))
+                        val pivotY = formatBigDecimal(randomTransformNumber(random))
+                        append(
+                            "<group android:scaleX=\"$factor\" android:scaleY=\"$factor\" " +
+                                "android:pivotX=\"$pivotX\" android:pivotY=\"$pivotY\">$path</group>"
+                        )
+                    }
+                    1 -> {
+                        val tx = formatBigDecimal(randomTransformNumber(random))
+                        val ty = formatBigDecimal(randomTransformNumber(random))
+                        append(
+                            "<group android:translateX=\"$tx\" android:translateY=\"$ty\">$path</group>"
+                        )
+                    }
+                    else -> append(path)
+                }
+
+                if (index + 1 < pathCount) append('\n')
+            }
+        }
+
+        return """<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="1000" android:viewportHeight="1000">$body</vector>"""
+    }
+
     /**
      * G2.25 Developer Tools diagnostic: differentially stress-tests the full
      * post-scale optimizer against the G2.24 narrowed post-scale pipeline.

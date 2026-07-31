@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
     private var currentDifferentialSearchReport = ""
     private var currentPostScaleDifferentialReport = ""
     private var currentPostScaleStageAddbackReport = ""
+    private var currentIdempotencePathReuseReport = ""
 
     private fun makeButton(
         label: String,
@@ -187,6 +188,19 @@ class MainActivity : ComponentActivity() {
                 currentPostScaleStageAddbackReport
             )
             toast("G2.26 stage-addback report saved")
+        }
+    }
+
+    private val saveIdempotencePathReuseReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentIdempotencePathReuseReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(
+                this,
+                uri,
+                currentIdempotencePathReuseReport
+            )
+            toast("G3.4 differential search report saved")
         }
     }
 
@@ -800,6 +814,31 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        val idempotencePathReuseButton =
+            makeButton("Run G3.4 Stable-Path Reuse Differential Search") {
+                runIdempotencePathReuseDifferentialSearch()
+            }
+        layout.addView(
+            idempotencePathReuseButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Generates 100,000 deterministic VectorDrawable cases. Each
+                case runs one common production pass, then compares a fully
+                independent second-pass path recomputation with G3.3 final-path
+                stable-output reuse. Exact second-pass XML and the idempotence
+                verdict must match.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
         val diagnosticsHeading = makeText(
             "Future Diagnostics",
             16f,
@@ -1358,6 +1397,160 @@ class MainActivity : ComponentActivity() {
             )
         )
         toast("G2.26 stage-addback report copied")
+    }
+
+    private fun runIdempotencePathReuseDifferentialSearch() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+
+        val progressBar = ProgressBar(this)
+        val statusText = makeText(
+            "Comparing independent and reused idempotence passes…",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 24, 0, 0) }
+
+        val detailText = makeText(
+            "Runs 100,000 deterministic VectorDrawable cases off the UI thread.",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 12, 0, 0) }
+
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(detailText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.4 Stable-Path Reuse Differential Search")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgIdempotencePathReuseDifferentialSearch.runDefault()
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("G3.4 automated stable-path reuse differential stress search")
+                    appendLine()
+                    appendLine("RESULT: The search could not be completed.")
+                    appendLine()
+                    appendLine(throwable.message ?: throwable::class.java.simpleName)
+                    appendLine()
+                    appendLine(
+                        "Check that SvgIdempotencePathReuseDifferentialSearch.kt and the " +
+                            "G3.4 SvgPathDataOptimizer.kt are included in the app."
+                    )
+                }
+            }
+
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentIdempotencePathReuseReport = report
+                    showIdempotencePathReuseResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showIdempotencePathReuseResultsDialog(report: String) {
+        val failed = report.contains("could not be completed")
+        val exact = report.contains(
+            "RESULT: stable-path reuse matched independent recomputation across every seed."
+        )
+
+        val summaryText: String
+        val summaryColor: Int
+        when {
+            failed -> {
+                summaryText = "✕ Search could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+            exact -> {
+                summaryText = "✓ Stable-path reuse matched exactly"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+            else -> {
+                summaryText = "⚠ Stable-path reuse mismatch detected"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+        layout.addView(
+            makeText(summaryText, 18f, summaryColor, Gravity.START, paddingBottom = 16)
+        )
+
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        val reportScroll = ScrollView(this).apply { addView(reportView) }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val copyButton = makeButton("Copy Results") { copyIdempotencePathReuseReport() }
+        val saveButton = makeButton("Save .txt") {
+            saveIdempotencePathReuseReport.launch(
+                "g3_4_stable_path_reuse_differential_search_report.txt"
+            )
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+
+        val rerunButton = makeButton("Run Again") {
+            runIdempotencePathReuseDifferentialSearch()
+        }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.4 Stable-Path Reuse Search Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+        dialog.show()
+    }
+
+    private fun copyIdempotencePathReuseReport() {
+        if (currentIdempotencePathReuseReport.isBlank()) {
+            toast("No G3.4 differential search report to copy")
+            return
+        }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "g3_4_stable_path_reuse_differential_search_report.txt",
+                currentIdempotencePathReuseReport
+            )
+        )
+        toast("G3.4 differential search report copied")
     }
 
     private fun runBundledRegressionSuite() {
