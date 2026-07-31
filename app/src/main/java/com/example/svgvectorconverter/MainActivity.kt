@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
     private var currentIdempotencePathReuseReport = ""
     private var currentPathFixedPointReport = ""
     private var currentFinalCommandConvergenceReport = ""
+    private var currentPostSerializationGeometryConvergenceReport = ""
 
     private fun makeButton(
         label: String,
@@ -222,6 +223,19 @@ class MainActivity : ComponentActivity() {
         if (uri != null && currentFinalCommandConvergenceReport.isNotBlank()) {
             FileIoHelpers.writeTextToUri(this, uri, currentFinalCommandConvergenceReport)
             toast("G3.6 convergence report saved")
+        }
+    }
+
+    private val savePostSerializationGeometryConvergenceReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentPostSerializationGeometryConvergenceReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(
+                this,
+                uri,
+                currentPostSerializationGeometryConvergenceReport
+            )
+            toast("G3.7 geometry convergence report saved")
         }
     }
 
@@ -896,6 +910,33 @@ class MainActivity : ComponentActivity() {
                 serialization tail identified by G3.5, compares it with an
                 independent full second pass, then verifies that the candidate
                 is a full-optimizer fixed point. Production behavior is unchanged.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        val postSerializationGeometryConvergenceButton =
+            makeButton("Run G3.7 Post-Serialization Geometry Convergence Search") {
+                runPostSerializationGeometryConvergenceSearch()
+            }
+        layout.addView(
+            postSerializationGeometryConvergenceButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Reuses the exact G3.6 100,000-case corpus with four parallel
+                workers. G3.7 reparses pass-1 output, reruns only redundant
+                non-drawing geometry cleanup and exact collinear line
+                consolidation, then reruns the command/serialization tail. It
+                must match an independent full pass 2, remain fixed under a
+                full verification pass, and preserve sampled path geometry.
+                Production behavior is unchanged.
                 """.trimIndent(),
                 14f,
                 Color.GRAY,
@@ -2007,6 +2048,186 @@ class MainActivity : ComponentActivity() {
             )
         )
         toast("G3.6 convergence report copied")
+    }
+
+    private fun runPostSerializationGeometryConvergenceSearch() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+        val progressBar = ProgressBar(
+            this,
+            null,
+            android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            isIndeterminate = false
+            max = 100_000
+            progress = 0
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val statusText = makeText(
+            "Progress: 0.0%  •  0 / 100,000",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 24, 0, 0) }
+        val detailText = makeText(
+            "Workers: starting…",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 12, 0, 0) }
+        val noteText = makeText(
+            "Testing post-serialization geometry cleanup plus the final command/serialization tail.",
+            12f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 8, 0, 0) }
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(detailText)
+        progressLayout.addView(noteText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.7 Post-Serialization Geometry Convergence Search")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgPostSerializationGeometryConvergenceSearch.runDefault { progress ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && progressDialog.isShowing) {
+                            progressBar.max = progress.totalCases.coerceAtLeast(1)
+                            progressBar.progress = progress.completedCases.coerceIn(0, progressBar.max)
+                            statusText.text = String.format(
+                                java.util.Locale.US,
+                                "Progress: %.1f%%  •  %,d / %,d",
+                                progress.percentComplete,
+                                progress.completedCases,
+                                progress.totalCases
+                            )
+                            val seedProgress = progress.perSeedProcessed
+                                .mapIndexed { index, processed ->
+                                    "S${index + 1}: ${String.format(java.util.Locale.US, "%,d", processed)}"
+                                }
+                                .joinToString("  •  ")
+                            detailText.text = "Workers: ${progress.workerCount}  •  $seedProgress"
+                        }
+                    }
+                }
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("G3.7 automated post-serialization geometry convergence differential stress search")
+                    appendLine()
+                    appendLine("RESULT: The search could not be completed.")
+                    appendLine()
+                    appendLine(throwable.message ?: throwable::class.java.simpleName)
+                    appendLine()
+                    appendLine("Check that SvgPostSerializationGeometryConvergenceSearch.kt and the G3.7 SvgPathDataOptimizer.kt are included in the app.")
+                }
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentPostSerializationGeometryConvergenceReport = report
+                    showPostSerializationGeometryConvergenceResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showPostSerializationGeometryConvergenceResultsDialog(report: String) {
+        val failed = report.contains("could not be completed")
+        val exact = report.contains(
+            "RESULT: the G3.7 candidate exactly reproduced the independent second pass"
+        )
+        val summaryText: String
+        val summaryColor: Int
+        when {
+            failed -> {
+                summaryText = "✕ Search could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+            exact -> {
+                summaryText = "✓ Exact geometry convergence confirmed"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+            else -> {
+                summaryText = "⚠ Geometry convergence needs investigation"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+        }
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+        layout.addView(makeText(summaryText, 18f, summaryColor, Gravity.START, paddingBottom = 16))
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        val reportScroll = ScrollView(this).apply { addView(reportView) }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+        val copyButton = makeButton("Copy Results") {
+            copyPostSerializationGeometryConvergenceReport()
+        }
+        val saveButton = makeButton("Save .txt") {
+            savePostSerializationGeometryConvergenceReport.launch(
+                "g3_7_post_serialization_geometry_convergence_report.txt"
+            )
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+        val rerunButton = makeButton("Run Again") {
+            runPostSerializationGeometryConvergenceSearch()
+        }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.7 Post-Serialization Geometry Convergence Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+        dialog.show()
+    }
+
+    private fun copyPostSerializationGeometryConvergenceReport() {
+        if (currentPostSerializationGeometryConvergenceReport.isBlank()) {
+            toast("No G3.7 geometry convergence report to copy")
+            return
+        }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "g3_7_post_serialization_geometry_convergence_report.txt",
+                currentPostSerializationGeometryConvergenceReport
+            )
+        )
+        toast("G3.7 geometry convergence report copied")
     }
 
     private fun runBundledRegressionSuite() {

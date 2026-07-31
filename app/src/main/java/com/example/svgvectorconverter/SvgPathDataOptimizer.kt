@@ -5848,6 +5848,296 @@ internal object SvgPathDataOptimizer {
         return globallyOptimizeNumericSerialization(global).pathData
     }
 
+    data class PostSerializationGeometryConvergenceWitness(
+        val caseNumber: Int,
+        val source: String,
+        val firstPass: String,
+        val candidatePass: String,
+        val independentSecondPass: String,
+        val verificationPass: String,
+        val redundantGeometryChanged: Boolean,
+        val collinearGeometryChanged: Boolean,
+        val candidateChangedFirstPass: Boolean,
+        val candidateMatchedIndependentSecondPass: Boolean,
+        val candidateWasFixedPoint: Boolean,
+        val sampledGeometryMismatch: Boolean,
+        val characterDelta: Int
+    )
+
+    data class PostSerializationGeometryConvergenceResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val rejectedGeneratedCases: Int,
+        val unchangedByCandidate: Int,
+        val changedByCandidate: Int,
+        val redundantGeometryChangedCases: Int,
+        val collinearGeometryChangedCases: Int,
+        val matchedIndependentSecondPass: Int,
+        val differedFromIndependentSecondPass: Int,
+        val fixedAfterCandidate: Int,
+        val stillChangedAfterVerification: Int,
+        val sampledGeometryMismatchCount: Int,
+        val totalCharactersSaved: Long,
+        val totalCharactersGrown: Long,
+        val candidateNanos: Long,
+        val verificationNanos: Long,
+        val elapsedNanos: Long,
+        val witnesses: List<PostSerializationGeometryConvergenceWitness>
+    ) {
+        fun toPlainTextReport(): String = buildString {
+            appendLine("G3.7 post-serialization geometry convergence investigation")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $rejectedGeneratedCases")
+            appendLine("Unchanged by G3.7 candidate: $unchangedByCandidate")
+            appendLine("Changed by G3.7 candidate: $changedByCandidate")
+            appendLine("Redundant-geometry stage changed: $redundantGeometryChangedCases")
+            appendLine("Collinear-consolidation stage changed: $collinearGeometryChangedCases")
+            appendLine("Matched independent full pass 2: $matchedIndependentSecondPass")
+            appendLine("Differed from independent full pass 2: $differedFromIndependentSecondPass")
+            appendLine("Fixed after G3.7 candidate: $fixedAfterCandidate")
+            appendLine("Still changed after verification: $stillChangedAfterVerification")
+            appendLine("Sampled geometry mismatches: $sampledGeometryMismatchCount")
+            appendLine("Characters saved by G3.7 candidate: $totalCharactersSaved")
+            appendLine("Characters added by G3.7 candidate: $totalCharactersGrown")
+            appendLine("Candidate time: " + String.format(java.util.Locale.US, "%.2f ms", candidateNanos / 1_000_000.0))
+            appendLine("Verification time: " + String.format(java.util.Locale.US, "%.2f ms", verificationNanos / 1_000_000.0))
+            appendLine("Elapsed: " + String.format(java.util.Locale.US, "%.2f ms", elapsedNanos / 1_000_000.0))
+            appendLine()
+            when {
+                sampledGeometryMismatchCount > 0 -> {
+                    appendLine("RESULT: G3.7 produced sampled geometry mismatches.")
+                    appendLine("Recommendation: reject the candidate and investigate every geometry witness.")
+                }
+                stillChangedAfterVerification > 0 -> {
+                    appendLine("RESULT: the G3.7 candidate did not reach a fixed point for every case.")
+                    appendLine("Recommendation: keep production unchanged and inspect the remaining verification witnesses.")
+                }
+                differedFromIndependentSecondPass > 0 -> {
+                    appendLine("RESULT: the G3.7 candidate was fixed but did not exactly reproduce every independent second-pass result.")
+                    appendLine("Recommendation: keep production unchanged until the remaining spelling differences are classified.")
+                }
+                validCases > 0 -> {
+                    appendLine("RESULT: the G3.7 candidate exactly reproduced the independent second pass and remained fixed under full verification.")
+                    appendLine("Recommendation: rerun the locked regression suite, then advance to a guarded VectorDrawable-level production trial.")
+                }
+                else -> appendLine("RESULT: no valid comparisons were produced.")
+            }
+            if (witnesses.isNotEmpty()) {
+                appendLine()
+                appendLine("Witnesses")
+                witnesses.forEachIndexed { index, witness ->
+                    appendLine()
+                    appendLine("${index + 1}. Case ${witness.caseNumber}")
+                    appendLine("   Redundant geometry changed: ${witness.redundantGeometryChanged}")
+                    appendLine("   Collinear geometry changed: ${witness.collinearGeometryChanged}")
+                    appendLine("   Candidate changed pass 1: ${witness.candidateChangedFirstPass}")
+                    appendLine("   Matched independent pass 2: ${witness.candidateMatchedIndependentSecondPass}")
+                    appendLine("   Fixed under verification: ${witness.candidateWasFixedPoint}")
+                    appendLine("   Sampled geometry mismatch: ${witness.sampledGeometryMismatch}")
+                    appendLine("   Character delta (pass1 - candidate): ${witness.characterDelta}")
+                    appendLine("   Source: ${witness.source}")
+                    appendLine("   Pass 1: ${witness.firstPass}")
+                    appendLine("   G3.7 candidate: ${witness.candidatePass}")
+                    appendLine("   Independent pass 2: ${witness.independentSecondPass}")
+                    appendLine("   Verification pass: ${witness.verificationPass}")
+                }
+            }
+        }
+    }
+
+    /**
+     * G3.7 Developer Tools diagnostic. Production conversion never calls this.
+     *
+     * G3.6 showed that the remaining pass-2 drift was dominated by geometry that
+     * becomes newly eligible only after pass-1 command serialization is reparsed
+     * (for example consecutive H/V segments). G3.7 therefore reparses pass 1,
+     * reruns only the proven-lossless redundant non-drawing and exact-collinear
+     * geometry stages, then reruns the command/serialization tail.
+     */
+    fun runPostSerializationGeometryConvergenceStressSearch(
+        caseCount: Int = 25_000,
+        seed: Long = 0x6316_2026L,
+        maximumWitnesses: Int = 8,
+        progressCallback: ((processedCases: Int) -> Unit)? = null
+    ): PostSerializationGeometryConvergenceResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        require(maximumWitnesses >= 0) { "maximumWitnesses must be non-negative" }
+
+        val started = System.nanoTime()
+        val random = Random(seed)
+        val witnesses = mutableListOf<PostSerializationGeometryConvergenceWitness>()
+        var generated = 0
+        var valid = 0
+        var rejected = 0
+        var unchanged = 0
+        var changed = 0
+        var redundantChanged = 0
+        var collinearChanged = 0
+        var matchedIndependent = 0
+        var differedIndependent = 0
+        var fixed = 0
+        var stillChanged = 0
+        var sampledGeometryMismatches = 0
+        var charactersSaved = 0L
+        var charactersGrown = 0L
+        var candidateNanos = 0L
+        var verificationNanos = 0L
+
+        repeat(caseCount) { caseIndex ->
+            generated++
+            val source = generateDifferentialStressPath(random)
+            try {
+                val first = optimizePathData(source).pathData
+
+                val candidateStart = System.nanoTime()
+                val candidate = runPostSerializationGeometryConvergenceCandidate(first)
+                candidateNanos += System.nanoTime() - candidateStart
+
+                val independentSecond = optimizePathData(first).pathData
+
+                val verificationStart = System.nanoTime()
+                val verification = optimizePathData(candidate.pathData).pathData
+                verificationNanos += System.nanoTime() - verificationStart
+
+                val candidateChanged = candidate.pathData != first
+                val matched = candidate.pathData == independentSecond
+                val isFixed = verification == candidate.pathData
+                val sampledGeometryMismatch =
+                    candidateChanged && !sampledPathGeometryEquivalent(first, candidate.pathData)
+                val delta = first.length - candidate.pathData.length
+
+                valid++
+                if (candidateChanged) changed++ else unchanged++
+                if (candidate.redundantGeometryChanged) redundantChanged++
+                if (candidate.collinearGeometryChanged) collinearChanged++
+                if (matched) matchedIndependent++ else differedIndependent++
+                if (isFixed) fixed++ else stillChanged++
+                if (sampledGeometryMismatch) sampledGeometryMismatches++
+                if (delta > 0) charactersSaved += delta.toLong()
+                if (delta < 0) charactersGrown += (-delta).toLong()
+
+                val noteworthy = sampledGeometryMismatch || !isFixed || !matched || candidateChanged
+                if (noteworthy && witnesses.size < maximumWitnesses) {
+                    witnesses += PostSerializationGeometryConvergenceWitness(
+                        caseNumber = caseIndex + 1,
+                        source = source,
+                        firstPass = first,
+                        candidatePass = candidate.pathData,
+                        independentSecondPass = independentSecond,
+                        verificationPass = verification,
+                        redundantGeometryChanged = candidate.redundantGeometryChanged,
+                        collinearGeometryChanged = candidate.collinearGeometryChanged,
+                        candidateChangedFirstPass = candidateChanged,
+                        candidateMatchedIndependentSecondPass = matched,
+                        candidateWasFixedPoint = isFixed,
+                        sampledGeometryMismatch = sampledGeometryMismatch,
+                        characterDelta = delta
+                    )
+                }
+            } catch (_: Throwable) {
+                rejected++
+            }
+
+            val processed = caseIndex + 1
+            if (progressCallback != null && (processed == caseCount || processed % 250 == 0)) {
+                progressCallback(processed)
+            }
+        }
+        if (caseCount == 0) progressCallback?.invoke(0)
+
+        return PostSerializationGeometryConvergenceResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generated,
+            validCases = valid,
+            rejectedGeneratedCases = rejected,
+            unchangedByCandidate = unchanged,
+            changedByCandidate = changed,
+            redundantGeometryChangedCases = redundantChanged,
+            collinearGeometryChangedCases = collinearChanged,
+            matchedIndependentSecondPass = matchedIndependent,
+            differedFromIndependentSecondPass = differedIndependent,
+            fixedAfterCandidate = fixed,
+            stillChangedAfterVerification = stillChanged,
+            sampledGeometryMismatchCount = sampledGeometryMismatches,
+            totalCharactersSaved = charactersSaved,
+            totalCharactersGrown = charactersGrown,
+            candidateNanos = candidateNanos,
+            verificationNanos = verificationNanos,
+            elapsedNanos = System.nanoTime() - started,
+            witnesses = witnesses
+        )
+    }
+
+    private data class PostSerializationGeometryCandidate(
+        val pathData: String,
+        val redundantGeometryChanged: Boolean,
+        val collinearGeometryChanged: Boolean
+    )
+
+    private fun runPostSerializationGeometryConvergenceCandidate(
+        pathData: String
+    ): PostSerializationGeometryCandidate {
+        val matches = tokenRegex.findAll(pathData).toList()
+        if (matches.isEmpty()) {
+            return PostSerializationGeometryCandidate(pathData.trim(), false, false)
+        }
+
+        var cursor = 0
+        for (match in matches) {
+            if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
+                return PostSerializationGeometryCandidate(pathData, false, false)
+            }
+            cursor = match.range.last + 1
+        }
+        if (!containsOnlySeparators(pathData.substring(cursor))) {
+            return PostSerializationGeometryCandidate(pathData, false, false)
+        }
+
+        val normalized = StringBuilder(pathData.length)
+        var activeCommand: Char? = null
+        var previousWasNumber = false
+        for (match in matches) {
+            val token = match.value
+            if (isCommand(token)) {
+                val command = token[0]
+                val implicitRepeat =
+                    activeCommand == command && command !in charArrayOf('M', 'm', 'Z', 'z')
+                if (!implicitRepeat) {
+                    normalized.append(command)
+                    previousWasNumber = false
+                }
+                activeCommand = command
+            } else {
+                val value = token.toBigDecimalOrNull()
+                    ?.let(::formatPathNumber)
+                    ?: normalizeNumber(token)
+                if (previousWasNumber) normalized.append(',')
+                normalized.append(value)
+                previousWasNumber = true
+            }
+        }
+
+        val syntaxNormalized = normalized.toString()
+        val redundant = removeRedundantNonDrawingSegments(syntaxNormalized)
+        val collinear = consolidateConsecutiveCollinearLineRuns(redundant.pathData)
+        val local = shortenPathCommands(collinear.pathData, null).pathData
+        val global = globallyMinimizeCommandSequence(local, null).pathData
+        val numeric = globallyOptimizeNumericSerialization(global).pathData
+
+        return PostSerializationGeometryCandidate(
+            pathData = numeric,
+            redundantGeometryChanged = redundant.pathData != syntaxNormalized,
+            collinearGeometryChanged = collinear.pathData != redundant.pathData
+        )
+    }
+
     data class PathFixedPointWitness(
         val caseNumber: Int,
         val firstChangingStage: String,
