@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private var currentPathFixedPointReport = ""
     private var currentFinalCommandConvergenceReport = ""
     private var currentPostSerializationGeometryConvergenceReport = ""
+    private var currentCollinearGeometrySafetyReport = ""
 
     private fun makeButton(
         label: String,
@@ -236,6 +237,15 @@ class MainActivity : ComponentActivity() {
                 currentPostSerializationGeometryConvergenceReport
             )
             toast("G3.7 geometry convergence report saved")
+        }
+    }
+
+    private val saveCollinearGeometrySafetyReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentCollinearGeometrySafetyReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(this, uri, currentCollinearGeometrySafetyReport)
+            toast("G3.8 geometry-safety report saved")
         }
     }
 
@@ -937,6 +947,32 @@ class MainActivity : ComponentActivity() {
                 must match an independent full pass 2, remain fixed under a
                 full verification pass, and preserve sampled path geometry.
                 Production behavior is unchanged.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        val collinearGeometrySafetyButton =
+            makeButton("Run G3.8 Collinear Geometry-Safety Investigation") {
+                runCollinearGeometrySafetySearch()
+            }
+        layout.addView(
+            collinearGeometrySafetyButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Reuses the exact G3.7 100,000-case corpus with four parallel
+                workers. G3.8 prioritizes every geometry mismatch, reruns a
+                denser 2,048-sample comparison on changed paths, compares the
+                geometry immediately before and after collinear consolidation,
+                and reports the first differing token plus maximum deviation.
+                Production optimization behavior is unchanged.
                 """.trimIndent(),
                 14f,
                 Color.GRAY,
@@ -2228,6 +2264,183 @@ class MainActivity : ComponentActivity() {
             )
         )
         toast("G3.7 geometry convergence report copied")
+    }
+
+    private fun runCollinearGeometrySafetySearch() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+        val progressBar = ProgressBar(
+            this,
+            null,
+            android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            isIndeterminate = false
+            max = 100_000
+            progress = 0
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val statusText = makeText(
+            "Progress: 0.0%  •  0 / 100,000",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 24, 0, 0) }
+        val detailText = makeText(
+            "Workers: starting…",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 12, 0, 0) }
+        val noteText = makeText(
+            "Rechecking changed paths with dense geometry diagnostics and prioritized mismatch witnesses.",
+            12f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 8, 0, 0) }
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(detailText)
+        progressLayout.addView(noteText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.8 Collinear Geometry-Safety Investigation")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgCollinearGeometrySafetySearch.runDefault { progress ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && progressDialog.isShowing) {
+                            progressBar.max = progress.totalCases.coerceAtLeast(1)
+                            progressBar.progress = progress.completedCases.coerceIn(0, progressBar.max)
+                            statusText.text = String.format(
+                                java.util.Locale.US,
+                                "Progress: %.1f%%  •  %,d / %,d",
+                                progress.percentComplete,
+                                progress.completedCases,
+                                progress.totalCases
+                            )
+                            val seedProgress = progress.perSeedProcessed
+                                .mapIndexed { index, processed ->
+                                    "S${index + 1}: ${String.format(java.util.Locale.US, "%,d", processed)}"
+                                }
+                                .joinToString("  •  ")
+                            detailText.text = "Workers: ${progress.workerCount}  •  $seedProgress"
+                        }
+                    }
+                }
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("G3.8 automated collinear consolidation geometry-safety differential stress search")
+                    appendLine()
+                    appendLine("RESULT: The search could not be completed.")
+                    appendLine()
+                    appendLine(throwable.message ?: throwable::class.java.simpleName)
+                    appendLine()
+                    appendLine("Check that SvgCollinearGeometrySafetySearch.kt and the G3.8 SvgPathDataOptimizer.kt are included in the app.")
+                }
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentCollinearGeometrySafetyReport = report
+                    showCollinearGeometrySafetyResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showCollinearGeometrySafetyResultsDialog(report: String) {
+        val failed = report.contains("could not be completed")
+        val denseMismatch = report.contains("RESULT: G3.8 reproduced dense geometry mismatches.")
+        val comparatorOnly = report.contains("RESULT: G3.8 found only standard-sampler mismatches")
+        val summaryText: String
+        val summaryColor: Int
+        when {
+            failed -> {
+                summaryText = "✕ Search could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+            denseMismatch -> {
+                summaryText = "⚠ Dense geometry mismatches reproduced"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+            comparatorOnly -> {
+                summaryText = "⚠ Standard comparator mismatch only"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+            else -> {
+                summaryText = "✓ No geometry mismatch reproduced"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+        }
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+        layout.addView(makeText(summaryText, 18f, summaryColor, Gravity.START, paddingBottom = 16))
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        val reportScroll = ScrollView(this).apply { addView(reportView) }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+        val copyButton = makeButton("Copy Results") { copyCollinearGeometrySafetyReport() }
+        val saveButton = makeButton("Save .txt") {
+            saveCollinearGeometrySafetyReport.launch("g3_8_collinear_geometry_safety_report.txt")
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+        val rerunButton = makeButton("Run Again") { runCollinearGeometrySafetySearch() }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.8 Collinear Geometry-Safety Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+        dialog.show()
+    }
+
+    private fun copyCollinearGeometrySafetyReport() {
+        if (currentCollinearGeometrySafetyReport.isBlank()) {
+            toast("No G3.8 geometry-safety report to copy")
+            return
+        }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "g3_8_collinear_geometry_safety_report.txt",
+                currentCollinearGeometrySafetyReport
+            )
+        )
+        toast("G3.8 geometry-safety report copied")
     }
 
     private fun runBundledRegressionSuite() {

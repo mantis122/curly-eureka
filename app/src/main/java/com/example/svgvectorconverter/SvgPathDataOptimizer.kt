@@ -6138,6 +6138,372 @@ internal object SvgPathDataOptimizer {
         )
     }
 
+
+    // G3.8 diagnostic-only investigation. Production conversion never calls this.
+    data class CollinearGeometrySafetyWitness(
+        val caseNumber: Int,
+        val source: String,
+        val firstPass: String,
+        val syntaxNormalized: String,
+        val preCollinear: String,
+        val postCollinear: String,
+        val finalCandidate: String,
+        val independentSecondPass: String,
+        val standardMismatch: Boolean,
+        val denseMismatch: Boolean,
+        val directCollinearDenseMismatch: Boolean,
+        val sourceToFirstDenseMismatch: Boolean,
+        val sourceToSecondDenseMismatch: Boolean,
+        val firstDifferingTokenIndex: Int,
+        val preCollinearToken: String,
+        val postCollinearToken: String,
+        val preCollinearTokenCount: Int,
+        val postCollinearTokenCount: Int,
+        val firstLength: Float,
+        val candidateLength: Float,
+        val lengthDelta: Float,
+        val maximumSampleDeviation: Double,
+        val maximumDeviationFraction: Double,
+        val maximumDeviationFirstPoint: String,
+        val maximumDeviationCandidatePoint: String
+    )
+
+    data class CollinearGeometrySafetyResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val rejectedGeneratedCases: Int,
+        val candidateChangedCases: Int,
+        val collinearChangedCases: Int,
+        val standardMismatchCases: Int,
+        val denseMismatchCases: Int,
+        val directCollinearDenseMismatchCases: Int,
+        val standardOnlyMismatchCases: Int,
+        val sourceToFirstDenseMismatchCases: Int,
+        val sourceToSecondDenseMismatchCases: Int,
+        val denseChecks: Int,
+        val elapsedNanos: Long,
+        val mismatchWitnesses: List<CollinearGeometrySafetyWitness>
+    ) {
+        fun toPlainTextReport(): String = buildString {
+            appendLine("G3.8 collinear consolidation geometry-safety investigation")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $rejectedGeneratedCases")
+            appendLine("G3.7 candidate changed: $candidateChangedCases")
+            appendLine("Collinear-consolidation stage changed: $collinearChangedCases")
+            appendLine("Standard sampler mismatches: $standardMismatchCases")
+            appendLine("Dense sampler mismatches: $denseMismatchCases")
+            appendLine("Direct pre/post-collinear dense mismatches: $directCollinearDenseMismatchCases")
+            appendLine("Standard-only mismatches (dense check passed): $standardOnlyMismatchCases")
+            appendLine("Source → pass-1 dense mismatches: $sourceToFirstDenseMismatchCases")
+            appendLine("Source → pass-2 dense mismatches: $sourceToSecondDenseMismatchCases")
+            appendLine("Dense diagnostic checks: $denseChecks")
+            appendLine("Elapsed: " + String.format(java.util.Locale.US, "%.2f ms", elapsedNanos / 1_000_000.0))
+            appendLine()
+            when {
+                denseMismatchCases > 0 -> {
+                    appendLine("RESULT: dense geometry mismatches remain after rechecking the G3.7 changes.")
+                    appendLine("Recommendation: inspect the mismatch witnesses before changing production collinear consolidation.")
+                }
+                standardMismatchCases > 0 -> {
+                    appendLine("RESULT: every standard-sampler mismatch disappeared under the dense diagnostic.")
+                    appendLine("Recommendation: treat the G3.7 mismatch signal as a sampler/comparator issue and repair the comparator before revisiting convergence.")
+                }
+                validCases > 0 -> {
+                    appendLine("RESULT: no geometry mismatch was reproduced in the G3.8 diagnostic.")
+                    appendLine("Recommendation: rerun G3.7 after the diagnostic comparator is updated, then continue only if it remains clean.")
+                }
+                else -> appendLine("RESULT: no valid comparisons were produced.")
+            }
+            if (mismatchWitnesses.isNotEmpty()) {
+                appendLine()
+                appendLine("Geometry mismatch witnesses (prioritized)")
+                mismatchWitnesses.forEachIndexed { index, witness ->
+                    appendLine()
+                    appendLine("${index + 1}. Case ${witness.caseNumber}")
+                    appendLine("   Standard sampler mismatch: ${witness.standardMismatch}")
+                    appendLine("   Dense sampler mismatch: ${witness.denseMismatch}")
+                    appendLine("   Direct pre/post-collinear dense mismatch: ${witness.directCollinearDenseMismatch}")
+                    appendLine("   Source → pass-1 dense mismatch: ${witness.sourceToFirstDenseMismatch}")
+                    appendLine("   Source → pass-2 dense mismatch: ${witness.sourceToSecondDenseMismatch}")
+                    appendLine("   First differing token index: ${witness.firstDifferingTokenIndex}")
+                    appendLine("   Pre-collinear token: ${witness.preCollinearToken}")
+                    appendLine("   Post-collinear token: ${witness.postCollinearToken}")
+                    appendLine("   Token counts: ${witness.preCollinearTokenCount} → ${witness.postCollinearTokenCount}")
+                    appendLine("   Flattened lengths: ${witness.firstLength} → ${witness.candidateLength}")
+                    appendLine("   Length delta: ${witness.lengthDelta}")
+                    appendLine("   Maximum sampled deviation: ${String.format(java.util.Locale.US, "%.9g", witness.maximumSampleDeviation)}")
+                    appendLine("   Maximum-deviation fraction: ${String.format(java.util.Locale.US, "%.6f", witness.maximumDeviationFraction)}")
+                    appendLine("   First point at max deviation: ${witness.maximumDeviationFirstPoint}")
+                    appendLine("   Candidate point at max deviation: ${witness.maximumDeviationCandidatePoint}")
+                    appendLine("   Source: ${witness.source}")
+                    appendLine("   Pass 1: ${witness.firstPass}")
+                    appendLine("   Syntax normalized: ${witness.syntaxNormalized}")
+                    appendLine("   Before collinear consolidation: ${witness.preCollinear}")
+                    appendLine("   After collinear consolidation: ${witness.postCollinear}")
+                    appendLine("   Final G3.7-equivalent candidate: ${witness.finalCandidate}")
+                    appendLine("   Independent pass 2: ${witness.independentSecondPass}")
+                }
+            }
+        }
+    }
+
+    private data class DenseGeometryDiagnostic(
+        val equivalent: Boolean,
+        val firstLength: Float,
+        val secondLength: Float,
+        val maximumDeviation: Double,
+        val maximumDeviationFraction: Double,
+        val firstPoint: String,
+        val secondPoint: String
+    )
+
+    private data class G38CandidateStages(
+        val syntaxNormalized: String,
+        val preCollinear: String,
+        val postCollinear: String,
+        val finalCandidate: String,
+        val collinearChanged: Boolean
+    )
+
+    private fun buildG38CandidateStages(pathData: String): G38CandidateStages? {
+        val matches = tokenRegex.findAll(pathData).toList()
+        if (matches.isEmpty()) return null
+        var cursor = 0
+        for (match in matches) {
+            if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) return null
+            cursor = match.range.last + 1
+        }
+        if (!containsOnlySeparators(pathData.substring(cursor))) return null
+
+        val normalized = StringBuilder(pathData.length)
+        var activeCommand: Char? = null
+        var previousWasNumber = false
+        for (match in matches) {
+            val token = match.value
+            if (isCommand(token)) {
+                val command = token[0]
+                val implicitRepeat = activeCommand == command && command !in charArrayOf('M', 'm', 'Z', 'z')
+                if (!implicitRepeat) {
+                    normalized.append(command)
+                    previousWasNumber = false
+                }
+                activeCommand = command
+            } else {
+                val value = token.toBigDecimalOrNull()?.let(::formatPathNumber) ?: normalizeNumber(token)
+                if (previousWasNumber) normalized.append(',')
+                normalized.append(value)
+                previousWasNumber = true
+            }
+        }
+        val syntax = normalized.toString()
+        val redundant = removeRedundantNonDrawingSegments(syntax).pathData
+        val collinear = consolidateConsecutiveCollinearLineRuns(redundant).pathData
+        val local = shortenPathCommands(collinear, null).pathData
+        val global = globallyMinimizeCommandSequence(local, null).pathData
+        val numeric = globallyOptimizeNumericSerialization(global).pathData
+        return G38CandidateStages(
+            syntaxNormalized = syntax,
+            preCollinear = redundant,
+            postCollinear = collinear,
+            finalCandidate = numeric,
+            collinearChanged = collinear != redundant
+        )
+    }
+
+    private fun densePathGeometryDiagnostic(first: String, second: String): DenseGeometryDiagnostic {
+        val firstMeasured = SvgPathSampler.measure(first, curveSteps = 256)
+        val secondMeasured = SvgPathSampler.measure(second, curveSteps = 256)
+        if (firstMeasured == null || secondMeasured == null) {
+            return DenseGeometryDiagnostic(false, firstMeasured?.length ?: Float.NaN, secondMeasured?.length ?: Float.NaN,
+                Double.POSITIVE_INFINITY, 0.0, "unavailable", "unavailable")
+        }
+        fun closeEnough(a: Float, b: Float): Boolean {
+            val scale = maxOf(1.0f, kotlin.math.abs(a), kotlin.math.abs(b))
+            return kotlin.math.abs(a - b) <= 0.0005f * scale
+        }
+        var equivalent = closeEnough(firstMeasured.length, secondMeasured.length)
+        var maxDeviation = 0.0
+        var maxFraction = 0.0
+        var maxFirst = ""
+        var maxSecond = ""
+        val sampleCount = 2048
+        for (index in 0..sampleCount) {
+            val fraction = index.toDouble() / sampleCount.toDouble()
+            val a = firstMeasured.sample(firstMeasured.length * fraction.toFloat())
+            val b = secondMeasured.sample(secondMeasured.length * fraction.toFloat())
+            if (a == null || b == null) {
+                equivalent = false
+                continue
+            }
+            val dx = a.x.toDouble() - b.x.toDouble()
+            val dy = a.y.toDouble() - b.y.toDouble()
+            val deviation = kotlin.math.sqrt(dx * dx + dy * dy)
+            if (deviation > maxDeviation) {
+                maxDeviation = deviation
+                maxFraction = fraction
+                maxFirst = "${a.x},${a.y}"
+                maxSecond = "${b.x},${b.y}"
+            }
+            if (!closeEnough(a.x, b.x) || !closeEnough(a.y, b.y)) equivalent = false
+        }
+        return DenseGeometryDiagnostic(
+            equivalent = equivalent,
+            firstLength = firstMeasured.length,
+            secondLength = secondMeasured.length,
+            maximumDeviation = maxDeviation,
+            maximumDeviationFraction = maxFraction,
+            firstPoint = maxFirst,
+            secondPoint = maxSecond
+        )
+    }
+
+    private fun firstTokenDifference(first: String, second: String): Triple<Int, String, String> {
+        val a = tokenRegex.findAll(first).map { it.value }.toList()
+        val b = tokenRegex.findAll(second).map { it.value }.toList()
+        val limit = minOf(a.size, b.size)
+        for (index in 0 until limit) {
+            if (a[index] != b[index]) return Triple(index, a[index], b[index])
+        }
+        return if (a.size != b.size) {
+            Triple(limit, a.getOrNull(limit) ?: "<end>", b.getOrNull(limit) ?: "<end>")
+        } else Triple(-1, "<none>", "<none>")
+    }
+
+    fun runCollinearGeometrySafetyStressSearch(
+        caseCount: Int = 25_000,
+        seed: Long = 0x6316_2026L,
+        maximumMismatchWitnesses: Int = 64,
+        progressCallback: ((processedCases: Int) -> Unit)? = null
+    ): CollinearGeometrySafetyResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        require(maximumMismatchWitnesses >= 0) { "maximumMismatchWitnesses must be non-negative" }
+
+        val started = System.nanoTime()
+        val random = Random(seed)
+        val mismatchWitnesses = mutableListOf<CollinearGeometrySafetyWitness>()
+        var generated = 0
+        var valid = 0
+        var rejected = 0
+        var candidateChanged = 0
+        var collinearChanged = 0
+        var standardMismatchCount = 0
+        var denseMismatchCount = 0
+        var directCollinearDenseMismatchCount = 0
+        var standardOnlyMismatchCount = 0
+        var sourceToFirstMismatchCount = 0
+        var sourceToSecondMismatchCount = 0
+        var denseChecks = 0
+
+        repeat(caseCount) { caseIndex ->
+            generated++
+            val source = generateDifferentialStressPath(random)
+            try {
+                val first = optimizePathData(source).pathData
+                val stages = buildG38CandidateStages(first) ?: throw IllegalArgumentException("candidate parse failed")
+                val second = optimizePathData(first).pathData
+                val changed = stages.finalCandidate != first
+                if (changed) candidateChanged++
+                if (stages.collinearChanged) collinearChanged++
+
+                var standardMismatch = false
+                var dense = DenseGeometryDiagnostic(true, Float.NaN, Float.NaN, 0.0, 0.0, "", "")
+                var directCollinearMismatch = false
+                var sourceToFirstMismatch = false
+                var sourceToSecondMismatch = false
+
+                if (changed) {
+                    standardMismatch = !sampledPathGeometryEquivalent(first, stages.finalCandidate)
+                    dense = densePathGeometryDiagnostic(first, stages.finalCandidate)
+                    denseChecks++
+                    if (standardMismatch) standardMismatchCount++
+                    if (!dense.equivalent) denseMismatchCount++
+                    if (standardMismatch && dense.equivalent) standardOnlyMismatchCount++
+
+                    if (stages.collinearChanged) {
+                        val direct = densePathGeometryDiagnostic(stages.preCollinear, stages.postCollinear)
+                        denseChecks++
+                        directCollinearMismatch = !direct.equivalent
+                        if (directCollinearMismatch) directCollinearDenseMismatchCount++
+                    }
+
+                    if (standardMismatch || !dense.equivalent || directCollinearMismatch) {
+                        val sourceFirst = densePathGeometryDiagnostic(source, first)
+                        val sourceSecond = densePathGeometryDiagnostic(source, second)
+                        denseChecks += 2
+                        sourceToFirstMismatch = !sourceFirst.equivalent
+                        sourceToSecondMismatch = !sourceSecond.equivalent
+                        if (sourceToFirstMismatch) sourceToFirstMismatchCount++
+                        if (sourceToSecondMismatch) sourceToSecondMismatchCount++
+
+                        if (mismatchWitnesses.size < maximumMismatchWitnesses) {
+                            val diff = firstTokenDifference(stages.preCollinear, stages.postCollinear)
+                            val preTokens = tokenRegex.findAll(stages.preCollinear).count()
+                            val postTokens = tokenRegex.findAll(stages.postCollinear).count()
+                            mismatchWitnesses += CollinearGeometrySafetyWitness(
+                                caseNumber = caseIndex + 1,
+                                source = source,
+                                firstPass = first,
+                                syntaxNormalized = stages.syntaxNormalized,
+                                preCollinear = stages.preCollinear,
+                                postCollinear = stages.postCollinear,
+                                finalCandidate = stages.finalCandidate,
+                                independentSecondPass = second,
+                                standardMismatch = standardMismatch,
+                                denseMismatch = !dense.equivalent,
+                                directCollinearDenseMismatch = directCollinearMismatch,
+                                sourceToFirstDenseMismatch = sourceToFirstMismatch,
+                                sourceToSecondDenseMismatch = sourceToSecondMismatch,
+                                firstDifferingTokenIndex = diff.first,
+                                preCollinearToken = diff.second,
+                                postCollinearToken = diff.third,
+                                preCollinearTokenCount = preTokens,
+                                postCollinearTokenCount = postTokens,
+                                firstLength = dense.firstLength,
+                                candidateLength = dense.secondLength,
+                                lengthDelta = dense.secondLength - dense.firstLength,
+                                maximumSampleDeviation = dense.maximumDeviation,
+                                maximumDeviationFraction = dense.maximumDeviationFraction,
+                                maximumDeviationFirstPoint = dense.firstPoint,
+                                maximumDeviationCandidatePoint = dense.secondPoint
+                            )
+                        }
+                    }
+                }
+                valid++
+            } catch (_: Throwable) {
+                rejected++
+            }
+            val processed = caseIndex + 1
+            if (progressCallback != null && (processed == caseCount || processed % 250 == 0)) progressCallback(processed)
+        }
+        if (caseCount == 0) progressCallback?.invoke(0)
+
+        return CollinearGeometrySafetyResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generated,
+            validCases = valid,
+            rejectedGeneratedCases = rejected,
+            candidateChangedCases = candidateChanged,
+            collinearChangedCases = collinearChanged,
+            standardMismatchCases = standardMismatchCount,
+            denseMismatchCases = denseMismatchCount,
+            directCollinearDenseMismatchCases = directCollinearDenseMismatchCount,
+            standardOnlyMismatchCases = standardOnlyMismatchCount,
+            sourceToFirstDenseMismatchCases = sourceToFirstMismatchCount,
+            sourceToSecondDenseMismatchCases = sourceToSecondMismatchCount,
+            denseChecks = denseChecks,
+            elapsedNanos = System.nanoTime() - started,
+            mismatchWitnesses = mismatchWitnesses
+        )
+    }
+
     data class PathFixedPointWitness(
         val caseNumber: Int,
         val firstChangingStage: String,
