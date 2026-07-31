@@ -5594,6 +5594,260 @@ internal object SvgPathDataOptimizer {
     }
 
 
+    data class FinalCommandConvergenceWitness(
+        val caseNumber: Int,
+        val source: String,
+        val firstPass: String,
+        val convergencePass: String,
+        val independentSecondPass: String,
+        val verificationPass: String,
+        val convergenceChangedFirstPass: Boolean,
+        val convergenceMatchedIndependentSecondPass: Boolean,
+        val convergenceWasFixedPoint: Boolean,
+        val semanticMismatch: Boolean,
+        val characterDelta: Int
+    )
+
+    data class FinalCommandConvergenceResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val rejectedGeneratedCases: Int,
+        val unchangedByConvergence: Int,
+        val changedByConvergence: Int,
+        val matchedIndependentSecondPass: Int,
+        val differedFromIndependentSecondPass: Int,
+        val fixedAfterConvergence: Int,
+        val stillChangedAfterVerification: Int,
+        val semanticMismatchCount: Int,
+        val totalCharactersSaved: Long,
+        val totalCharactersGrown: Long,
+        val convergenceNanos: Long,
+        val verificationNanos: Long,
+        val elapsedNanos: Long,
+        val witnesses: List<FinalCommandConvergenceWitness>
+    ) {
+        fun toPlainTextReport(): String = buildString {
+            appendLine("G3.6 final-command convergence investigation")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $rejectedGeneratedCases")
+            appendLine("Unchanged by convergence pass: $unchangedByConvergence")
+            appendLine("Changed by convergence pass: $changedByConvergence")
+            appendLine("Matched independent full pass 2: $matchedIndependentSecondPass")
+            appendLine("Differed from independent full pass 2: $differedFromIndependentSecondPass")
+            appendLine("Fixed after convergence: $fixedAfterConvergence")
+            appendLine("Still changed after verification: $stillChangedAfterVerification")
+            appendLine("Semantic mismatches: $semanticMismatchCount")
+            appendLine("Characters saved by convergence: $totalCharactersSaved")
+            appendLine("Characters added by convergence: $totalCharactersGrown")
+            appendLine("Convergence time: " + String.format(java.util.Locale.US, "%.2f ms", convergenceNanos / 1_000_000.0))
+            appendLine("Verification time: " + String.format(java.util.Locale.US, "%.2f ms", verificationNanos / 1_000_000.0))
+            appendLine("Elapsed: " + String.format(java.util.Locale.US, "%.2f ms", elapsedNanos / 1_000_000.0))
+            appendLine()
+            when {
+                semanticMismatchCount > 0 -> {
+                    appendLine("RESULT: G3.6 produced semantic mismatches.")
+                    appendLine("Recommendation: reject the convergence candidate and investigate every mismatch witness.")
+                }
+                stillChangedAfterVerification > 0 -> {
+                    appendLine("RESULT: the final-command convergence candidate was not a fixed point for every case.")
+                    appendLine("Recommendation: keep production unchanged and inspect the remaining verification witnesses.")
+                }
+                differedFromIndependentSecondPass > 0 -> {
+                    appendLine("RESULT: the candidate reached a fixed point but did not always reproduce the independent second-pass optimizer output.")
+                    appendLine("Recommendation: do not activate it yet; investigate the spelling differences before deciding whether they are acceptable alternatives.")
+                }
+                else -> {
+                    appendLine("RESULT: the final-command convergence candidate exactly reproduced the independent second pass and was fixed under full verification.")
+                    appendLine("Recommendation: proceed to a guarded VectorDrawable-level production trial before activation.")
+                }
+            }
+            if (witnesses.isNotEmpty()) {
+                appendLine()
+                appendLine("Witnesses")
+                witnesses.forEachIndexed { index, witness ->
+                    appendLine()
+                    appendLine("${index + 1}. Case ${witness.caseNumber}")
+                    appendLine("   Convergence changed pass 1: ${witness.convergenceChangedFirstPass}")
+                    appendLine("   Matched independent pass 2: ${witness.convergenceMatchedIndependentSecondPass}")
+                    appendLine("   Fixed under verification: ${witness.convergenceWasFixedPoint}")
+                    appendLine("   Semantic mismatch: ${witness.semanticMismatch}")
+                    appendLine("   Character delta (pass1 - convergence): ${witness.characterDelta}")
+                    appendLine("   Source: ${witness.source}")
+                    appendLine("   Pass 1: ${witness.firstPass}")
+                    appendLine("   G3.6 convergence: ${witness.convergencePass}")
+                    appendLine("   Independent pass 2: ${witness.independentSecondPass}")
+                    appendLine("   Verification pass: ${witness.verificationPass}")
+                }
+            }
+        }
+    }
+
+    /**
+     * G3.6 Developer Tools diagnostic. Production conversion never calls this.
+     *
+     * The candidate deliberately reruns only the syntax/command serialization tail
+     * that G3.5 identified as the source of pass-2 drift. It is then compared with
+     * an independent full second pass and finally verified by one full optimization
+     * from the candidate output.
+     */
+    fun runFinalCommandConvergenceStressSearch(
+        caseCount: Int = 25_000,
+        seed: Long = 0x6316_2026L,
+        maximumWitnesses: Int = 8,
+        progressCallback: ((processedCases: Int) -> Unit)? = null
+    ): FinalCommandConvergenceResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        require(maximumWitnesses >= 0) { "maximumWitnesses must be non-negative" }
+
+        val started = System.nanoTime()
+        val random = Random(seed)
+        val witnesses = mutableListOf<FinalCommandConvergenceWitness>()
+        var generated = 0
+        var valid = 0
+        var rejected = 0
+        var unchanged = 0
+        var changed = 0
+        var matchedIndependent = 0
+        var differedIndependent = 0
+        var fixed = 0
+        var stillChanged = 0
+        var semanticMismatches = 0
+        var charactersSaved = 0L
+        var charactersGrown = 0L
+        var convergenceNanos = 0L
+        var verificationNanos = 0L
+
+        repeat(caseCount) { caseIndex ->
+            generated++
+            val source = generateDifferentialStressPath(random)
+            try {
+                val first = optimizePathData(source).pathData
+
+                val convergenceStart = System.nanoTime()
+                val convergence = runFinalCommandConvergenceCandidate(first)
+                convergenceNanos += System.nanoTime() - convergenceStart
+
+                val independentSecond = optimizePathData(first).pathData
+
+                val verificationStart = System.nanoTime()
+                val verification = optimizePathData(convergence).pathData
+                verificationNanos += System.nanoTime() - verificationStart
+
+                val convergenceChanged = convergence != first
+                val matched = convergence == independentSecond
+                val isFixed = verification == convergence
+                val firstSemantics = canonicalPathSemantics(first)
+                val convergenceSemantics = canonicalPathSemantics(convergence)
+                val semanticMismatch = firstSemantics == null ||
+                    convergenceSemantics == null ||
+                    firstSemantics != convergenceSemantics
+                val delta = first.length - convergence.length
+
+                valid++
+                if (convergenceChanged) changed++ else unchanged++
+                if (matched) matchedIndependent++ else differedIndependent++
+                if (isFixed) fixed++ else stillChanged++
+                if (semanticMismatch) semanticMismatches++
+                if (delta > 0) charactersSaved += delta.toLong()
+                if (delta < 0) charactersGrown += (-delta).toLong()
+
+                val noteworthy = semanticMismatch || !isFixed || !matched || convergenceChanged
+                if (noteworthy && witnesses.size < maximumWitnesses) {
+                    witnesses += FinalCommandConvergenceWitness(
+                        caseNumber = caseIndex + 1,
+                        source = source,
+                        firstPass = first,
+                        convergencePass = convergence,
+                        independentSecondPass = independentSecond,
+                        verificationPass = verification,
+                        convergenceChangedFirstPass = convergenceChanged,
+                        convergenceMatchedIndependentSecondPass = matched,
+                        convergenceWasFixedPoint = isFixed,
+                        semanticMismatch = semanticMismatch,
+                        characterDelta = delta
+                    )
+                }
+            } catch (_: Throwable) {
+                rejected++
+            }
+
+            val processed = caseIndex + 1
+            if (progressCallback != null && (processed == caseCount || processed % 250 == 0)) {
+                progressCallback(processed)
+            }
+        }
+        if (caseCount == 0) progressCallback?.invoke(0)
+
+        return FinalCommandConvergenceResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generated,
+            validCases = valid,
+            rejectedGeneratedCases = rejected,
+            unchangedByConvergence = unchanged,
+            changedByConvergence = changed,
+            matchedIndependentSecondPass = matchedIndependent,
+            differedFromIndependentSecondPass = differedIndependent,
+            fixedAfterConvergence = fixed,
+            stillChangedAfterVerification = stillChanged,
+            semanticMismatchCount = semanticMismatches,
+            totalCharactersSaved = charactersSaved,
+            totalCharactersGrown = charactersGrown,
+            convergenceNanos = convergenceNanos,
+            verificationNanos = verificationNanos,
+            elapsedNanos = System.nanoTime() - started,
+            witnesses = witnesses
+        )
+    }
+
+    private fun runFinalCommandConvergenceCandidate(pathData: String): String {
+        val matches = tokenRegex.findAll(pathData).toList()
+        if (matches.isEmpty()) return pathData.trim()
+
+        var cursor = 0
+        for (match in matches) {
+            if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
+                return pathData
+            }
+            cursor = match.range.last + 1
+        }
+        if (!containsOnlySeparators(pathData.substring(cursor))) return pathData
+
+        val normalized = StringBuilder(pathData.length)
+        var activeCommand: Char? = null
+        var previousWasNumber = false
+        for (match in matches) {
+            val token = match.value
+            if (isCommand(token)) {
+                val command = token[0]
+                val implicitRepeat =
+                    activeCommand == command && command !in charArrayOf('M', 'm', 'Z', 'z')
+                if (!implicitRepeat) {
+                    normalized.append(command)
+                    previousWasNumber = false
+                }
+                activeCommand = command
+            } else {
+                val value = token.toBigDecimalOrNull()
+                    ?.let(::formatPathNumber)
+                    ?: normalizeNumber(token)
+                if (previousWasNumber) normalized.append(',')
+                normalized.append(value)
+                previousWasNumber = true
+            }
+        }
+
+        val local = shortenPathCommands(normalized.toString(), null).pathData
+        val global = globallyMinimizeCommandSequence(local, null).pathData
+        return globallyOptimizeNumericSerialization(global).pathData
+    }
+
     data class PathFixedPointWitness(
         val caseNumber: Int,
         val firstChangingStage: String,
