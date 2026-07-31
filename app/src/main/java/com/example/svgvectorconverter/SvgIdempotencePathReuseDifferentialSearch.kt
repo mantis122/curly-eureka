@@ -3,27 +3,77 @@ package com.example.svgvectorconverter
 /** Android-free entry point for the G3.4 idempotence stable-path reuse search. */
 object SvgIdempotencePathReuseDifferentialSearch {
 
-    fun runDefault(): String = run(
+    data class Progress(
+        val completedCases: Int,
+        val totalCases: Int,
+        val seedIndex: Int,
+        val seedCount: Int,
+        val currentSeedProcessed: Int,
+        val casesPerSeed: Int
+    ) {
+        val percentComplete: Double
+            get() = if (totalCases <= 0) 100.0
+            else completedCases.toDouble() * 100.0 / totalCases.toDouble()
+    }
+
+    fun runDefault(
+        progressCallback: ((Progress) -> Unit)? = null
+    ): String = run(
         casesPerSeed = 25_000,
         seeds = listOf(
             0x6314_2026L,
             0x6314_0001L,
             0x6314_0002L,
             0x1D3E_2026L
-        )
+        ),
+        progressCallback = progressCallback
     )
 
-    fun run(casesPerSeed: Int, seeds: List<Long>): String {
+    fun run(
+        casesPerSeed: Int,
+        seeds: List<Long>,
+        progressCallback: ((Progress) -> Unit)? = null
+    ): String {
         require(casesPerSeed >= 0) { "casesPerSeed must be non-negative" }
         require(seeds.isNotEmpty()) { "At least one seed is required" }
 
         val started = System.nanoTime()
-        val results = seeds.map { seed ->
-            SvgPathDataOptimizer.runIdempotencePathReuseDifferentialStressSearch(
+        val totalCases = casesPerSeed * seeds.size
+        val results = mutableListOf<SvgPathDataOptimizer.IdempotencePathReuseDifferentialSearchResult>()
+
+        if (totalCases == 0) {
+            progressCallback?.invoke(
+                Progress(
+                    completedCases = 0,
+                    totalCases = 0,
+                    seedIndex = 1,
+                    seedCount = seeds.size,
+                    currentSeedProcessed = 0,
+                    casesPerSeed = casesPerSeed
+                )
+            )
+        }
+
+        seeds.forEachIndexed { index, seed ->
+            val completedBeforeSeed = index * casesPerSeed
+            val result = SvgPathDataOptimizer.runIdempotencePathReuseDifferentialStressSearch(
                 caseCount = casesPerSeed,
                 seed = seed,
-                maximumWitnesses = 4
+                maximumWitnesses = 4,
+                progressCallback = { currentSeedProcessed ->
+                    progressCallback?.invoke(
+                        Progress(
+                            completedCases = completedBeforeSeed + currentSeedProcessed,
+                            totalCases = totalCases,
+                            seedIndex = index + 1,
+                            seedCount = seeds.size,
+                            currentSeedProcessed = currentSeedProcessed,
+                            casesPerSeed = casesPerSeed
+                        )
+                    )
+                }
             )
+            results += result
         }
 
         val valid = results.sumOf { it.validCases }

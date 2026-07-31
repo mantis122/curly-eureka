@@ -5485,7 +5485,8 @@ internal object SvgPathDataOptimizer {
     fun runIdempotencePathReuseDifferentialStressSearch(
         caseCount: Int = 25_000,
         seed: Long = 0x6314_2026L,
-        maximumWitnesses: Int = 12
+        maximumWitnesses: Int = 12,
+        progressCallback: ((processedCases: Int) -> Unit)? = null
     ): IdempotencePathReuseDifferentialSearchResult {
         require(caseCount >= 0) { "caseCount must be non-negative" }
         require(maximumWitnesses >= 0) { "maximumWitnesses must be non-negative" }
@@ -5567,6 +5568,18 @@ internal object SvgPathDataOptimizer {
             } catch (_: Throwable) {
                 rejectedGeneratedCases++
             }
+
+            val processedCases = caseIndex + 1
+            if (
+                progressCallback != null &&
+                (processedCases % 250 == 0 || processedCases == caseCount)
+            ) {
+                progressCallback(processedCases)
+            }
+        }
+
+        if (caseCount == 0) {
+            progressCallback?.invoke(0)
         }
 
         return IdempotencePathReuseDifferentialSearchResult(

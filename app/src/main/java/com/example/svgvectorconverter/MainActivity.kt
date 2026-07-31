@@ -1406,24 +1406,45 @@ class MainActivity : ComponentActivity() {
             setPadding(64, 48, 64, 48)
         }
 
-        val progressBar = ProgressBar(this)
+        val progressBar = ProgressBar(
+            this,
+            null,
+            android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            isIndeterminate = false
+            max = 100_000
+            progress = 0
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
         val statusText = makeText(
-            "Comparing independent and reused idempotence passes…",
+            "Progress: 0.0%  •  0 / 100,000",
             16f,
             Color.DKGRAY,
             Gravity.CENTER
         ).apply { setPadding(0, 24, 0, 0) }
 
         val detailText = makeText(
-            "Runs 100,000 deterministic VectorDrawable cases off the UI thread.",
+            "Seed 1 of 4  •  0 / 25,000 in current seed",
             13f,
             Color.GRAY,
             Gravity.CENTER
         ).apply { setPadding(0, 12, 0, 0) }
 
+        val noteText = makeText(
+            "Comparing independent and reused idempotence passes off the UI thread.",
+            12f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 8, 0, 0) }
+
         progressLayout.addView(progressBar)
         progressLayout.addView(statusText)
         progressLayout.addView(detailText)
+        progressLayout.addView(noteText)
 
         val progressDialog = android.app.AlertDialog.Builder(this)
             .setTitle("G3.4 Stable-Path Reuse Differential Search")
@@ -1434,7 +1455,32 @@ class MainActivity : ComponentActivity() {
 
         Thread {
             val report = try {
-                SvgIdempotencePathReuseDifferentialSearch.runDefault()
+                SvgIdempotencePathReuseDifferentialSearch.runDefault { progress ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && progressDialog.isShowing) {
+                            progressBar.max = progress.totalCases.coerceAtLeast(1)
+                            progressBar.progress = progress.completedCases.coerceIn(
+                                0,
+                                progressBar.max
+                            )
+                            statusText.text = String.format(
+                                java.util.Locale.US,
+                                "Progress: %.1f%%  •  %,d / %,d",
+                                progress.percentComplete,
+                                progress.completedCases,
+                                progress.totalCases
+                            )
+                            detailText.text = String.format(
+                                java.util.Locale.US,
+                                "Seed %d of %d  •  %,d / %,d in current seed",
+                                progress.seedIndex,
+                                progress.seedCount,
+                                progress.currentSeedProcessed,
+                                progress.casesPerSeed
+                            )
+                        }
+                    }
+                }
             } catch (throwable: Throwable) {
                 buildString {
                     appendLine("G3.4 automated stable-path reuse differential stress search")
