@@ -12,20 +12,38 @@ object SvgBidirectionalPolylineGeometrySearch {
         val percentComplete:Double get()=if(totalCases<=0)100.0 else completedCases*100.0/totalCases
     }
 
-    fun runDefault(progressCallback:((Progress)->Unit)?=null):String=run(
-        25_000,listOf(0x6316_2026L,0x6316_0001L,0x6316_0002L,0x1D40_2026L),progressCallback)
+    fun runDefault(
+        progressCallback:((Progress)->Unit)?=null,
+        controlCheckpoint:(()->Unit)?=null
+    ):String=run(
+        25_000,
+        listOf(0x6316_2026L,0x6316_0001L,0x6316_0002L,0x1D40_2026L),
+        progressCallback,
+        controlCheckpoint
+    )
 
-    fun run(casesPerSeed:Int,seeds:List<Long>,progressCallback:((Progress)->Unit)?=null):String{
+    fun run(
+        casesPerSeed:Int,
+        seeds:List<Long>,
+        progressCallback:((Progress)->Unit)?=null,
+        controlCheckpoint:(()->Unit)?=null
+    ):String{
         require(casesPerSeed>=0);require(seeds.isNotEmpty())
         val started=System.nanoTime();val total=casesPerSeed*seeds.size
         val processors=Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
         val workers=minOf(4,seeds.size,processors);val progress=AtomicIntegerArray(seeds.size)
         val executor=Executors.newFixedThreadPool(workers)
         val futures=seeds.mapIndexed{index,seed->executor.submit<SvgPathDataOptimizer.BidirectionalPolylineResult>{
-            SvgPathDataOptimizer.runBidirectionalPolylineGeometryStressSearch(casesPerSeed,seed,64){processed->
+            SvgPathDataOptimizer.runBidirectionalPolylineGeometryStressSearch(
+                casesPerSeed,
+                seed,
+                64,
+                { processed ->
                 progress.set(index,processed);val snapshot=List(seeds.size){progress.get(it)}
                 progressCallback?.invoke(Progress(snapshot.sum(),total,workers,snapshot,casesPerSeed))
-            }
+                },
+                controlCheckpoint
+            )
         }}
         val results=try{futures.map{it.get()}}finally{executor.shutdownNow()}
         val valid=results.sumOf{it.validCases};val rejected=results.sumOf{it.rejectedGeneratedCases}

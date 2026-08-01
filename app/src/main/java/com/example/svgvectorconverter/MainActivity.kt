@@ -2,11 +2,16 @@ package com.example.svgvectorconverter
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -20,6 +25,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.graphics.drawable.BitmapDrawable
 
 class MainActivity : ComponentActivity() {
@@ -2478,11 +2484,43 @@ class MainActivity : ComponentActivity() {
         toast("G3.8 geometry-safety report copied")
     }
 
-    private fun runBidirectionalPolylineGeometrySearch() {
+    private fun runBidirectionalPolylineGeometrySearch(forceRestart: Boolean = false) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 310)
+        }
+
+        val existing = G310SearchForegroundService.snapshot()
+        val savedReport = G310SearchForegroundService.readReport(this)
+        if (!forceRestart && existing.status !in setOf(
+                G310SearchForegroundService.Status.RUNNING,
+                G310SearchForegroundService.Status.MANUAL_PAUSED,
+                G310SearchForegroundService.Status.THERMAL_PAUSED
+            ) && savedReport.isNotBlank()
+        ) {
+            currentBidirectionalPolylineGeometryReport = savedReport
+            showBidirectionalPolylineGeometryResultsDialog(savedReport)
+            return
+        }
+        if (existing.status !in setOf(
+                G310SearchForegroundService.Status.RUNNING,
+                G310SearchForegroundService.Status.MANUAL_PAUSED,
+                G310SearchForegroundService.Status.THERMAL_PAUSED
+            )
+        ) {
+            G310SearchForegroundService.clearPreviousReport(this)
+            ContextCompat.startForegroundService(
+                this,
+                Intent(this, G310SearchForegroundService::class.java)
+                    .setAction(G310SearchForegroundService.ACTION_START)
+            )
+        }
+
         val progressLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(64, 48, 64, 48)
+            setPadding(64, 48, 64, 32)
         }
         val progressBar = ProgressBar(
             this,
@@ -2509,66 +2547,100 @@ class MainActivity : ComponentActivity() {
             Color.GRAY,
             Gravity.CENTER
         ).apply { setPadding(0, 12, 0, 0) }
+        val thermalText = makeText(
+            "Thermal monitoring active",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 10, 0, 0) }
         val noteText = makeText(
-            "Comparing flattened subpaths with bidirectional adaptive point-to-polyline distance.",
+            "The foreground service continues with the screen off or while another app is open. " +
+                "It pauses automatically when the phone becomes too hot.",
             12f,
             Color.GRAY,
             Gravity.CENTER
-        ).apply { setPadding(0, 8, 0, 0) }
+        ).apply { setPadding(0, 10, 0, 0) }
+        val pauseResumeButton = makeButton("Pause") {
+            val snapshot = G310SearchForegroundService.snapshot()
+            val action = if (snapshot.status == G310SearchForegroundService.Status.MANUAL_PAUSED) {
+                G310SearchForegroundService.ACTION_RESUME
+            } else {
+                G310SearchForegroundService.ACTION_PAUSE
+            }
+            startService(Intent(this, G310SearchForegroundService::class.java).setAction(action))
+        }
+        val stopButton = makeButton("Stop Search") {
+            startService(
+                Intent(this, G310SearchForegroundService::class.java)
+                    .setAction(G310SearchForegroundService.ACTION_STOP)
+            )
+        }
         progressLayout.addView(progressBar)
         progressLayout.addView(statusText)
         progressLayout.addView(detailText)
+        progressLayout.addView(thermalText)
         progressLayout.addView(noteText)
+        progressLayout.addView(horizontalRow(pauseResumeButton, stopButton))
 
         val progressDialog = android.app.AlertDialog.Builder(this)
             .setTitle("G3.10 Bidirectional Polyline Geometry Comparator")
             .setView(progressLayout)
-            .setCancelable(false)
+            .setNegativeButton("Hide") { dialog, _ -> dialog.dismiss() }
+            .setCancelable(true)
             .create()
         progressDialog.show()
 
-        Thread {
-            val report = try {
-                SvgBidirectionalPolylineGeometrySearch.runDefault { progress ->
-                    runOnUiThread {
-                        if (!isFinishing && !isDestroyed && progressDialog.isShowing) {
-                            progressBar.max = progress.totalCases.coerceAtLeast(1)
-                            progressBar.progress = progress.completedCases.coerceIn(0, progressBar.max)
-                            statusText.text = String.format(
-                                java.util.Locale.US,
-                                "Progress: %.1f%%  •  %,d / %,d",
-                                progress.percentComplete,
-                                progress.completedCases,
-                                progress.totalCases
-                            )
-                            val seedProgress = progress.perSeedProcessed
-                                .mapIndexed { index, processed ->
-                                    "S${index + 1}: ${String.format(java.util.Locale.US, "%,d", processed)}"
-                                }
-                                .joinToString("  •  ")
-                            detailText.text = "Workers: ${progress.workerCount}  •  $seedProgress"
-                        }
+        val handler = Handler(Looper.getMainLooper())
+        lateinit var poll: Runnable
+        poll = Runnable {
+            if (!progressDialog.isShowing || isFinishing || isDestroyed) return@Runnable
+            val snapshot = G310SearchForegroundService.snapshot()
+            progressBar.max = snapshot.totalCases.coerceAtLeast(1)
+            progressBar.progress = snapshot.completedCases.coerceIn(0, progressBar.max)
+            statusText.text = String.format(
+                java.util.Locale.US,
+                "Progress: %.1f%%  •  %,d / %,d",
+                snapshot.percentComplete,
+                snapshot.completedCases,
+                snapshot.totalCases
+            )
+            detailText.text = "Workers: ${snapshot.workerCount}  •  " +
+                snapshot.perSeedProcessed.mapIndexed { index, processed ->
+                    "S${index + 1}: ${String.format(java.util.Locale.US, "%,d", processed)}"
+                }.joinToString("  •  ")
+            thermalText.text = snapshot.message
+            thermalText.setTextColor(
+                when (snapshot.status) {
+                    G310SearchForegroundService.Status.THERMAL_PAUSED -> Color.rgb(190, 75, 0)
+                    G310SearchForegroundService.Status.MANUAL_PAUSED -> Color.rgb(150, 105, 0)
+                    else -> Color.GRAY
+                }
+            )
+            pauseResumeButton.text = if (
+                snapshot.status == G310SearchForegroundService.Status.MANUAL_PAUSED
+            ) "Resume" else "Pause"
+            pauseResumeButton.isEnabled = snapshot.status != G310SearchForegroundService.Status.THERMAL_PAUSED
+
+            when (snapshot.status) {
+                G310SearchForegroundService.Status.COMPLETED -> {
+                    progressDialog.dismiss()
+                    val report = G310SearchForegroundService.readReport(this)
+                    currentBidirectionalPolylineGeometryReport = report
+                    if (report.isNotBlank()) {
+                        showBidirectionalPolylineGeometryResultsDialog(report)
+                    } else {
+                        toast("G3.10 completed, but its report could not be read")
                     }
                 }
-            } catch (throwable: Throwable) {
-                buildString {
-                    appendLine("G3.10 automated bidirectional polyline geometry comparator differential stress search")
-                    appendLine()
-                    appendLine("RESULT: The search could not be completed.")
-                    appendLine()
-                    appendLine(throwable.message ?: throwable::class.java.simpleName)
-                    appendLine()
-                    appendLine("Check that SvgBidirectionalPolylineGeometrySearch.kt and the G3.10 source files are included in the app.")
-                }
-            }
-            runOnUiThread {
-                if (!isFinishing && !isDestroyed) {
+                G310SearchForegroundService.Status.STOPPED -> {
                     progressDialog.dismiss()
-                    currentBidirectionalPolylineGeometryReport = report
-                    showBidirectionalPolylineGeometryResultsDialog(report)
+                    toast("G3.10 search stopped")
                 }
+                else -> handler.postDelayed(poll, 750L)
             }
-        }.start()
+        }
+        handler.post(poll)
+        progressDialog.setOnDismissListener { handler.removeCallbacks(poll) }
     }
 
     private fun showBidirectionalPolylineGeometryResultsDialog(report: String) {
@@ -2625,7 +2697,7 @@ class MainActivity : ComponentActivity() {
             saveBidirectionalPolylineGeometryReport.launch("g3_10_bidirectional_polyline_geometry_report.txt")
         }
         layout.addView(horizontalRow(copyButton, saveButton))
-        val rerunButton = makeButton("Run Again") { runBidirectionalPolylineGeometrySearch() }
+        val rerunButton = makeButton("Run Again") { runBidirectionalPolylineGeometrySearch(forceRestart = true) }
         layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
         val dialog = android.app.AlertDialog.Builder(this)
             .setTitle("G3.10 Bidirectional Polyline Geometry Results")

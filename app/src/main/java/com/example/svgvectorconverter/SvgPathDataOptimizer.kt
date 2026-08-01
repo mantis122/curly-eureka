@@ -4,6 +4,7 @@ package com.example.svgvectorconverter
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.io.StringReader
+import java.util.concurrent.CancellationException
 import javax.xml.parsers.DocumentBuilderFactory
 import org.xml.sax.InputSource
 import kotlin.math.abs
@@ -6832,13 +6833,15 @@ internal object SvgPathDataOptimizer {
 
     fun runBidirectionalPolylineGeometryStressSearch(
         caseCount:Int=25_000,seed:Long=0x6316_2026L,maximumWitnesses:Int=64,
-        progressCallback:((processedCases:Int)->Unit)?=null
+        progressCallback:((processedCases:Int)->Unit)?=null,
+        controlCheckpoint:(()->Unit)?=null
     ):BidirectionalPolylineResult{
         require(caseCount>=0);require(maximumWitnesses>=0)
         val started=System.nanoTime();val random=Random(seed);val ws=mutableListOf<BidirectionalPolylineWitness>()
         var generated=0;var valid=0;var rejected=0;var changedCount=0;var colCount=0
         var candCount=0;var directCount=0;var sfCount=0;var ssCount=0;var checks=0
         repeat(caseCount){caseIndex->
+            controlCheckpoint?.invoke()
             generated++;val source=generateDifferentialStressPath(random)
             try{
                 val first=optimizePathData(source).pathData
@@ -6846,8 +6849,12 @@ internal object SvgPathDataOptimizer {
                 val second=optimizePathData(first).pathData
                 val changed=stages.finalCandidate!=first;if(changed)changedCount++;if(stages.collinearChanged)colCount++
                 if(changed){
+                    controlCheckpoint?.invoke()
                     val cand=SvgPathSampler.bidirectionalPolylineGeometryDiagnostic(first,stages.finalCandidate);checks++
-                    val direct=if(stages.collinearChanged){checks++;SvgPathSampler.bidirectionalPolylineGeometryDiagnostic(stages.preCollinear,stages.postCollinear)} else cand.copy(equivalent=true,reason="not checked",maximumFirstToSecondDeviation=0.0,maximumSecondToFirstDeviation=0.0)
+                    val direct=if(stages.collinearChanged){
+                        controlCheckpoint?.invoke();checks++
+                        SvgPathSampler.bidirectionalPolylineGeometryDiagnostic(stages.preCollinear,stages.postCollinear)
+                    } else cand.copy(equivalent=true,reason="not checked",maximumFirstToSecondDeviation=0.0,maximumSecondToFirstDeviation=0.0)
                     val cm=!cand.equivalent;val dm=stages.collinearChanged&&!direct.equivalent
                     if(cm)candCount++;if(dm)directCount++
                     if(cm||dm){
@@ -6864,7 +6871,12 @@ internal object SvgPathDataOptimizer {
                     }
                 }
                 valid++
-            }catch(_:Throwable){rejected++}
+            }catch(throwable:Throwable){
+                if(throwable is CancellationException || throwable is InterruptedException){
+                    throw throwable
+                }
+                rejected++
+            }
             val processed=caseIndex+1;if(progressCallback!=null&&(processed==caseCount||processed%250==0))progressCallback(processed)
         }
         if(caseCount==0)progressCallback?.invoke(0)
