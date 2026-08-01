@@ -510,6 +510,120 @@ internal object SvgPathSampler {
         return abs(a.toDouble() - b.toDouble()) <= max(1e-4, ulpTolerance)
     }
 
+
+
+    /** G3.10 diagnostic-only bidirectional polyline comparator. */
+    internal data class BidirectionalPolylineDiagnostic(
+        val equivalent: Boolean,
+        val firstSubpaths: Int,
+        val secondSubpaths: Int,
+        val firstVertices: Int,
+        val secondVertices: Int,
+        val maximumFirstToSecondDeviation: Double,
+        val maximumSecondToFirstDeviation: Double,
+        val firstOffendingPoint: String,
+        val secondOffendingPoint: String,
+        val firstNearestSegment: String,
+        val secondNearestSegment: String,
+        val reason: String
+    )
+
+    internal fun bidirectionalPolylineGeometryDiagnostic(
+        first: String,
+        second: String,
+        curveSteps: Int = 256
+    ): BidirectionalPolylineDiagnostic {
+        val aMeasured = measure(first, curveSteps)
+        val bMeasured = measure(second, curveSteps)
+        if (aMeasured == null || bMeasured == null) {
+            return BidirectionalPolylineDiagnostic(false, 0, 0, 0, 0,
+                Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, "", "", "", "",
+                "path could not be flattened")
+        }
+        val a = aMeasured.flattenedSubpaths()
+        val b = bMeasured.flattenedSubpaths()
+        val av = a.sumOf { it.size }
+        val bv = b.sumOf { it.size }
+        if (a.size != b.size) return BidirectionalPolylineDiagnostic(false,a.size,b.size,av,bv,
+            Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY,"","","","","subpath count differs")
+
+        var maxAB = 0.0; var maxBA = 0.0
+        var pointAB = ""; var pointBA = ""; var segAB = ""; var segBA = ""
+        for (i in a.indices) {
+            val pa=a[i]; val pb=b[i]
+            if (pa.size < 2 || pb.size < 2) continue
+            val aClosed = samePointLoose(pa.first(), pa.last())
+            val bClosed = samePointLoose(pb.first(), pb.last())
+            if (aClosed != bClosed) return BidirectionalPolylineDiagnostic(false,a.size,b.size,av,bv,maxAB,maxBA,pointAB,pointBA,segAB,segBA,
+                "closure differs in subpath ${i+1}")
+            if (!aClosed) {
+                if (!pointEquivalentLoose(pa.first(), pb.first()) || !pointEquivalentLoose(pa.last(), pb.last())) {
+                    return BidirectionalPolylineDiagnostic(false,a.size,b.size,av,bv,maxAB,maxBA,
+                        formatPoint(pa.first()),formatPoint(pb.first()),"","","open-subpath endpoints differ in subpath ${i+1}")
+                }
+            }
+            val la=polylineLength(pa); val lb=polylineLength(pb)
+            val lenTol=max(1e-4, 1e-7*max(1.0,max(la,lb)))
+            if (abs(la-lb)>lenTol) return BidirectionalPolylineDiagnostic(false,a.size,b.size,av,bv,maxAB,maxBA,"","","","",
+                "traveled length differs in subpath ${i+1}: $la vs $lb")
+
+            val ab=directedPolylineDeviation(pa,pb)
+            val ba=directedPolylineDeviation(pb,pa)
+            if (ab.distance>maxAB){maxAB=ab.distance;pointAB=formatPoint(ab.point);segAB=ab.segment}
+            if (ba.distance>maxBA){maxBA=ba.distance;pointBA=formatPoint(ba.point);segBA=ba.segment}
+            val scale=max(1.0, max(polylineBoundsScale(pa), polylineBoundsScale(pb)))
+            val tol=max(1e-4, 8.0*Math.ulp(scale.toFloat()).toDouble())
+            if (ab.distance>tol || ba.distance>tol) return BidirectionalPolylineDiagnostic(false,a.size,b.size,av,bv,maxAB,maxBA,pointAB,pointBA,segAB,segBA,
+                "bidirectional polyline deviation exceeds tolerance in subpath ${i+1}")
+        }
+        return BidirectionalPolylineDiagnostic(true,a.size,b.size,av,bv,maxAB,maxBA,pointAB,pointBA,segAB,segBA,
+            "equivalent under bidirectional adaptive polyline distance")
+    }
+
+    private data class DirectedDeviation(val distance:Double,val point:Point,val segment:String)
+
+    private fun directedPolylineDeviation(source:List<Point>, target:List<Point>):DirectedDeviation {
+        var best=DirectedDeviation(0.0, source.first(), "")
+        fun test(p:Point){
+            val nearest=nearestSegmentDistance(p,target)
+            if(nearest.first>best.distance) best=DirectedDeviation(nearest.first,p,nearest.second)
+        }
+        for (p in source) test(p)
+        for (i in 0 until source.lastIndex) {
+            val a=source[i]; val b=source[i+1]
+            fun refine(p0:Point,p1:Point,depth:Int){
+                val mid=Point((p0.x+p1.x)/2f,(p0.y+p1.y)/2f); test(mid)
+                if(depth<5){ refine(p0,mid,depth+1); refine(mid,p1,depth+1) }
+            }
+            refine(a,b,0)
+        }
+        return best
+    }
+
+    private fun nearestSegmentDistance(p:Point, poly:List<Point>):Pair<Double,String>{
+        var best=Double.POSITIVE_INFINITY; var label=""
+        for(i in 0 until poly.lastIndex){
+            val a=poly[i]; val b=poly[i+1]
+            val vx=b.x.toDouble()-a.x; val vy=b.y.toDouble()-a.y
+            val wx=p.x.toDouble()-a.x; val wy=p.y.toDouble()-a.y
+            val denom=vx*vx+vy*vy
+            val t=if(denom<=1e-30)0.0 else ((wx*vx+wy*vy)/denom).coerceIn(0.0,1.0)
+            val qx=a.x+vx*t; val qy=a.y+vy*t
+            val d=hypot(p.x-qx,p.y-qy)
+            if(d<best){best=d;label="${formatPoint(a)} → ${formatPoint(b)}"}
+        }
+        return best to label
+    }
+
+    private fun polylineLength(points:List<Point>):Double=(0 until points.lastIndex).sumOf{i->hypot(
+        points[i+1].x.toDouble()-points[i].x.toDouble(),points[i+1].y.toDouble()-points[i].y.toDouble())}
+    private fun polylineBoundsScale(points:List<Point>):Double{
+        var m=0.0; for(p in points)m=max(m,max(abs(p.x.toDouble()),abs(p.y.toDouble()))); return m
+    }
+    private fun samePointLoose(a:Point,b:Point)=pointEquivalentLoose(a,b)
+    private fun pointEquivalentLoose(a:Point,b:Point)=floatGeometryCoordinateEquivalent(a.x,b.x)&&floatGeometryCoordinateEquivalent(a.y,b.y)
+    private fun formatPoint(p:Point)=String.format(java.util.Locale.US,"%.9g,%.9g",p.x.toDouble(),p.y.toDouble())
+
     private fun tokenize(data:String)=Regex("[A-Za-z]|[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?").findAll(data).map{it.value}.toList()
     private fun isCommand(token:String)=token.length==1&&token[0].isLetter()
 }

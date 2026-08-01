@@ -6759,6 +6759,118 @@ internal object SvgPathDataOptimizer {
         )
     }
 
+
+
+    // G3.10 diagnostic-only investigation. Production conversion never calls this.
+    data class BidirectionalPolylineWitness(
+        val caseNumber:Int,val source:String,val firstPass:String,val preCollinear:String,val postCollinear:String,
+        val finalCandidate:String,val independentSecondPass:String,
+        val candidateMismatch:Boolean,val directCollinearMismatch:Boolean,
+        val sourceToFirstMismatch:Boolean,val sourceToSecondMismatch:Boolean,
+        val candidateReason:String,val directReason:String,
+        val candidateFirstToSecondDeviation:Double,val candidateSecondToFirstDeviation:Double,
+        val directFirstToSecondDeviation:Double,val directSecondToFirstDeviation:Double,
+        val offendingPoint:String,val nearestSegment:String
+    )
+
+    data class BidirectionalPolylineResult(
+        val seed:Long,val requestedCases:Int,val generatedCases:Int,val validCases:Int,val rejectedGeneratedCases:Int,
+        val candidateChangedCases:Int,val collinearChangedCases:Int,
+        val candidateMismatchCases:Int,val directCollinearMismatchCases:Int,
+        val sourceToFirstMismatchCases:Int,val sourceToSecondMismatchCases:Int,
+        val comparisons:Int,val elapsedNanos:Long,val witnesses:List<BidirectionalPolylineWitness>
+    ) {
+        fun toPlainTextReport():String=buildString{
+            appendLine("G3.10 bidirectional polyline geometry comparator investigation")
+            appendLine();appendLine("Seed: $seed");appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases");appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $rejectedGeneratedCases")
+            appendLine("G3.7 candidate changed: $candidateChangedCases")
+            appendLine("Collinear-consolidation stage changed: $collinearChangedCases")
+            appendLine("Bidirectional candidate mismatches: $candidateMismatchCases")
+            appendLine("Bidirectional direct-collinear mismatches: $directCollinearMismatchCases")
+            appendLine("Source → pass-1 bidirectional mismatches: $sourceToFirstMismatchCases")
+            appendLine("Source → pass-2 bidirectional mismatches: $sourceToSecondMismatchCases")
+            appendLine("Bidirectional comparisons: $comparisons")
+            appendLine("Elapsed: "+String.format(java.util.Locale.US,"%.2f ms",elapsedNanos/1_000_000.0))
+            appendLine()
+            if(directCollinearMismatchCases>0){
+                appendLine("RESULT: G3.10 found direct collinear geometry differences under bidirectional polyline distance.")
+                appendLine("Recommendation: keep production unchanged and inspect every direct-collinear witness.")
+            } else if(candidateMismatchCases>0||sourceToSecondMismatchCases>0){
+                appendLine("RESULT: G3.10 cleared the direct collinear signal but found residual geometry differences elsewhere.")
+                appendLine("Recommendation: keep production unchanged and investigate the residual witnesses.")
+            } else {
+                appendLine("RESULT: G3.10 classified the G3.9 direct-collinear signal as a comparator artifact on this corpus.")
+                appendLine("Recommendation: adopt the bidirectional comparator for diagnostics, then rerun G3.7 before any production change.")
+            }
+            if(witnesses.isNotEmpty()){
+                appendLine();appendLine("Bidirectional comparator witnesses")
+                witnesses.forEachIndexed{i,w->
+                    appendLine();appendLine("${i+1}. Case ${w.caseNumber}")
+                    appendLine("   Candidate mismatch: ${w.candidateMismatch}")
+                    appendLine("   Direct-collinear mismatch: ${w.directCollinearMismatch}")
+                    appendLine("   Source → pass-1 mismatch: ${w.sourceToFirstMismatch}")
+                    appendLine("   Source → pass-2 mismatch: ${w.sourceToSecondMismatch}")
+                    appendLine("   Candidate reason: ${w.candidateReason}")
+                    appendLine("   Direct reason: ${w.directReason}")
+                    appendLine("   Candidate A → B max deviation: ${String.format(java.util.Locale.US,"%.9g",w.candidateFirstToSecondDeviation)}")
+                    appendLine("   Candidate B → A max deviation: ${String.format(java.util.Locale.US,"%.9g",w.candidateSecondToFirstDeviation)}")
+                    appendLine("   Direct A → B max deviation: ${String.format(java.util.Locale.US,"%.9g",w.directFirstToSecondDeviation)}")
+                    appendLine("   Direct B → A max deviation: ${String.format(java.util.Locale.US,"%.9g",w.directSecondToFirstDeviation)}")
+                    appendLine("   Offending point: ${w.offendingPoint}")
+                    appendLine("   Nearest target segment: ${w.nearestSegment}")
+                    appendLine("   Source: ${w.source}");appendLine("   Pass 1: ${w.firstPass}")
+                    appendLine("   Before collinear consolidation: ${w.preCollinear}")
+                    appendLine("   After collinear consolidation: ${w.postCollinear}")
+                    appendLine("   Final G3.7-equivalent candidate: ${w.finalCandidate}")
+                    appendLine("   Independent pass 2: ${w.independentSecondPass}")
+                }
+            }
+        }
+    }
+
+    fun runBidirectionalPolylineGeometryStressSearch(
+        caseCount:Int=25_000,seed:Long=0x6316_2026L,maximumWitnesses:Int=64,
+        progressCallback:((processedCases:Int)->Unit)?=null
+    ):BidirectionalPolylineResult{
+        require(caseCount>=0);require(maximumWitnesses>=0)
+        val started=System.nanoTime();val random=Random(seed);val ws=mutableListOf<BidirectionalPolylineWitness>()
+        var generated=0;var valid=0;var rejected=0;var changedCount=0;var colCount=0
+        var candCount=0;var directCount=0;var sfCount=0;var ssCount=0;var checks=0
+        repeat(caseCount){caseIndex->
+            generated++;val source=generateDifferentialStressPath(random)
+            try{
+                val first=optimizePathData(source).pathData
+                val stages=buildG38CandidateStages(first)?:throw IllegalArgumentException("candidate parse failed")
+                val second=optimizePathData(first).pathData
+                val changed=stages.finalCandidate!=first;if(changed)changedCount++;if(stages.collinearChanged)colCount++
+                if(changed){
+                    val cand=SvgPathSampler.bidirectionalPolylineGeometryDiagnostic(first,stages.finalCandidate);checks++
+                    val direct=if(stages.collinearChanged){checks++;SvgPathSampler.bidirectionalPolylineGeometryDiagnostic(stages.preCollinear,stages.postCollinear)} else cand.copy(equivalent=true,reason="not checked",maximumFirstToSecondDeviation=0.0,maximumSecondToFirstDeviation=0.0)
+                    val cm=!cand.equivalent;val dm=stages.collinearChanged&&!direct.equivalent
+                    if(cm)candCount++;if(dm)directCount++
+                    if(cm||dm){
+                        val sf=SvgPathSampler.bidirectionalPolylineGeometryDiagnostic(source,first);checks++
+                        val ss=SvgPathSampler.bidirectionalPolylineGeometryDiagnostic(source,second);checks++
+                        val sfm=!sf.equivalent;val ssm=!ss.equivalent;if(sfm)sfCount++;if(ssm)ssCount++
+                        if(ws.size<maximumWitnesses){
+                            val use=if(dm)direct else cand
+                            ws+=BidirectionalPolylineWitness(caseIndex+1,source,first,stages.preCollinear,stages.postCollinear,stages.finalCandidate,second,
+                                cm,dm,sfm,ssm,cand.reason,direct.reason,cand.maximumFirstToSecondDeviation,cand.maximumSecondToFirstDeviation,
+                                direct.maximumFirstToSecondDeviation,direct.maximumSecondToFirstDeviation,
+                                use.firstOffendingPoint.ifBlank{use.secondOffendingPoint},use.firstNearestSegment.ifBlank{use.secondNearestSegment})
+                        }
+                    }
+                }
+                valid++
+            }catch(_:Throwable){rejected++}
+            val processed=caseIndex+1;if(progressCallback!=null&&(processed==caseCount||processed%250==0))progressCallback(processed)
+        }
+        if(caseCount==0)progressCallback?.invoke(0)
+        return BidirectionalPolylineResult(seed,caseCount,generated,valid,rejected,changedCount,colCount,candCount,directCount,sfCount,ssCount,checks,System.nanoTime()-started,ws)
+    }
+
     data class PathFixedPointWitness(
         val caseNumber: Int,
         val firstChangingStage: String,

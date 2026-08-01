@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
     private var currentFinalCommandConvergenceReport = ""
     private var currentPostSerializationGeometryConvergenceReport = ""
     private var currentCollinearGeometrySafetyReport = ""
-    private var currentSubdivisionInvariantGeometryReport = ""
+    private var currentBidirectionalPolylineGeometryReport = ""
 
     private fun makeButton(
         label: String,
@@ -250,12 +250,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val saveSubdivisionInvariantGeometryReport = registerForActivityResult(
+    private val saveBidirectionalPolylineGeometryReport = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain")
     ) { uri ->
-        if (uri != null && currentSubdivisionInvariantGeometryReport.isNotBlank()) {
-            FileIoHelpers.writeTextToUri(this, uri, currentSubdivisionInvariantGeometryReport)
-            toast("G3.9 subdivision-invariant report saved")
+        if (uri != null && currentBidirectionalPolylineGeometryReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(this, uri, currentBidirectionalPolylineGeometryReport)
+            toast("G3.10 bidirectional-polyline report saved")
         }
     }
 
@@ -992,8 +992,8 @@ class MainActivity : ComponentActivity() {
         )
 
         val subdivisionInvariantGeometryButton =
-            makeButton("Run G3.9 Subdivision-Invariant Geometry Comparator") {
-                runSubdivisionInvariantGeometrySearch()
+            makeButton("Run G3.10 Bidirectional Polyline Geometry Comparator") {
+                runBidirectionalPolylineGeometrySearch()
             }
         layout.addView(
             subdivisionInvariantGeometryButton,
@@ -1003,12 +1003,11 @@ class MainActivity : ComponentActivity() {
         layout.addView(
             makeText(
                 """
-                Reuses the exact G3.8 100,000-case corpus with four parallel
-                workers. G3.9 compares the dense arc-length sampler against an
-                ordered-polyline comparator that removes only monotonic
-                collinear subdivision vertices. This distinguishes harmless
-                line subdivision changes from reversals/backtracking and true
-                geometry changes. Production optimization behavior is unchanged.
+                Reuses the exact G3.8/G3.9 100,000-case corpus with four parallel
+                workers. G3.10 compares ordered flattened subpaths using
+                bidirectional point-to-polyline distance with adaptive midpoint
+                refinement, plus endpoint, closure, and traveled-length checks.
+                Production optimization behavior is unchanged.
                 """.trimIndent(),
                 14f,
                 Color.GRAY,
@@ -2479,7 +2478,7 @@ class MainActivity : ComponentActivity() {
         toast("G3.8 geometry-safety report copied")
     }
 
-    private fun runSubdivisionInvariantGeometrySearch() {
+    private fun runBidirectionalPolylineGeometrySearch() {
         val progressLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -2511,7 +2510,7 @@ class MainActivity : ComponentActivity() {
             Gravity.CENTER
         ).apply { setPadding(0, 12, 0, 0) }
         val noteText = makeText(
-            "Comparing dense arc-length sampling with monotonic subdivision-invariant ordered polylines.",
+            "Comparing flattened subpaths with bidirectional adaptive point-to-polyline distance.",
             12f,
             Color.GRAY,
             Gravity.CENTER
@@ -2522,7 +2521,7 @@ class MainActivity : ComponentActivity() {
         progressLayout.addView(noteText)
 
         val progressDialog = android.app.AlertDialog.Builder(this)
-            .setTitle("G3.9 Subdivision-Invariant Geometry Comparator")
+            .setTitle("G3.10 Bidirectional Polyline Geometry Comparator")
             .setView(progressLayout)
             .setCancelable(false)
             .create()
@@ -2530,7 +2529,7 @@ class MainActivity : ComponentActivity() {
 
         Thread {
             val report = try {
-                SvgSubdivisionInvariantGeometrySearch.runDefault { progress ->
+                SvgBidirectionalPolylineGeometrySearch.runDefault { progress ->
                     runOnUiThread {
                         if (!isFinishing && !isDestroyed && progressDialog.isShowing) {
                             progressBar.max = progress.totalCases.coerceAtLeast(1)
@@ -2553,30 +2552,30 @@ class MainActivity : ComponentActivity() {
                 }
             } catch (throwable: Throwable) {
                 buildString {
-                    appendLine("G3.9 automated subdivision-invariant geometry comparator differential stress search")
+                    appendLine("G3.10 automated bidirectional polyline geometry comparator differential stress search")
                     appendLine()
                     appendLine("RESULT: The search could not be completed.")
                     appendLine()
                     appendLine(throwable.message ?: throwable::class.java.simpleName)
                     appendLine()
-                    appendLine("Check that SvgSubdivisionInvariantGeometrySearch.kt and the G3.9 source files are included in the app.")
+                    appendLine("Check that SvgBidirectionalPolylineGeometrySearch.kt and the G3.10 source files are included in the app.")
                 }
             }
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
                     progressDialog.dismiss()
-                    currentSubdivisionInvariantGeometryReport = report
-                    showSubdivisionInvariantGeometryResultsDialog(report)
+                    currentBidirectionalPolylineGeometryReport = report
+                    showBidirectionalPolylineGeometryResultsDialog(report)
                 }
             }
         }.start()
     }
 
-    private fun showSubdivisionInvariantGeometryResultsDialog(report: String) {
+    private fun showBidirectionalPolylineGeometryResultsDialog(report: String) {
         val failed = report.contains("could not be completed")
-        val invariantMismatch = report.contains("RESULT: G3.9 found direct collinear geometry differences") ||
-            report.contains("RESULT: G3.9 cleared the direct collinear signal but found residual invariant geometry differences")
-        val comparatorArtifact = report.contains("RESULT: G3.9 classified every reproduced dense mismatch as a subdivision-sensitive comparator artifact.")
+        val invariantMismatch = report.contains("RESULT: G3.10 found direct collinear geometry differences") ||
+            report.contains("RESULT: G3.10 cleared the direct collinear signal but found residual geometry differences")
+        val comparatorArtifact = report.contains("RESULT: G3.10 classified the G3.9 direct-collinear signal as a comparator artifact on this corpus.")
         val summaryText: String
         val summaryColor: Int
         when {
@@ -2585,15 +2584,15 @@ class MainActivity : ComponentActivity() {
                 summaryColor = Color.rgb(180, 35, 35)
             }
             invariantMismatch -> {
-                summaryText = "⚠ Invariant geometry mismatch remains"
+                summaryText = "⚠ Bidirectional geometry mismatch remains"
                 summaryColor = Color.rgb(190, 110, 0)
             }
             comparatorArtifact -> {
-                summaryText = "✓ Dense mismatches classified as comparator artifacts"
+                summaryText = "✓ G3.9 signal classified as comparator artifact"
                 summaryColor = Color.rgb(30, 120, 55)
             }
             else -> {
-                summaryText = "✓ No invariant geometry mismatch reproduced"
+                summaryText = "✓ No bidirectional geometry mismatch reproduced"
                 summaryColor = Color.rgb(30, 120, 55)
             }
         }
@@ -2621,15 +2620,15 @@ class MainActivity : ComponentActivity() {
                 1f
             )
         )
-        val copyButton = makeButton("Copy Results") { copySubdivisionInvariantGeometryReport() }
+        val copyButton = makeButton("Copy Results") { copyBidirectionalPolylineGeometryReport() }
         val saveButton = makeButton("Save .txt") {
-            saveSubdivisionInvariantGeometryReport.launch("g3_9_subdivision_invariant_geometry_report.txt")
+            saveBidirectionalPolylineGeometryReport.launch("g3_10_bidirectional_polyline_geometry_report.txt")
         }
         layout.addView(horizontalRow(copyButton, saveButton))
-        val rerunButton = makeButton("Run Again") { runSubdivisionInvariantGeometrySearch() }
+        val rerunButton = makeButton("Run Again") { runBidirectionalPolylineGeometrySearch() }
         layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
         val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle("G3.9 Subdivision-Invariant Geometry Results")
+            .setTitle("G3.10 Bidirectional Polyline Geometry Results")
             .setView(layout)
             .setPositiveButton("Close", null)
             .create()
@@ -2643,19 +2642,19 @@ class MainActivity : ComponentActivity() {
         dialog.show()
     }
 
-    private fun copySubdivisionInvariantGeometryReport() {
-        if (currentSubdivisionInvariantGeometryReport.isBlank()) {
-            toast("No G3.9 subdivision-invariant report to copy")
+    private fun copyBidirectionalPolylineGeometryReport() {
+        if (currentBidirectionalPolylineGeometryReport.isBlank()) {
+            toast("No G3.10 bidirectional-polyline report to copy")
             return
         }
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(
             ClipData.newPlainText(
-                "g3_9_subdivision_invariant_geometry_report.txt",
-                currentSubdivisionInvariantGeometryReport
+                "g3_10_bidirectional_polyline_geometry_report.txt",
+                currentBidirectionalPolylineGeometryReport
             )
         )
-        toast("G3.9 subdivision-invariant report copied")
+        toast("G3.10 bidirectional-polyline report copied")
     }
 
     private fun runBundledRegressionSuite() {
