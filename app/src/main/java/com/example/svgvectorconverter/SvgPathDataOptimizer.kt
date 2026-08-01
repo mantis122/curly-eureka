@@ -6504,6 +6504,261 @@ internal object SvgPathDataOptimizer {
         )
     }
 
+
+    // G3.9 diagnostic-only investigation. Production conversion never calls this.
+    data class SubdivisionInvariantGeometryWitness(
+        val caseNumber: Int,
+        val source: String,
+        val firstPass: String,
+        val preCollinear: String,
+        val postCollinear: String,
+        val finalCandidate: String,
+        val independentSecondPass: String,
+        val denseCandidateMismatch: Boolean,
+        val invariantCandidateMismatch: Boolean,
+        val denseDirectCollinearMismatch: Boolean,
+        val invariantDirectCollinearMismatch: Boolean,
+        val sourceToFirstInvariantMismatch: Boolean,
+        val sourceToSecondInvariantMismatch: Boolean,
+        val candidateReason: String,
+        val directReason: String,
+        val firstVerticesBefore: Int,
+        val candidateVerticesBefore: Int,
+        val firstVerticesAfter: Int,
+        val candidateVerticesAfter: Int,
+        val maximumMatchedVertexDeviation: Double,
+        val denseMismatchCleared: Boolean
+    )
+
+    data class SubdivisionInvariantGeometryResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val rejectedGeneratedCases: Int,
+        val candidateChangedCases: Int,
+        val collinearChangedCases: Int,
+        val denseCandidateMismatchCases: Int,
+        val invariantCandidateMismatchCases: Int,
+        val denseCandidateMismatchesCleared: Int,
+        val denseDirectCollinearMismatchCases: Int,
+        val invariantDirectCollinearMismatchCases: Int,
+        val denseDirectCollinearMismatchesCleared: Int,
+        val sourceToFirstInvariantMismatchCases: Int,
+        val sourceToSecondInvariantMismatchCases: Int,
+        val invariantChecks: Int,
+        val elapsedNanos: Long,
+        val witnesses: List<SubdivisionInvariantGeometryWitness>
+    ) {
+        fun toPlainTextReport(): String = buildString {
+            appendLine("G3.9 subdivision-invariant geometry comparator investigation")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $rejectedGeneratedCases")
+            appendLine("G3.7 candidate changed: $candidateChangedCases")
+            appendLine("Collinear-consolidation stage changed: $collinearChangedCases")
+            appendLine("Dense candidate mismatches: $denseCandidateMismatchCases")
+            appendLine("Subdivision-invariant candidate mismatches: $invariantCandidateMismatchCases")
+            appendLine("Dense candidate mismatches cleared: $denseCandidateMismatchesCleared")
+            appendLine("Dense direct-collinear mismatches: $denseDirectCollinearMismatchCases")
+            appendLine("Subdivision-invariant direct-collinear mismatches: $invariantDirectCollinearMismatchCases")
+            appendLine("Dense direct-collinear mismatches cleared: $denseDirectCollinearMismatchesCleared")
+            appendLine("Source → pass-1 invariant mismatches: $sourceToFirstInvariantMismatchCases")
+            appendLine("Source → pass-2 invariant mismatches: $sourceToSecondInvariantMismatchCases")
+            appendLine("Subdivision-invariant checks: $invariantChecks")
+            appendLine("Elapsed: " + String.format(java.util.Locale.US, "%.2f ms", elapsedNanos / 1_000_000.0))
+            appendLine()
+            when {
+                invariantDirectCollinearMismatchCases > 0 -> {
+                    appendLine("RESULT: G3.9 found geometry differences that remain after subdivision normalization.")
+                    appendLine("Recommendation: keep production unchanged and inspect every invariant direct-collinear witness before modifying the comparator or consolidator.")
+                }
+                invariantCandidateMismatchCases > 0 || sourceToSecondInvariantMismatchCases > 0 -> {
+                    appendLine("RESULT: G3.9 cleared the collinear subdivision signal but found residual invariant geometry differences elsewhere in the candidate pipeline.")
+                    appendLine("Recommendation: keep production unchanged and investigate the residual invariant witnesses.")
+                }
+                denseCandidateMismatchCases > 0 || denseDirectCollinearMismatchCases > 0 -> {
+                    appendLine("RESULT: G3.9 classified every reproduced dense mismatch as a subdivision-sensitive comparator artifact.")
+                    appendLine("Recommendation: adopt the subdivision-invariant comparator for diagnostics, then rerun G3.7 before considering the convergence candidate for production.")
+                }
+                validCases > 0 -> {
+                    appendLine("RESULT: G3.9 found no geometry mismatch in either comparator on this corpus.")
+                    appendLine("Recommendation: rerun G3.7 with the subdivision-invariant comparator before any production change.")
+                }
+                else -> appendLine("RESULT: no valid comparisons were produced.")
+            }
+            if (witnesses.isNotEmpty()) {
+                appendLine()
+                appendLine("Comparator witnesses")
+                witnesses.forEachIndexed { index, witness ->
+                    appendLine()
+                    appendLine("${index + 1}. Case ${witness.caseNumber}")
+                    appendLine("   Dense candidate mismatch: ${witness.denseCandidateMismatch}")
+                    appendLine("   Invariant candidate mismatch: ${witness.invariantCandidateMismatch}")
+                    appendLine("   Dense direct-collinear mismatch: ${witness.denseDirectCollinearMismatch}")
+                    appendLine("   Invariant direct-collinear mismatch: ${witness.invariantDirectCollinearMismatch}")
+                    appendLine("   Dense mismatch cleared by invariant comparator: ${witness.denseMismatchCleared}")
+                    appendLine("   Source → pass-1 invariant mismatch: ${witness.sourceToFirstInvariantMismatch}")
+                    appendLine("   Source → pass-2 invariant mismatch: ${witness.sourceToSecondInvariantMismatch}")
+                    appendLine("   Simplified candidate reason: ${witness.candidateReason}")
+                    appendLine("   Simplified direct-collinear reason: ${witness.directReason}")
+                    appendLine("   Flattened vertices before simplification: ${witness.firstVerticesBefore} → ${witness.candidateVerticesBefore}")
+                    appendLine("   Flattened vertices after simplification: ${witness.firstVerticesAfter} → ${witness.candidateVerticesAfter}")
+                    appendLine("   Maximum matched simplified-vertex deviation: ${String.format(java.util.Locale.US, "%.9g", witness.maximumMatchedVertexDeviation)}")
+                    appendLine("   Source: ${witness.source}")
+                    appendLine("   Pass 1: ${witness.firstPass}")
+                    appendLine("   Before collinear consolidation: ${witness.preCollinear}")
+                    appendLine("   After collinear consolidation: ${witness.postCollinear}")
+                    appendLine("   Final G3.7-equivalent candidate: ${witness.finalCandidate}")
+                    appendLine("   Independent pass 2: ${witness.independentSecondPass}")
+                }
+            }
+        }
+    }
+
+    fun runSubdivisionInvariantGeometryStressSearch(
+        caseCount: Int = 25_000,
+        seed: Long = 0x6316_2026L,
+        maximumWitnesses: Int = 64,
+        progressCallback: ((processedCases: Int) -> Unit)? = null
+    ): SubdivisionInvariantGeometryResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        require(maximumWitnesses >= 0) { "maximumWitnesses must be non-negative" }
+
+        val started = System.nanoTime()
+        val random = Random(seed)
+        val witnesses = mutableListOf<SubdivisionInvariantGeometryWitness>()
+        var generated = 0
+        var valid = 0
+        var rejected = 0
+        var candidateChanged = 0
+        var collinearChanged = 0
+        var denseCandidateMismatch = 0
+        var invariantCandidateMismatch = 0
+        var denseCandidateCleared = 0
+        var denseDirectMismatch = 0
+        var invariantDirectMismatch = 0
+        var denseDirectCleared = 0
+        var sourceFirstMismatch = 0
+        var sourceSecondMismatch = 0
+        var invariantChecks = 0
+
+        repeat(caseCount) { caseIndex ->
+            generated++
+            val source = generateDifferentialStressPath(random)
+            try {
+                val first = optimizePathData(source).pathData
+                val stages = buildG38CandidateStages(first) ?: throw IllegalArgumentException("candidate parse failed")
+                val second = optimizePathData(first).pathData
+                val changed = stages.finalCandidate != first
+                if (changed) candidateChanged++
+                if (stages.collinearChanged) collinearChanged++
+
+                var denseCandidate = false
+                var invariantCandidate = false
+                var denseDirect = false
+                var invariantDirect = false
+                var sourceFirst = false
+                var sourceSecond = false
+                var candidateDiag = SvgPathSampler.SubdivisionInvariantDiagnostic(
+                    true, 0, 0, 0, 0, 0, 0, 0.0, "not checked"
+                )
+                var directDiag = candidateDiag
+
+                if (changed) {
+                    denseCandidate = !densePathGeometryDiagnostic(first, stages.finalCandidate).equivalent
+                    candidateDiag = SvgPathSampler.subdivisionInvariantGeometryDiagnostic(first, stages.finalCandidate)
+                    invariantChecks++
+                    invariantCandidate = !candidateDiag.equivalent
+                    if (denseCandidate) denseCandidateMismatch++
+                    if (invariantCandidate) invariantCandidateMismatch++
+                    if (denseCandidate && !invariantCandidate) denseCandidateCleared++
+
+                    if (stages.collinearChanged) {
+                        denseDirect = !densePathGeometryDiagnostic(stages.preCollinear, stages.postCollinear).equivalent
+                        directDiag = SvgPathSampler.subdivisionInvariantGeometryDiagnostic(stages.preCollinear, stages.postCollinear)
+                        invariantChecks++
+                        invariantDirect = !directDiag.equivalent
+                        if (denseDirect) denseDirectMismatch++
+                        if (invariantDirect) invariantDirectMismatch++
+                        if (denseDirect && !invariantDirect) denseDirectCleared++
+                    }
+
+                    if (denseCandidate || invariantCandidate || denseDirect || invariantDirect) {
+                        val sourceFirstDiag = SvgPathSampler.subdivisionInvariantGeometryDiagnostic(source, first)
+                        val sourceSecondDiag = SvgPathSampler.subdivisionInvariantGeometryDiagnostic(source, second)
+                        invariantChecks += 2
+                        sourceFirst = !sourceFirstDiag.equivalent
+                        sourceSecond = !sourceSecondDiag.equivalent
+                        if (sourceFirst) sourceFirstMismatch++
+                        if (sourceSecond) sourceSecondMismatch++
+
+                        val shouldRecord = invariantCandidate || invariantDirect || sourceFirst || sourceSecond ||
+                            ((denseCandidate || denseDirect) && witnesses.size < 12)
+                        if (shouldRecord && witnesses.size < maximumWitnesses) {
+                            witnesses += SubdivisionInvariantGeometryWitness(
+                                caseNumber = caseIndex + 1,
+                                source = source,
+                                firstPass = first,
+                                preCollinear = stages.preCollinear,
+                                postCollinear = stages.postCollinear,
+                                finalCandidate = stages.finalCandidate,
+                                independentSecondPass = second,
+                                denseCandidateMismatch = denseCandidate,
+                                invariantCandidateMismatch = invariantCandidate,
+                                denseDirectCollinearMismatch = denseDirect,
+                                invariantDirectCollinearMismatch = invariantDirect,
+                                sourceToFirstInvariantMismatch = sourceFirst,
+                                sourceToSecondInvariantMismatch = sourceSecond,
+                                candidateReason = candidateDiag.reason,
+                                directReason = directDiag.reason,
+                                firstVerticesBefore = candidateDiag.firstVerticesBefore,
+                                candidateVerticesBefore = candidateDiag.secondVerticesBefore,
+                                firstVerticesAfter = candidateDiag.firstVerticesAfter,
+                                candidateVerticesAfter = candidateDiag.secondVerticesAfter,
+                                maximumMatchedVertexDeviation = candidateDiag.maximumMatchedVertexDeviation,
+                                denseMismatchCleared = (denseCandidate && !invariantCandidate) || (denseDirect && !invariantDirect)
+                            )
+                        }
+                    }
+                }
+                valid++
+            } catch (_: Throwable) {
+                rejected++
+            }
+
+            val processed = caseIndex + 1
+            if (progressCallback != null && (processed == caseCount || processed % 250 == 0)) {
+                progressCallback(processed)
+            }
+        }
+        if (caseCount == 0) progressCallback?.invoke(0)
+
+        return SubdivisionInvariantGeometryResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generated,
+            validCases = valid,
+            rejectedGeneratedCases = rejected,
+            candidateChangedCases = candidateChanged,
+            collinearChangedCases = collinearChanged,
+            denseCandidateMismatchCases = denseCandidateMismatch,
+            invariantCandidateMismatchCases = invariantCandidateMismatch,
+            denseCandidateMismatchesCleared = denseCandidateCleared,
+            denseDirectCollinearMismatchCases = denseDirectMismatch,
+            invariantDirectCollinearMismatchCases = invariantDirectMismatch,
+            denseDirectCollinearMismatchesCleared = denseDirectCleared,
+            sourceToFirstInvariantMismatchCases = sourceFirstMismatch,
+            sourceToSecondInvariantMismatchCases = sourceSecondMismatch,
+            invariantChecks = invariantChecks,
+            elapsedNanos = System.nanoTime() - started,
+            witnesses = witnesses
+        )
+    }
+
     data class PathFixedPointWitness(
         val caseNumber: Int,
         val firstChangingStage: String,

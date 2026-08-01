@@ -371,6 +371,145 @@ internal object SvgPathSampler {
         return (1..count).map { i -> val t=theta1+delta*i/count; Point((cx+cosPhi*rx*cos(t)-sinPhi*ry*sin(t)).toFloat(),(cy+sinPhi*rx*cos(t)+cosPhi*ry*sin(t)).toFloat()) }
     }
 
+
+    /**
+     * G3.9 diagnostic comparator. Compares ordered flattened subpaths after
+     * removing only subdivision vertices that lie strictly on the same
+     * monotonic straight segment. This makes equivalent line subdivisions
+     * invariant without erasing reversals/backtracking.
+     */
+    internal data class SubdivisionInvariantDiagnostic(
+        val equivalent: Boolean,
+        val firstSubpaths: Int,
+        val secondSubpaths: Int,
+        val firstVerticesBefore: Int,
+        val secondVerticesBefore: Int,
+        val firstVerticesAfter: Int,
+        val secondVerticesAfter: Int,
+        val maximumMatchedVertexDeviation: Double,
+        val reason: String
+    )
+
+    internal fun subdivisionInvariantGeometryDiagnostic(
+        first: String,
+        second: String,
+        curveSteps: Int = 256
+    ): SubdivisionInvariantDiagnostic {
+        val firstMeasured = measure(first, curveSteps)
+        val secondMeasured = measure(second, curveSteps)
+        if (firstMeasured == null || secondMeasured == null) {
+            return SubdivisionInvariantDiagnostic(
+                equivalent = false,
+                firstSubpaths = firstMeasured?.flattenedSubpaths()?.size ?: 0,
+                secondSubpaths = secondMeasured?.flattenedSubpaths()?.size ?: 0,
+                firstVerticesBefore = 0,
+                secondVerticesBefore = 0,
+                firstVerticesAfter = 0,
+                secondVerticesAfter = 0,
+                maximumMatchedVertexDeviation = Double.POSITIVE_INFINITY,
+                reason = "path could not be flattened"
+            )
+        }
+
+        val firstRaw = firstMeasured.flattenedSubpaths()
+        val secondRaw = secondMeasured.flattenedSubpaths()
+        val firstSimple = firstRaw.map(::removeMonotonicCollinearSubdivisionVertices)
+        val secondSimple = secondRaw.map(::removeMonotonicCollinearSubdivisionVertices)
+        val firstBefore = firstRaw.sumOf { it.size }
+        val secondBefore = secondRaw.sumOf { it.size }
+        val firstAfter = firstSimple.sumOf { it.size }
+        val secondAfter = secondSimple.sumOf { it.size }
+
+        if (firstSimple.size != secondSimple.size) {
+            return SubdivisionInvariantDiagnostic(false, firstSimple.size, secondSimple.size,
+                firstBefore, secondBefore, firstAfter, secondAfter,
+                Double.POSITIVE_INFINITY, "subpath count differs")
+        }
+
+        var maxDeviation = 0.0
+        for (subpathIndex in firstSimple.indices) {
+            val a = firstSimple[subpathIndex]
+            val b = secondSimple[subpathIndex]
+            if (a.size != b.size) {
+                return SubdivisionInvariantDiagnostic(false, firstSimple.size, secondSimple.size,
+                    firstBefore, secondBefore, firstAfter, secondAfter,
+                    Double.POSITIVE_INFINITY,
+                    "simplified vertex count differs in subpath ${subpathIndex + 1}: ${a.size} vs ${b.size}")
+            }
+            for (index in a.indices) {
+                val dx = a[index].x.toDouble() - b[index].x.toDouble()
+                val dy = a[index].y.toDouble() - b[index].y.toDouble()
+                val deviation = sqrt(dx * dx + dy * dy)
+                if (deviation > maxDeviation) maxDeviation = deviation
+                if (!floatGeometryCoordinateEquivalent(a[index].x, b[index].x) ||
+                    !floatGeometryCoordinateEquivalent(a[index].y, b[index].y)
+                ) {
+                    return SubdivisionInvariantDiagnostic(false, firstSimple.size, secondSimple.size,
+                        firstBefore, secondBefore, firstAfter, secondAfter,
+                        maxDeviation,
+                        "vertex ${index + 1} differs in subpath ${subpathIndex + 1}")
+                }
+            }
+        }
+
+        return SubdivisionInvariantDiagnostic(true, firstSimple.size, secondSimple.size,
+            firstBefore, secondBefore, firstAfter, secondAfter,
+            maxDeviation, "equivalent after monotonic collinear subdivision removal")
+    }
+
+    internal fun subdivisionInvariantGeometryEquivalent(
+        first: String,
+        second: String,
+        curveSteps: Int = 256
+    ): Boolean = subdivisionInvariantGeometryDiagnostic(first, second, curveSteps).equivalent
+
+    private fun removeMonotonicCollinearSubdivisionVertices(points: List<Point>): List<Point> {
+        if (points.size <= 2) return points
+        val result = ArrayList<Point>(points.size)
+        for (point in points) {
+            result.add(point)
+            while (result.size >= 3) {
+                val a = result[result.size - 3]
+                val b = result[result.size - 2]
+                val c = result[result.size - 1]
+                if (!isRemovableMonotonicCollinearVertex(a, b, c)) break
+                result.removeAt(result.size - 2)
+            }
+        }
+        return result
+    }
+
+    private fun isRemovableMonotonicCollinearVertex(a: Point, b: Point, c: Point): Boolean {
+        val abx = b.x.toDouble() - a.x.toDouble()
+        val aby = b.y.toDouble() - a.y.toDouble()
+        val bcx = c.x.toDouble() - b.x.toDouble()
+        val bcy = c.y.toDouble() - b.y.toDouble()
+        val abLength = hypot(abx, aby)
+        val bcLength = hypot(bcx, bcy)
+        if (abLength <= 1e-12 || bcLength <= 1e-12) return true
+
+        val cross = abx * bcy - aby * bcx
+        val crossTolerance = 1e-9 * max(1.0, abLength * bcLength)
+        if (abs(cross) > crossTolerance) return false
+
+        // Positive dot product means both segments continue in the same
+        // direction. A reversal/backtrack therefore remains observable.
+        val dot = abx * bcx + aby * bcy
+        if (dot <= 0.0) return false
+
+        val acx = c.x.toDouble() - a.x.toDouble()
+        val acy = c.y.toDouble() - a.y.toDouble()
+        val projection = (abx * acx + aby * acy) / max(1e-30, acx * acx + acy * acy)
+        return projection > 0.0 && projection < 1.0
+    }
+
+    private fun floatGeometryCoordinateEquivalent(a: Float, b: Float): Boolean {
+        if (a == b) return true
+        if (!a.isFinite() || !b.isFinite()) return false
+        val ulpTolerance = 8.0 * max(java.lang.Math.ulp(a), java.lang.Math.ulp(b)).toDouble()
+        return abs(a.toDouble() - b.toDouble()) <= max(1e-4, ulpTolerance)
+    }
+
     private fun tokenize(data:String)=Regex("[A-Za-z]|[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?").findAll(data).map{it.value}.toList()
     private fun isCommand(token:String)=token.length==1&&token[0].isLetter()
 }

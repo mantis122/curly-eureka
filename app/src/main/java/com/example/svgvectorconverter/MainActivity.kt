@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
     private var currentFinalCommandConvergenceReport = ""
     private var currentPostSerializationGeometryConvergenceReport = ""
     private var currentCollinearGeometrySafetyReport = ""
+    private var currentSubdivisionInvariantGeometryReport = ""
 
     private fun makeButton(
         label: String,
@@ -246,6 +247,15 @@ class MainActivity : ComponentActivity() {
         if (uri != null && currentCollinearGeometrySafetyReport.isNotBlank()) {
             FileIoHelpers.writeTextToUri(this, uri, currentCollinearGeometrySafetyReport)
             toast("G3.8 geometry-safety report saved")
+        }
+    }
+
+    private val saveSubdivisionInvariantGeometryReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentSubdivisionInvariantGeometryReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(this, uri, currentSubdivisionInvariantGeometryReport)
+            toast("G3.9 subdivision-invariant report saved")
         }
     }
 
@@ -973,6 +983,32 @@ class MainActivity : ComponentActivity() {
                 geometry immediately before and after collinear consolidation,
                 and reports the first differing token plus maximum deviation.
                 Production optimization behavior is unchanged.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        val subdivisionInvariantGeometryButton =
+            makeButton("Run G3.9 Subdivision-Invariant Geometry Comparator") {
+                runSubdivisionInvariantGeometrySearch()
+            }
+        layout.addView(
+            subdivisionInvariantGeometryButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Reuses the exact G3.8 100,000-case corpus with four parallel
+                workers. G3.9 compares the dense arc-length sampler against an
+                ordered-polyline comparator that removes only monotonic
+                collinear subdivision vertices. This distinguishes harmless
+                line subdivision changes from reversals/backtracking and true
+                geometry changes. Production optimization behavior is unchanged.
                 """.trimIndent(),
                 14f,
                 Color.GRAY,
@@ -2441,6 +2477,185 @@ class MainActivity : ComponentActivity() {
             )
         )
         toast("G3.8 geometry-safety report copied")
+    }
+
+    private fun runSubdivisionInvariantGeometrySearch() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+        val progressBar = ProgressBar(
+            this,
+            null,
+            android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            isIndeterminate = false
+            max = 100_000
+            progress = 0
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val statusText = makeText(
+            "Progress: 0.0%  •  0 / 100,000",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 24, 0, 0) }
+        val detailText = makeText(
+            "Workers: starting…",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 12, 0, 0) }
+        val noteText = makeText(
+            "Comparing dense arc-length sampling with monotonic subdivision-invariant ordered polylines.",
+            12f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 8, 0, 0) }
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(detailText)
+        progressLayout.addView(noteText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.9 Subdivision-Invariant Geometry Comparator")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgSubdivisionInvariantGeometrySearch.runDefault { progress ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && progressDialog.isShowing) {
+                            progressBar.max = progress.totalCases.coerceAtLeast(1)
+                            progressBar.progress = progress.completedCases.coerceIn(0, progressBar.max)
+                            statusText.text = String.format(
+                                java.util.Locale.US,
+                                "Progress: %.1f%%  •  %,d / %,d",
+                                progress.percentComplete,
+                                progress.completedCases,
+                                progress.totalCases
+                            )
+                            val seedProgress = progress.perSeedProcessed
+                                .mapIndexed { index, processed ->
+                                    "S${index + 1}: ${String.format(java.util.Locale.US, "%,d", processed)}"
+                                }
+                                .joinToString("  •  ")
+                            detailText.text = "Workers: ${progress.workerCount}  •  $seedProgress"
+                        }
+                    }
+                }
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("G3.9 automated subdivision-invariant geometry comparator differential stress search")
+                    appendLine()
+                    appendLine("RESULT: The search could not be completed.")
+                    appendLine()
+                    appendLine(throwable.message ?: throwable::class.java.simpleName)
+                    appendLine()
+                    appendLine("Check that SvgSubdivisionInvariantGeometrySearch.kt and the G3.9 source files are included in the app.")
+                }
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentSubdivisionInvariantGeometryReport = report
+                    showSubdivisionInvariantGeometryResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showSubdivisionInvariantGeometryResultsDialog(report: String) {
+        val failed = report.contains("could not be completed")
+        val invariantMismatch = report.contains("RESULT: G3.9 found direct collinear geometry differences") ||
+            report.contains("RESULT: G3.9 cleared the direct collinear signal but found residual invariant geometry differences")
+        val comparatorArtifact = report.contains("RESULT: G3.9 classified every reproduced dense mismatch as a subdivision-sensitive comparator artifact.")
+        val summaryText: String
+        val summaryColor: Int
+        when {
+            failed -> {
+                summaryText = "✕ Search could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+            invariantMismatch -> {
+                summaryText = "⚠ Invariant geometry mismatch remains"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+            comparatorArtifact -> {
+                summaryText = "✓ Dense mismatches classified as comparator artifacts"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+            else -> {
+                summaryText = "✓ No invariant geometry mismatch reproduced"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+        layout.addView(makeText(summaryText, 18f, summaryColor, Gravity.START, paddingBottom = 16))
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        val reportScroll = ScrollView(this).apply { addView(reportView) }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+        val copyButton = makeButton("Copy Results") { copySubdivisionInvariantGeometryReport() }
+        val saveButton = makeButton("Save .txt") {
+            saveSubdivisionInvariantGeometryReport.launch("g3_9_subdivision_invariant_geometry_report.txt")
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+        val rerunButton = makeButton("Run Again") { runSubdivisionInvariantGeometrySearch() }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.9 Subdivision-Invariant Geometry Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+        dialog.show()
+    }
+
+    private fun copySubdivisionInvariantGeometryReport() {
+        if (currentSubdivisionInvariantGeometryReport.isBlank()) {
+            toast("No G3.9 subdivision-invariant report to copy")
+            return
+        }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "g3_9_subdivision_invariant_geometry_report.txt",
+                currentSubdivisionInvariantGeometryReport
+            )
+        )
+        toast("G3.9 subdivision-invariant report copied")
     }
 
     private fun runBundledRegressionSuite() {
