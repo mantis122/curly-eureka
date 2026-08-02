@@ -387,15 +387,34 @@ class G310SearchForegroundService : Service() {
             atomicWrite(checkpointFile(context),root.toString())
         }
     }
-    private fun readCheckpoint(context:Context):StoredCheckpoint?=try{
-        val file=checkpointFile(context);if(!file.exists())return null
-        val root=JSONObject(file.readText());if(root.optInt("version")!=CHECKPOINT_VERSION)return null
-        val cases=root.getInt("casesPerSeed");val seedArray=root.getJSONArray("seeds")
-        val seeds=List(seedArray.length()){seedArray.getLong(it)}
-        if(cases!=CASES_PER_SEED||seeds!=DEFAULT_SEEDS)return null
-        val array=root.getJSONArray("states");if(array.length()!=seeds.size)return null
-        StoredCheckpoint(SvgBidirectionalPolylineGeometrySearch.ResumeState(cases,seeds,List(array.length()){partialFromJson(array.getJSONObject(it))}),root.optLong("activeElapsedMs",0L))
-    }catch(_:Throwable){null}
+    private fun readCheckpoint(context: Context): StoredCheckpoint? {
+        return try {
+            val file = checkpointFile(context)
+            if (!file.exists()) return null
+
+            val root = JSONObject(file.readText())
+            if (root.optInt("version") != CHECKPOINT_VERSION) return null
+
+            val cases = root.getInt("casesPerSeed")
+            val seedArray = root.getJSONArray("seeds")
+            val seeds = List(seedArray.length()) { seedArray.getLong(it) }
+            if (cases != CASES_PER_SEED || seeds != DEFAULT_SEEDS) return null
+
+            val array = root.getJSONArray("states")
+            if (array.length() != seeds.size) return null
+
+            StoredCheckpoint(
+                SvgBidirectionalPolylineGeometrySearch.ResumeState(
+                    cases,
+                    seeds,
+                    List(array.length()) { partialFromJson(array.getJSONObject(it)) }
+                ),
+                root.optLong("activeElapsedMs", 0L)
+            )
+        } catch (_: Throwable) {
+            null
+        }
+    }
     private fun partialToJson(s:SvgPathDataOptimizer.BidirectionalPolylinePartialState)=JSONObject()
         .put("processed",s.processedCases).put("generated",s.generatedCases).put("valid",s.validCases).put("rejected",s.rejectedGeneratedCases)
         .put("changed",s.candidateChangedCases).put("collinear",s.collinearChangedCases).put("candidateMismatch",s.candidateMismatchCases)
