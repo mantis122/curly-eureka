@@ -2492,28 +2492,59 @@ class MainActivity : ComponentActivity() {
         }
 
         val existing = G310SearchForegroundService.snapshot()
+        val activeStatuses = setOf(
+            G310SearchForegroundService.Status.RUNNING,
+            G310SearchForegroundService.Status.MANUAL_PAUSED,
+            G310SearchForegroundService.Status.THERMAL_PAUSED
+        )
         val savedReport = G310SearchForegroundService.readReport(this)
-        if (!forceRestart && existing.status !in setOf(
-                G310SearchForegroundService.Status.RUNNING,
-                G310SearchForegroundService.Status.MANUAL_PAUSED,
-                G310SearchForegroundService.Status.THERMAL_PAUSED
-            ) && savedReport.isNotBlank()
-        ) {
+        if (!forceRestart && existing.status !in activeStatuses && savedReport.isNotBlank()) {
             currentBidirectionalPolylineGeometryReport = savedReport
             showBidirectionalPolylineGeometryResultsDialog(savedReport)
             return
         }
-        if (existing.status !in setOf(
-                G310SearchForegroundService.Status.RUNNING,
-                G310SearchForegroundService.Status.MANUAL_PAUSED,
-                G310SearchForegroundService.Status.THERMAL_PAUSED
+        if (!forceRestart && existing.status !in activeStatuses && G310SearchForegroundService.hasCheckpoint(this)) {
+            val savedProgress = String.format(
+                java.util.Locale.US,
+                "%,d / %,d cases (%.1f%%)",
+                existing.completedCases,
+                existing.totalCases,
+                existing.percentComplete
             )
-        ) {
-            G310SearchForegroundService.clearPreviousReport(this)
+            val elapsed = G310SearchForegroundService.formatDuration(existing.elapsedMillis)
+            val eta = existing.estimatedRemainingMillis?.let {
+                G310SearchForegroundService.formatDuration(it)
+            } ?: "calculating after resume"
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Saved G3.10 Progress Found")
+                .setMessage("Saved progress: $savedProgress\nActive elapsed time: $elapsed\nEstimated remaining: $eta")
+                .setPositiveButton("Resume") { _, _ -> runBidirectionalPolylineGeometrySearchFromState(false) }
+                .setNeutralButton("Restart") { _, _ -> runBidirectionalPolylineGeometrySearchFromState(true) }
+                .setNegativeButton("Delete") { _, _ ->
+                    G310SearchForegroundService.clearCheckpoint(this)
+                    toast("Saved G3.10 checkpoint deleted")
+                }
+                .show()
+            return
+        }
+        runBidirectionalPolylineGeometrySearchFromState(forceRestart)
+    }
+
+    private fun runBidirectionalPolylineGeometrySearchFromState(forceRestart: Boolean) {
+        val existing = G310SearchForegroundService.snapshot()
+        val activeStatuses = setOf(
+            G310SearchForegroundService.Status.RUNNING,
+            G310SearchForegroundService.Status.MANUAL_PAUSED,
+            G310SearchForegroundService.Status.THERMAL_PAUSED
+        )
+        if (existing.status !in activeStatuses) {
+            if (forceRestart) G310SearchForegroundService.clearPreviousReport(this)
             ContextCompat.startForegroundService(
                 this,
-                Intent(this, G310SearchForegroundService::class.java)
-                    .setAction(G310SearchForegroundService.ACTION_START)
+                Intent(this, G310SearchForegroundService::class.java).setAction(
+                    if (forceRestart) G310SearchForegroundService.ACTION_RESTART
+                    else G310SearchForegroundService.ACTION_START
+                )
             )
         }
 
@@ -2522,40 +2553,33 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER
             setPadding(64, 48, 64, 32)
         }
-        val progressBar = ProgressBar(
-            this,
-            null,
-            android.R.attr.progressBarStyleHorizontal
-        ).apply {
+        val progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = false
             max = 100_000
-            progress = 0
+            progress = existing.completedCases
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
-        val statusText = makeText(
-            "Progress: 0.0%  •  0 / 100,000",
-            16f,
-            Color.DKGRAY,
-            Gravity.CENTER
-        ).apply { setPadding(0, 24, 0, 0) }
-        val detailText = makeText(
-            "Workers: starting…",
-            13f,
-            Color.GRAY,
-            Gravity.CENTER
-        ).apply { setPadding(0, 12, 0, 0) }
-        val thermalText = makeText(
-            "Thermal monitoring active",
-            13f,
-            Color.GRAY,
-            Gravity.CENTER
-        ).apply { setPadding(0, 10, 0, 0) }
+        val statusText = makeText("Progress: loading…", 16f, Color.DKGRAY, Gravity.CENTER).apply {
+            setPadding(0, 24, 0, 0)
+        }
+        val timingText = makeText("Elapsed: loading…", 14f, Color.DKGRAY, Gravity.CENTER).apply {
+            setPadding(0, 12, 0, 0)
+        }
+        val detailText = makeText("Workers: starting…", 13f, Color.GRAY, Gravity.CENTER).apply {
+            setPadding(0, 12, 0, 0)
+        }
+        val thermalText = makeText("Thermal monitoring active", 13f, Color.GRAY, Gravity.CENTER).apply {
+            setPadding(0, 10, 0, 0)
+        }
+        val checkpointText = makeText("Checkpoint: preparing…", 12f, Color.GRAY, Gravity.CENTER).apply {
+            setPadding(0, 10, 0, 0)
+        }
         val noteText = makeText(
             "The foreground service continues with the screen off or while another app is open. " +
-                "It pauses automatically when the phone becomes too hot.",
+                "Progress is saved every 250 cases per seed and whenever the search pauses or stops.",
             12f,
             Color.GRAY,
             Gravity.CENTER
@@ -2564,21 +2588,18 @@ class MainActivity : ComponentActivity() {
             val snapshot = G310SearchForegroundService.snapshot()
             val action = if (snapshot.status == G310SearchForegroundService.Status.MANUAL_PAUSED) {
                 G310SearchForegroundService.ACTION_RESUME
-            } else {
-                G310SearchForegroundService.ACTION_PAUSE
-            }
+            } else G310SearchForegroundService.ACTION_PAUSE
             startService(Intent(this, G310SearchForegroundService::class.java).setAction(action))
         }
-        val stopButton = makeButton("Stop Search") {
-            startService(
-                Intent(this, G310SearchForegroundService::class.java)
-                    .setAction(G310SearchForegroundService.ACTION_STOP)
-            )
+        val stopButton = makeButton("Stop & Save") {
+            startService(Intent(this, G310SearchForegroundService::class.java).setAction(G310SearchForegroundService.ACTION_STOP))
         }
         progressLayout.addView(progressBar)
         progressLayout.addView(statusText)
+        progressLayout.addView(timingText)
         progressLayout.addView(detailText)
         progressLayout.addView(thermalText)
+        progressLayout.addView(checkpointText)
         progressLayout.addView(noteText)
         progressLayout.addView(horizontalRow(pauseResumeButton, stopButton))
 
@@ -2604,6 +2625,11 @@ class MainActivity : ComponentActivity() {
                 snapshot.completedCases,
                 snapshot.totalCases
             )
+            val elapsed = G310SearchForegroundService.formatDuration(snapshot.elapsedMillis)
+            val eta = snapshot.estimatedRemainingMillis?.let {
+                G310SearchForegroundService.formatDuration(it)
+            } ?: "calculating…"
+            timingText.text = "Active elapsed: $elapsed  •  Estimated remaining: $eta"
             detailText.text = "Workers: ${snapshot.workerCount}  •  " +
                 snapshot.perSeedProcessed.mapIndexed { index, processed ->
                     "S${index + 1}: ${String.format(java.util.Locale.US, "%,d", processed)}"
@@ -2616,9 +2642,12 @@ class MainActivity : ComponentActivity() {
                     else -> Color.GRAY
                 }
             )
-            pauseResumeButton.text = if (
-                snapshot.status == G310SearchForegroundService.Status.MANUAL_PAUSED
-            ) "Resume" else "Pause"
+            checkpointText.text = when {
+                snapshot.lastSavedMillis > 0L -> "Checkpoint saved • resume is available after an interruption"
+                snapshot.checkpointAvailable -> "Saved checkpoint available"
+                else -> "Checkpoint will be written at the next 250-case boundary"
+            }
+            pauseResumeButton.text = if (snapshot.status == G310SearchForegroundService.Status.MANUAL_PAUSED) "Resume" else "Pause"
             pauseResumeButton.isEnabled = snapshot.status != G310SearchForegroundService.Status.THERMAL_PAUSED
 
             when (snapshot.status) {
@@ -2626,15 +2655,12 @@ class MainActivity : ComponentActivity() {
                     progressDialog.dismiss()
                     val report = G310SearchForegroundService.readReport(this)
                     currentBidirectionalPolylineGeometryReport = report
-                    if (report.isNotBlank()) {
-                        showBidirectionalPolylineGeometryResultsDialog(report)
-                    } else {
-                        toast("G3.10 completed, but its report could not be read")
-                    }
+                    if (report.isNotBlank()) showBidirectionalPolylineGeometryResultsDialog(report)
+                    else toast("G3.10 completed, but its report could not be read")
                 }
                 G310SearchForegroundService.Status.STOPPED -> {
                     progressDialog.dismiss()
-                    toast("G3.10 search stopped")
+                    toast(if (snapshot.checkpointAvailable) "G3.10 stopped; progress saved" else "G3.10 search stopped")
                 }
                 else -> handler.postDelayed(poll, 750L)
             }

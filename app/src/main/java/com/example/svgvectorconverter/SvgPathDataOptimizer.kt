@@ -6831,16 +6831,46 @@ internal object SvgPathDataOptimizer {
         }
     }
 
+    data class BidirectionalPolylinePartialState(
+        val processedCases:Int=0,
+        val generatedCases:Int=0,
+        val validCases:Int=0,
+        val rejectedGeneratedCases:Int=0,
+        val candidateChangedCases:Int=0,
+        val collinearChangedCases:Int=0,
+        val candidateMismatchCases:Int=0,
+        val directCollinearMismatchCases:Int=0,
+        val sourceToFirstMismatchCases:Int=0,
+        val sourceToSecondMismatchCases:Int=0,
+        val comparisons:Int=0,
+        val elapsedNanos:Long=0L,
+        val witnesses:List<BidirectionalPolylineWitness> = emptyList()
+    )
+
     fun runBidirectionalPolylineGeometryStressSearch(
         caseCount:Int=25_000,seed:Long=0x6316_2026L,maximumWitnesses:Int=64,
         progressCallback:((processedCases:Int)->Unit)?=null,
-        controlCheckpoint:(()->Unit)?=null
+        controlCheckpoint:(()->Unit)?=null,
+        resumeState:BidirectionalPolylinePartialState?=null,
+        checkpointCallback:((BidirectionalPolylinePartialState)->Unit)?=null
     ):BidirectionalPolylineResult{
         require(caseCount>=0);require(maximumWitnesses>=0)
-        val started=System.nanoTime();val random=Random(seed);val ws=mutableListOf<BidirectionalPolylineWitness>()
-        var generated=0;var valid=0;var rejected=0;var changedCount=0;var colCount=0
-        var candCount=0;var directCount=0;var sfCount=0;var ssCount=0;var checks=0
-        repeat(caseCount){caseIndex->
+        val initial=resumeState ?: BidirectionalPolylinePartialState()
+        require(initial.processedCases in 0..caseCount)
+        val runStarted=System.nanoTime();val random=Random(seed)
+        // Replaying generation is intentionally cheap and preserves the exact original corpus.
+        repeat(initial.processedCases){ generateDifferentialStressPath(random) }
+        val ws=initial.witnesses.take(maximumWitnesses).toMutableList()
+        var generated=initial.generatedCases;var valid=initial.validCases;var rejected=initial.rejectedGeneratedCases
+        var changedCount=initial.candidateChangedCases;var colCount=initial.collinearChangedCases
+        var candCount=initial.candidateMismatchCases;var directCount=initial.directCollinearMismatchCases
+        var sfCount=initial.sourceToFirstMismatchCases;var ssCount=initial.sourceToSecondMismatchCases
+        var checks=initial.comparisons
+        fun snapshot(processed:Int)=BidirectionalPolylinePartialState(
+            processed,generated,valid,rejected,changedCount,colCount,candCount,directCount,
+            sfCount,ssCount,checks,initial.elapsedNanos+(System.nanoTime()-runStarted),ws.toList()
+        )
+        for(caseIndex in initial.processedCases until caseCount){
             controlCheckpoint?.invoke()
             generated++;val source=generateDifferentialStressPath(random)
             try{
@@ -6872,15 +6902,22 @@ internal object SvgPathDataOptimizer {
                 }
                 valid++
             }catch(throwable:Throwable){
-                if(throwable is CancellationException || throwable is InterruptedException){
-                    throw throwable
-                }
+                if(throwable is CancellationException || throwable is InterruptedException) throw throwable
                 rejected++
             }
-            val processed=caseIndex+1;if(progressCallback!=null&&(processed==caseCount||processed%250==0))progressCallback(processed)
+            val processed=caseIndex+1
+            if(processed==caseCount||processed%250==0){
+                progressCallback?.invoke(processed)
+                checkpointCallback?.invoke(snapshot(processed))
+            }
         }
-        if(caseCount==0)progressCallback?.invoke(0)
-        return BidirectionalPolylineResult(seed,caseCount,generated,valid,rejected,changedCount,colCount,candCount,directCount,sfCount,ssCount,checks,System.nanoTime()-started,ws)
+        if(caseCount==0){progressCallback?.invoke(0);checkpointCallback?.invoke(snapshot(0))}
+        val finalState=snapshot(caseCount)
+        return BidirectionalPolylineResult(seed,caseCount,finalState.generatedCases,finalState.validCases,
+            finalState.rejectedGeneratedCases,finalState.candidateChangedCases,finalState.collinearChangedCases,
+            finalState.candidateMismatchCases,finalState.directCollinearMismatchCases,
+            finalState.sourceToFirstMismatchCases,finalState.sourceToSecondMismatchCases,
+            finalState.comparisons,finalState.elapsedNanos,finalState.witnesses)
     }
 
     data class PathFixedPointWitness(

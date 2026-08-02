@@ -12,26 +12,59 @@ object SvgBidirectionalPolylineGeometrySearch {
         val percentComplete:Double get()=if(totalCases<=0)100.0 else completedCases*100.0/totalCases
     }
 
+    data class ResumeState(
+        val casesPerSeed:Int,
+        val seeds:List<Long>,
+        val perSeedStates:List<SvgPathDataOptimizer.BidirectionalPolylinePartialState>
+    )
+
     fun runDefault(
         progressCallback:((Progress)->Unit)?=null,
-        controlCheckpoint:(()->Unit)?=null
+        controlCheckpoint:(()->Unit)?=null,
+        resumeState:ResumeState?=null,
+        checkpointCallback:((ResumeState)->Unit)?=null
     ):String=run(
         25_000,
         listOf(0x6316_2026L,0x6316_0001L,0x6316_0002L,0x1D40_2026L),
         progressCallback,
-        controlCheckpoint
+        controlCheckpoint,
+        resumeState,
+        checkpointCallback
     )
 
     fun run(
         casesPerSeed:Int,
         seeds:List<Long>,
         progressCallback:((Progress)->Unit)?=null,
-        controlCheckpoint:(()->Unit)?=null
+        controlCheckpoint:(()->Unit)?=null,
+        resumeState:ResumeState?=null,
+        checkpointCallback:((ResumeState)->Unit)?=null
     ):String{
         require(casesPerSeed>=0);require(seeds.isNotEmpty())
+        val validResume = resumeState?.takeIf {
+            it.casesPerSeed==casesPerSeed && it.seeds==seeds && it.perSeedStates.size==seeds.size
+        }
+        val initialStates = validResume?.perSeedStates ?: List(seeds.size){
+            SvgPathDataOptimizer.BidirectionalPolylinePartialState()
+        }
         val started=System.nanoTime();val total=casesPerSeed*seeds.size
         val processors=Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
-        val workers=minOf(4,seeds.size,processors);val progress=AtomicIntegerArray(seeds.size)
+        val workers=minOf(4,seeds.size,processors)
+        val progress=AtomicIntegerArray(seeds.size)
+        initialStates.forEachIndexed { i,state -> progress.set(i,state.processedCases) }
+        val stateLock=Any()
+        val latestStates=initialStates.toMutableList()
+        fun publishProgress(){
+            val snapshot=List(seeds.size){progress.get(it)}
+            progressCallback?.invoke(Progress(snapshot.sum(),total,workers,snapshot,casesPerSeed))
+        }
+        fun publishCheckpoint(index:Int,state:SvgPathDataOptimizer.BidirectionalPolylinePartialState){
+            synchronized(stateLock){
+                latestStates[index]=state
+                checkpointCallback?.invoke(ResumeState(casesPerSeed,seeds,latestStates.toList()))
+            }
+        }
+        publishProgress()
         val executor=Executors.newFixedThreadPool(workers)
         val futures=seeds.mapIndexed{index,seed->executor.submit<SvgPathDataOptimizer.BidirectionalPolylineResult>{
             SvgPathDataOptimizer.runBidirectionalPolylineGeometryStressSearch(
@@ -39,10 +72,12 @@ object SvgBidirectionalPolylineGeometrySearch {
                 seed,
                 64,
                 { processed ->
-                progress.set(index,processed);val snapshot=List(seeds.size){progress.get(it)}
-                progressCallback?.invoke(Progress(snapshot.sum(),total,workers,snapshot,casesPerSeed))
+                    progress.set(index,processed)
+                    publishProgress()
                 },
-                controlCheckpoint
+                controlCheckpoint,
+                initialStates[index],
+                { state -> publishCheckpoint(index,state) }
             )
         }}
         val results=try{futures.map{it.get()}}finally{executor.shutdownNow()}
@@ -62,7 +97,8 @@ object SvgBidirectionalPolylineGeometrySearch {
             appendLine("Source → pass-1 bidirectional mismatches: $sf")
             appendLine("Source → pass-2 bidirectional mismatches: $ss")
             appendLine("Bidirectional comparisons: $checks")
-            appendLine("Elapsed: "+String.format(java.util.Locale.US,"%.2f ms",elapsed/1_000_000.0))
+            appendLine("Elapsed this process: "+String.format(java.util.Locale.US,"%.2f ms",elapsed/1_000_000.0))
+            appendLine("Accumulated search CPU time: "+String.format(java.util.Locale.US,"%.2f ms",results.sumOf{it.elapsedNanos}/1_000_000.0))
             appendLine()
             if(direct>0){
                 appendLine("RESULT: G3.10 found direct collinear geometry differences under bidirectional polyline distance.")
