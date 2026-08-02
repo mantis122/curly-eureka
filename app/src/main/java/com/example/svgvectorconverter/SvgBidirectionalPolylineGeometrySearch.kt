@@ -12,13 +12,13 @@ object SvgBidirectionalPolylineGeometrySearch {
         val percentComplete:Double get()=if(totalCases<=0)100.0 else completedCases*100.0/totalCases
     }
 
-    data class ResumeState(
+    internal data class ResumeState(
         val casesPerSeed:Int,
         val seeds:List<Long>,
         val perSeedStates:List<SvgPathDataOptimizer.BidirectionalPolylinePartialState>
     )
 
-    fun runDefault(
+    internal fun runDefault(
         progressCallback:((Progress)->Unit)?=null,
         controlCheckpoint:(()->Unit)?=null,
         resumeState:ResumeState?=null,
@@ -32,7 +32,7 @@ object SvgBidirectionalPolylineGeometrySearch {
         checkpointCallback
     )
 
-    fun run(
+    internal fun run(
         casesPerSeed:Int,
         seeds:List<Long>,
         progressCallback:((Progress)->Unit)?=null,
