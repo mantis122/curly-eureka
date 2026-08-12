@@ -296,4 +296,175 @@ object SvgPostSerializationGeometryConvergenceSearch {
         }
     }
 
+
+    fun runG316Default(
+        progressCallback: ((Progress) -> Unit)? = null
+    ): String = runG316(
+        casesPerSeed = 25_000,
+        seeds = listOf(
+            0x6316_2026L,
+            0x6316_0001L,
+            0x6316_0002L,
+            0x1D40_2026L
+        ),
+        progressCallback = progressCallback
+    )
+
+    fun runG316(
+        casesPerSeed: Int,
+        seeds: List<Long>,
+        progressCallback: ((Progress) -> Unit)? = null
+    ): String {
+        require(casesPerSeed >= 0) { "casesPerSeed must be non-negative" }
+        require(seeds.isNotEmpty()) { "At least one seed is required" }
+
+        val started = System.nanoTime()
+        val totalCases = casesPerSeed * seeds.size
+        val availableProcessors = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val workerCount = minOf(4, seeds.size, availableProcessors)
+        val perSeedProgress = AtomicIntegerArray(seeds.size)
+        val executor = Executors.newFixedThreadPool(workerCount)
+
+        val futures = seeds.mapIndexed { index, seed ->
+            executor.submit<SvgPathDataOptimizer.G316GuardedProductionTrialResult> {
+                SvgPathDataOptimizer.runG316GuardedProductionTrialStressSearch(
+                    caseCount = casesPerSeed,
+                    seed = seed,
+                    maximumWitnesses = 5,
+                    progressCallback = { currentSeedProcessed ->
+                        perSeedProgress.set(index, currentSeedProcessed)
+                        if (progressCallback != null) {
+                            val snapshot = List(seeds.size) { seedIndex ->
+                                perSeedProgress.get(seedIndex)
+                            }
+                            progressCallback.invoke(
+                                Progress(
+                                    completedCases = snapshot.sum(),
+                                    totalCases = totalCases,
+                                    workerCount = workerCount,
+                                    perSeedProcessed = snapshot,
+                                    casesPerSeed = casesPerSeed
+                                )
+                            )
+                        }
+                    }
+                )
+            }
+        }
+
+        val results = try {
+            futures.map { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        val valid = results.sumOf { it.validCases }
+        val rejected = results.sumOf { it.rejectedGeneratedCases }
+        val unchanged = results.sumOf { it.candidateUnchanged }
+        val changed = results.sumOf { it.candidateChanged }
+        val accepted = results.sumOf { it.guardAccepted }
+        val guardRejected = results.sumOf { it.guardRejected }
+        val unsafeAccepts = results.sumOf { it.unsafeAccepts }
+        val falseRejects = results.sumOf { it.falseRejects }
+        val acceptedGeometryFailures = results.sumOf { it.acceptedGeometryFailures }
+        val acceptedComparatorFailures = results.sumOf { it.acceptedComparatorFailures }
+        val acceptedPass2Mismatches = results.sumOf { it.acceptedPass2Mismatches }
+        val acceptedNonFixed = results.sumOf { it.acceptedNonFixedCandidates }
+        val acceptedValidationFailures = results.sumOf { it.acceptedValidationFailures }
+        val coverageDrift = results.sumOf { it.secondPassDriftOutsideCandidateCoverage }
+        val geometryComparisons = results.sumOf { it.geometryComparisons }
+        val geometryMismatches = results.sumOf { it.geometryMismatchCount }
+        val exactShortCircuits = results.sumOf { it.exactShortCircuitCount }
+        val fallbackBidirectional = results.sumOf { it.fallbackBidirectionalCount }
+        val comparatorFailures = results.sumOf { it.comparatorFailureCount }
+        val validationFailures = results.sumOf { it.finalValidationFailures }
+        val fixedPointFailures = results.sumOf { it.fixedPointFailures }
+        val pass2Mismatches = results.sumOf { it.pass2MismatchCount }
+        val saved = results.sumOf { it.totalCharactersSaved }
+        val grown = results.sumOf { it.totalCharactersAdded }
+        val guardNanos = results.sumOf { it.guardNanos }
+        val rejectionReasons = linkedMapOf<String, Int>()
+        results.forEach { result ->
+            result.rejectionReasonCounts.forEach { (reason, count) ->
+                rejectionReasons[reason] = (rejectionReasons[reason] ?: 0) + count
+            }
+        }
+        val elapsed = System.nanoTime() - started
+
+        return buildString {
+            appendLine("G3.16 automated guarded G3.15 shadow-mode stress trial")
+            appendLine()
+            appendLine("Seeds: ${seeds.size}")
+            appendLine("Cases per seed: $casesPerSeed")
+            appendLine("Parallel workers: $workerCount")
+            appendLine("Available processors: $availableProcessors")
+            appendLine("Valid comparisons: $valid")
+            appendLine("Rejected generated cases: $rejected")
+            appendLine("G3.15 candidate unchanged: $unchanged")
+            appendLine("G3.15 candidate changed: $changed")
+            appendLine("Guard accepted: $accepted")
+            appendLine("Guard rejected: $guardRejected")
+            appendLine("Unsafe accepts: $unsafeAccepts")
+            appendLine("False rejects: $falseRejects")
+            appendLine("Accepted geometry failures: $acceptedGeometryFailures")
+            appendLine("Accepted comparator failures: $acceptedComparatorFailures")
+            appendLine("Accepted pass-2 mismatches: $acceptedPass2Mismatches")
+            appendLine("Accepted non-fixed candidates: $acceptedNonFixed")
+            appendLine("Accepted validation failures: $acceptedValidationFailures")
+            appendLine("Second-pass drift outside G3.15 candidate coverage: $coverageDrift")
+            appendLine("G3.13 geometry comparisons: $geometryComparisons")
+            appendLine("G3.13 geometry mismatches: $geometryMismatches")
+            appendLine("Exact ordered-traversal short-circuits: $exactShortCircuits")
+            appendLine("Fallback bidirectional comparisons: $fallbackBidirectional")
+            appendLine("Comparator failures: $comparatorFailures")
+            appendLine("Final validation failures: $validationFailures")
+            appendLine("Fixed-point failures: $fixedPointFailures")
+            appendLine("Candidate/pass-2 mismatches: $pass2Mismatches")
+            appendLine("Characters saved by accepted candidates: $saved")
+            appendLine("Characters added by accepted candidates: $grown")
+            appendLine("Guard CPU time: " + String.format(java.util.Locale.US, "%.2f ms", guardNanos / 1_000_000.0))
+            appendLine("Elapsed: " + String.format(java.util.Locale.US, "%.2f ms", elapsed / 1_000_000.0))
+            if (rejectionReasons.isNotEmpty()) {
+                appendLine()
+                appendLine("Guard rejection reasons")
+                rejectionReasons.toSortedMap().forEach { (reason, count) ->
+                    appendLine("• $reason: $count")
+                }
+            }
+            appendLine()
+            when {
+                unsafeAccepts > 0 ||
+                    acceptedGeometryFailures > 0 ||
+                    acceptedComparatorFailures > 0 ||
+                    acceptedPass2Mismatches > 0 ||
+                    acceptedNonFixed > 0 ||
+                    acceptedValidationFailures > 0 -> {
+                    appendLine("RESULT: G3.16 found an unsafe accept or accepted-candidate invariant failure.")
+                    appendLine("Recommendation: keep G3.15 shadow-only and inspect every failure witness.")
+                }
+                falseRejects > 0 -> {
+                    appendLine("RESULT: G3.16 found false rejects in the G3.15 guard.")
+                    appendLine("Recommendation: keep G3.15 shadow-only and classify the false-reject witnesses.")
+                }
+                valid > 0 -> {
+                    appendLine("RESULT: G3.16 found no unsafe accepts, false rejects, or accepted-candidate invariant failures across every seed.")
+                    if (coverageDrift > 0) {
+                        appendLine("NOTE: second-pass drift existed outside the narrow G3.15 convergence-candidate coverage.")
+                        appendLine("Recommendation: inspect the coverage signal before making G3.15 authoritative.")
+                    } else {
+                        appendLine("Recommendation: combine this with the locked regression suite before the next production-enablement step.")
+                    }
+                }
+                else -> appendLine("RESULT: no valid comparisons were produced.")
+            }
+
+            results.forEachIndexed { index, result ->
+                appendLine()
+                appendLine("────────────────────────────────")
+                appendLine("Seed ${index + 1}")
+                append(result.toPlainTextReport())
+            }
+        }
+    }
+
 }

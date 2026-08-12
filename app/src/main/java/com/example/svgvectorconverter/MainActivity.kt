@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
     private var currentBidirectionalComparatorRepairReport = ""
     private var currentExactTraversalShortCircuitReport = ""
     private var currentG314ConvergenceReport = ""
+    private var currentG316GuardedTrialReport = ""
 
     private fun makeButton(
         label: String,
@@ -302,6 +303,15 @@ class MainActivity : ComponentActivity() {
         if (uri != null && currentG314ConvergenceReport.isNotBlank()) {
             FileIoHelpers.writeTextToUri(this, uri, currentG314ConvergenceReport)
             toast("G3.14 convergence-corpus report saved")
+        }
+    }
+
+    private val saveG316GuardedTrialReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentG316GuardedTrialReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(this, uri, currentG316GuardedTrialReport)
+            toast("G3.16 guarded-trial report saved")
         }
     }
 
@@ -1178,6 +1188,33 @@ class MainActivity : ComponentActivity() {
                 report records unchanged, guard-accepted, or guard-rejected
                 status plus size and timing data. The candidate does not replace
                 production XML during G3.15.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        val g316Button =
+            makeButton("Run G3.16 Guarded G3.15 Stress Trial") {
+                runG316GuardedProductionTrialSearch()
+            }
+        layout.addView(
+            g316Button,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Runs 100,000 generated VectorDrawable cases across four parallel
+                workers and invokes the actual G3.15 shadow guard for every case.
+                Reports guard accepts/rejects, unsafe accepts, false rejects,
+                accepted invariant failures, G3.13 geometry checks, validation,
+                fixed-point status, size effects, guard overhead, and second-pass
+                drift that falls outside the narrow G3.15 candidate coverage.
+                Production XML remains unchanged.
                 """.trimIndent(),
                 14f,
                 Color.GRAY,
@@ -3348,6 +3385,211 @@ class MainActivity : ComponentActivity() {
         )
         toast("G3.14 convergence-corpus report copied")
     }
+
+    private fun runG316GuardedProductionTrialSearch() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+        val progressBar = ProgressBar(
+            this,
+            null,
+            android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            isIndeterminate = false
+            max = 100_000
+            progress = 0
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val statusText = makeText(
+            "Progress: 0.0%  •  0 / 100,000",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 24, 0, 0) }
+        val detailText = makeText(
+            "Workers: starting…",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 12, 0, 0) }
+        val noteText = makeText(
+            "Shadow-only: G3.16 exercises the actual G3.15 guard but never changes production XML.",
+            12f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 8, 0, 0) }
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(detailText)
+        progressLayout.addView(noteText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.16 Guarded G3.15 Stress Trial")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgPostSerializationGeometryConvergenceSearch.runG316Default { progress ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && progressDialog.isShowing) {
+                            progressBar.max = progress.totalCases.coerceAtLeast(1)
+                            progressBar.progress =
+                                progress.completedCases.coerceIn(0, progressBar.max)
+                            statusText.text = String.format(
+                                java.util.Locale.US,
+                                "Progress: %.1f%%  •  %,d / %,d",
+                                progress.percentComplete,
+                                progress.completedCases,
+                                progress.totalCases
+                            )
+                            val seedProgress = progress.perSeedProcessed
+                                .mapIndexed { index, processed ->
+                                    "S${index + 1}: ${
+                                        String.format(
+                                            java.util.Locale.US,
+                                            "%,d",
+                                            processed
+                                        )
+                                    }"
+                                }
+                                .joinToString("  •  ")
+                            detailText.text =
+                                "Workers: ${progress.workerCount}  •  $seedProgress"
+                        }
+                    }
+                }
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("G3.16 automated guarded G3.15 shadow-mode stress trial")
+                    appendLine()
+                    appendLine("RESULT: The search could not be completed.")
+                    appendLine()
+                    appendLine(throwable.message ?: throwable::class.java.simpleName)
+                    appendLine()
+                    appendLine(
+                        "Check that SvgPostSerializationGeometryConvergenceSearch.kt, " +
+                            "SvgPathDataOptimizer.kt, and SvgPathSampler.kt are included in the app."
+                    )
+                }
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentG316GuardedTrialReport = report
+                    showG316GuardedProductionTrialResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showG316GuardedProductionTrialResultsDialog(report: String) {
+        val failed = report.contains("could not be completed")
+        val clean = report.contains(
+            "RESULT: G3.16 found no unsafe accepts, false rejects, or accepted-candidate invariant failures"
+        )
+        val coverageSignal = report.contains(
+            "NOTE: second-pass drift existed outside the narrow G3.15 convergence-candidate coverage."
+        )
+
+        val summaryText: String
+        val summaryColor: Int
+        when {
+            failed -> {
+                summaryText = "✕ Search could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+            clean && !coverageSignal -> {
+                summaryText = "✓ G3.16 guard stress trial passed"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+            clean -> {
+                summaryText = "⚠ G3.16 guard passed; coverage signal found"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+            else -> {
+                summaryText = "⚠ G3.16 needs investigation"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+        layout.addView(
+            makeText(
+                summaryText,
+                18f,
+                summaryColor,
+                Gravity.START,
+                paddingBottom = 16
+            )
+        )
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        val reportScroll = ScrollView(this).apply { addView(reportView) }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val copyButton = makeButton("Copy Results") { copyG316GuardedTrialReport() }
+        val saveButton = makeButton("Save .txt") {
+            saveG316GuardedTrialReport.launch("g3_16_guarded_g315_stress_report.txt")
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+        val rerunButton = makeButton("Run Again") { runG316GuardedProductionTrialSearch() }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.16 Guarded G3.15 Stress Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+        dialog.show()
+    }
+
+    private fun copyG316GuardedTrialReport() {
+        if (currentG316GuardedTrialReport.isBlank()) {
+            toast("No G3.16 guarded-trial report to copy")
+            return
+        }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "g3_16_guarded_g315_stress_report.txt",
+                currentG316GuardedTrialReport
+            )
+        )
+        toast("G3.16 guarded-trial report copied")
+    }
+
 
     private fun runBidirectionalPolylineGeometrySearch(forceRestart: Boolean = false) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

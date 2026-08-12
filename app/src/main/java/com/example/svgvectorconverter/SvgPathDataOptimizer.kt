@@ -6515,6 +6515,375 @@ internal object SvgPathDataOptimizer {
         )
     }
 
+
+    // G3.16 diagnostic-only shadow stress trial of the actual G3.15 production guard.
+    // Production conversion never calls this.
+    data class G316GuardedProductionTrialWitness(
+        val caseNumber: Int,
+        val sourcePath: String,
+        val firstPassXml: String,
+        val independentSecondPassXml: String,
+        val verificationPassXml: String,
+        val candidateChanged: Boolean,
+        val guardAccepted: Boolean,
+        val guardRejected: Boolean,
+        val independentlySafeToAccept: Boolean,
+        val unsafeAccept: Boolean,
+        val falseReject: Boolean,
+        val secondPassDriftOutsideCandidateCoverage: Boolean,
+        val rejectionReason: String,
+        val geometryComparisons: Int,
+        val geometryMismatchCount: Int,
+        val exactShortCircuitCount: Int,
+        val fallbackBidirectionalCount: Int,
+        val comparatorFailureCount: Int,
+        val finalValidationPassed: Boolean,
+        val fixedPointVerified: Boolean,
+        val matchedIndependentSecondPass: Boolean,
+        val charactersSaved: Int,
+        val charactersAdded: Int
+    )
+
+    data class G316GuardedProductionTrialResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val rejectedGeneratedCases: Int,
+        val candidateUnchanged: Int,
+        val candidateChanged: Int,
+        val guardAccepted: Int,
+        val guardRejected: Int,
+        val unsafeAccepts: Int,
+        val falseRejects: Int,
+        val acceptedGeometryFailures: Int,
+        val acceptedComparatorFailures: Int,
+        val acceptedPass2Mismatches: Int,
+        val acceptedNonFixedCandidates: Int,
+        val acceptedValidationFailures: Int,
+        val secondPassDriftOutsideCandidateCoverage: Int,
+        val geometryComparisons: Int,
+        val geometryMismatchCount: Int,
+        val exactShortCircuitCount: Int,
+        val fallbackBidirectionalCount: Int,
+        val comparatorFailureCount: Int,
+        val finalValidationFailures: Int,
+        val fixedPointFailures: Int,
+        val pass2MismatchCount: Int,
+        val totalCharactersSaved: Long,
+        val totalCharactersAdded: Long,
+        val guardNanos: Long,
+        val elapsedNanos: Long,
+        val rejectionReasonCounts: Map<String, Int>,
+        val witnesses: List<G316GuardedProductionTrialWitness>
+    ) {
+        fun toPlainTextReport(): String = buildString {
+            appendLine("G3.16 guarded G3.15 shadow-mode stress trial")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $rejectedGeneratedCases")
+            appendLine("G3.15 candidate unchanged: $candidateUnchanged")
+            appendLine("G3.15 candidate changed: $candidateChanged")
+            appendLine("Guard accepted: $guardAccepted")
+            appendLine("Guard rejected: $guardRejected")
+            appendLine("Unsafe accepts: $unsafeAccepts")
+            appendLine("False rejects: $falseRejects")
+            appendLine("Accepted geometry failures: $acceptedGeometryFailures")
+            appendLine("Accepted comparator failures: $acceptedComparatorFailures")
+            appendLine("Accepted pass-2 mismatches: $acceptedPass2Mismatches")
+            appendLine("Accepted non-fixed candidates: $acceptedNonFixedCandidates")
+            appendLine("Accepted validation failures: $acceptedValidationFailures")
+            appendLine("Second-pass drift outside G3.15 candidate coverage: $secondPassDriftOutsideCandidateCoverage")
+            appendLine("G3.13 geometry comparisons: $geometryComparisons")
+            appendLine("G3.13 geometry mismatches: $geometryMismatchCount")
+            appendLine("Exact ordered-traversal short-circuits: $exactShortCircuitCount")
+            appendLine("Fallback bidirectional comparisons: $fallbackBidirectionalCount")
+            appendLine("Comparator failures: $comparatorFailureCount")
+            appendLine("Final validation failures: $finalValidationFailures")
+            appendLine("Fixed-point failures: $fixedPointFailures")
+            appendLine("Candidate/pass-2 mismatches: $pass2MismatchCount")
+            appendLine("Characters saved by accepted candidates: $totalCharactersSaved")
+            appendLine("Characters added by accepted candidates: $totalCharactersAdded")
+            appendLine("Guard CPU time: " + String.format(java.util.Locale.US, "%.2f ms", guardNanos / 1_000_000.0))
+            appendLine("Elapsed: " + String.format(java.util.Locale.US, "%.2f ms", elapsedNanos / 1_000_000.0))
+            if (rejectionReasonCounts.isNotEmpty()) {
+                appendLine()
+                appendLine("Guard rejection reasons")
+                rejectionReasonCounts.toSortedMap().forEach { (reason, count) ->
+                    appendLine("• $reason: $count")
+                }
+            }
+            appendLine()
+            when {
+                unsafeAccepts > 0 -> {
+                    appendLine("RESULT: G3.16 found unsafe G3.15 guard accepts.")
+                    appendLine("Recommendation: keep G3.15 shadow-only and inspect every unsafe-accept witness.")
+                }
+                acceptedGeometryFailures > 0 ||
+                    acceptedComparatorFailures > 0 ||
+                    acceptedPass2Mismatches > 0 ||
+                    acceptedNonFixedCandidates > 0 ||
+                    acceptedValidationFailures > 0 -> {
+                    appendLine("RESULT: G3.16 found an accepted candidate that violated a required guard invariant.")
+                    appendLine("Recommendation: keep G3.15 shadow-only and inspect every invariant-failure witness.")
+                }
+                falseRejects > 0 -> {
+                    appendLine("RESULT: G3.16 found false rejects in the G3.15 guard.")
+                    appendLine("Recommendation: keep G3.15 shadow-only and classify the false-reject witnesses before production enablement.")
+                }
+                validCases > 0 -> {
+                    appendLine("RESULT: G3.16 found no unsafe accepts, false rejects, or accepted-candidate invariant failures.")
+                    if (secondPassDriftOutsideCandidateCoverage > 0) {
+                        appendLine("NOTE: second-pass drift existed outside the narrow G3.15 convergence-candidate coverage.")
+                        appendLine("Recommendation: inspect that coverage signal before deciding whether G3.15 should become authoritative.")
+                    } else {
+                        appendLine("Recommendation: combine this result with the locked regression suite and consider the next guarded production-enablement step.")
+                    }
+                }
+                else -> appendLine("RESULT: no valid comparisons were produced.")
+            }
+
+            if (witnesses.isNotEmpty()) {
+                appendLine()
+                appendLine("Witnesses")
+                witnesses.forEachIndexed { index, witness ->
+                    appendLine()
+                    appendLine("${index + 1}. Case ${witness.caseNumber}")
+                    appendLine("   Candidate changed: ${witness.candidateChanged}")
+                    appendLine("   Guard accepted: ${witness.guardAccepted}")
+                    appendLine("   Guard rejected: ${witness.guardRejected}")
+                    appendLine("   Independently safe to accept: ${witness.independentlySafeToAccept}")
+                    appendLine("   Unsafe accept: ${witness.unsafeAccept}")
+                    appendLine("   False reject: ${witness.falseReject}")
+                    appendLine("   Second-pass drift outside candidate coverage: ${witness.secondPassDriftOutsideCandidateCoverage}")
+                    appendLine("   Rejection reason: ${witness.rejectionReason.ifBlank { "(none)" }}")
+                    appendLine("   Geometry comparisons: ${witness.geometryComparisons}")
+                    appendLine("   Geometry mismatches: ${witness.geometryMismatchCount}")
+                    appendLine("   Exact short-circuits: ${witness.exactShortCircuitCount}")
+                    appendLine("   Fallback bidirectional comparisons: ${witness.fallbackBidirectionalCount}")
+                    appendLine("   Comparator failures: ${witness.comparatorFailureCount}")
+                    appendLine("   Final validation passed: ${witness.finalValidationPassed}")
+                    appendLine("   Fixed point verified: ${witness.fixedPointVerified}")
+                    appendLine("   Matched independent pass 2: ${witness.matchedIndependentSecondPass}")
+                    appendLine("   Characters saved: ${witness.charactersSaved}")
+                    appendLine("   Characters added: ${witness.charactersAdded}")
+                    appendLine("   Source path: ${witness.sourcePath}")
+                    appendLine("   First pass XML: ${witness.firstPassXml}")
+                    appendLine("   Independent pass 2 XML: ${witness.independentSecondPassXml}")
+                    appendLine("   Verification pass XML: ${witness.verificationPassXml}")
+                }
+            }
+        }
+    }
+
+    fun runG316GuardedProductionTrialStressSearch(
+        caseCount: Int = 25_000,
+        seed: Long = 0x6316_2026L,
+        maximumWitnesses: Int = 8,
+        progressCallback: ((processedCases: Int) -> Unit)? = null
+    ): G316GuardedProductionTrialResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        require(maximumWitnesses >= 0) { "maximumWitnesses must be non-negative" }
+
+        val started = System.nanoTime()
+        val random = Random(seed)
+        val witnesses = mutableListOf<G316GuardedProductionTrialWitness>()
+        val rejectionReasons = linkedMapOf<String, Int>()
+
+        var generated = 0
+        var valid = 0
+        var rejected = 0
+        var candidateUnchanged = 0
+        var candidateChanged = 0
+        var guardAccepted = 0
+        var guardRejected = 0
+        var unsafeAccepts = 0
+        var falseRejects = 0
+        var acceptedGeometryFailures = 0
+        var acceptedComparatorFailures = 0
+        var acceptedPass2Mismatches = 0
+        var acceptedNonFixedCandidates = 0
+        var acceptedValidationFailures = 0
+        var coverageDrift = 0
+        var geometryComparisons = 0
+        var geometryMismatches = 0
+        var exactShortCircuits = 0
+        var fallbackBidirectional = 0
+        var comparatorFailures = 0
+        var validationFailures = 0
+        var fixedPointFailures = 0
+        var pass2Mismatches = 0
+        var charactersSaved = 0L
+        var charactersAdded = 0L
+        var guardNanos = 0L
+
+        repeat(caseCount) { caseIndex ->
+            generated++
+            val sourcePath = generateDifferentialStressPath(random)
+            try {
+                val sourceXml = buildString {
+                    append("""<vector xmlns:android="http://schemas.android.com/apk/res/android" """)
+                    append("""android:width="24dp" android:height="24dp" """)
+                    append("""android:viewportWidth="1000" android:viewportHeight="1000">""")
+                    append("""<path android:pathData="""")
+                    append('"')
+                    append(sourcePath)
+                    append('"')
+                    append(""" android:fillColor="#FF336699"/></vector>""")
+                }
+
+                val firstPass = optimizeVectorXmlSinglePass(
+                    xml = sourceXml,
+                    pathCache = PathOptimizationCache(),
+                    validationPass = false
+                )
+                val secondPass = optimizeVectorXmlSinglePass(
+                    xml = firstPass.xml,
+                    pathCache = PathOptimizationCache(),
+                    validationPass = true
+                )
+                val thirdPass = optimizeVectorXmlSinglePass(
+                    xml = secondPass.xml,
+                    pathCache = PathOptimizationCache(),
+                    validationPass = true
+                )
+                val secondPassIsFixed = thirdPass.xml == secondPass.xml
+
+                val guardStart = System.nanoTime()
+                val trial = runG315GuardedProductionTrial(
+                    firstPassXml = firstPass.xml,
+                    independentSecondPassXml = secondPass.xml,
+                    independentSecondPassIsFixed = secondPassIsFixed
+                )
+                guardNanos += System.nanoTime() - guardStart
+
+                val independentlySafe =
+                    trial.candidateChanged &&
+                        trial.comparatorFailureCount == 0 &&
+                        trial.geometryMismatchCount == 0 &&
+                        trial.matchedIndependentSecondPass &&
+                        trial.fixedPointVerified &&
+                        trial.finalValidationPassed
+
+                val unsafeAccept = trial.guardAccepted && !independentlySafe
+                val falseReject = trial.candidateChanged && independentlySafe && trial.guardRejected
+                val driftOutsideCoverage =
+                    !trial.candidateChanged && secondPass.xml != firstPass.xml
+
+                valid++
+                if (trial.candidateChanged) candidateChanged++ else candidateUnchanged++
+                if (trial.guardAccepted) guardAccepted++
+                if (trial.guardRejected) {
+                    guardRejected++
+                    if (trial.rejectionReason.isNotBlank()) {
+                        rejectionReasons[trial.rejectionReason] =
+                            (rejectionReasons[trial.rejectionReason] ?: 0) + 1
+                    }
+                }
+                if (unsafeAccept) unsafeAccepts++
+                if (falseReject) falseRejects++
+                if (trial.guardAccepted && trial.geometryMismatchCount > 0) acceptedGeometryFailures++
+                if (trial.guardAccepted && trial.comparatorFailureCount > 0) acceptedComparatorFailures++
+                if (trial.guardAccepted && !trial.matchedIndependentSecondPass) acceptedPass2Mismatches++
+                if (trial.guardAccepted && !trial.fixedPointVerified) acceptedNonFixedCandidates++
+                if (trial.guardAccepted && !trial.finalValidationPassed) acceptedValidationFailures++
+                if (driftOutsideCoverage) coverageDrift++
+
+                geometryComparisons += trial.geometryComparisons
+                geometryMismatches += trial.geometryMismatchCount
+                exactShortCircuits += trial.exactShortCircuitCount
+                fallbackBidirectional += trial.fallbackBidirectionalCount
+                comparatorFailures += trial.comparatorFailureCount
+                if (!trial.finalValidationPassed) validationFailures++
+                if (!trial.fixedPointVerified) fixedPointFailures++
+                if (trial.candidateChanged && !trial.matchedIndependentSecondPass) pass2Mismatches++
+
+                if (trial.guardAccepted) {
+                    charactersSaved += trial.charactersSaved.toLong()
+                    charactersAdded += trial.charactersAdded.toLong()
+                }
+
+                val noteworthy =
+                    unsafeAccept ||
+                        falseReject ||
+                        driftOutsideCoverage ||
+                        (trial.guardRejected && witnesses.size < minOf(maximumWitnesses, 2))
+                if (noteworthy && witnesses.size < maximumWitnesses) {
+                    witnesses += G316GuardedProductionTrialWitness(
+                        caseNumber = caseIndex + 1,
+                        sourcePath = sourcePath,
+                        firstPassXml = firstPass.xml,
+                        independentSecondPassXml = secondPass.xml,
+                        verificationPassXml = thirdPass.xml,
+                        candidateChanged = trial.candidateChanged,
+                        guardAccepted = trial.guardAccepted,
+                        guardRejected = trial.guardRejected,
+                        independentlySafeToAccept = independentlySafe,
+                        unsafeAccept = unsafeAccept,
+                        falseReject = falseReject,
+                        secondPassDriftOutsideCandidateCoverage = driftOutsideCoverage,
+                        rejectionReason = trial.rejectionReason,
+                        geometryComparisons = trial.geometryComparisons,
+                        geometryMismatchCount = trial.geometryMismatchCount,
+                        exactShortCircuitCount = trial.exactShortCircuitCount,
+                        fallbackBidirectionalCount = trial.fallbackBidirectionalCount,
+                        comparatorFailureCount = trial.comparatorFailureCount,
+                        finalValidationPassed = trial.finalValidationPassed,
+                        fixedPointVerified = trial.fixedPointVerified,
+                        matchedIndependentSecondPass = trial.matchedIndependentSecondPass,
+                        charactersSaved = trial.charactersSaved,
+                        charactersAdded = trial.charactersAdded
+                    )
+                }
+            } catch (_: Throwable) {
+                rejected++
+            }
+
+            val processed = caseIndex + 1
+            if (progressCallback != null && (processed == caseCount || processed % 250 == 0)) {
+                progressCallback(processed)
+            }
+        }
+        if (caseCount == 0) progressCallback?.invoke(0)
+
+        return G316GuardedProductionTrialResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generated,
+            validCases = valid,
+            rejectedGeneratedCases = rejected,
+            candidateUnchanged = candidateUnchanged,
+            candidateChanged = candidateChanged,
+            guardAccepted = guardAccepted,
+            guardRejected = guardRejected,
+            unsafeAccepts = unsafeAccepts,
+            falseRejects = falseRejects,
+            acceptedGeometryFailures = acceptedGeometryFailures,
+            acceptedComparatorFailures = acceptedComparatorFailures,
+            acceptedPass2Mismatches = acceptedPass2Mismatches,
+            acceptedNonFixedCandidates = acceptedNonFixedCandidates,
+            acceptedValidationFailures = acceptedValidationFailures,
+            secondPassDriftOutsideCandidateCoverage = coverageDrift,
+            geometryComparisons = geometryComparisons,
+            geometryMismatchCount = geometryMismatches,
+            exactShortCircuitCount = exactShortCircuits,
+            fallbackBidirectionalCount = fallbackBidirectional,
+            comparatorFailureCount = comparatorFailures,
+            finalValidationFailures = validationFailures,
+            fixedPointFailures = fixedPointFailures,
+            pass2MismatchCount = pass2Mismatches,
+            totalCharactersSaved = charactersSaved,
+            totalCharactersAdded = charactersAdded,
+            guardNanos = guardNanos,
+            elapsedNanos = System.nanoTime() - started,
+            rejectionReasonCounts = rejectionReasons.toMap(),
+            witnesses = witnesses
+        )
+    }
+
     private data class PostSerializationGeometryCandidate(
         val pathData: String,
         val redundantGeometryChanged: Boolean,
