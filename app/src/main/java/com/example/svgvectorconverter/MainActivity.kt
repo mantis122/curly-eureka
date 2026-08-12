@@ -1167,6 +1167,25 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        layout.addView(
+            makeText(
+                """
+                G3.15 guarded production trial is active in shadow mode.
+                Every normal conversion evaluates the validated G3.14
+                post-serialization convergence candidate against the independent
+                second pass, fixed-point verification, final VectorDrawable
+                validation, and the G3.13 geometry comparator. The conversion
+                report records unchanged, guard-accepted, or guard-rejected
+                status plus size and timing data. The candidate does not replace
+                production XML during G3.15.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
         val diagnosticsHeading = makeText(
             "Future Diagnostics",
             16f,

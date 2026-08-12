@@ -147,6 +147,31 @@ internal object SvgPathDataOptimizer {
         val xmlCharactersAfter: Int = 0
     )
 
+    data class G315GuardedProductionTrialStats(
+        val attempted: Boolean = false,
+        val candidateChanged: Boolean = false,
+        val pathsExamined: Int = 0,
+        val pathsChanged: Int = 0,
+        val geometryComparisons: Int = 0,
+        val geometryMismatchCount: Int = 0,
+        val exactShortCircuitCount: Int = 0,
+        val fallbackBidirectionalCount: Int = 0,
+        val comparatorFailureCount: Int = 0,
+        val matchedIndependentSecondPass: Boolean = false,
+        val fixedPointVerified: Boolean = false,
+        val finalValidationPassed: Boolean = false,
+        val guardAccepted: Boolean = false,
+        val guardRejected: Boolean = false,
+        val charactersBefore: Int = 0,
+        val charactersAfter: Int = 0,
+        val charactersSaved: Int = 0,
+        val charactersAdded: Int = 0,
+        val candidateNanos: Long = 0,
+        val comparatorNanos: Long = 0,
+        val guardNanos: Long = 0,
+        val rejectionReason: String = ""
+    )
+
     data class Stats(
         val pathCount: Int = 0,
         val charactersBefore: Int = 0,
@@ -263,7 +288,9 @@ internal object SvgPathDataOptimizer {
         val numericCleanupCharactersSaved: Int = 0,
         val formattingCharactersSaved: Int = 0,
         val xmlCharactersBefore: Int = 0,
-        val xmlCharactersAfter: Int = 0
+        val xmlCharactersAfter: Int = 0,
+        val g315GuardedProductionTrial: G315GuardedProductionTrialStats =
+            G315GuardedProductionTrialStats()
     ) {
         val charactersSaved: Int
             get() = (charactersBefore - charactersAfter).coerceAtLeast(0)
@@ -393,6 +420,11 @@ internal object SvgPathDataOptimizer {
         )
 
         if (secondPassMatchesFirst) {
+            val g315Trial = runG315GuardedProductionTrial(
+                firstPassXml = firstPass.xml,
+                independentSecondPassXml = secondPass.xml,
+                independentSecondPassIsFixed = true
+            )
             return attachFinalOutputValidation(
                 firstPass.copy(
                     stats = firstPass.stats.copy(
@@ -409,7 +441,8 @@ internal object SvgPathDataOptimizer {
                         optimizerValidationPasses = 2,
                         optimizerFirstPassChangedXml = firstPass.xml != xml,
                         optimizerSecondPassChangedXml = false,
-                        optimizerThirdPassChangedXml = false
+                        optimizerThirdPassChangedXml = false,
+                        g315GuardedProductionTrial = g315Trial
                     )
                 )
             )
@@ -428,6 +461,11 @@ internal object SvgPathDataOptimizer {
         )
         val thirdPassNanos = System.nanoTime() - thirdPassStartTime
         val reachedFixedPoint = thirdPass.xml == secondPass.xml
+        val g315Trial = runG315GuardedProductionTrial(
+            firstPassXml = firstPass.xml,
+            independentSecondPassXml = secondPass.xml,
+            independentSecondPassIsFixed = reachedFixedPoint
+        )
 
         return attachFinalOutputValidation(
             firstPass.copy(
@@ -445,9 +483,121 @@ internal object SvgPathDataOptimizer {
                     optimizerValidationPasses = 3,
                     optimizerFirstPassChangedXml = firstPass.xml != xml,
                     optimizerSecondPassChangedXml = secondPass.xml != firstPass.xml,
-                    optimizerThirdPassChangedXml = thirdPass.xml != secondPass.xml
+                    optimizerThirdPassChangedXml = thirdPass.xml != secondPass.xml,
+                    g315GuardedProductionTrial = g315Trial
                 )
             )
+        )
+    }
+
+    // G3.15 guarded production trial.
+    //
+    // This is deliberately shadow-only: it evaluates the G3.14 convergence
+    // candidate against real production output, but optimizeVectorXml() still
+    // returns the established first-pass production XML. A later milestone can
+    // make the candidate authoritative only if the locked regression suite and
+    // production evidence justify that change.
+    private fun runG315GuardedProductionTrial(
+        firstPassXml: String,
+        independentSecondPassXml: String,
+        independentSecondPassIsFixed: Boolean
+    ): G315GuardedProductionTrialStats {
+        val guardStart = System.nanoTime()
+        var pathsExamined = 0
+        var pathsChanged = 0
+        var geometryComparisons = 0
+        var geometryMismatches = 0
+        var exactShortCircuits = 0
+        var fallbackBidirectional = 0
+        var comparatorFailures = 0
+        var comparatorNanos = 0L
+
+        val candidateStart = System.nanoTime()
+        val candidateXml = pathDataAttributeRegex.replace(firstPassXml) { match ->
+            pathsExamined++
+            val before = match.groupValues[1]
+            val candidate = runPostSerializationGeometryConvergenceCandidate(before).pathData
+            if (candidate != before) {
+                pathsChanged++
+                geometryComparisons++
+                val comparatorStart = System.nanoTime()
+                val diagnostic = SvgPathSampler.exactTraversalShortCircuitGeometryDiagnostic(
+                    before,
+                    candidate
+                )
+                comparatorNanos += System.nanoTime() - comparatorStart
+                val exact =
+                    diagnostic.reason.contains("G3.13 exact ordered-traversal short-circuit")
+                if (exact) exactShortCircuits++ else fallbackBidirectional++
+                if (!diagnostic.equivalent) geometryMismatches++
+                if (
+                    diagnostic.reason.contains("parse failed", ignoreCase = true) ||
+                    diagnostic.reason.contains("could not be flattened", ignoreCase = true)
+                ) {
+                    comparatorFailures++
+                }
+            }
+            "android:pathData=\"$candidate\""
+        }
+        val candidateAndComparatorNanos = System.nanoTime() - candidateStart
+        val candidateNanos =
+            (candidateAndComparatorNanos - comparatorNanos).coerceAtLeast(0L)
+
+        val candidateChanged = candidateXml != firstPassXml
+        val matchedIndependent = candidateXml == independentSecondPassXml
+        val validation =
+            if (candidateChanged) validateFinalVectorXml(candidateXml)
+            else validateFinalVectorXml(firstPassXml)
+
+        val rejectionReason = when {
+            !candidateChanged -> ""
+            comparatorFailures > 0 ->
+                "G3.13 comparator failure"
+            geometryMismatches > 0 ->
+                "G3.13 geometry mismatch"
+            !matchedIndependent ->
+                "candidate differed from independent full pass 2"
+            !independentSecondPassIsFixed ->
+                "independent full pass 2 was not a fixed point"
+            !validation.passed ->
+                "candidate failed final VectorDrawable validation"
+            else -> ""
+        }
+
+        val accepted =
+            candidateChanged &&
+                comparatorFailures == 0 &&
+                geometryMismatches == 0 &&
+                matchedIndependent &&
+                independentSecondPassIsFixed &&
+                validation.passed
+
+        val beforeLength = firstPassXml.length
+        val afterLength = candidateXml.length
+
+        return G315GuardedProductionTrialStats(
+            attempted = true,
+            candidateChanged = candidateChanged,
+            pathsExamined = pathsExamined,
+            pathsChanged = pathsChanged,
+            geometryComparisons = geometryComparisons,
+            geometryMismatchCount = geometryMismatches,
+            exactShortCircuitCount = exactShortCircuits,
+            fallbackBidirectionalCount = fallbackBidirectional,
+            comparatorFailureCount = comparatorFailures,
+            matchedIndependentSecondPass = matchedIndependent,
+            fixedPointVerified = independentSecondPassIsFixed,
+            finalValidationPassed = validation.passed,
+            guardAccepted = accepted,
+            guardRejected = candidateChanged && !accepted,
+            charactersBefore = beforeLength,
+            charactersAfter = afterLength,
+            charactersSaved = (beforeLength - afterLength).coerceAtLeast(0),
+            charactersAdded = (afterLength - beforeLength).coerceAtLeast(0),
+            candidateNanos = candidateNanos,
+            comparatorNanos = comparatorNanos,
+            guardNanos = System.nanoTime() - guardStart,
+            rejectionReason = rejectionReason
         )
     }
 

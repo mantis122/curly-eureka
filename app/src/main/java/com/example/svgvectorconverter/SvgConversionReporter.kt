@@ -220,6 +220,28 @@ class SvgConversionReportData {
     var optimizerFirstPassChangedXml: Boolean = false
     var optimizerSecondPassChangedXml: Boolean = false
     var optimizerThirdPassChangedXml: Boolean = false
+    var g315TrialAttempted: Boolean = false
+    var g315CandidateChanged: Boolean = false
+    var g315PathsExamined: Int = 0
+    var g315PathsChanged: Int = 0
+    var g315GeometryComparisons: Int = 0
+    var g315GeometryMismatchCount: Int = 0
+    var g315ExactShortCircuitCount: Int = 0
+    var g315FallbackBidirectionalCount: Int = 0
+    var g315ComparatorFailureCount: Int = 0
+    var g315MatchedIndependentSecondPass: Boolean = false
+    var g315FixedPointVerified: Boolean = false
+    var g315FinalValidationPassed: Boolean = false
+    var g315GuardAccepted: Boolean = false
+    var g315GuardRejected: Boolean = false
+    var g315CharactersBefore: Int = 0
+    var g315CharactersAfter: Int = 0
+    var g315CharactersSaved: Int = 0
+    var g315CharactersAdded: Int = 0
+    var g315CandidateNanos: Long = 0
+    var g315ComparatorNanos: Long = 0
+    var g315GuardNanos: Long = 0
+    var g315RejectionReason: String = ""
     var finalOutputValidationPassed: Boolean = false
     var finalOutputValidationNanos: Long = 0
     var validatedPathDataCount: Int = 0
@@ -837,6 +859,7 @@ object SvgConversionReporter {
                 appendLine("✓ Horizontal/vertical commands selected: ${data.axisCommandsSelected}")
 
             appendOptimizerValidation(data)
+            appendG315GuardedProductionTrial(data)
             appendFinalOutputValidation(data)
             appendOptimizationImpact(data)
             appendOptimizationQualityMetrics(data)
@@ -1261,6 +1284,77 @@ object SvgConversionReporter {
      * used. The converter's raw warning count may also include the internal
      * invalid-array diagnostic, so remove that duplicate from the aggregate.
      */
+    private fun StringBuilder.appendG315GuardedProductionTrial(
+        data: SvgConversionReportData
+    ) {
+        if (!data.g315TrialAttempted) return
+
+        appendLine()
+        appendLine("G3.15 guarded production convergence trial")
+        appendLine("• Mode: shadow-only; production XML unchanged")
+
+        when {
+            !data.g315CandidateChanged ->
+                appendLine("✓ Candidate unchanged; no convergence action needed")
+            data.g315GuardAccepted ->
+                appendLine("✓ Candidate passed every G3.15 guard")
+            data.g315GuardRejected -> {
+                appendLine("⚠ Candidate rejected; existing production XML retained")
+                if (data.g315RejectionReason.isNotBlank()) {
+                    appendLine("• Rejection reason: ${data.g315RejectionReason}")
+                }
+            }
+            else ->
+                appendLine("⚠ Trial completed without an accepted/rejected classification")
+        }
+
+        appendLine("• Paths examined: ${data.g315PathsExamined}")
+        appendLine("• Paths changed by candidate: ${data.g315PathsChanged}")
+        if (data.g315CandidateChanged) {
+            appendLine(
+                "• Matched independent full pass 2: " +
+                    if (data.g315MatchedIndependentSecondPass) "Yes" else "No"
+            )
+            appendLine(
+                "• Independent pass 2 fixed point verified: " +
+                    if (data.g315FixedPointVerified) "Yes" else "No"
+            )
+            appendLine(
+                "• Candidate final validation passed: " +
+                    if (data.g315FinalValidationPassed) "Yes" else "No"
+            )
+            appendLine("• G3.13 geometry comparisons: ${data.g315GeometryComparisons}")
+            appendLine("• G3.13 geometry mismatches: ${data.g315GeometryMismatchCount}")
+            appendLine(
+                "• Exact ordered-traversal short-circuits: " +
+                    data.g315ExactShortCircuitCount
+            )
+            appendLine(
+                "• Fallback bidirectional comparisons: " +
+                    data.g315FallbackBidirectionalCount
+            )
+            appendLine("• Comparator failures: ${data.g315ComparatorFailureCount}")
+            appendLine(
+                "• XML characters: ${data.g315CharactersBefore} → " +
+                    data.g315CharactersAfter
+            )
+            appendLine("• Characters saved: ${data.g315CharactersSaved}")
+            appendLine("• Characters added: ${data.g315CharactersAdded}")
+        }
+        appendLine(
+            "• Candidate time: " +
+                formatNanosAsMilliseconds(data.g315CandidateNanos)
+        )
+        appendLine(
+            "• Comparator time: " +
+                formatNanosAsMilliseconds(data.g315ComparatorNanos)
+        )
+        appendLine(
+            "• Total G3.15 guard time: " +
+                formatNanosAsMilliseconds(data.g315GuardNanos)
+        )
+    }
+
     private fun StringBuilder.appendFinalOutputValidation(
         data: SvgConversionReportData
     ) {
