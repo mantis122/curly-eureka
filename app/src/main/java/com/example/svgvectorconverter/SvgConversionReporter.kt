@@ -1290,16 +1290,16 @@ object SvgConversionReporter {
         if (!data.g315TrialAttempted) return
 
         appendLine()
-        appendLine("G3.15 guarded production convergence trial")
-        appendLine("• Mode: shadow-only; production XML unchanged")
+        appendLine("G3.19 guarded production convergence")
+        appendLine("• Mode: production-enabled, fail-closed")
 
         when {
             !data.g315CandidateChanged ->
-                appendLine("✓ Candidate unchanged; no convergence action needed")
+                appendLine("✓ Candidate unchanged; pass-1 production XML retained")
             data.g315GuardAccepted ->
-                appendLine("✓ Candidate passed every G3.15 guard")
+                appendLine("✓ Candidate passed every guard and was applied to production XML")
             data.g315GuardRejected -> {
-                appendLine("⚠ Candidate rejected; existing production XML retained")
+                appendLine("⚠ Candidate rejected; pass-1 production XML retained")
                 if (data.g315RejectionReason.isNotBlank()) {
                     appendLine("• Rejection reason: ${data.g315RejectionReason}")
                 }
@@ -1350,7 +1350,7 @@ object SvgConversionReporter {
                 formatNanosAsMilliseconds(data.g315ComparatorNanos)
         )
         appendLine(
-            "• Total G3.15 guard time: " +
+            "• Total guarded convergence time: " +
                 formatNanosAsMilliseconds(data.g315GuardNanos)
         )
     }

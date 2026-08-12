@@ -169,7 +169,8 @@ internal object SvgPathDataOptimizer {
         val candidateNanos: Long = 0,
         val comparatorNanos: Long = 0,
         val guardNanos: Long = 0,
-        val rejectionReason: String = ""
+        val rejectionReason: String = "",
+        val candidateXml: String = ""
     )
 
     data class Stats(
@@ -425,9 +426,16 @@ internal object SvgPathDataOptimizer {
                 independentSecondPassXml = secondPass.xml,
                 independentSecondPassIsFixed = true
             )
+            val selectedXml =
+                if (g315Trial.guardAccepted) g315Trial.candidateXml else firstPass.xml
+            val selectedPathCharacters = pathDataAttributeRegex.findAll(selectedXml)
+                .sumOf { it.groupValues[1].length }
             return attachFinalOutputValidation(
                 firstPass.copy(
+                    xml = selectedXml,
                     stats = firstPass.stats.copy(
+                        charactersAfter = selectedPathCharacters,
+                        xmlCharactersAfter = selectedXml.length,
                         optimizerIdempotenceVerified = true,
                         optimizerReachedFixedPoint = true,
                         optimizerStabilityPasses = 1,
@@ -449,9 +457,9 @@ internal object SvgPathDataOptimizer {
         }
 
         // A third pass distinguishes a one-pass drift from an optimizer that
-        // continues changing its own output. D1 intentionally returns the
-        // original first-pass output so validation never silently changes
-        // production behavior.
+        // continues changing its own output. G3.19 may promote only a candidate
+        // that matches this independently verified fixed point and passes every
+        // remaining fail-closed guard.
         val thirdPassStartTime = System.nanoTime()
         val thirdPassCache = PathOptimizationCache()
         val thirdPass = optimizeVectorXmlSinglePass(
@@ -467,9 +475,17 @@ internal object SvgPathDataOptimizer {
             independentSecondPassIsFixed = reachedFixedPoint
         )
 
+        val selectedXml =
+            if (g315Trial.guardAccepted) g315Trial.candidateXml else firstPass.xml
+        val selectedPathCharacters = pathDataAttributeRegex.findAll(selectedXml)
+            .sumOf { it.groupValues[1].length }
+
         return attachFinalOutputValidation(
             firstPass.copy(
+                xml = selectedXml,
                 stats = firstPass.stats.copy(
+                    charactersAfter = selectedPathCharacters,
+                    xmlCharactersAfter = selectedXml.length,
                     optimizerIdempotenceVerified = false,
                     optimizerReachedFixedPoint = reachedFixedPoint,
                     optimizerStabilityPasses = if (reachedFixedPoint) 2 else 3,
@@ -490,13 +506,13 @@ internal object SvgPathDataOptimizer {
         )
     }
 
-    // G3.15 guarded production trial.
+    // G3.19 guarded production convergence.
     //
-    // This is deliberately shadow-only: it evaluates the G3.14 convergence
-    // candidate against real production output, but optimizeVectorXml() still
-    // returns the established first-pass production XML. A later milestone can
-    // make the candidate authoritative only if the locked regression suite and
-    // production evidence justify that change.
+    // The G3.15 guard remains the fail-closed safety gate. A changed candidate
+    // becomes authoritative only when geometry, independent-pass agreement,
+    // fixed-point verification, and final VectorDrawable validation all pass.
+    // Every unchanged or rejected candidate falls back to the established
+    // first-pass production XML.
     private fun runG315GuardedProductionTrial(
         firstPassXml: String,
         independentSecondPassXml: String,
@@ -597,7 +613,8 @@ internal object SvgPathDataOptimizer {
             candidateNanos = candidateNanos,
             comparatorNanos = comparatorNanos,
             guardNanos = System.nanoTime() - guardStart,
-            rejectionReason = rejectionReason
+            rejectionReason = rejectionReason,
+            candidateXml = candidateXml
         )
     }
 
