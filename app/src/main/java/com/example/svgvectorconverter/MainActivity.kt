@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
     private var currentOrderedCollinearTraversalReport = ""
     private var currentBidirectionalComparatorRepairReport = ""
     private var currentExactTraversalShortCircuitReport = ""
+    private var currentG314ConvergenceReport = ""
 
     private fun makeButton(
         label: String,
@@ -292,6 +293,15 @@ class MainActivity : ComponentActivity() {
         if (uri != null && currentExactTraversalShortCircuitReport.isNotBlank()) {
             FileIoHelpers.writeTextToUri(this, uri, currentExactTraversalShortCircuitReport)
             toast("G3.13 exact-traversal report saved")
+        }
+    }
+
+    private val saveG314ConvergenceReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentG314ConvergenceReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(this, uri, currentG314ConvergenceReport)
+            toast("G3.14 convergence-corpus report saved")
         }
     }
 
@@ -1122,6 +1132,33 @@ class MainActivity : ComponentActivity() {
                 Float flattening or traveled-length bookkeeping. Non-identical
                 traversal falls through to the existing G3.12 bidirectional
                 comparator. Production optimization behavior is unchanged.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        val g314Button =
+            makeButton("Run G3.14 G3.7 Corpus with G3.13 Comparator") {
+                runG314ConvergenceCorpusSearch()
+            }
+        layout.addView(
+            g314Button,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Reruns the exact 100,000-case G3.7 convergence corpus with four
+                parallel workers. Every changed convergence candidate is checked
+                by the validated G3.13 comparator: exact ordered traversal first,
+                with the repaired bidirectional comparator only as fallback.
+                Reports exact short-circuits, fallbacks, geometry mismatches,
+                pass-2 agreement, and fixed-point verification. Production
+                optimization behavior remains unchanged.
                 """.trimIndent(),
                 14f,
                 Color.GRAY,
@@ -3093,6 +3130,204 @@ class MainActivity : ComponentActivity() {
             )
         )
         toast("G3.13 exact-traversal report copied")
+    }
+
+
+    private fun runG314ConvergenceCorpusSearch() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+        val progressBar = ProgressBar(
+            this,
+            null,
+            android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            isIndeterminate = false
+            max = 100_000
+            progress = 0
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val statusText = makeText(
+            "Progress: 0.0%  •  0 / 100,000",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 24, 0, 0) }
+        val detailText = makeText(
+            "Workers: starting…",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 12, 0, 0) }
+        val noteText = makeText(
+            "G3.13 exact traversal runs first; only unresolved pairs use the slower bidirectional fallback.",
+            12f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 8, 0, 0) }
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(detailText)
+        progressLayout.addView(noteText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.14 G3.7 Corpus + G3.13 Comparator")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgPostSerializationGeometryConvergenceSearch.runG314Default { progress ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && progressDialog.isShowing) {
+                            progressBar.max = progress.totalCases.coerceAtLeast(1)
+                            progressBar.progress =
+                                progress.completedCases.coerceIn(0, progressBar.max)
+                            statusText.text = String.format(
+                                java.util.Locale.US,
+                                "Progress: %.1f%%  •  %,d / %,d",
+                                progress.percentComplete,
+                                progress.completedCases,
+                                progress.totalCases
+                            )
+                            val seedProgress = progress.perSeedProcessed
+                                .mapIndexed { index, processed ->
+                                    "S${index + 1}: ${
+                                        String.format(
+                                            java.util.Locale.US,
+                                            "%,d",
+                                            processed
+                                        )
+                                    }"
+                                }
+                                .joinToString("  •  ")
+                            detailText.text =
+                                "Workers: ${progress.workerCount}  •  $seedProgress"
+                        }
+                    }
+                }
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("G3.14 automated G3.7 convergence-corpus rerun with G3.13 geometry comparator")
+                    appendLine()
+                    appendLine("RESULT: The search could not be completed.")
+                    appendLine()
+                    appendLine(throwable.message ?: throwable::class.java.simpleName)
+                    appendLine()
+                    appendLine(
+                        "Check that SvgPostSerializationGeometryConvergenceSearch.kt, " +
+                            "SvgPathDataOptimizer.kt, and the G3.13 SvgPathSampler.kt " +
+                            "are included in the app."
+                    )
+                }
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentG314ConvergenceReport = report
+                    showG314ConvergenceCorpusResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showG314ConvergenceCorpusResultsDialog(report: String) {
+        val failed = report.contains("could not be completed")
+        val exact = report.contains(
+            "RESULT: G3.14 exactly reproduced the independent second pass"
+        )
+        val summaryText: String
+        val summaryColor: Int
+        when {
+            failed -> {
+                summaryText = "✕ Search could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+            exact -> {
+                summaryText = "✓ G3.14 convergence + geometry validation passed"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+            else -> {
+                summaryText = "⚠ G3.14 needs investigation"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+        layout.addView(
+            makeText(
+                summaryText,
+                18f,
+                summaryColor,
+                Gravity.START,
+                paddingBottom = 16
+            )
+        )
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        val reportScroll = ScrollView(this).apply { addView(reportView) }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val copyButton = makeButton("Copy Results") { copyG314ConvergenceReport() }
+        val saveButton = makeButton("Save .txt") {
+            saveG314ConvergenceReport.launch("g3_14_convergence_corpus_g313_report.txt")
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+        val rerunButton = makeButton("Run Again") { runG314ConvergenceCorpusSearch() }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.14 Convergence Corpus Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+        dialog.show()
+    }
+
+    private fun copyG314ConvergenceReport() {
+        if (currentG314ConvergenceReport.isBlank()) {
+            toast("No G3.14 convergence-corpus report to copy")
+            return
+        }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "g3_14_convergence_corpus_g313_report.txt",
+                currentG314ConvergenceReport
+            )
+        )
+        toast("G3.14 convergence-corpus report copied")
     }
 
     private fun runBidirectionalPolylineGeometrySearch(forceRestart: Boolean = false) {

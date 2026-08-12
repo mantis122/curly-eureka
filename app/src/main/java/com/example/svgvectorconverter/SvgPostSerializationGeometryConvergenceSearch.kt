@@ -150,4 +150,150 @@ object SvgPostSerializationGeometryConvergenceSearch {
             }
         }
     }
+
+    fun runG314Default(
+        progressCallback: ((Progress) -> Unit)? = null
+    ): String = runG314(
+        casesPerSeed = 25_000,
+        seeds = listOf(
+            0x6316_2026L,
+            0x6316_0001L,
+            0x6316_0002L,
+            0x1D40_2026L
+        ),
+        progressCallback = progressCallback
+    )
+
+    fun runG314(
+        casesPerSeed: Int,
+        seeds: List<Long>,
+        progressCallback: ((Progress) -> Unit)? = null
+    ): String {
+        require(casesPerSeed >= 0) { "casesPerSeed must be non-negative" }
+        require(seeds.isNotEmpty()) { "At least one seed is required" }
+
+        val started = System.nanoTime()
+        val totalCases = casesPerSeed * seeds.size
+        val availableProcessors = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val workerCount = minOf(4, seeds.size, availableProcessors)
+        val perSeedProgress = AtomicIntegerArray(seeds.size)
+        val executor = Executors.newFixedThreadPool(workerCount)
+
+        val futures = seeds.mapIndexed { index, seed ->
+            executor.submit<SvgPathDataOptimizer.G314PostSerializationGeometryConvergenceResult> {
+                SvgPathDataOptimizer.runG314PostSerializationGeometryConvergenceStressSearch(
+                    caseCount = casesPerSeed,
+                    seed = seed,
+                    maximumWitnesses = 5,
+                    progressCallback = { currentSeedProcessed ->
+                        perSeedProgress.set(index, currentSeedProcessed)
+                        if (progressCallback != null) {
+                            val snapshot = List(seeds.size) { seedIndex ->
+                                perSeedProgress.get(seedIndex)
+                            }
+                            progressCallback.invoke(
+                                Progress(
+                                    completedCases = snapshot.sum(),
+                                    totalCases = totalCases,
+                                    workerCount = workerCount,
+                                    perSeedProcessed = snapshot,
+                                    casesPerSeed = casesPerSeed
+                                )
+                            )
+                        }
+                    }
+                )
+            }
+        }
+
+        val results = try {
+            futures.map { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        val valid = results.sumOf { it.validCases }
+        val rejected = results.sumOf { it.rejectedGeneratedCases }
+        val unchanged = results.sumOf { it.unchangedByCandidate }
+        val changed = results.sumOf { it.changedByCandidate }
+        val redundantChanged = results.sumOf { it.redundantGeometryChangedCases }
+        val collinearChanged = results.sumOf { it.collinearGeometryChangedCases }
+        val matchedIndependent = results.sumOf { it.matchedIndependentSecondPass }
+        val differedIndependent = results.sumOf { it.differedFromIndependentSecondPass }
+        val fixed = results.sumOf { it.fixedAfterCandidate }
+        val stillChanged = results.sumOf { it.stillChangedAfterVerification }
+        val geometryComparisons = results.sumOf { it.geometryComparisons }
+        val geometryMismatches = results.sumOf { it.geometryMismatchCount }
+        val exactShortCircuits = results.sumOf { it.exactShortCircuitCount }
+        val fallbackBidirectional = results.sumOf { it.fallbackBidirectionalCount }
+        val comparatorFailures = results.sumOf { it.comparatorFailureCount }
+        val saved = results.sumOf { it.totalCharactersSaved }
+        val grown = results.sumOf { it.totalCharactersGrown }
+        val candidateNanos = results.sumOf { it.candidateNanos }
+        val comparatorNanos = results.sumOf { it.comparatorNanos }
+        val verificationNanos = results.sumOf { it.verificationNanos }
+        val elapsed = System.nanoTime() - started
+
+        return buildString {
+            appendLine("G3.14 automated G3.7 convergence-corpus rerun with G3.13 geometry comparator")
+            appendLine()
+            appendLine("Seeds: ${seeds.size}")
+            appendLine("Cases per seed: $casesPerSeed")
+            appendLine("Parallel workers: $workerCount")
+            appendLine("Available processors: $availableProcessors")
+            appendLine("Valid comparisons: $valid")
+            appendLine("Rejected generated cases: $rejected")
+            appendLine("Unchanged by convergence candidate: $unchanged")
+            appendLine("Changed by convergence candidate: $changed")
+            appendLine("Redundant-geometry stage changed: $redundantChanged")
+            appendLine("Collinear-consolidation stage changed: $collinearChanged")
+            appendLine("Matched independent full pass 2: $matchedIndependent")
+            appendLine("Differed from independent full pass 2: $differedIndependent")
+            appendLine("Fixed after convergence candidate: $fixed")
+            appendLine("Still changed after verification: $stillChanged")
+            appendLine("G3.13 geometry comparisons: $geometryComparisons")
+            appendLine("G3.13 geometry mismatches: $geometryMismatches")
+            appendLine("Exact ordered-traversal short-circuits: $exactShortCircuits")
+            appendLine("Fallback bidirectional comparisons: $fallbackBidirectional")
+            appendLine("Comparator failures: $comparatorFailures")
+            appendLine("Characters saved by convergence candidate: $saved")
+            appendLine("Characters added by convergence candidate: $grown")
+            appendLine("Candidate CPU time: " + String.format(java.util.Locale.US, "%.2f ms", candidateNanos / 1_000_000.0))
+            appendLine("Comparator CPU time: " + String.format(java.util.Locale.US, "%.2f ms", comparatorNanos / 1_000_000.0))
+            appendLine("Full verification CPU time: " + String.format(java.util.Locale.US, "%.2f ms", verificationNanos / 1_000_000.0))
+            appendLine("Elapsed: " + String.format(java.util.Locale.US, "%.2f ms", elapsed / 1_000_000.0))
+            appendLine()
+            when {
+                comparatorFailures > 0 -> {
+                    appendLine("RESULT: G3.14 encountered diagnostic comparator failures.")
+                    appendLine("Recommendation: keep production unchanged and inspect every comparator-failure witness.")
+                }
+                geometryMismatches > 0 -> {
+                    appendLine("RESULT: G3.14 found geometry mismatches under the validated G3.13 comparator.")
+                    appendLine("Recommendation: keep production unchanged and inspect every geometry witness before revisiting convergence.")
+                }
+                stillChanged > 0 -> {
+                    appendLine("RESULT: the G3.14 convergence candidate did not reach a fixed point for every case.")
+                    appendLine("Recommendation: keep production unchanged and inspect the remaining verification witnesses.")
+                }
+                differedIndependent > 0 -> {
+                    appendLine("RESULT: G3.14 preserved geometry but did not exactly reproduce every independent second-pass result.")
+                    appendLine("Recommendation: keep production unchanged until the remaining spelling differences are classified.")
+                }
+                valid > 0 -> {
+                    appendLine("RESULT: G3.14 exactly reproduced the independent second pass, remained fixed, and produced no G3.13 geometry mismatches across every seed.")
+                    appendLine("Recommendation: rerun the locked regression suite, then consider a guarded production convergence trial.")
+                }
+                else -> appendLine("RESULT: no valid comparisons were produced.")
+            }
+
+            results.forEachIndexed { index, result ->
+                appendLine()
+                appendLine("────────────────────────────────")
+                appendLine("Seed ${index + 1}")
+                append(result.toPlainTextReport())
+            }
+        }
+    }
+
 }

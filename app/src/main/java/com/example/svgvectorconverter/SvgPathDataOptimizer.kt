@@ -6076,6 +6076,295 @@ internal object SvgPathDataOptimizer {
         )
     }
 
+
+    // G3.14 diagnostic-only rerun of the G3.7 corpus with the G3.13 comparator.
+    // Production conversion never calls this.
+    data class G314PostSerializationGeometryConvergenceWitness(
+        val caseNumber: Int,
+        val source: String,
+        val firstPass: String,
+        val candidatePass: String,
+        val independentSecondPass: String,
+        val verificationPass: String,
+        val redundantGeometryChanged: Boolean,
+        val collinearGeometryChanged: Boolean,
+        val candidateChangedFirstPass: Boolean,
+        val candidateMatchedIndependentSecondPass: Boolean,
+        val candidateWasFixedPoint: Boolean,
+        val geometryEquivalent: Boolean,
+        val exactShortCircuitUsed: Boolean,
+        val comparatorReason: String,
+        val maximumFirstToSecondDeviation: Double,
+        val maximumSecondToFirstDeviation: Double,
+        val characterDelta: Int
+    )
+
+    data class G314PostSerializationGeometryConvergenceResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val rejectedGeneratedCases: Int,
+        val unchangedByCandidate: Int,
+        val changedByCandidate: Int,
+        val redundantGeometryChangedCases: Int,
+        val collinearGeometryChangedCases: Int,
+        val matchedIndependentSecondPass: Int,
+        val differedFromIndependentSecondPass: Int,
+        val fixedAfterCandidate: Int,
+        val stillChangedAfterVerification: Int,
+        val geometryComparisons: Int,
+        val geometryMismatchCount: Int,
+        val exactShortCircuitCount: Int,
+        val fallbackBidirectionalCount: Int,
+        val comparatorFailureCount: Int,
+        val totalCharactersSaved: Long,
+        val totalCharactersGrown: Long,
+        val candidateNanos: Long,
+        val comparatorNanos: Long,
+        val verificationNanos: Long,
+        val elapsedNanos: Long,
+        val witnesses: List<G314PostSerializationGeometryConvergenceWitness>
+    ) {
+        fun toPlainTextReport(): String = buildString {
+            appendLine("G3.14 G3.7 convergence-corpus rerun with G3.13 geometry comparator")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $rejectedGeneratedCases")
+            appendLine("Unchanged by convergence candidate: $unchangedByCandidate")
+            appendLine("Changed by convergence candidate: $changedByCandidate")
+            appendLine("Redundant-geometry stage changed: $redundantGeometryChangedCases")
+            appendLine("Collinear-consolidation stage changed: $collinearGeometryChangedCases")
+            appendLine("Matched independent full pass 2: $matchedIndependentSecondPass")
+            appendLine("Differed from independent full pass 2: $differedFromIndependentSecondPass")
+            appendLine("Fixed after convergence candidate: $fixedAfterCandidate")
+            appendLine("Still changed after verification: $stillChangedAfterVerification")
+            appendLine("G3.13 geometry comparisons: $geometryComparisons")
+            appendLine("G3.13 geometry mismatches: $geometryMismatchCount")
+            appendLine("Exact ordered-traversal short-circuits: $exactShortCircuitCount")
+            appendLine("Fallback bidirectional comparisons: $fallbackBidirectionalCount")
+            appendLine("Comparator failures: $comparatorFailureCount")
+            appendLine("Characters saved by convergence candidate: $totalCharactersSaved")
+            appendLine("Characters added by convergence candidate: $totalCharactersGrown")
+            appendLine("Candidate time: " + String.format(java.util.Locale.US, "%.2f ms", candidateNanos / 1_000_000.0))
+            appendLine("Comparator time: " + String.format(java.util.Locale.US, "%.2f ms", comparatorNanos / 1_000_000.0))
+            appendLine("Verification time: " + String.format(java.util.Locale.US, "%.2f ms", verificationNanos / 1_000_000.0))
+            appendLine("Elapsed: " + String.format(java.util.Locale.US, "%.2f ms", elapsedNanos / 1_000_000.0))
+            appendLine()
+            when {
+                comparatorFailureCount > 0 -> {
+                    appendLine("RESULT: G3.14 encountered diagnostic comparator failures.")
+                    appendLine("Recommendation: keep production unchanged and inspect every comparator-failure witness.")
+                }
+                geometryMismatchCount > 0 -> {
+                    appendLine("RESULT: G3.14 found geometry mismatches under the validated G3.13 comparator.")
+                    appendLine("Recommendation: keep production unchanged and inspect every geometry witness before revisiting convergence.")
+                }
+                stillChangedAfterVerification > 0 -> {
+                    appendLine("RESULT: the G3.14 convergence candidate did not reach a fixed point for every case.")
+                    appendLine("Recommendation: keep production unchanged and inspect the remaining verification witnesses.")
+                }
+                differedFromIndependentSecondPass > 0 -> {
+                    appendLine("RESULT: G3.14 preserved geometry but did not exactly reproduce every independent second-pass result.")
+                    appendLine("Recommendation: keep production unchanged until the remaining spelling differences are classified.")
+                }
+                validCases > 0 -> {
+                    appendLine("RESULT: G3.14 exactly reproduced the independent second pass, remained fixed, and produced no G3.13 geometry mismatches.")
+                    appendLine("Recommendation: rerun the locked regression suite, then consider a guarded production convergence trial.")
+                }
+                else -> appendLine("RESULT: no valid comparisons were produced.")
+            }
+            if (witnesses.isNotEmpty()) {
+                appendLine()
+                appendLine("Witnesses")
+                witnesses.forEachIndexed { index, witness ->
+                    appendLine()
+                    appendLine("${index + 1}. Case ${witness.caseNumber}")
+                    appendLine("   Redundant geometry changed: ${witness.redundantGeometryChanged}")
+                    appendLine("   Collinear geometry changed: ${witness.collinearGeometryChanged}")
+                    appendLine("   Candidate changed pass 1: ${witness.candidateChangedFirstPass}")
+                    appendLine("   Matched independent pass 2: ${witness.candidateMatchedIndependentSecondPass}")
+                    appendLine("   Fixed under verification: ${witness.candidateWasFixedPoint}")
+                    appendLine("   G3.13 geometry equivalent: ${witness.geometryEquivalent}")
+                    appendLine("   Exact short-circuit used: ${witness.exactShortCircuitUsed}")
+                    appendLine("   Comparator reason: ${witness.comparatorReason}")
+                    appendLine("   A → B max deviation: " + String.format(java.util.Locale.US, "%.9g", witness.maximumFirstToSecondDeviation))
+                    appendLine("   B → A max deviation: " + String.format(java.util.Locale.US, "%.9g", witness.maximumSecondToFirstDeviation))
+                    appendLine("   Character delta (pass1 - candidate): ${witness.characterDelta}")
+                    appendLine("   Source: ${witness.source}")
+                    appendLine("   Pass 1: ${witness.firstPass}")
+                    appendLine("   G3.14 candidate: ${witness.candidatePass}")
+                    appendLine("   Independent pass 2: ${witness.independentSecondPass}")
+                    appendLine("   Verification pass: ${witness.verificationPass}")
+                }
+            }
+        }
+    }
+
+    fun runG314PostSerializationGeometryConvergenceStressSearch(
+        caseCount: Int = 25_000,
+        seed: Long = 0x6316_2026L,
+        maximumWitnesses: Int = 8,
+        progressCallback: ((processedCases: Int) -> Unit)? = null
+    ): G314PostSerializationGeometryConvergenceResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        require(maximumWitnesses >= 0) { "maximumWitnesses must be non-negative" }
+
+        val started = System.nanoTime()
+        val random = Random(seed)
+        val witnesses = mutableListOf<G314PostSerializationGeometryConvergenceWitness>()
+        var generated = 0
+        var valid = 0
+        var rejected = 0
+        var unchanged = 0
+        var changed = 0
+        var redundantChanged = 0
+        var collinearChanged = 0
+        var matchedIndependent = 0
+        var differedIndependent = 0
+        var fixed = 0
+        var stillChanged = 0
+        var geometryComparisons = 0
+        var geometryMismatches = 0
+        var exactShortCircuits = 0
+        var fallbackBidirectional = 0
+        var comparatorFailures = 0
+        var charactersSaved = 0L
+        var charactersGrown = 0L
+        var candidateNanos = 0L
+        var comparatorNanos = 0L
+        var verificationNanos = 0L
+
+        repeat(caseCount) { caseIndex ->
+            generated++
+            val source = generateDifferentialStressPath(random)
+            try {
+                val first = optimizePathData(source).pathData
+
+                val candidateStart = System.nanoTime()
+                val candidate = runPostSerializationGeometryConvergenceCandidate(first)
+                candidateNanos += System.nanoTime() - candidateStart
+
+                val independentSecond = optimizePathData(first).pathData
+
+                val verificationStart = System.nanoTime()
+                val verification = optimizePathData(candidate.pathData).pathData
+                verificationNanos += System.nanoTime() - verificationStart
+
+                val candidateChanged = candidate.pathData != first
+                val matched = candidate.pathData == independentSecond
+                val isFixed = verification == candidate.pathData
+                val delta = first.length - candidate.pathData.length
+
+                var geometryEquivalent = true
+                var exactShortCircuitUsed = false
+                var comparatorReason = "candidate unchanged; comparator not required"
+                var maxFirstToSecondDeviation = 0.0
+                var maxSecondToFirstDeviation = 0.0
+
+                if (candidateChanged) {
+                    geometryComparisons++
+                    val comparatorStart = System.nanoTime()
+                    val diagnostic = SvgPathSampler.exactTraversalShortCircuitGeometryDiagnostic(
+                        first,
+                        candidate.pathData
+                    )
+                    comparatorNanos += System.nanoTime() - comparatorStart
+
+                    geometryEquivalent = diagnostic.equivalent
+                    exactShortCircuitUsed =
+                        diagnostic.reason.contains("G3.13 exact ordered-traversal short-circuit")
+                    if (exactShortCircuitUsed) exactShortCircuits++ else fallbackBidirectional++
+                    comparatorReason = diagnostic.reason
+                    maxFirstToSecondDeviation = diagnostic.maximumFirstToSecondDeviation
+                    maxSecondToFirstDeviation = diagnostic.maximumSecondToFirstDeviation
+
+                    if (!geometryEquivalent) {
+                        geometryMismatches++
+                        if (diagnostic.reason.contains("parse failed", ignoreCase = true) ||
+                            diagnostic.reason.contains("could not be flattened", ignoreCase = true)
+                        ) {
+                            comparatorFailures++
+                        }
+                    }
+                }
+
+                valid++
+                if (candidateChanged) changed++ else unchanged++
+                if (candidate.redundantGeometryChanged) redundantChanged++
+                if (candidate.collinearGeometryChanged) collinearChanged++
+                if (matched) matchedIndependent++ else differedIndependent++
+                if (isFixed) fixed++ else stillChanged++
+                if (delta > 0) charactersSaved += delta.toLong()
+                if (delta < 0) charactersGrown += (-delta).toLong()
+
+                val noteworthy =
+                    !geometryEquivalent || !isFixed || !matched ||
+                        (candidateChanged && witnesses.size < minOf(maximumWitnesses, 2))
+                if (noteworthy && witnesses.size < maximumWitnesses) {
+                    witnesses += G314PostSerializationGeometryConvergenceWitness(
+                        caseNumber = caseIndex + 1,
+                        source = source,
+                        firstPass = first,
+                        candidatePass = candidate.pathData,
+                        independentSecondPass = independentSecond,
+                        verificationPass = verification,
+                        redundantGeometryChanged = candidate.redundantGeometryChanged,
+                        collinearGeometryChanged = candidate.collinearGeometryChanged,
+                        candidateChangedFirstPass = candidateChanged,
+                        candidateMatchedIndependentSecondPass = matched,
+                        candidateWasFixedPoint = isFixed,
+                        geometryEquivalent = geometryEquivalent,
+                        exactShortCircuitUsed = exactShortCircuitUsed,
+                        comparatorReason = comparatorReason,
+                        maximumFirstToSecondDeviation = maxFirstToSecondDeviation,
+                        maximumSecondToFirstDeviation = maxSecondToFirstDeviation,
+                        characterDelta = delta
+                    )
+                }
+            } catch (_: Throwable) {
+                rejected++
+            }
+
+            val processed = caseIndex + 1
+            if (progressCallback != null && (processed == caseCount || processed % 250 == 0)) {
+                progressCallback(processed)
+            }
+        }
+        if (caseCount == 0) progressCallback?.invoke(0)
+
+        return G314PostSerializationGeometryConvergenceResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generated,
+            validCases = valid,
+            rejectedGeneratedCases = rejected,
+            unchangedByCandidate = unchanged,
+            changedByCandidate = changed,
+            redundantGeometryChangedCases = redundantChanged,
+            collinearGeometryChangedCases = collinearChanged,
+            matchedIndependentSecondPass = matchedIndependent,
+            differedFromIndependentSecondPass = differedIndependent,
+            fixedAfterCandidate = fixed,
+            stillChangedAfterVerification = stillChanged,
+            geometryComparisons = geometryComparisons,
+            geometryMismatchCount = geometryMismatches,
+            exactShortCircuitCount = exactShortCircuits,
+            fallbackBidirectionalCount = fallbackBidirectional,
+            comparatorFailureCount = comparatorFailures,
+            totalCharactersSaved = charactersSaved,
+            totalCharactersGrown = charactersGrown,
+            candidateNanos = candidateNanos,
+            comparatorNanos = comparatorNanos,
+            verificationNanos = verificationNanos,
+            elapsedNanos = System.nanoTime() - started,
+            witnesses = witnesses
+        )
+    }
+
     private data class PostSerializationGeometryCandidate(
         val pathData: String,
         val redundantGeometryChanged: Boolean,
