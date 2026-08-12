@@ -6905,6 +6905,362 @@ internal object SvgPathDataOptimizer {
         )
     }
 
+
+    // G3.17 diagnostic-only classification of the 14 G3.16 final-validation failures.
+    // Production conversion never calls this. The broad corpus does only the minimum
+    // work needed to reproduce G3.16's validation signal; pass 2/pass 3 are computed
+    // only for actual validation-failure witnesses.
+    data class G317ValidationSnapshot(
+        val passed: Boolean,
+        val validatedPathDataCount: Int,
+        val invalidPathDataCount: Int,
+        val nonFiniteNumberCount: Int,
+        val malformedStructureCount: Int,
+        val invalidViewportCount: Int,
+        val unsupportedOutputConstructCount: Int
+    ) {
+        fun reason(): String {
+            if (passed) return "passed"
+            val parts = mutableListOf<String>()
+            if (invalidPathDataCount > 0) parts += "invalid pathData=$invalidPathDataCount"
+            if (nonFiniteNumberCount > 0) parts += "non-finite numbers=$nonFiniteNumberCount"
+            if (malformedStructureCount > 0) parts += "malformed XML structure=$malformedStructureCount"
+            if (invalidViewportCount > 0) parts += "invalid viewport=$invalidViewportCount"
+            if (unsupportedOutputConstructCount > 0) parts += "unsupported output constructs=$unsupportedOutputConstructCount"
+            return if (parts.isEmpty()) "failed for unclassified validator reason" else parts.joinToString(", ")
+        }
+    }
+
+    data class G317FinalValidationWitness(
+        val caseNumber: Int,
+        val sourcePath: String,
+        val firstPassPath: String,
+        val candidatePath: String,
+        val independentSecondPassPath: String,
+        val verificationPassPath: String,
+        val candidateChanged: Boolean,
+        val guardValidationTarget: String,
+        val sourceValidation: G317ValidationSnapshot,
+        val firstPassValidation: G317ValidationSnapshot,
+        val candidateValidation: G317ValidationSnapshot,
+        val independentSecondPassValidation: G317ValidationSnapshot,
+        val verificationPassValidation: G317ValidationSnapshot,
+        val firstFailureStage: String,
+        val candidateMatchedIndependentSecondPass: Boolean,
+        val independentSecondPassWasFixed: Boolean
+    )
+
+    data class G317FinalValidationClassificationResult(
+        val seed: Long,
+        val requestedCases: Int,
+        val generatedCases: Int,
+        val validCases: Int,
+        val rejectedGeneratedCases: Int,
+        val candidateChangedCases: Int,
+        val candidateUnchangedCases: Int,
+        val reproducedFinalValidationFailures: Int,
+        val failureWithChangedCandidate: Int,
+        val failureWithUnchangedCandidate: Int,
+        val sourceAlreadyInvalid: Int,
+        val firstPassIntroducedInvalidity: Int,
+        val candidateIntroducedInvalidity: Int,
+        val candidatePreservedExistingInvalidity: Int,
+        val pass2RecoveredValidity: Int,
+        val pass2StillInvalid: Int,
+        val pass3StillInvalid: Int,
+        val failureCandidatePass2Mismatches: Int,
+        val failureNonFixedSecondPasses: Int,
+        val expectedHistoricalFailures: Int?,
+        val historicalFailureCoverageMatched: Boolean,
+        val validatorReasonCounts: Map<String, Int>,
+        val elapsedNanos: Long,
+        val witnesses: List<G317FinalValidationWitness>
+    ) {
+        fun toPlainTextReport(): String = buildString {
+            appendLine("G3.17 final-validation failure classification")
+            appendLine()
+            appendLine("Seed: $seed")
+            appendLine("Requested cases: $requestedCases")
+            appendLine("Generated cases: $generatedCases")
+            appendLine("Valid comparisons: $validCases")
+            appendLine("Rejected generated cases: $rejectedGeneratedCases")
+            appendLine("G3.15 candidate changed: $candidateChangedCases")
+            appendLine("G3.15 candidate unchanged: $candidateUnchangedCases")
+            appendLine("Reproduced G3.16 final-validation failures: $reproducedFinalValidationFailures")
+            if (expectedHistoricalFailures != null) {
+                appendLine("Historical G3.16 expected validation failures: $expectedHistoricalFailures")
+                appendLine("Historical validation-failure coverage reproduced: $historicalFailureCoverageMatched")
+            }
+            appendLine("Failures with changed candidate: $failureWithChangedCandidate")
+            appendLine("Failures with unchanged candidate: $failureWithUnchangedCandidate")
+            appendLine("Source already invalid: $sourceAlreadyInvalid")
+            appendLine("Pass 1 introduced invalidity: $firstPassIntroducedInvalidity")
+            appendLine("Candidate introduced invalidity: $candidateIntroducedInvalidity")
+            appendLine("Candidate preserved existing invalidity: $candidatePreservedExistingInvalidity")
+            appendLine("Pass 2 recovered validity: $pass2RecoveredValidity")
+            appendLine("Pass 2 still invalid: $pass2StillInvalid")
+            appendLine("Pass 3 still invalid: $pass3StillInvalid")
+            appendLine("Failure candidate/pass-2 mismatches: $failureCandidatePass2Mismatches")
+            appendLine("Failure non-fixed second passes: $failureNonFixedSecondPasses")
+            appendLine("Elapsed: " + String.format(java.util.Locale.US, "%.2f ms", elapsedNanos / 1_000_000.0))
+            if (validatorReasonCounts.isNotEmpty()) {
+                appendLine()
+                appendLine("Validator failure reasons")
+                validatorReasonCounts.toSortedMap().forEach { (reason, count) ->
+                    appendLine("• $reason: $count")
+                }
+            }
+            appendLine()
+            when {
+                !historicalFailureCoverageMatched -> {
+                    appendLine("RESULT: INVALID TEST — G3.17 did not reproduce the historical G3.16 validation-failure count for this seed.")
+                    appendLine("Recommendation: repair the diagnostic harness before drawing any production conclusion.")
+                }
+                reproducedFinalValidationFailures == 0 -> {
+                    appendLine("RESULT: G3.17 reproduced no final-validation failures.")
+                    appendLine("Recommendation: treat the run as inconclusive unless this was a non-historical smoke corpus.")
+                }
+                failureWithChangedCandidate > 0 || candidateIntroducedInvalidity > 0 -> {
+                    appendLine("RESULT: G3.17 found a validation failure that could involve the G3.15 convergence candidate.")
+                    appendLine("Recommendation: keep G3.15 shadow-only and inspect every listed witness before production enablement.")
+                }
+                firstPassIntroducedInvalidity > 0 -> {
+                    appendLine("RESULT: G3.17 found validation failures introduced before G3.15, during the existing pass-1 optimizer.")
+                    appendLine("Recommendation: classify the pass-1 validator limitation separately; the failures are not convergence-induced.")
+                }
+                sourceAlreadyInvalid == reproducedFinalValidationFailures -> {
+                    appendLine("RESULT: every reproduced validation failure was already present in the generated source path and no failure involved a changed G3.15 candidate.")
+                    appendLine("Recommendation: treat the G3.16 final-validation signal as baseline corpus invalidity, then proceed to the guarded production-enablement step after the locked suite remains clean.")
+                }
+                else -> {
+                    appendLine("RESULT: G3.17 reproduced the G3.16 validation failures without implicating a changed G3.15 candidate, but the failures have mixed baseline origins.")
+                    appendLine("Recommendation: review the witnesses before production enablement.")
+                }
+            }
+
+            if (witnesses.isNotEmpty()) {
+                appendLine()
+                appendLine("Validation failure witnesses")
+                witnesses.forEachIndexed { index, w ->
+                    appendLine()
+                    appendLine("${index + 1}. Case ${w.caseNumber}")
+                    appendLine("   Candidate changed: ${w.candidateChanged}")
+                    appendLine("   Guard validation target: ${w.guardValidationTarget}")
+                    appendLine("   First failure stage: ${w.firstFailureStage}")
+                    appendLine("   Source validation: ${w.sourceValidation.reason()}")
+                    appendLine("   Pass-1 validation: ${w.firstPassValidation.reason()}")
+                    appendLine("   Candidate validation: ${w.candidateValidation.reason()}")
+                    appendLine("   Independent pass-2 validation: ${w.independentSecondPassValidation.reason()}")
+                    appendLine("   Verification pass validation: ${w.verificationPassValidation.reason()}")
+                    appendLine("   Candidate matched independent pass 2: ${w.candidateMatchedIndependentSecondPass}")
+                    appendLine("   Independent pass 2 fixed: ${w.independentSecondPassWasFixed}")
+                    appendLine("   Source path: ${w.sourcePath}")
+                    appendLine("   Pass 1: ${w.firstPassPath}")
+                    appendLine("   G3.15 candidate: ${w.candidatePath}")
+                    appendLine("   Independent pass 2: ${w.independentSecondPassPath}")
+                    appendLine("   Verification pass: ${w.verificationPassPath}")
+                }
+            }
+        }
+    }
+
+    private fun g317HistoricalExpectedValidationFailures(seed: Long, caseCount: Int): Int? {
+        if (caseCount != 25_000) return null
+        return when (seed) {
+            0x6316_2026L -> 2
+            0x6316_0001L -> 3
+            0x6316_0002L -> 6
+            0x1D40_2026L -> 3
+            else -> null
+        }
+    }
+
+    private fun g317Snapshot(validation: FinalOutputValidation): G317ValidationSnapshot =
+        G317ValidationSnapshot(
+            passed = validation.passed,
+            validatedPathDataCount = validation.validatedPathDataCount,
+            invalidPathDataCount = validation.invalidPathDataCount,
+            nonFiniteNumberCount = validation.nonFiniteNumberCount,
+            malformedStructureCount = validation.malformedStructureCount,
+            invalidViewportCount = validation.invalidViewportCount,
+            unsupportedOutputConstructCount = validation.unsupportedOutputConstructCount
+        )
+
+    private fun g317FastWrappedPathValidation(pathData: String): G317ValidationSnapshot {
+        val invalidPathData = if (pathData.isBlank() || parseNormalizedSegments(pathData) == null) 1 else 0
+        val nonFinite = Regex(
+            """(?i)(?<![A-Za-z0-9_])(?:NaN|[-+]?Infinity)(?![A-Za-z0-9_])"""
+        ).findAll(pathData).count()
+        return G317ValidationSnapshot(
+            passed = invalidPathData == 0 && nonFinite == 0,
+            validatedPathDataCount = 1,
+            invalidPathDataCount = invalidPathData,
+            nonFiniteNumberCount = nonFinite,
+            malformedStructureCount = 0,
+            invalidViewportCount = 0,
+            unsupportedOutputConstructCount = 0
+        )
+    }
+
+    fun runG317FinalValidationClassificationStressSearch(
+        caseCount: Int = 25_000,
+        seed: Long = 0x6316_2026L,
+        maximumWitnesses: Int = 32,
+        progressCallback: ((processedCases: Int) -> Unit)? = null
+    ): G317FinalValidationClassificationResult {
+        require(caseCount >= 0) { "caseCount must be non-negative" }
+        require(maximumWitnesses >= 0) { "maximumWitnesses must be non-negative" }
+
+        val started = System.nanoTime()
+        val random = Random(seed)
+        val witnesses = mutableListOf<G317FinalValidationWitness>()
+        val validatorReasons = linkedMapOf<String, Int>()
+
+        var generated = 0
+        var valid = 0
+        var rejected = 0
+        var candidateChanged = 0
+        var candidateUnchanged = 0
+        var failures = 0
+        var failuresChanged = 0
+        var failuresUnchanged = 0
+        var sourceAlreadyInvalid = 0
+        var pass1Introduced = 0
+        var candidateIntroduced = 0
+        var candidatePreservedInvalid = 0
+        var pass2Recovered = 0
+        var pass2StillInvalid = 0
+        var pass3StillInvalid = 0
+        var failurePass2Mismatch = 0
+        var failureNonFixed = 0
+
+        repeat(caseCount) { caseIndex ->
+            generated++
+            val sourcePath = generateDifferentialStressPath(random)
+            try {
+                val firstPassPath = optimizePathData(sourcePath).pathData
+                val candidate = runPostSerializationGeometryConvergenceCandidate(firstPassPath).pathData
+                val changed = candidate != firstPassPath
+                if (changed) candidateChanged++ else candidateUnchanged++
+
+                // The G3.16 diagnostic wrapper has fixed, known-valid XML structure, viewport,
+                // and output constructs. Its only variable content is pathData, so this fast
+                // scan is equivalent to the full final validator for broad corpus discovery.
+                val firstValidationFast = g317FastWrappedPathValidation(firstPassPath)
+                val candidateValidationFast = if (changed) {
+                    g317FastWrappedPathValidation(candidate)
+                } else {
+                    firstValidationFast
+                }
+                val guardValidationFast = if (changed) candidateValidationFast else firstValidationFast
+                valid++
+
+                if (!guardValidationFast.passed) {
+                    // Confirm every discovered failure with the exact production validator and
+                    // classify source/pass/candidate/pass2/pass3 only for this tiny population.
+                    val sourceValidation = g317Snapshot(validateFinalVectorXml(buildG316VectorXml(sourcePath)))
+                    val firstValidation = g317Snapshot(validateFinalVectorXml(buildG316VectorXml(firstPassPath)))
+                    val candidateValidation = if (changed) {
+                        g317Snapshot(validateFinalVectorXml(buildG316VectorXml(candidate)))
+                    } else {
+                        firstValidation
+                    }
+                    val guardValidation = if (changed) candidateValidation else firstValidation
+                    if (guardValidation.passed) {
+                        throw IllegalStateException("G3.17 fast validation disagreed with full final validation")
+                    }
+                    failures++
+                    if (changed) failuresChanged++ else failuresUnchanged++
+                    val reason = guardValidation.reason()
+                    validatorReasons[reason] = (validatorReasons[reason] ?: 0) + 1
+
+                    if (!sourceValidation.passed) sourceAlreadyInvalid++
+                    if (sourceValidation.passed && !firstValidation.passed) pass1Introduced++
+                    if (changed && firstValidation.passed && !candidateValidation.passed) candidateIntroduced++
+                    if (changed && !firstValidation.passed && !candidateValidation.passed) candidatePreservedInvalid++
+
+                    // Expensive follow-up work is limited to the small failure population.
+                    val secondPassPath = optimizePathData(firstPassPath).pathData
+                    val verificationPath = optimizePathData(secondPassPath).pathData
+                    val secondValidation = g317Snapshot(validateFinalVectorXml(buildG316VectorXml(secondPassPath)))
+                    val verificationValidation = g317Snapshot(validateFinalVectorXml(buildG316VectorXml(verificationPath)))
+                    if (secondValidation.passed) pass2Recovered++ else pass2StillInvalid++
+                    if (!verificationValidation.passed) pass3StillInvalid++
+                    val matched = candidate == secondPassPath
+                    val fixed = verificationPath == secondPassPath
+                    if (!matched) failurePass2Mismatch++
+                    if (!fixed) failureNonFixed++
+
+                    val firstFailureStage = when {
+                        !sourceValidation.passed -> "source"
+                        !firstValidation.passed -> "pass 1"
+                        changed && !candidateValidation.passed -> "G3.15 candidate"
+                        else -> "guard validation target"
+                    }
+
+                    if (witnesses.size < maximumWitnesses) {
+                        witnesses += G317FinalValidationWitness(
+                            caseNumber = caseIndex + 1,
+                            sourcePath = sourcePath,
+                            firstPassPath = firstPassPath,
+                            candidatePath = candidate,
+                            independentSecondPassPath = secondPassPath,
+                            verificationPassPath = verificationPath,
+                            candidateChanged = changed,
+                            guardValidationTarget = if (changed) "G3.15 candidate" else "pass 1 (candidate unchanged)",
+                            sourceValidation = sourceValidation,
+                            firstPassValidation = firstValidation,
+                            candidateValidation = candidateValidation,
+                            independentSecondPassValidation = secondValidation,
+                            verificationPassValidation = verificationValidation,
+                            firstFailureStage = firstFailureStage,
+                            candidateMatchedIndependentSecondPass = matched,
+                            independentSecondPassWasFixed = fixed
+                        )
+                    }
+                }
+            } catch (_: Throwable) {
+                rejected++
+            }
+
+            val processed = caseIndex + 1
+            if (progressCallback != null && (processed == caseCount || processed % 250 == 0)) {
+                progressCallback(processed)
+            }
+        }
+        if (caseCount == 0) progressCallback?.invoke(0)
+
+        val expected = g317HistoricalExpectedValidationFailures(seed, caseCount)
+        val coverageMatched = expected == null || failures == expected
+
+        return G317FinalValidationClassificationResult(
+            seed = seed,
+            requestedCases = caseCount,
+            generatedCases = generated,
+            validCases = valid,
+            rejectedGeneratedCases = rejected,
+            candidateChangedCases = candidateChanged,
+            candidateUnchangedCases = candidateUnchanged,
+            reproducedFinalValidationFailures = failures,
+            failureWithChangedCandidate = failuresChanged,
+            failureWithUnchangedCandidate = failuresUnchanged,
+            sourceAlreadyInvalid = sourceAlreadyInvalid,
+            firstPassIntroducedInvalidity = pass1Introduced,
+            candidateIntroducedInvalidity = candidateIntroduced,
+            candidatePreservedExistingInvalidity = candidatePreservedInvalid,
+            pass2RecoveredValidity = pass2Recovered,
+            pass2StillInvalid = pass2StillInvalid,
+            pass3StillInvalid = pass3StillInvalid,
+            failureCandidatePass2Mismatches = failurePass2Mismatch,
+            failureNonFixedSecondPasses = failureNonFixed,
+            expectedHistoricalFailures = expected,
+            historicalFailureCoverageMatched = coverageMatched,
+            validatorReasonCounts = validatorReasons.toMap(),
+            elapsedNanos = System.nanoTime() - started,
+            witnesses = witnesses
+        )
+    }
+
     private data class PostSerializationGeometryCandidate(
         val pathData: String,
         val redundantGeometryChanged: Boolean,

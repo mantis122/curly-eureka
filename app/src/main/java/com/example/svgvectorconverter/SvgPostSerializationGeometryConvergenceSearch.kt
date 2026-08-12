@@ -485,4 +485,166 @@ object SvgPostSerializationGeometryConvergenceSearch {
         }
     }
 
+
+    fun runG317Default(
+        progressCallback: ((Progress) -> Unit)? = null
+    ): String = runG317(
+        casesPerSeed = 25_000,
+        seeds = listOf(
+            0x6316_2026L,
+            0x6316_0001L,
+            0x6316_0002L,
+            0x1D40_2026L
+        ),
+        progressCallback = progressCallback
+    )
+
+    fun runG317(
+        casesPerSeed: Int,
+        seeds: List<Long>,
+        progressCallback: ((Progress) -> Unit)? = null
+    ): String {
+        require(casesPerSeed >= 0) { "casesPerSeed must be non-negative" }
+        require(seeds.isNotEmpty()) { "At least one seed is required" }
+
+        val started = System.nanoTime()
+        val totalCases = casesPerSeed * seeds.size
+        val availableProcessors = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val workerCount = minOf(4, seeds.size, availableProcessors)
+        val perSeedProgress = AtomicIntegerArray(seeds.size)
+        val executor = Executors.newFixedThreadPool(workerCount)
+
+        val futures = seeds.mapIndexed { index, seed ->
+            executor.submit<SvgPathDataOptimizer.G317FinalValidationClassificationResult> {
+                SvgPathDataOptimizer.runG317FinalValidationClassificationStressSearch(
+                    caseCount = casesPerSeed,
+                    seed = seed,
+                    maximumWitnesses = 32,
+                    progressCallback = { currentSeedProcessed ->
+                        perSeedProgress.set(index, currentSeedProcessed)
+                        if (progressCallback != null) {
+                            val snapshot = List(seeds.size) { seedIndex ->
+                                perSeedProgress.get(seedIndex)
+                            }
+                            progressCallback.invoke(
+                                Progress(
+                                    completedCases = snapshot.sum(),
+                                    totalCases = totalCases,
+                                    workerCount = workerCount,
+                                    perSeedProcessed = snapshot,
+                                    casesPerSeed = casesPerSeed
+                                )
+                            )
+                        }
+                    }
+                )
+            }
+        }
+
+        val results = try {
+            futures.map { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        val valid = results.sumOf { it.validCases }
+        val rejected = results.sumOf { it.rejectedGeneratedCases }
+        val changed = results.sumOf { it.candidateChangedCases }
+        val unchanged = results.sumOf { it.candidateUnchangedCases }
+        val failures = results.sumOf { it.reproducedFinalValidationFailures }
+        val failuresChanged = results.sumOf { it.failureWithChangedCandidate }
+        val failuresUnchanged = results.sumOf { it.failureWithUnchangedCandidate }
+        val sourceInvalid = results.sumOf { it.sourceAlreadyInvalid }
+        val pass1Introduced = results.sumOf { it.firstPassIntroducedInvalidity }
+        val candidateIntroduced = results.sumOf { it.candidateIntroducedInvalidity }
+        val candidatePreserved = results.sumOf { it.candidatePreservedExistingInvalidity }
+        val pass2Recovered = results.sumOf { it.pass2RecoveredValidity }
+        val pass2Invalid = results.sumOf { it.pass2StillInvalid }
+        val pass3Invalid = results.sumOf { it.pass3StillInvalid }
+        val pass2Mismatches = results.sumOf { it.failureCandidatePass2Mismatches }
+        val nonFixed = results.sumOf { it.failureNonFixedSecondPasses }
+        val historicalExpected = results.mapNotNull { it.expectedHistoricalFailures }
+        val historicalChecksRequired = historicalExpected.size
+        val historicalChecksPassed = results.count {
+            it.expectedHistoricalFailures != null && it.historicalFailureCoverageMatched
+        }
+        val historicalMatched = historicalChecksRequired == 0 || historicalChecksPassed == historicalChecksRequired
+        val reasonCounts = linkedMapOf<String, Int>()
+        results.forEach { result ->
+            result.validatorReasonCounts.forEach { (reason, count) ->
+                reasonCounts[reason] = (reasonCounts[reason] ?: 0) + count
+            }
+        }
+        val elapsed = System.nanoTime() - started
+
+        return buildString {
+            appendLine("G3.17 automated final-validation failure classification")
+            appendLine()
+            appendLine("Seeds: ${seeds.size}")
+            appendLine("Cases per seed: $casesPerSeed")
+            appendLine("Parallel workers: $workerCount")
+            appendLine("Available processors: $availableProcessors")
+            appendLine("Valid comparisons: $valid")
+            appendLine("Rejected generated cases: $rejected")
+            appendLine("G3.15 candidate changed: $changed")
+            appendLine("G3.15 candidate unchanged: $unchanged")
+            appendLine("Reproduced G3.16 final-validation failures: $failures")
+            if (historicalChecksRequired > 0) {
+                appendLine("Historical G3.16 expected validation failures: ${historicalExpected.sum()}")
+                appendLine("Historical coverage checks passed: $historicalChecksPassed / $historicalChecksRequired")
+                appendLine("Historical validation-failure coverage reproduced: $historicalMatched")
+            }
+            appendLine("Failures with changed candidate: $failuresChanged")
+            appendLine("Failures with unchanged candidate: $failuresUnchanged")
+            appendLine("Source already invalid: $sourceInvalid")
+            appendLine("Pass 1 introduced invalidity: $pass1Introduced")
+            appendLine("Candidate introduced invalidity: $candidateIntroduced")
+            appendLine("Candidate preserved existing invalidity: $candidatePreserved")
+            appendLine("Pass 2 recovered validity: $pass2Recovered")
+            appendLine("Pass 2 still invalid: $pass2Invalid")
+            appendLine("Pass 3 still invalid: $pass3Invalid")
+            appendLine("Failure candidate/pass-2 mismatches: $pass2Mismatches")
+            appendLine("Failure non-fixed second passes: $nonFixed")
+            appendLine("Elapsed: " + String.format(java.util.Locale.US, "%.2f ms", elapsed / 1_000_000.0))
+            if (reasonCounts.isNotEmpty()) {
+                appendLine()
+                appendLine("Validator failure reasons")
+                reasonCounts.toSortedMap().forEach { (reason, count) ->
+                    appendLine("• $reason: $count")
+                }
+            }
+            appendLine()
+            when {
+                !historicalMatched -> {
+                    appendLine("RESULT: INVALID TEST — G3.17 did not reproduce the historical 14-case G3.16 validation signal.")
+                    appendLine("Recommendation: repair the diagnostic harness before making a production-enablement decision.")
+                }
+                failuresChanged > 0 || candidateIntroduced > 0 -> {
+                    appendLine("RESULT: G3.17 found validation failures that could implicate a changed G3.15 convergence candidate.")
+                    appendLine("Recommendation: keep G3.15 shadow-only and inspect every failure witness.")
+                }
+                failures == 14 && failuresUnchanged == 14 -> {
+                    appendLine("RESULT: G3.17 reproduced all 14 historical G3.16 final-validation failures, and every failure occurred where the G3.15 candidate was unchanged.")
+                    if (pass1Introduced > 0) {
+                        appendLine("Recommendation: the convergence guard is not implicated; classify the pass-1 validator failures separately before production enablement.")
+                    } else {
+                        appendLine("Recommendation: the convergence guard is not implicated; treat the signal as baseline corpus invalidity and proceed to the guarded production-enablement step after the locked suite remains clean.")
+                    }
+                }
+                valid > 0 -> {
+                    appendLine("RESULT: G3.17 completed without finding a changed-candidate validation failure.")
+                    appendLine("Recommendation: review the witness classifications before production enablement.")
+                }
+                else -> appendLine("RESULT: no valid comparisons were produced.")
+            }
+
+            results.forEachIndexed { index, result ->
+                appendLine()
+                appendLine("────────────────────────────────")
+                appendLine("Seed ${index + 1}")
+                append(result.toPlainTextReport())
+            }
+        }
+    }
+
 }
