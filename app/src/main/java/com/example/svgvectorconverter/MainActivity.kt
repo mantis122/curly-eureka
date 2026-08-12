@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
     private var currentG314ConvergenceReport = ""
     private var currentG316GuardedTrialReport = ""
     private var currentG317ValidationClassificationReport = ""
+    private var currentG318EmptyMoveOnlyIntegrationReport = ""
 
     private fun makeButton(
         label: String,
@@ -322,6 +323,15 @@ class MainActivity : ComponentActivity() {
         if (uri != null && currentG317ValidationClassificationReport.isNotBlank()) {
             FileIoHelpers.writeTextToUri(this, uri, currentG317ValidationClassificationReport)
             toast("G3.17 validation-classification report saved")
+        }
+    }
+
+    private val saveG318EmptyMoveOnlyIntegrationReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentG318EmptyMoveOnlyIntegrationReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(this, uri, currentG318EmptyMoveOnlyIntegrationReport)
+            toast("G3.18 integration report saved")
         }
     }
 
@@ -1250,6 +1260,29 @@ class MainActivity : ComponentActivity() {
                 reports whether invalidity already existed in the source, was
                 introduced by pass 1, or could involve a changed G3.15 candidate.
                 Production behavior remains unchanged.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        val g318Button =
+            makeButton("Run G3.18 Empty / Move-Only Integration Check") {
+                runG318EmptyMoveOnlyIntegrationCheck()
+            }
+        layout.addView(g318Button, LinearLayout.LayoutParams(-1, -2))
+
+        layout.addView(
+            makeText(
+                """
+                Replays all 14 G3.17 move-only witnesses plus focused controls
+                through the real VectorDrawable production optimizer entry point.
+                Verifies that empty/move-only paths are pruned, drawable siblings
+                survive, empty groups are cleaned up, no android:pathData="" is
+                emitted, and final VectorDrawable validation passes. Diagnostic-only;
+                production behavior remains unchanged.
                 """.trimIndent(),
                 14f,
                 Color.GRAY,
@@ -3835,6 +3868,143 @@ class MainActivity : ComponentActivity() {
             )
         )
         toast("G3.17 validation-classification report copied")
+    }
+
+    private fun runG318EmptyMoveOnlyIntegrationCheck() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+        val progressBar = ProgressBar(this)
+        val statusText = makeText(
+            "Running 22 targeted integration cases…",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 24, 0, 0) }
+        val noteText = makeText(
+            "14 historical G3.17 witnesses + 8 focused production controls.",
+            12f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 8, 0, 0) }
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(noteText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.18 Empty / Move-Only Integration Check")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgEmptyMoveOnlyIntegrationSearch.run()
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("G3.18 move-only / empty-path production integration check")
+                    appendLine()
+                    appendLine("RESULT: The integration check could not be completed.")
+                    appendLine()
+                    appendLine(throwable.message ?: throwable::class.java.simpleName)
+                }
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentG318EmptyMoveOnlyIntegrationReport = report
+                    showG318EmptyMoveOnlyIntegrationResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showG318EmptyMoveOnlyIntegrationResultsDialog(report: String) {
+        val failed = report.contains("could not be completed")
+        val clean = report.contains(
+            "RESULT: G3.18 confirmed that production optimization prunes move-only/empty paths"
+        )
+        val summaryText: String
+        val summaryColor: Int
+        when {
+            failed -> {
+                summaryText = "✕ G3.18 could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+            clean -> {
+                summaryText = "✓ G3.18 production integration passed"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+            else -> {
+                summaryText = "⚠ G3.18 found an integration issue"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+        layout.addView(makeText(summaryText, 18f, summaryColor, Gravity.START, paddingBottom = 16))
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        val reportScroll = ScrollView(this).apply { addView(reportView) }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+        val copyButton = makeButton("Copy Results") { copyG318EmptyMoveOnlyIntegrationReport() }
+        val saveButton = makeButton("Save .txt") {
+            saveG318EmptyMoveOnlyIntegrationReport.launch(
+                "g3_18_empty_move_only_integration_report.txt"
+            )
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+        val rerunButton = makeButton("Run Again") { runG318EmptyMoveOnlyIntegrationCheck() }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.18 Integration Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+        dialog.show()
+    }
+
+    private fun copyG318EmptyMoveOnlyIntegrationReport() {
+        if (currentG318EmptyMoveOnlyIntegrationReport.isBlank()) {
+            toast("No G3.18 integration report to copy")
+            return
+        }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "g3_18_empty_move_only_integration_report.txt",
+                currentG318EmptyMoveOnlyIntegrationReport
+            )
+        )
+        toast("G3.18 integration report copied")
     }
 
 
