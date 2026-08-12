@@ -593,6 +593,36 @@ internal object SvgPathSampler {
             "equivalent under G3.12 exact bookkeeping + bidirectional adaptive polyline distance")
     }
 
+    /**
+     * G3.13 diagnostic-only comparator. Exact ordered traversal is a proof of
+     * equivalence and bypasses Float flattening/length bookkeeping. Pairs that
+     * are not exactly traversal-identical fall through to the G3.12 comparator.
+     */
+    internal fun exactTraversalShortCircuitGeometryDiagnostic(
+        first: String,
+        second: String,
+        curveSteps: Int = 256
+    ): BidirectionalPolylineDiagnostic {
+        val exact = SvgPathDataOptimizer.orderedTraversalPairDiagnostic(first, second)
+        if (exact.parseable && exact.endpointsPreserved && exact.orderedTraversalPreserved) {
+            return BidirectionalPolylineDiagnostic(
+                equivalent = true,
+                firstSubpaths = 0,
+                secondSubpaths = 0,
+                firstVertices = 0,
+                secondVertices = 0,
+                maximumFirstToSecondDeviation = 0.0,
+                maximumSecondToFirstDeviation = 0.0,
+                firstOffendingPoint = "",
+                secondOffendingPoint = "",
+                firstNearestSegment = "",
+                secondNearestSegment = "",
+                reason = "equivalent under G3.13 exact ordered-traversal short-circuit"
+            )
+        }
+        return bidirectionalPolylineGeometryDiagnostic(first, second, curveSteps)
+    }
+
     private data class DirectedDeviation(val distance:Double,val point:Point,val segment:String)
 
     private fun directedPolylineDeviation(source:List<Point>, target:List<Point>):DirectedDeviation {

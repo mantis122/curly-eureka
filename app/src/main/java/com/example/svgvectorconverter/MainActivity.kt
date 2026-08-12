@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
     private var currentBidirectionalPolylineGeometryReport = ""
     private var currentOrderedCollinearTraversalReport = ""
     private var currentBidirectionalComparatorRepairReport = ""
+    private var currentExactTraversalShortCircuitReport = ""
 
     private fun makeButton(
         label: String,
@@ -282,6 +283,15 @@ class MainActivity : ComponentActivity() {
         if (uri != null && currentBidirectionalComparatorRepairReport.isNotBlank()) {
             FileIoHelpers.writeTextToUri(this, uri, currentBidirectionalComparatorRepairReport)
             toast("G3.12 comparator-repair report saved")
+        }
+    }
+
+    private val saveExactTraversalShortCircuitReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentExactTraversalShortCircuitReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(this, uri, currentExactTraversalShortCircuitReport)
+            toast("G3.13 exact-traversal report saved")
         }
     }
 
@@ -1086,6 +1096,32 @@ class MainActivity : ComponentActivity() {
                 reversal, perpendicular-offset, and closure mutations to prove
                 the repair did not simply make the comparator more permissive.
                 Production optimization behavior is unchanged.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        val exactTraversalShortCircuitButton =
+            makeButton("Run G3.13 Exact Traversal Short-Circuit Validation") {
+                runExactTraversalShortCircuitSearch()
+            }
+        layout.addView(
+            exactTraversalShortCircuitButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Replays the five G3.10 survivors and targeted controls/mutations.
+                When G3.11's exact BigDecimal traversal signature proves two
+                paths have identical ordered geometry, G3.13 accepts them before
+                Float flattening or traveled-length bookkeeping. Non-identical
+                traversal falls through to the existing G3.12 bidirectional
+                comparator. Production optimization behavior is unchanged.
                 """.trimIndent(),
                 14f,
                 Color.GRAY,
@@ -2889,6 +2925,174 @@ class MainActivity : ComponentActivity() {
             )
         )
         toast("G3.12 comparator-repair report copied")
+    }
+
+    private fun runExactTraversalShortCircuitSearch() {
+        val totalChecks = 17
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+        val progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = false
+            max = totalChecks
+            progress = 0
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val statusText = makeText(
+            "Progress: 0.0%  •  0 / $totalChecks",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 24, 0, 0) }
+        val detailText = makeText(
+            "Preparing survivor replays…",
+            13f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 12, 0, 0) }
+        val noteText = makeText(
+            "Diagnostic-only; production optimization is unchanged.",
+            12f,
+            Color.GRAY,
+            Gravity.CENTER
+        ).apply { setPadding(0, 8, 0, 0) }
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+        progressLayout.addView(detailText)
+        progressLayout.addView(noteText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.13 Exact Traversal Short-Circuit")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        Thread {
+            val report = try {
+                SvgExactTraversalShortCircuitSearch.run { progress ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed && progressDialog.isShowing) {
+                            progressBar.max = progress.totalChecks.coerceAtLeast(1)
+                            progressBar.progress = progress.completedChecks.coerceIn(0, progressBar.max)
+                            statusText.text = String.format(
+                                java.util.Locale.US,
+                                "Progress: %.1f%%  •  %,d / %,d",
+                                progress.percentComplete,
+                                progress.completedChecks,
+                                progress.totalChecks
+                            )
+                            detailText.text = progress.label
+                        }
+                    }
+                }
+            } catch (throwable: Throwable) {
+                buildString {
+                    appendLine("G3.13 exact ordered-traversal short-circuit validation")
+                    appendLine()
+                    appendLine("RESULT: The validation could not be completed.")
+                    appendLine()
+                    appendLine(throwable.message ?: throwable::class.java.simpleName)
+                    appendLine()
+                    appendLine("Check that SvgExactTraversalShortCircuitSearch.kt and the G3.13 version of SvgPathSampler.kt are included in the app.")
+                }
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentExactTraversalShortCircuitReport = report
+                    showExactTraversalShortCircuitResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun showExactTraversalShortCircuitResultsDialog(report: String) {
+        val failed = report.contains("could not be completed", ignoreCase = true)
+        val validationFailed = report.contains("RESULT: G3.13 short-circuit validation failed.")
+        val summaryText: String
+        val summaryColor: Int
+        when {
+            failed -> {
+                summaryText = "✕ Validation could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+            validationFailed -> {
+                summaryText = "⚠ Exact traversal short-circuit has failures"
+                summaryColor = Color.rgb(190, 110, 0)
+            }
+            else -> {
+                summaryText = "✓ Exact traversal short-circuit validated"
+                summaryColor = Color.rgb(30, 120, 55)
+            }
+        }
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+        layout.addView(makeText(summaryText, 18f, summaryColor, Gravity.START, paddingBottom = 16))
+
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        val reportScroll = ScrollView(this).apply { addView(reportView) }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val copyButton = makeButton("Copy Results") { copyExactTraversalShortCircuitReport() }
+        val saveButton = makeButton("Save .txt") {
+            saveExactTraversalShortCircuitReport.launch("g3_13_exact_traversal_short_circuit_report.txt")
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+        val rerunButton = makeButton("Run Again") { runExactTraversalShortCircuitSearch() }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("G3.13 Exact Traversal Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+        dialog.show()
+    }
+
+    private fun copyExactTraversalShortCircuitReport() {
+        if (currentExactTraversalShortCircuitReport.isBlank()) {
+            toast("No G3.13 exact-traversal report to copy")
+            return
+        }
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "g3_13_exact_traversal_short_circuit_report.txt",
+                currentExactTraversalShortCircuitReport
+            )
+        )
+        toast("G3.13 exact-traversal report copied")
     }
 
     private fun runBidirectionalPolylineGeometrySearch(forceRestart: Boolean = false) {
