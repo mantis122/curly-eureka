@@ -6574,6 +6574,8 @@ internal object SvgPathDataOptimizer {
         val totalCharactersAdded: Long,
         val guardNanos: Long,
         val elapsedNanos: Long,
+        val expectedHistoricalChangedCandidates: Int?,
+        val historicalCoverageMatched: Boolean,
         val rejectionReasonCounts: Map<String, Int>,
         val witnesses: List<G316GuardedProductionTrialWitness>
     ) {
@@ -6587,6 +6589,10 @@ internal object SvgPathDataOptimizer {
             appendLine("Rejected generated cases: $rejectedGeneratedCases")
             appendLine("G3.15 candidate unchanged: $candidateUnchanged")
             appendLine("G3.15 candidate changed: $candidateChanged")
+            if (expectedHistoricalChangedCandidates != null) {
+                appendLine("Historical G3.14 expected changed candidates: $expectedHistoricalChangedCandidates")
+                appendLine("Historical G3.14 coverage reproduced: $historicalCoverageMatched")
+            }
             appendLine("Guard accepted: $guardAccepted")
             appendLine("Guard rejected: $guardRejected")
             appendLine("Unsafe accepts: $unsafeAccepts")
@@ -6618,6 +6624,10 @@ internal object SvgPathDataOptimizer {
             }
             appendLine()
             when {
+                !historicalCoverageMatched -> {
+                    appendLine("RESULT: INVALID TEST — G3.16 did not reproduce the historical G3.14 candidate coverage for this seed.")
+                    appendLine("Recommendation: do not use this run for production-enablement decisions; repair the harness before continuing.")
+                }
                 unsafeAccepts > 0 -> {
                     appendLine("RESULT: G3.16 found unsafe G3.15 guard accepts.")
                     appendLine("Recommendation: keep G3.15 shadow-only and inspect every unsafe-accept witness.")
@@ -6679,6 +6689,26 @@ internal object SvgPathDataOptimizer {
         }
     }
 
+    private fun g316HistoricalExpectedChangedCandidates(seed: Long, caseCount: Int): Int? {
+        if (caseCount != 25_000) return null
+        return when (seed) {
+            0x6316_2026L -> 295
+            0x6316_0001L -> 282
+            0x6316_0002L -> 297
+            0x1D40_2026L -> 281
+            else -> null
+        }
+    }
+
+    private fun buildG316VectorXml(pathData: String): String = buildString {
+        append("<vector xmlns:android=\"http://schemas.android.com/apk/res/android\" " )
+        append("android:width=\"24dp\" android:height=\"24dp\" " )
+        append("android:viewportWidth=\"1000\" android:viewportHeight=\"1000\">")
+        append("<path android:pathData=\"")
+        append(pathData)
+        append("\" android:fillColor=\"#FF336699\"/></vector>")
+    }
+
     fun runG316GuardedProductionTrialStressSearch(
         caseCount: Int = 25_000,
         seed: Long = 0x6316_2026L,
@@ -6724,38 +6754,22 @@ internal object SvgPathDataOptimizer {
             generated++
             val sourcePath = generateDifferentialStressPath(random)
             try {
-                val sourceXml = buildString {
-                    append("""<vector xmlns:android="http://schemas.android.com/apk/res/android" """)
-                    append("""android:width="24dp" android:height="24dp" """)
-                    append("""android:viewportWidth="1000" android:viewportHeight="1000">""")
-                    append("""<path android:pathData="""")
-                    append('"')
-                    append(sourcePath)
-                    append('"')
-                    append(""" android:fillColor="#FF336699"/></vector>""")
-                }
+                // G3.16 must enter the corpus at the same path-level boundary as G3.14.
+                // Feeding optimizeVectorXmlSinglePass() output here pre-consumes the narrow
+                // post-serialization convergence opportunity and makes the guard vacuous.
+                val firstPassPath = optimizePathData(sourcePath).pathData
+                val independentSecondPassPath = optimizePathData(firstPassPath).pathData
+                val verificationPassPath = optimizePathData(independentSecondPassPath).pathData
+                val secondPassIsFixed = verificationPassPath == independentSecondPassPath
 
-                val firstPass = optimizeVectorXmlSinglePass(
-                    xml = sourceXml,
-                    pathCache = PathOptimizationCache(),
-                    validationPass = false
-                )
-                val secondPass = optimizeVectorXmlSinglePass(
-                    xml = firstPass.xml,
-                    pathCache = PathOptimizationCache(),
-                    validationPass = true
-                )
-                val thirdPass = optimizeVectorXmlSinglePass(
-                    xml = secondPass.xml,
-                    pathCache = PathOptimizationCache(),
-                    validationPass = true
-                )
-                val secondPassIsFixed = thirdPass.xml == secondPass.xml
+                val firstPassXml = buildG316VectorXml(firstPassPath)
+                val independentSecondPassXml = buildG316VectorXml(independentSecondPassPath)
+                val verificationPassXml = buildG316VectorXml(verificationPassPath)
 
                 val guardStart = System.nanoTime()
                 val trial = runG315GuardedProductionTrial(
-                    firstPassXml = firstPass.xml,
-                    independentSecondPassXml = secondPass.xml,
+                    firstPassXml = firstPassXml,
+                    independentSecondPassXml = independentSecondPassXml,
                     independentSecondPassIsFixed = secondPassIsFixed
                 )
                 guardNanos += System.nanoTime() - guardStart
@@ -6771,7 +6785,7 @@ internal object SvgPathDataOptimizer {
                 val unsafeAccept = trial.guardAccepted && !independentlySafe
                 val falseReject = trial.candidateChanged && independentlySafe && trial.guardRejected
                 val driftOutsideCoverage =
-                    !trial.candidateChanged && secondPass.xml != firstPass.xml
+                    !trial.candidateChanged && independentSecondPassPath != firstPassPath
 
                 valid++
                 if (trial.candidateChanged) candidateChanged++ else candidateUnchanged++
@@ -6815,9 +6829,9 @@ internal object SvgPathDataOptimizer {
                     witnesses += G316GuardedProductionTrialWitness(
                         caseNumber = caseIndex + 1,
                         sourcePath = sourcePath,
-                        firstPassXml = firstPass.xml,
-                        independentSecondPassXml = secondPass.xml,
-                        verificationPassXml = thirdPass.xml,
+                        firstPassXml = firstPassXml,
+                        independentSecondPassXml = independentSecondPassXml,
+                        verificationPassXml = verificationPassXml,
                         candidateChanged = trial.candidateChanged,
                         guardAccepted = trial.guardAccepted,
                         guardRejected = trial.guardRejected,
@@ -6849,6 +6863,11 @@ internal object SvgPathDataOptimizer {
         }
         if (caseCount == 0) progressCallback?.invoke(0)
 
+        val expectedHistoricalChanged =
+            g316HistoricalExpectedChangedCandidates(seed, caseCount)
+        val historicalCoverageMatched =
+            expectedHistoricalChanged == null || candidateChanged == expectedHistoricalChanged
+
         return G316GuardedProductionTrialResult(
             seed = seed,
             requestedCases = caseCount,
@@ -6879,6 +6898,8 @@ internal object SvgPathDataOptimizer {
             totalCharactersAdded = charactersAdded,
             guardNanos = guardNanos,
             elapsedNanos = System.nanoTime() - started,
+            expectedHistoricalChangedCandidates = expectedHistoricalChanged,
+            historicalCoverageMatched = historicalCoverageMatched,
             rejectionReasonCounts = rejectionReasons.toMap(),
             witnesses = witnesses
         )

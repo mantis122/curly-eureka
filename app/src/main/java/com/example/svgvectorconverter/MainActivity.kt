@@ -3492,6 +3492,7 @@ class MainActivity : ComponentActivity() {
 
     private fun showG316GuardedProductionTrialResultsDialog(report: String) {
         val failed = report.contains("could not be completed")
+        val invalidCoverage = report.contains("RESULT: INVALID TEST — G3.16")
         val clean = report.contains(
             "RESULT: G3.16 found no unsafe accepts, false rejects, or accepted-candidate invariant failures"
         )
@@ -3504,6 +3505,10 @@ class MainActivity : ComponentActivity() {
         when {
             failed -> {
                 summaryText = "✕ Search could not be completed"
+                summaryColor = Color.rgb(180, 35, 35)
+            }
+            invalidCoverage -> {
+                summaryText = "✕ G3.16 invalid: historical coverage not reproduced"
                 summaryColor = Color.rgb(180, 35, 35)
             }
             clean && !coverageSignal -> {

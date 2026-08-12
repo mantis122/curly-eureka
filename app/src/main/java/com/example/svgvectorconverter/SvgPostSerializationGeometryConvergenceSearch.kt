@@ -383,6 +383,15 @@ object SvgPostSerializationGeometryConvergenceSearch {
         val saved = results.sumOf { it.totalCharactersSaved }
         val grown = results.sumOf { it.totalCharactersAdded }
         val guardNanos = results.sumOf { it.guardNanos }
+        val historicalCoverageExpected = results.mapNotNull { it.expectedHistoricalChangedCandidates }
+        val historicalCoverageChecksRequired = historicalCoverageExpected.size
+        val historicalCoverageChecksPassed = results.count {
+            it.expectedHistoricalChangedCandidates != null && it.historicalCoverageMatched
+        }
+        val historicalExpectedChangedTotal = historicalCoverageExpected.sum()
+        val historicalCoverageMatched =
+            historicalCoverageChecksRequired == 0 ||
+                historicalCoverageChecksPassed == historicalCoverageChecksRequired
         val rejectionReasons = linkedMapOf<String, Int>()
         results.forEach { result ->
             result.rejectionReasonCounts.forEach { (reason, count) ->
@@ -402,6 +411,11 @@ object SvgPostSerializationGeometryConvergenceSearch {
             appendLine("Rejected generated cases: $rejected")
             appendLine("G3.15 candidate unchanged: $unchanged")
             appendLine("G3.15 candidate changed: $changed")
+            if (historicalCoverageChecksRequired > 0) {
+                appendLine("Historical G3.14 expected changed candidates: $historicalExpectedChangedTotal")
+                appendLine("Historical coverage checks passed: $historicalCoverageChecksPassed / $historicalCoverageChecksRequired")
+                appendLine("Historical G3.14 coverage reproduced: $historicalCoverageMatched")
+            }
             appendLine("Guard accepted: $accepted")
             appendLine("Guard rejected: $guardRejected")
             appendLine("Unsafe accepts: $unsafeAccepts")
@@ -433,6 +447,10 @@ object SvgPostSerializationGeometryConvergenceSearch {
             }
             appendLine()
             when {
+                !historicalCoverageMatched -> {
+                    appendLine("RESULT: INVALID TEST — G3.16 did not reproduce the historical G3.14 candidate coverage.")
+                    appendLine("Recommendation: do not use this run for production-enablement decisions; repair the harness before continuing.")
+                }
                 unsafeAccepts > 0 ||
                     acceptedGeometryFailures > 0 ||
                     acceptedComparatorFailures > 0 ||
