@@ -533,6 +533,21 @@ internal object SvgPathSampler {
         second: String,
         curveSteps: Int = 256
     ): BidirectionalPolylineDiagnostic {
+        val exactBookkeeping = SvgPathDataOptimizer.orderedTraversalPairDiagnostic(first, second)
+        if (!exactBookkeeping.parseable) {
+            return BidirectionalPolylineDiagnostic(false, 0, 0, 0, 0,
+                Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, "", "", "", "",
+                "exact path bookkeeping parse failed")
+        }
+        if (!exactBookkeeping.endpointsPreserved) {
+            return BidirectionalPolylineDiagnostic(false, 0, 0, 0, 0,
+                Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY,
+                exactBookkeeping.firstEndpointSummary,
+                exactBookkeeping.secondEndpointSummary,
+                "", "",
+                "exact open/closed subpath endpoints differ")
+        }
+
         val aMeasured = measure(first, curveSteps)
         val bMeasured = measure(second, curveSteps)
         if (aMeasured == null || bMeasured == null) {
@@ -552,17 +567,15 @@ internal object SvgPathSampler {
         for (i in a.indices) {
             val pa=a[i]; val pb=b[i]
             if (pa.size < 2 || pb.size < 2) continue
-            val aClosed = samePointLoose(pa.first(), pa.last())
-            val bClosed = samePointLoose(pb.first(), pb.last())
-            if (aClosed != bClosed) return BidirectionalPolylineDiagnostic(false,a.size,b.size,av,bv,maxAB,maxBA,pointAB,pointBA,segAB,segBA,
-                "closure differs in subpath ${i+1}")
-            if (!aClosed) {
-                if (!pointEquivalentLoose(pa.first(), pb.first()) || !pointEquivalentLoose(pa.last(), pb.last())) {
-                    return BidirectionalPolylineDiagnostic(false,a.size,b.size,av,bv,maxAB,maxBA,
-                        formatPoint(pa.first()),formatPoint(pb.first()),"","","open-subpath endpoints differ in subpath ${i+1}")
-                }
-            }
-            val la=polylineLength(pa); val lb=polylineLength(pb)
+
+            /*
+             * G3.12 bookkeeping repair:
+             * remove only same-direction collinear subdivision vertices before
+             * traveled-length accounting. Reversals/backtracking remain.
+             */
+            val paLengthBasis = removeMonotonicCollinearSubdivisionVertices(pa)
+            val pbLengthBasis = removeMonotonicCollinearSubdivisionVertices(pb)
+            val la=polylineLength(paLengthBasis); val lb=polylineLength(pbLengthBasis)
             val lenTol=max(1e-4, 1e-7*max(1.0,max(la,lb)))
             if (abs(la-lb)>lenTol) return BidirectionalPolylineDiagnostic(false,a.size,b.size,av,bv,maxAB,maxBA,"","","","",
                 "traveled length differs in subpath ${i+1}: $la vs $lb")
@@ -577,7 +590,7 @@ internal object SvgPathSampler {
                 "bidirectional polyline deviation exceeds tolerance in subpath ${i+1}")
         }
         return BidirectionalPolylineDiagnostic(true,a.size,b.size,av,bv,maxAB,maxBA,pointAB,pointBA,segAB,segBA,
-            "equivalent under bidirectional adaptive polyline distance")
+            "equivalent under G3.12 exact bookkeeping + bidirectional adaptive polyline distance")
     }
 
     private data class DirectedDeviation(val distance:Double,val point:Point,val segment:String)

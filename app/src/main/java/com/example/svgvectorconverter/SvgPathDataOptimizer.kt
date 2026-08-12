@@ -6949,6 +6949,18 @@ internal object SvgPathDataOptimizer {
         val zeroLengthLines: Int
     )
 
+    /** G3.12 diagnostic-only exact bookkeeping comparison. */
+    internal data class OrderedTraversalPairDiagnostic(
+        val parseable: Boolean,
+        val endpointsPreserved: Boolean,
+        val orderedTraversalPreserved: Boolean,
+        val firstEndpointSummary: String,
+        val secondEndpointSummary: String,
+        val firstTraversalSignature: String,
+        val secondTraversalSignature: String
+    )
+
+
     /**
      * G3.11: independently canonicalizes ordered straight-line traversal.
      *
@@ -7128,6 +7140,39 @@ internal object SvgPathDataOptimizer {
             subpathEndpoints = subpathEndpoints,
             reversalPairs = reversalPairs,
             zeroLengthLines = zeroLengthLines
+        )
+    }
+
+    /**
+     * G3.12 exact endpoint/traversal bookkeeping used by diagnostic comparators.
+     * This is deliberately independent of Float flattening and therefore does
+     * not accumulate subdivision-dependent endpoint or path-length error.
+     */
+    internal fun orderedTraversalPairDiagnostic(
+        first: String,
+        second: String
+    ): OrderedTraversalPairDiagnostic {
+        val a = analyzeOrderedTraversal(first)
+        val b = analyzeOrderedTraversal(second)
+        if (a == null || b == null) {
+            return OrderedTraversalPairDiagnostic(
+                parseable = false,
+                endpointsPreserved = false,
+                orderedTraversalPreserved = false,
+                firstEndpointSummary = a?.subpathEndpoints?.joinToString(" | ") ?: "",
+                secondEndpointSummary = b?.subpathEndpoints?.joinToString(" | ") ?: "",
+                firstTraversalSignature = a?.signature ?: "",
+                secondTraversalSignature = b?.signature ?: ""
+            )
+        }
+        return OrderedTraversalPairDiagnostic(
+            parseable = true,
+            endpointsPreserved = a.subpathEndpoints == b.subpathEndpoints,
+            orderedTraversalPreserved = a.signature == b.signature,
+            firstEndpointSummary = a.subpathEndpoints.joinToString(" | "),
+            secondEndpointSummary = b.subpathEndpoints.joinToString(" | "),
+            firstTraversalSignature = a.signature,
+            secondTraversalSignature = b.signature
         )
     }
 
