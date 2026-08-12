@@ -6920,6 +6920,337 @@ internal object SvgPathDataOptimizer {
             finalState.comparisons,finalState.elapsedNanos,finalState.witnesses)
     }
 
+    // G3.11 diagnostic-only investigation. Production conversion never calls this.
+    data class OrderedCollinearTraversalDiagnostic(
+        val source: String,
+        val firstPass: String,
+        val preCollinear: String,
+        val postCollinear: String,
+        val changed: Boolean,
+        val consolidatedSegments: Int,
+        val parseable: Boolean,
+        val endpointsPreserved: Boolean,
+        val orderedTraversalPreserved: Boolean,
+        val traveledLengthPreserved: Boolean,
+        val reversalPairsBefore: Int,
+        val zeroLengthLinesBefore: Int,
+        val reason: String,
+        val beforeTraversalSignature: String,
+        val afterTraversalSignature: String
+    ) {
+        val safe: Boolean
+            get() = parseable && endpointsPreserved && orderedTraversalPreserved && traveledLengthPreserved
+    }
+
+    private data class OrderedTraversalAnalysis(
+        val signature: String,
+        val subpathEndpoints: List<String>,
+        val reversalPairs: Int,
+        val zeroLengthLines: Int
+    )
+
+    /**
+     * G3.11: independently canonicalizes ordered straight-line traversal.
+     *
+     * Consecutive non-zero line segments are merged in the diagnostic signature
+     * only when they are exactly collinear and travel in the same direction.
+     * Reversals/backtracking, zero-length segments, curves, arcs, closes, and
+     * subpath boundaries remain explicit. This gives G3.11 an analytic oracle
+     * that does not depend on the expensive sampled/polyline comparators used by
+     * G3.8-G3.10.
+     */
+    private fun analyzeOrderedTraversal(pathData: String): OrderedTraversalAnalysis? {
+        val segments = parseNormalizedSegments(pathData) ?: return null
+        val signature = mutableListOf<String>()
+        val subpathEndpoints = mutableListOf<String>()
+
+        data class PendingLine(
+            val startX: BigDecimal,
+            val startY: BigDecimal,
+            var endX: BigDecimal,
+            var endY: BigDecimal,
+            val dx: BigDecimal,
+            val dy: BigDecimal
+        )
+
+        var currentX = BigDecimal.ZERO
+        var currentY = BigDecimal.ZERO
+        var subpathX = BigDecimal.ZERO
+        var subpathY = BigDecimal.ZERO
+        var haveSubpath = false
+        var subpathClosed = false
+        var pending: PendingLine? = null
+        var previousLineDx: BigDecimal? = null
+        var previousLineDy: BigDecimal? = null
+        var reversalPairs = 0
+        var zeroLengthLines = 0
+
+        fun number(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
+        fun point(x: BigDecimal, y: BigDecimal): String = "${number(x)},${number(y)}"
+
+        fun sameStrictDirectionAndSlope(
+            firstDx: BigDecimal,
+            firstDy: BigDecimal,
+            secondDx: BigDecimal,
+            secondDy: BigDecimal
+        ): Boolean {
+            if ((firstDx.signum() == 0 && firstDy.signum() == 0) ||
+                (secondDx.signum() == 0 && secondDy.signum() == 0)
+            ) return false
+            val cross = firstDx.multiply(secondDy).subtract(firstDy.multiply(secondDx))
+            if (cross.compareTo(BigDecimal.ZERO) != 0) return false
+            val dot = firstDx.multiply(secondDx).add(firstDy.multiply(secondDy))
+            return dot.signum() > 0
+        }
+
+        fun flushPending() {
+            val line = pending ?: return
+            signature += "LINE:${point(line.startX, line.startY)}>${point(line.endX, line.endY)}"
+            pending = null
+        }
+
+        fun finishSubpath() {
+            if (!haveSubpath) return
+            flushPending()
+            subpathEndpoints += "${point(subpathX, subpathY)}>${point(currentX, currentY)}:${if (subpathClosed) "closed" else "open"}"
+            haveSubpath = false
+            subpathClosed = false
+            previousLineDx = null
+            previousLineDy = null
+        }
+
+        for (segment in segments) {
+            val upper = segment.command.uppercaseChar()
+            val absolute = absoluteValuesFor(segment, currentX, currentY)
+            val startX = currentX
+            val startY = currentY
+
+            val endX: BigDecimal
+            val endY: BigDecimal
+            when (upper) {
+                'M', 'L', 'T' -> {
+                    endX = absolute[0]
+                    endY = absolute[1]
+                }
+                'H' -> {
+                    endX = absolute[0]
+                    endY = currentY
+                }
+                'V' -> {
+                    endX = currentX
+                    endY = absolute[0]
+                }
+                'C' -> {
+                    endX = absolute[4]
+                    endY = absolute[5]
+                }
+                'S', 'Q' -> {
+                    endX = absolute[2]
+                    endY = absolute[3]
+                }
+                'A' -> {
+                    endX = absolute[5]
+                    endY = absolute[6]
+                }
+                'Z' -> {
+                    endX = subpathX
+                    endY = subpathY
+                }
+                else -> return null
+            }
+
+            if (upper == 'M') {
+                finishSubpath()
+                currentX = endX
+                currentY = endY
+                subpathX = endX
+                subpathY = endY
+                haveSubpath = true
+                signature += "M:${point(endX, endY)}"
+                previousLineDx = null
+                previousLineDy = null
+                continue
+            }
+
+            if (!haveSubpath) {
+                haveSubpath = true
+                subpathX = currentX
+                subpathY = currentY
+            }
+
+            val isLine = upper == 'L' || upper == 'H' || upper == 'V'
+            if (isLine) {
+                val dx = endX.subtract(startX)
+                val dy = endY.subtract(startY)
+                if (dx.signum() == 0 && dy.signum() == 0) {
+                    zeroLengthLines++
+                    flushPending()
+                    signature += "ZERO:${point(startX, startY)}"
+                    previousLineDx = null
+                    previousLineDy = null
+                } else {
+                    val prevDx = previousLineDx
+                    val prevDy = previousLineDy
+                    if (prevDx != null && prevDy != null) {
+                        val cross = prevDx.multiply(dy).subtract(prevDy.multiply(dx))
+                        val dot = prevDx.multiply(dx).add(prevDy.multiply(dy))
+                        if (cross.compareTo(BigDecimal.ZERO) == 0 && dot.signum() <= 0) {
+                            reversalPairs++
+                        }
+                    }
+                    val active = pending
+                    if (active != null && sameStrictDirectionAndSlope(active.dx, active.dy, dx, dy)) {
+                        active.endX = endX
+                        active.endY = endY
+                    } else {
+                        flushPending()
+                        pending = PendingLine(startX, startY, endX, endY, dx, dy)
+                    }
+                    previousLineDx = dx
+                    previousLineDy = dy
+                }
+            } else {
+                flushPending()
+                previousLineDx = null
+                previousLineDy = null
+                val values = absolute.joinToString(",") { number(it) }
+                signature += if (upper == 'Z') "Z" else "$upper:$values"
+                if (upper == 'Z') subpathClosed = true
+            }
+
+            currentX = endX
+            currentY = endY
+        }
+        finishSubpath()
+
+        return OrderedTraversalAnalysis(
+            signature = signature.joinToString("|"),
+            subpathEndpoints = subpathEndpoints,
+            reversalPairs = reversalPairs,
+            zeroLengthLines = zeroLengthLines
+        )
+    }
+
+    /**
+     * G3.11 ordered-traversal safety oracle.
+     *
+     * When [productionReplay] is true the path is first run through the normal
+     * optimizer and G3.11 inspects the exact pre/post-collinear pair used by the
+     * G3.7-G3.10 investigations. When false, the supplied path is parsed and
+     * encoded directly before applying only the production collinear stage.
+     */
+    fun diagnoseOrderedCollinearTraversal(
+        pathData: String,
+        productionReplay: Boolean = false
+    ): OrderedCollinearTraversalDiagnostic {
+        val firstPass: String
+        val preCollinear: String
+        val postCollinear: String
+        val consolidatedCount: Int
+
+        if (productionReplay) {
+            firstPass = optimizePathData(pathData).pathData
+            val stages = buildG38CandidateStages(firstPass)
+                ?: return OrderedCollinearTraversalDiagnostic(
+                    source = pathData,
+                    firstPass = firstPass,
+                    preCollinear = firstPass,
+                    postCollinear = firstPass,
+                    changed = false,
+                    consolidatedSegments = 0,
+                    parseable = false,
+                    endpointsPreserved = false,
+                    orderedTraversalPreserved = false,
+                    traveledLengthPreserved = false,
+                    reversalPairsBefore = 0,
+                    zeroLengthLinesBefore = 0,
+                    reason = "candidate stage parse failed",
+                    beforeTraversalSignature = "",
+                    afterTraversalSignature = ""
+                )
+            preCollinear = stages.preCollinear
+            postCollinear = stages.postCollinear
+            consolidatedCount = if (stages.collinearChanged) 1 else 0
+        } else {
+            val parsed = parseNormalizedSegments(pathData)
+                ?: return OrderedCollinearTraversalDiagnostic(
+                    source = pathData,
+                    firstPass = pathData,
+                    preCollinear = pathData,
+                    postCollinear = pathData,
+                    changed = false,
+                    consolidatedSegments = 0,
+                    parseable = false,
+                    endpointsPreserved = false,
+                    orderedTraversalPreserved = false,
+                    traveledLengthPreserved = false,
+                    reversalPairsBefore = 0,
+                    zeroLengthLinesBefore = 0,
+                    reason = "input parse failed",
+                    beforeTraversalSignature = "",
+                    afterTraversalSignature = ""
+                )
+            firstPass = pathData
+            preCollinear = encodeParsedSegments(parsed)
+            val cleanup = consolidateConsecutiveCollinearLineRuns(preCollinear)
+            postCollinear = cleanup.pathData
+            consolidatedCount = cleanup.consolidatedCount
+        }
+
+        val before = analyzeOrderedTraversal(preCollinear)
+        val after = analyzeOrderedTraversal(postCollinear)
+        if (before == null || after == null) {
+            return OrderedCollinearTraversalDiagnostic(
+                source = pathData,
+                firstPass = firstPass,
+                preCollinear = preCollinear,
+                postCollinear = postCollinear,
+                changed = preCollinear != postCollinear,
+                consolidatedSegments = consolidatedCount,
+                parseable = false,
+                endpointsPreserved = false,
+                orderedTraversalPreserved = false,
+                traveledLengthPreserved = false,
+                reversalPairsBefore = before?.reversalPairs ?: 0,
+                zeroLengthLinesBefore = before?.zeroLengthLines ?: 0,
+                reason = "pre/post traversal analysis failed",
+                beforeTraversalSignature = before?.signature ?: "",
+                afterTraversalSignature = after?.signature ?: ""
+            )
+        }
+
+        val endpointsPreserved = before.subpathEndpoints == after.subpathEndpoints
+        val orderedPreserved = before.signature == after.signature
+        // The signature collapses only exact monotonic-collinear line runs. If
+        // it is identical, straight-line travel order and exact line distance
+        // are mathematically identical without floating-point sqrt comparisons.
+        val traveledLengthPreserved = orderedPreserved
+        val reason = when {
+            !endpointsPreserved -> "open/closed subpath endpoint changed"
+            !orderedPreserved -> "ordered line traversal changed"
+            preCollinear == postCollinear -> "collinear stage made no change"
+            else -> "exact ordered traversal preserved"
+        }
+
+        return OrderedCollinearTraversalDiagnostic(
+            source = pathData,
+            firstPass = firstPass,
+            preCollinear = preCollinear,
+            postCollinear = postCollinear,
+            changed = preCollinear != postCollinear,
+            consolidatedSegments = consolidatedCount,
+            parseable = true,
+            endpointsPreserved = endpointsPreserved,
+            orderedTraversalPreserved = orderedPreserved,
+            traveledLengthPreserved = traveledLengthPreserved,
+            reversalPairsBefore = before.reversalPairs,
+            zeroLengthLinesBefore = before.zeroLengthLines,
+            reason = reason,
+            beforeTraversalSignature = before.signature,
+            afterTraversalSignature = after.signature
+        )
+    }
+
     data class PathFixedPointWitness(
         val caseNumber: Int,
         val firstChangingStage: String,
