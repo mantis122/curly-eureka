@@ -331,6 +331,8 @@ internal object SvgPathDataOptimizer {
         val h23LocalCommandShorteningCharacterDelta: Int = 0,
         val h23GlobalCommandMinimizationCharacterDelta: Int = 0,
         val h23GlobalNumericSerializationCharacterDelta: Int = 0,
+        val h24PathSyntaxCandidatesRejectedForSize: Int = 0,
+        val h24PathSyntaxCharactersAvoided: Int = 0,
         val h21PruningCharacterDelta: Int = 0,
         val h21TransformCharacterDelta: Int = 0,
         val h21NearIntegerCharacterDelta: Int = 0,
@@ -965,6 +967,8 @@ internal object SvgPathDataOptimizer {
         var h23LocalCommandShorteningCharacterDelta = 0
         var h23GlobalCommandMinimizationCharacterDelta = 0
         var h23GlobalNumericSerializationCharacterDelta = 0
+        var h24PathSyntaxCandidatesRejectedForSize = 0
+        var h24PathSyntaxCharactersAvoided = 0
 
         val pathSyntaxStartTime = System.nanoTime()
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
@@ -978,47 +982,21 @@ internal object SvgPathDataOptimizer {
 
             pathCount++
             charactersBefore += original.length
-            repeatedCommandsRemoved += optimized.repeatedCommandsRemoved
-            redundantNonDrawingSegmentsRemoved +=
-                optimized.redundantNonDrawingSegmentsRemoved
-            collinearLineSegmentsConsolidated +=
-                optimized.collinearLineSegmentsConsolidated
-            straightBezierCurvesSimplified +=
-                optimized.straightBezierCurvesSimplified
-            degenerateArcsSimplified +=
-                optimized.degenerateArcsSimplified
-            smoothBezierShorthandsSelected +=
-                optimized.smoothBezierShorthandsSelected
-            cubicCurvesReducedToQuadratic +=
-                optimized.cubicCurvesReducedToQuadratic
-            arcRotationsCanonicalized +=
-                optimized.arcRotationsCanonicalized
-            arcRadiiCanonicalized +=
-                optimized.arcRadiiCanonicalized
-            arcHalfTurnRotationsReduced +=
-                optimized.arcHalfTurnRotationsReduced
-            arcAxesSwappedForSize +=
-                optimized.arcAxesSwappedForSize
-            arcRepresentationsGloballyMinimized +=
-                optimized.arcRepresentationsGloballyMinimized
-            commandSequencesGloballyMinimized +=
-                optimized.commandSequencesGloballyMinimized
-            implicitLineTosAfterMoveSelected +=
-                optimized.implicitLineTosAfterMoveSelected
-            repeatedShorthandCurveCommandsOmitted +=
-                optimized.repeatedShorthandCurveCommandsOmitted
-            repeatedFullCurveCommandsOmitted +=
-                optimized.repeatedFullCurveCommandsOmitted
-            repeatedArcCommandsOmitted +=
-                optimized.repeatedArcCommandsOmitted
-            scientificNotationValuesSelected +=
-                optimized.scientificNotationValuesSelected
-            globallyOptimizedNumericPaths +=
-                optimized.globallyOptimizedNumericPaths
-            numbersNormalized += optimized.numbersNormalized
-            shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
-            relativeCommandsSelected += optimized.relativeCommandsSelected
-            axisCommandsSelected += optimized.axisCommandsSelected
+
+            // H2.4: the complete PathData rewrite is a production candidate.
+            // Reject only candidates that are strictly longer than the
+            // original. Equal-length optimized output remains canonical.
+            val pathSyntaxAccepted = optimized.pathData.length <= original.length
+            val selectedPathData = if (pathSyntaxAccepted) {
+                optimized.pathData
+            } else {
+                h24PathSyntaxCandidatesRejectedForSize++
+                h24PathSyntaxCharactersAvoided +=
+                    optimized.pathData.length - original.length
+                original
+            }
+
+            // H2.3 remains attempted-rewrite telemetry.
             h23SyntaxNormalizationCharacterDelta += optimized.h23SyntaxNormalizationCharacterDelta
             h23RedundantGeometryCharacterDelta += optimized.h23RedundantGeometryCharacterDelta
             h23ArcCleanupCharacterDelta += optimized.h23ArcCleanupCharacterDelta
@@ -1028,7 +1006,34 @@ internal object SvgPathDataOptimizer {
             h23GlobalCommandMinimizationCharacterDelta += optimized.h23GlobalCommandMinimizationCharacterDelta
             h23GlobalNumericSerializationCharacterDelta += optimized.h23GlobalNumericSerializationCharacterDelta
 
-            "android:pathData=\"${optimized.pathData}\""
+            // Activity counters describe only rewrites actually emitted.
+            if (pathSyntaxAccepted) {
+                repeatedCommandsRemoved += optimized.repeatedCommandsRemoved
+                redundantNonDrawingSegmentsRemoved += optimized.redundantNonDrawingSegmentsRemoved
+                collinearLineSegmentsConsolidated += optimized.collinearLineSegmentsConsolidated
+                straightBezierCurvesSimplified += optimized.straightBezierCurvesSimplified
+                degenerateArcsSimplified += optimized.degenerateArcsSimplified
+                smoothBezierShorthandsSelected += optimized.smoothBezierShorthandsSelected
+                cubicCurvesReducedToQuadratic += optimized.cubicCurvesReducedToQuadratic
+                arcRotationsCanonicalized += optimized.arcRotationsCanonicalized
+                arcRadiiCanonicalized += optimized.arcRadiiCanonicalized
+                arcHalfTurnRotationsReduced += optimized.arcHalfTurnRotationsReduced
+                arcAxesSwappedForSize += optimized.arcAxesSwappedForSize
+                arcRepresentationsGloballyMinimized += optimized.arcRepresentationsGloballyMinimized
+                commandSequencesGloballyMinimized += optimized.commandSequencesGloballyMinimized
+                implicitLineTosAfterMoveSelected += optimized.implicitLineTosAfterMoveSelected
+                repeatedShorthandCurveCommandsOmitted += optimized.repeatedShorthandCurveCommandsOmitted
+                repeatedFullCurveCommandsOmitted += optimized.repeatedFullCurveCommandsOmitted
+                repeatedArcCommandsOmitted += optimized.repeatedArcCommandsOmitted
+                scientificNotationValuesSelected += optimized.scientificNotationValuesSelected
+                globallyOptimizedNumericPaths += optimized.globallyOptimizedNumericPaths
+                numbersNormalized += optimized.numbersNormalized
+                shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
+                relativeCommandsSelected += optimized.relativeCommandsSelected
+                axisCommandsSelected += optimized.axisCommandsSelected
+            }
+
+            "android:pathData=\"$selectedPathData\""
         }
 
         val colorNormalizationStartTime = System.nanoTime()
@@ -1409,6 +1414,8 @@ internal object SvgPathDataOptimizer {
                 h23LocalCommandShorteningCharacterDelta = h23LocalCommandShorteningCharacterDelta,
                 h23GlobalCommandMinimizationCharacterDelta = h23GlobalCommandMinimizationCharacterDelta,
                 h23GlobalNumericSerializationCharacterDelta = h23GlobalNumericSerializationCharacterDelta,
+                h24PathSyntaxCandidatesRejectedForSize = h24PathSyntaxCandidatesRejectedForSize,
+                h24PathSyntaxCharactersAvoided = h24PathSyntaxCharactersAvoided,
                 h21PruningCharacterDelta = h21PruningCharacterDelta,
                 h21TransformCharacterDelta = h21TransformCharacterDelta,
                 h21NearIntegerCharacterDelta = h21NearIntegerCharacterDelta,

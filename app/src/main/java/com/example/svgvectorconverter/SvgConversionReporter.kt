@@ -419,6 +419,8 @@ class SvgConversionReportData {
     var h23LocalCommandShorteningCharacterDelta: Int = 0
     var h23GlobalCommandMinimizationCharacterDelta: Int = 0
     var h23GlobalNumericSerializationCharacterDelta: Int = 0
+    var h24PathSyntaxCandidatesRejectedForSize: Int = 0
+    var h24PathSyntaxCharactersAvoided: Int = 0
     var h21PruningCharacterDelta: Int = 0
     var h21TransformCharacterDelta: Int = 0
     var h21NearIntegerCharacterDelta: Int = 0

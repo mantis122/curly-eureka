@@ -617,6 +617,10 @@ object SvgToVectorConverter {
         reportData.h23LocalCommandShorteningCharacterDelta = pathOptimizationStats.h23LocalCommandShorteningCharacterDelta
         reportData.h23GlobalCommandMinimizationCharacterDelta = pathOptimizationStats.h23GlobalCommandMinimizationCharacterDelta
         reportData.h23GlobalNumericSerializationCharacterDelta = pathOptimizationStats.h23GlobalNumericSerializationCharacterDelta
+        reportData.h24PathSyntaxCandidatesRejectedForSize =
+            pathOptimizationStats.h24PathSyntaxCandidatesRejectedForSize
+        reportData.h24PathSyntaxCharactersAvoided =
+            pathOptimizationStats.h24PathSyntaxCharactersAvoided
         reportData.h21PruningCharacterDelta = pathOptimizationStats.h21PruningCharacterDelta
         reportData.h21TransformCharacterDelta = pathOptimizationStats.h21TransformCharacterDelta
         reportData.h21NearIntegerCharacterDelta = pathOptimizationStats.h21NearIntegerCharacterDelta

@@ -102,7 +102,7 @@ object SvgProductionCorpusProfiler {
 
             return buildString {
                 appendLine("H1 production corpus profile")
-                appendLine("Instrumentation level: H2.3")
+                appendLine("Instrumentation level: H2.4")
                 appendLine()
                 appendLine("Mode: diagnostic only; normal production conversion pipeline")
                 appendLine("Files selected: ${files.size}")
@@ -191,7 +191,7 @@ object SvgProductionCorpusProfiler {
                     appendCounter("Uniform-scale groups preserved because flattening was not smaller", sumInt { it.scaleGroupsPreservedForSize })
                     appendCounter("Non-uniform-scale groups preserved because flattening was not smaller", sumInt { it.nonUniformScaleGroupsPreservedForSize })
                     appendCounter("Rotation groups preserved because flattening was not smaller", sumInt { it.rotationGroupsPreservedForSize })
-                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H2.3 does not relax those rules.")
+                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H2.4 does not relax those rules.")
 
                     val validationFailures = successful.filter { (_, d) -> !d.finalOutputValidationPassed }
                     appendLine()
@@ -275,7 +275,23 @@ object SvgProductionCorpusProfiler {
                     h23StageTotals.forEach { (label, delta) ->
                         appendLine("$label: ${formatSignedStageDelta(delta)}")
                     }
-                    appendLine("Note: H2.3 internal deltas should sum to the H2.2 PathData syntax delta.")
+                    appendLine("Note: H2.3 internal deltas describe attempted rewrites; H2.4 may reject a larger completed candidate.")
+
+                    appendLine()
+                    appendLine("H2.4 whole-path production size guard")
+                    appendLine("────────────────────────────────")
+                    appendLine(
+                        "Completed PathData rewrites rejected for size: " +
+                            formatCount(sumInt { it.h24PathSyntaxCandidatesRejectedForSize })
+                    )
+                    appendLine(
+                        "Characters of path growth avoided: " +
+                            formatCount(sumInt { it.h24PathSyntaxCharactersAvoided })
+                    )
+                    appendLine(
+                        "Policy: accept the completed PathData rewrite only when its length is <= the original; " +
+                            "equal-length optimized output is retained."
+                    )
 
                     val regressionFiles = successful.filter { (_, data) ->
                         data.optimizedXmlCharactersAfter > data.optimizedXmlCharactersBefore
@@ -439,6 +455,12 @@ object SvgProductionCorpusProfiler {
                                 "format=${formatNanos(data.optimizationFormattingNanos)}, " +
                                 "other=${formatNanos(fileFirstPassOther)}"
                         )
+                        if (data.h24PathSyntaxCandidatesRejectedForSize > 0) {
+                            appendLine(
+                                "    H2.4 size guard: rejected=${data.h24PathSyntaxCandidatesRejectedForSize}, " +
+                                    "growthAvoided=${data.h24PathSyntaxCharactersAvoided} chars"
+                            )
+                        }
                         if (data.adjacentPathPairsExamined > 0 ||
                             data.compatiblePathsMerged > 0 ||
                             data.compatiblePathMergesPreservedForSize > 0
