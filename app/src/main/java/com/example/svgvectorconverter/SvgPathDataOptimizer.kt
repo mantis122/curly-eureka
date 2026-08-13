@@ -575,28 +575,35 @@ internal object SvgPathDataOptimizer {
                     pathsChanged++
                     geometryComparisons++
                     val comparatorStart = System.nanoTime()
-                    val diagnostic =
-                        SvgPathSampler.exactTraversalShortCircuitGeometryDiagnostic(
-                            before,
-                            candidate
-                        )
+
+                    // G3.20c production safety:
+                    // Use only the exact ordered-traversal oracle here.
+                    // SvgPathSampler.exactTraversalShortCircuitGeometryDiagnostic()
+                    // deliberately falls back to the G3.12 adaptive bidirectional
+                    // comparator when exact proof fails. G3.10 demonstrated that
+                    // fallback can be catastrophically expensive for extreme
+                    // coordinates, so it must never run on the interactive
+                    // production conversion path.
+                    //
+                    // If exact equivalence cannot be proven, fail closed and keep
+                    // pass 1. The expensive fallback remains available to
+                    // developer diagnostics only.
+                    val exactDiagnostic =
+                        orderedTraversalPairDiagnostic(before, candidate)
+
                     comparatorNanos += System.nanoTime() - comparatorStart
 
-                    val exact =
-                        diagnostic.reason.contains(
-                            "G3.13 exact ordered-traversal short-circuit"
-                        )
-                    if (exact) exactShortCircuits++ else fallbackBidirectional++
-
-                    if (!diagnostic.equivalent) geometryMismatches++
                     if (
-                        diagnostic.reason.contains("parse failed", ignoreCase = true) ||
-                        diagnostic.reason.contains(
-                            "could not be flattened",
-                            ignoreCase = true
-                        )
+                        exactDiagnostic.parseable &&
+                        exactDiagnostic.endpointsPreserved &&
+                        exactDiagnostic.orderedTraversalPreserved
                     ) {
-                        comparatorFailures++
+                        exactShortCircuits++
+                    } else {
+                        geometryMismatches++
+                        if (!exactDiagnostic.parseable) {
+                            comparatorFailures++
+                        }
                     }
                 }
             }
