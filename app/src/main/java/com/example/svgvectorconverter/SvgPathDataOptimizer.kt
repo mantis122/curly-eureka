@@ -421,13 +421,13 @@ internal object SvgPathDataOptimizer {
         )
 
         if (secondPassMatchesFirst) {
-            val g315Trial = runG315GuardedProductionTrial(
+            val productionConvergenceTrial = runGuardedProductionConvergenceTrial(
                 firstPassXml = firstPass.xml,
                 independentSecondPassXml = secondPass.xml,
                 independentSecondPassIsFixed = true
             )
             val selectedXml =
-                if (g315Trial.guardAccepted) g315Trial.candidateXml else firstPass.xml
+                if (productionConvergenceTrial.guardAccepted) productionConvergenceTrial.candidateXml else firstPass.xml
             val selectedPathCharacters = pathDataAttributeRegex.findAll(selectedXml)
                 .sumOf { it.groupValues[1].length }
             return attachFinalOutputValidation(
@@ -450,7 +450,7 @@ internal object SvgPathDataOptimizer {
                         optimizerFirstPassChangedXml = firstPass.xml != xml,
                         optimizerSecondPassChangedXml = false,
                         optimizerThirdPassChangedXml = false,
-                        g315GuardedProductionTrial = g315Trial
+                        g315GuardedProductionTrial = productionConvergenceTrial
                     )
                 )
             )
@@ -469,14 +469,14 @@ internal object SvgPathDataOptimizer {
         )
         val thirdPassNanos = System.nanoTime() - thirdPassStartTime
         val reachedFixedPoint = thirdPass.xml == secondPass.xml
-        val g315Trial = runG315GuardedProductionTrial(
+        val productionConvergenceTrial = runGuardedProductionConvergenceTrial(
             firstPassXml = firstPass.xml,
             independentSecondPassXml = secondPass.xml,
             independentSecondPassIsFixed = reachedFixedPoint
         )
 
         val selectedXml =
-            if (g315Trial.guardAccepted) g315Trial.candidateXml else firstPass.xml
+            if (productionConvergenceTrial.guardAccepted) productionConvergenceTrial.candidateXml else firstPass.xml
         val selectedPathCharacters = pathDataAttributeRegex.findAll(selectedXml)
             .sumOf { it.groupValues[1].length }
 
@@ -500,20 +500,23 @@ internal object SvgPathDataOptimizer {
                     optimizerFirstPassChangedXml = firstPass.xml != xml,
                     optimizerSecondPassChangedXml = secondPass.xml != firstPass.xml,
                     optimizerThirdPassChangedXml = thirdPass.xml != secondPass.xml,
-                    g315GuardedProductionTrial = g315Trial
+                    g315GuardedProductionTrial = productionConvergenceTrial
                 )
             )
         )
     }
 
-    // G3.19 guarded production convergence.
+    // Guarded production convergence.
     //
-    // The G3.15 guard remains the fail-closed safety gate. A changed candidate
-    // becomes authoritative only when geometry, independent-pass agreement,
-    // fixed-point verification, and final VectorDrawable validation all pass.
-    // Every unchanged or rejected candidate falls back to the established
-    // first-pass production XML.
-    private fun runG315GuardedProductionTrial(
+    // A changed independent second pass may become authoritative only when the
+    // XML structure outside pathData is unchanged, every changed path preserves
+    // exact ordered traversal, the second pass is independently verified as a
+    // fixed point, and final VectorDrawable validation succeeds.
+    //
+    // Production never invokes the expensive sampled/bidirectional geometry
+    // comparator here. If exact safety cannot be proven quickly, the guard
+    // fails closed and retains the established first-pass XML.
+    private fun runGuardedProductionConvergenceTrial(
         firstPassXml: String,
         independentSecondPassXml: String,
         independentSecondPassIsFixed: Boolean
@@ -524,30 +527,21 @@ internal object SvgPathDataOptimizer {
         var geometryComparisons = 0
         var geometryMismatches = 0
         var exactShortCircuits = 0
-        var fallbackBidirectional = 0
+        // Legacy telemetry field retained for reporter compatibility.
+        // Interactive production never performs the bidirectional fallback.
+        val fallbackBidirectional = 0
         var comparatorFailures = 0
         var comparatorNanos = 0L
 
         /*
-         * G3.20b production-path convergence.
+         * The independent second pass is already available at this point, and a
+         * third pass independently establishes whether it is a fixed point.
+         * Promote that actual second-pass XML rather than trying to reconstruct
+         * it with a narrower path-only candidate.
          *
-         * The full independent second pass has already been computed above, and
-         * pass 3 independently tells us whether that result is a fixed point.
-         * Production therefore must not try to reconstruct pass 2 with the
-         * narrower historical G3.15/G3.14 candidate: final decimal
-         * canonicalization and other production-only path stages may have
-         * changed the spelling before this guard sees firstPassXml.
-         *
-         * Instead, promote the independently computed pass-2 XML itself, but
-         * only when:
-         *   1. first pass and pass 2 are structurally identical outside
-         *      android:pathData values;
-         *   2. path counts are identical;
-         *   3. every changed path is geometry-equivalent under G3.13;
-         *   4. pass 2 is independently verified as fixed by pass 3; and
-         *   5. final VectorDrawable validation passes.
-         *
-         * Any failure remains fail-closed and retains firstPassXml.
+         * Promotion remains fail-closed: path counts and non-path XML structure
+         * must match, every changed path must preserve exact ordered traversal,
+         * the second pass must be fixed, and final output validation must pass.
          */
         val firstPathMatches = pathDataAttributeRegex.findAll(firstPassXml).toList()
         val secondPathMatches = pathDataAttributeRegex.findAll(independentSecondPassXml).toList()
@@ -576,18 +570,11 @@ internal object SvgPathDataOptimizer {
                     geometryComparisons++
                     val comparatorStart = System.nanoTime()
 
-                    // G3.20c production safety:
-                    // Use only the exact ordered-traversal oracle here.
-                    // SvgPathSampler.exactTraversalShortCircuitGeometryDiagnostic()
-                    // deliberately falls back to the G3.12 adaptive bidirectional
-                    // comparator when exact proof fails. G3.10 demonstrated that
-                    // fallback can be catastrophically expensive for extreme
-                    // coordinates, so it must never run on the interactive
-                    // production conversion path.
-                    //
-                    // If exact equivalence cannot be proven, fail closed and keep
-                    // pass 1. The expensive fallback remains available to
-                    // developer diagnostics only.
+                    // Interactive production uses only the exact ordered-
+                    // traversal oracle. The adaptive bidirectional comparator is
+                    // intentionally diagnostic-only because its cost can become
+                    // extreme on large-coordinate paths. If exact equivalence
+                    // cannot be proven, fail closed and retain pass 1.
                     val exactDiagnostic =
                         orderedTraversalPairDiagnostic(before, candidate)
 
@@ -6848,7 +6835,7 @@ internal object SvgPathDataOptimizer {
                 val verificationPassXml = buildG316VectorXml(verificationPassPath)
 
                 val guardStart = System.nanoTime()
-                val trial = runG315GuardedProductionTrial(
+                val trial = runGuardedProductionConvergenceTrial(
                     firstPassXml = firstPassXml,
                     independentSecondPassXml = independentSecondPassXml,
                     independentSecondPassIsFixed = secondPassIsFixed
@@ -12255,7 +12242,7 @@ internal object SvgPathDataOptimizer {
             return if (pathData.isBlank()) emptyList() else null
         }
 
-        // G3.20a: tokenRegex.findAll() is intentionally useful in many diagnostic
+        // tokenRegex.findAll() is intentionally useful in many diagnostic
         // callers, but a parser/validator must not silently skip malformed text
         // between otherwise valid tokens. Require complete lexical coverage here:
         // every gap before, between, and after recognized command/number tokens
