@@ -322,6 +322,15 @@ internal object SvgPathDataOptimizer {
         // H2.2: split the combined path-syntax/color stage into its real sub-steps.
         val h22PathDataSyntaxCharacterDelta: Int = 0,
         val h22ColorNormalizationCharacterDelta: Int = 0,
+        // H2.3: signed internal PathData syntax-stage deltas. Positive = shorter.
+        val h23SyntaxNormalizationCharacterDelta: Int = 0,
+        val h23RedundantGeometryCharacterDelta: Int = 0,
+        val h23ArcCleanupCharacterDelta: Int = 0,
+        val h23CurveSimplificationCharacterDelta: Int = 0,
+        val h23CollinearConsolidationCharacterDelta: Int = 0,
+        val h23LocalCommandShorteningCharacterDelta: Int = 0,
+        val h23GlobalCommandMinimizationCharacterDelta: Int = 0,
+        val h23GlobalNumericSerializationCharacterDelta: Int = 0,
         val h21PruningCharacterDelta: Int = 0,
         val h21TransformCharacterDelta: Int = 0,
         val h21NearIntegerCharacterDelta: Int = 0,
@@ -948,6 +957,14 @@ internal object SvgPathDataOptimizer {
         var relativeCommandsSelected = 0
         var axisCommandsSelected = 0
         val pathProfiling = PathSyntaxProfiling()
+        var h23SyntaxNormalizationCharacterDelta = 0
+        var h23RedundantGeometryCharacterDelta = 0
+        var h23ArcCleanupCharacterDelta = 0
+        var h23CurveSimplificationCharacterDelta = 0
+        var h23CollinearConsolidationCharacterDelta = 0
+        var h23LocalCommandShorteningCharacterDelta = 0
+        var h23GlobalCommandMinimizationCharacterDelta = 0
+        var h23GlobalNumericSerializationCharacterDelta = 0
 
         val pathSyntaxStartTime = System.nanoTime()
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
@@ -1002,6 +1019,14 @@ internal object SvgPathDataOptimizer {
             shorterCommandFormsSelected += optimized.shorterCommandFormsSelected
             relativeCommandsSelected += optimized.relativeCommandsSelected
             axisCommandsSelected += optimized.axisCommandsSelected
+            h23SyntaxNormalizationCharacterDelta += optimized.h23SyntaxNormalizationCharacterDelta
+            h23RedundantGeometryCharacterDelta += optimized.h23RedundantGeometryCharacterDelta
+            h23ArcCleanupCharacterDelta += optimized.h23ArcCleanupCharacterDelta
+            h23CurveSimplificationCharacterDelta += optimized.h23CurveSimplificationCharacterDelta
+            h23CollinearConsolidationCharacterDelta += optimized.h23CollinearConsolidationCharacterDelta
+            h23LocalCommandShorteningCharacterDelta += optimized.h23LocalCommandShorteningCharacterDelta
+            h23GlobalCommandMinimizationCharacterDelta += optimized.h23GlobalCommandMinimizationCharacterDelta
+            h23GlobalNumericSerializationCharacterDelta += optimized.h23GlobalNumericSerializationCharacterDelta
 
             "android:pathData=\"${optimized.pathData}\""
         }
@@ -1376,6 +1401,14 @@ internal object SvgPathDataOptimizer {
                 h21PathSyntaxCharacterDelta = h21PathSyntaxCharacterDelta,
                 h22PathDataSyntaxCharacterDelta = h22PathDataSyntaxCharacterDelta,
                 h22ColorNormalizationCharacterDelta = h22ColorNormalizationCharacterDelta,
+                h23SyntaxNormalizationCharacterDelta = h23SyntaxNormalizationCharacterDelta,
+                h23RedundantGeometryCharacterDelta = h23RedundantGeometryCharacterDelta,
+                h23ArcCleanupCharacterDelta = h23ArcCleanupCharacterDelta,
+                h23CurveSimplificationCharacterDelta = h23CurveSimplificationCharacterDelta,
+                h23CollinearConsolidationCharacterDelta = h23CollinearConsolidationCharacterDelta,
+                h23LocalCommandShorteningCharacterDelta = h23LocalCommandShorteningCharacterDelta,
+                h23GlobalCommandMinimizationCharacterDelta = h23GlobalCommandMinimizationCharacterDelta,
+                h23GlobalNumericSerializationCharacterDelta = h23GlobalNumericSerializationCharacterDelta,
                 h21PruningCharacterDelta = h21PruningCharacterDelta,
                 h21TransformCharacterDelta = h21TransformCharacterDelta,
                 h21NearIntegerCharacterDelta = h21NearIntegerCharacterDelta,
@@ -9660,6 +9693,14 @@ internal object SvgPathDataOptimizer {
         val relativeCommandsSelected: Int = 0,
         val axisCommandsSelected: Int = 0,
         val globallyOptimizedNumericPaths: Int = 0,
+        val h23SyntaxNormalizationCharacterDelta: Int = 0,
+        val h23RedundantGeometryCharacterDelta: Int = 0,
+        val h23ArcCleanupCharacterDelta: Int = 0,
+        val h23CurveSimplificationCharacterDelta: Int = 0,
+        val h23CollinearConsolidationCharacterDelta: Int = 0,
+        val h23LocalCommandShorteningCharacterDelta: Int = 0,
+        val h23GlobalCommandMinimizationCharacterDelta: Int = 0,
+        val h23GlobalNumericSerializationCharacterDelta: Int = 0,
     )
 
 
@@ -9896,6 +9937,8 @@ internal object SvgPathDataOptimizer {
         }
 
         val syntaxNormalizedPath = output.toString()
+        val h23SyntaxNormalizationCharacterDelta =
+            pathData.length - syntaxNormalizedPath.length
         stageTrace?.add(PathFixedPointStageSnapshot("Syntax normalization", syntaxNormalizedPath))
 
         profiling?.let {
@@ -9909,6 +9952,8 @@ internal object SvgPathDataOptimizer {
         val redundantCleanup = removeRedundantNonDrawingSegments(
             syntaxNormalizedPath
         )
+        val h23RedundantGeometryCharacterDelta =
+            syntaxNormalizedPath.length - redundantCleanup.pathData.length
         stageTrace?.add(PathFixedPointStageSnapshot("Redundant geometry cleanup", redundantCleanup.pathData))
         profiling?.let {
             it.redundantSegmentCleanupNanos +=
@@ -9971,6 +10016,8 @@ internal object SvgPathDataOptimizer {
                 DegenerateArcCleanupResult(unchangedPathData, 0)
         }
 
+        val h23ArcCleanupCharacterDelta =
+            redundantCleanup.pathData.length - degenerateArcCleanup.pathData.length
         stageTrace?.add(PathFixedPointStageSnapshot("Arc cleanup", degenerateArcCleanup.pathData))
 
         val curveSimplificationStartTime = System.nanoTime()
@@ -10002,6 +10049,8 @@ internal object SvgPathDataOptimizer {
                 System.nanoTime() - curveSimplificationStartTime
         }
 
+        val h23CurveSimplificationCharacterDelta =
+            degenerateArcCleanup.pathData.length - straightBezierCleanup.pathData.length
         stageTrace?.add(PathFixedPointStageSnapshot("Curve simplification", straightBezierCleanup.pathData))
 
         val collinearConsolidationStartTime = System.nanoTime()
@@ -10014,6 +10063,8 @@ internal object SvgPathDataOptimizer {
             it.geometryCleanupNanos += System.nanoTime() - geometryCleanupStartTime
         }
 
+        val h23CollinearConsolidationCharacterDelta =
+            straightBezierCleanup.pathData.length - collinearCleanup.pathData.length
         stageTrace?.add(PathFixedPointStageSnapshot("Collinear consolidation", collinearCleanup.pathData))
 
         val commandMinimizationStartTime = System.nanoTime()
@@ -10026,11 +10077,15 @@ internal object SvgPathDataOptimizer {
             it.commandLocalShorteningNanos +=
                 System.nanoTime() - localShorteningStartTime
         }
+        val h23LocalCommandShorteningCharacterDelta =
+            collinearCleanup.pathData.length - commandOptimization.pathData.length
         stageTrace?.add(PathFixedPointStageSnapshot("Local command shortening", commandOptimization.pathData))
         val globalCommandOptimization = globallyMinimizeCommandSequence(
             commandOptimization.pathData,
             profiling
         )
+        val h23GlobalCommandMinimizationCharacterDelta =
+            commandOptimization.pathData.length - globalCommandOptimization.pathData.length
         stageTrace?.add(PathFixedPointStageSnapshot("Global command minimization", globalCommandOptimization.pathData))
         profiling?.let {
             it.commandMinimizationNanos +=
@@ -10045,6 +10100,8 @@ internal object SvgPathDataOptimizer {
             it.numericSerializationNanos +=
                 System.nanoTime() - numericSerializationStartTime
         }
+        val h23GlobalNumericSerializationCharacterDelta =
+            globalCommandOptimization.pathData.length - globalNumericOptimization.pathData.length
         stageTrace?.add(PathFixedPointStageSnapshot("Global numeric serialization", globalNumericOptimization.pathData))
         return PathResult(
             pathData = globalNumericOptimization.pathData,
@@ -10104,7 +10161,15 @@ internal object SvgPathDataOptimizer {
             relativeCommandsSelected = commandOptimization.relativeCommandsSelected,
             axisCommandsSelected = commandOptimization.axisCommandsSelected,
             globallyOptimizedNumericPaths =
-                if (globalNumericOptimization.optimized) 1 else 0
+                if (globalNumericOptimization.optimized) 1 else 0,
+            h23SyntaxNormalizationCharacterDelta = h23SyntaxNormalizationCharacterDelta,
+            h23RedundantGeometryCharacterDelta = h23RedundantGeometryCharacterDelta,
+            h23ArcCleanupCharacterDelta = h23ArcCleanupCharacterDelta,
+            h23CurveSimplificationCharacterDelta = h23CurveSimplificationCharacterDelta,
+            h23CollinearConsolidationCharacterDelta = h23CollinearConsolidationCharacterDelta,
+            h23LocalCommandShorteningCharacterDelta = h23LocalCommandShorteningCharacterDelta,
+            h23GlobalCommandMinimizationCharacterDelta = h23GlobalCommandMinimizationCharacterDelta,
+            h23GlobalNumericSerializationCharacterDelta = h23GlobalNumericSerializationCharacterDelta
         )
     }
 

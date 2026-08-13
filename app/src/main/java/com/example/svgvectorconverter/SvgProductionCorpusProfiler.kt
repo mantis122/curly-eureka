@@ -102,7 +102,7 @@ object SvgProductionCorpusProfiler {
 
             return buildString {
                 appendLine("H1 production corpus profile")
-                appendLine("Instrumentation level: H2.2")
+                appendLine("Instrumentation level: H2.3")
                 appendLine()
                 appendLine("Mode: diagnostic only; normal production conversion pipeline")
                 appendLine("Files selected: ${files.size}")
@@ -191,7 +191,7 @@ object SvgProductionCorpusProfiler {
                     appendCounter("Uniform-scale groups preserved because flattening was not smaller", sumInt { it.scaleGroupsPreservedForSize })
                     appendCounter("Non-uniform-scale groups preserved because flattening was not smaller", sumInt { it.nonUniformScaleGroupsPreservedForSize })
                     appendCounter("Rotation groups preserved because flattening was not smaller", sumInt { it.rotationGroupsPreservedForSize })
-                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H2.2 does not relax those rules.")
+                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H2.3 does not relax those rules.")
 
                     val validationFailures = successful.filter { (_, d) -> !d.finalOutputValidationPassed }
                     appendLine()
@@ -259,6 +259,24 @@ object SvgProductionCorpusProfiler {
                     )
                     appendLine("Note: these two H2.2 substages sum to the combined H2.1 path-syntax/color delta.")
 
+                    appendLine()
+                    appendLine("H2.3 PathData internal-stage attribution")
+                    appendLine("────────────────────────────────")
+                    val h23StageTotals = listOf(
+                        "Syntax/token normalization" to sumInt { it.h23SyntaxNormalizationCharacterDelta },
+                        "Redundant geometry cleanup" to sumInt { it.h23RedundantGeometryCharacterDelta },
+                        "Arc cleanup" to sumInt { it.h23ArcCleanupCharacterDelta },
+                        "Curve simplification" to sumInt { it.h23CurveSimplificationCharacterDelta },
+                        "Collinear consolidation" to sumInt { it.h23CollinearConsolidationCharacterDelta },
+                        "Local command shortening" to sumInt { it.h23LocalCommandShorteningCharacterDelta },
+                        "Global command minimization" to sumInt { it.h23GlobalCommandMinimizationCharacterDelta },
+                        "Global numeric serialization" to sumInt { it.h23GlobalNumericSerializationCharacterDelta }
+                    )
+                    h23StageTotals.forEach { (label, delta) ->
+                        appendLine("$label: ${formatSignedStageDelta(delta)}")
+                    }
+                    appendLine("Note: H2.3 internal deltas should sum to the H2.2 PathData syntax delta.")
+
                     val regressionFiles = successful.filter { (_, data) ->
                         data.optimizedXmlCharactersAfter > data.optimizedXmlCharactersBefore
                     }
@@ -291,6 +309,33 @@ object SvgProductionCorpusProfiler {
                             appendLine(
                                 "    H2.2 color normalization: " +
                                     formatSignedStageDelta(data.h22ColorNormalizationCharacterDelta.toLong())
+                            )
+                            val h23Stages = listOf(
+                                "syntax/token normalization" to data.h23SyntaxNormalizationCharacterDelta,
+                                "redundant geometry cleanup" to data.h23RedundantGeometryCharacterDelta,
+                                "arc cleanup" to data.h23ArcCleanupCharacterDelta,
+                                "curve simplification" to data.h23CurveSimplificationCharacterDelta,
+                                "collinear consolidation" to data.h23CollinearConsolidationCharacterDelta,
+                                "local command shortening" to data.h23LocalCommandShorteningCharacterDelta,
+                                "global command minimization" to data.h23GlobalCommandMinimizationCharacterDelta,
+                                "global numeric serialization" to data.h23GlobalNumericSerializationCharacterDelta
+                            )
+                            val h23FirstGrowth = h23Stages.firstOrNull { it.second < 0 }
+                            val h23LargestGrowth = h23Stages.filter { it.second < 0 }.minByOrNull { it.second }
+                            appendLine(
+                                "    H2.3 first internal growth: " +
+                                    (h23FirstGrowth?.let { "${it.first} (${formatSignedStageDelta(it.second.toLong())})" }
+                                        ?: "none recorded")
+                            )
+                            appendLine(
+                                "    H2.3 largest internal growth: " +
+                                    (h23LargestGrowth?.let { "${it.first} (${formatSignedStageDelta(it.second.toLong())})" }
+                                        ?: "none recorded")
+                            )
+                            appendLine(
+                                "    H2.3 stages: " + h23Stages.joinToString(", ") { (label, delta) ->
+                                    "$label=${formatSignedStageDelta(delta.toLong())}"
+                                }
                             )
                             appendLine(
                                 "    first growth stage: " +

@@ -609,6 +609,14 @@ object SvgToVectorConverter {
         reportData.h22PathDataSyntaxCharacterDelta = pathOptimizationStats.h22PathDataSyntaxCharacterDelta
         reportData.h22ColorNormalizationCharacterDelta =
             pathOptimizationStats.h22ColorNormalizationCharacterDelta
+        reportData.h23SyntaxNormalizationCharacterDelta = pathOptimizationStats.h23SyntaxNormalizationCharacterDelta
+        reportData.h23RedundantGeometryCharacterDelta = pathOptimizationStats.h23RedundantGeometryCharacterDelta
+        reportData.h23ArcCleanupCharacterDelta = pathOptimizationStats.h23ArcCleanupCharacterDelta
+        reportData.h23CurveSimplificationCharacterDelta = pathOptimizationStats.h23CurveSimplificationCharacterDelta
+        reportData.h23CollinearConsolidationCharacterDelta = pathOptimizationStats.h23CollinearConsolidationCharacterDelta
+        reportData.h23LocalCommandShorteningCharacterDelta = pathOptimizationStats.h23LocalCommandShorteningCharacterDelta
+        reportData.h23GlobalCommandMinimizationCharacterDelta = pathOptimizationStats.h23GlobalCommandMinimizationCharacterDelta
+        reportData.h23GlobalNumericSerializationCharacterDelta = pathOptimizationStats.h23GlobalNumericSerializationCharacterDelta
         reportData.h21PruningCharacterDelta = pathOptimizationStats.h21PruningCharacterDelta
         reportData.h21TransformCharacterDelta = pathOptimizationStats.h21TransformCharacterDelta
         reportData.h21NearIntegerCharacterDelta = pathOptimizationStats.h21NearIntegerCharacterDelta

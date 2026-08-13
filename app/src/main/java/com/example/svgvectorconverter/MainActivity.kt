@@ -180,7 +180,7 @@ class MainActivity : ComponentActivity() {
                 uri,
                 currentH11CorpusProfileReport
             )
-            toast("H2.2 corpus profile saved")
+            toast("H2.3 corpus profile saved")
         }
     }
 
@@ -909,7 +909,7 @@ class MainActivity : ComponentActivity() {
         layout.addView(
             makeText(
                 """
-                Select a real-world SVG corpus. H2.2 runs each file through
+                Select a real-world SVG corpus. H2.3 runs each file through
                 the normal production converter and aggregates existing
                 structured optimization, size, validation, opportunity, and full-pass runtime metrics.
                 This is diagnostic-only and does not change production output.
@@ -4425,7 +4425,7 @@ class MainActivity : ComponentActivity() {
                 appendLine()
                 appendLine()
                 appendLine(
-                    "Total H2.2 wall time including input reads: " +
+                    "Total H2.3 wall time including input reads: " +
                         String.format(
                             java.util.Locale.US,
                             "%.2f ms",
@@ -4530,7 +4530,7 @@ class MainActivity : ComponentActivity() {
 
     private fun copyH11CorpusProfileReport() {
         if (currentH11CorpusProfileReport.isBlank()) {
-            toast("No H2.2 corpus profile to copy")
+            toast("No H2.3 corpus profile to copy")
             return
         }
 
@@ -4541,7 +4541,7 @@ class MainActivity : ComponentActivity() {
                 currentH11CorpusProfileReport
             )
         )
-        toast("H2.2 corpus profile copied")
+        toast("H2.3 corpus profile copied")
     }
 
     private fun runBundledRegressionSuite() {

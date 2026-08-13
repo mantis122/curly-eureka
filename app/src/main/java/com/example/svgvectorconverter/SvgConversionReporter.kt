@@ -411,6 +411,14 @@ class SvgConversionReportData {
     var h21PathSyntaxCharacterDelta: Int = 0
     var h22PathDataSyntaxCharacterDelta: Int = 0
     var h22ColorNormalizationCharacterDelta: Int = 0
+    var h23SyntaxNormalizationCharacterDelta: Int = 0
+    var h23RedundantGeometryCharacterDelta: Int = 0
+    var h23ArcCleanupCharacterDelta: Int = 0
+    var h23CurveSimplificationCharacterDelta: Int = 0
+    var h23CollinearConsolidationCharacterDelta: Int = 0
+    var h23LocalCommandShorteningCharacterDelta: Int = 0
+    var h23GlobalCommandMinimizationCharacterDelta: Int = 0
+    var h23GlobalNumericSerializationCharacterDelta: Int = 0
     var h21PruningCharacterDelta: Int = 0
     var h21TransformCharacterDelta: Int = 0
     var h21NearIntegerCharacterDelta: Int = 0
