@@ -209,6 +209,14 @@ internal object SvgPathDataOptimizer {
         val adjacentGroupsCoalesced: Int = 0,
         val compatiblePathsMerged: Int = 0,
         val compatiblePathMergesPreservedForSize: Int = 0,
+        val adjacentPathPairsExamined: Int = 0,
+        val adjacentPathPairsSamePaint: Int = 0,
+        val adjacentPathMergeRejectedNestedPaint: Int = 0,
+        val adjacentPathMergeRejectedMissingPathData: Int = 0,
+        val adjacentPathMergeRejectedPaintMismatch: Int = 0,
+        val adjacentPathMergeRejectedUnsupportedGeometry: Int = 0,
+        val adjacentPathMergeRejectedOverlapSafety: Int = 0,
+        val adjacentPathMergeRejectedForSize: Int = 0,
         val exactDuplicatePathsRemoved: Int = 0,
         val translatedGroupsFlattened: Int = 0,
         val translatedPaths: Int = 0,
@@ -1085,6 +1093,22 @@ internal object SvgPathDataOptimizer {
                 compatiblePathsMerged = pathMerging.mergedCount,
                 compatiblePathMergesPreservedForSize =
                     pathMerging.preservedForSize,
+                adjacentPathPairsExamined =
+                    pathMerging.opportunityStats.pairsExamined,
+                adjacentPathPairsSamePaint =
+                    pathMerging.opportunityStats.samePaintPairs,
+                adjacentPathMergeRejectedNestedPaint =
+                    pathMerging.opportunityStats.rejectedNestedPaint,
+                adjacentPathMergeRejectedMissingPathData =
+                    pathMerging.opportunityStats.rejectedMissingPathData,
+                adjacentPathMergeRejectedPaintMismatch =
+                    pathMerging.opportunityStats.rejectedPaintMismatch,
+                adjacentPathMergeRejectedUnsupportedGeometry =
+                    pathMerging.opportunityStats.rejectedUnsupportedGeometry,
+                adjacentPathMergeRejectedOverlapSafety =
+                    pathMerging.opportunityStats.rejectedOverlapSafety,
+                adjacentPathMergeRejectedForSize =
+                    pathMerging.opportunityStats.rejectedForSize,
                 exactDuplicatePathsRemoved = duplicateRemoval.removedCount,
                 translatedGroupsFlattened = translationFlattening.flattenedGroups,
                 translatedPaths = translationFlattening.translatedPaths,
@@ -4448,10 +4472,22 @@ internal object SvgPathDataOptimizer {
     }
 
 
+    private data class PathMergeOpportunityStats(
+        var pairsExamined: Int = 0,
+        var samePaintPairs: Int = 0,
+        var rejectedNestedPaint: Int = 0,
+        var rejectedMissingPathData: Int = 0,
+        var rejectedPaintMismatch: Int = 0,
+        var rejectedUnsupportedGeometry: Int = 0,
+        var rejectedOverlapSafety: Int = 0,
+        var rejectedForSize: Int = 0
+    )
+
     private data class PathMergingResult(
         val xml: String,
         val mergedCount: Int,
-        val preservedForSize: Int
+        val preservedForSize: Int,
+        val opportunityStats: PathMergeOpportunityStats
     )
 
 
@@ -4600,6 +4636,7 @@ internal object SvgPathDataOptimizer {
         var current = xml
         var totalMerged = 0
         val rejectedSignatures = mutableSetOf<String>()
+        val opportunityStats = PathMergeOpportunityStats()
 
         while (true) {
             var mergedThisPass = false
@@ -4615,7 +4652,7 @@ internal object SvgPathDataOptimizer {
                 val first = match.groupValues[1]
                 val separator = match.groupValues[2]
                 val second = match.groupValues[3]
-                val merged = mergePathElements(first, second)
+                val merged = mergePathElements(first, second, opportunityStats)
 
                 if (merged == null) {
                     return@replace match.value
@@ -4635,6 +4672,7 @@ internal object SvgPathDataOptimizer {
                 val mergedCost = stableXmlPayloadCost(canonicalMerged)
 
                 if (mergedCost >= originalCost) {
+                    opportunityStats.rejectedForSize++
                     rejectedSignatures += signature
                     return@replace match.value
                 }
@@ -4653,26 +4691,46 @@ internal object SvgPathDataOptimizer {
         return PathMergingResult(
             xml = current,
             mergedCount = totalMerged,
-            preservedForSize = rejectedSignatures.size
+            preservedForSize = rejectedSignatures.size,
+            opportunityStats = opportunityStats
         )
     }
 
-    private fun mergePathElements(first: String, second: String): String? {
+    private fun mergePathElements(
+        first: String,
+        second: String,
+        opportunityStats: PathMergeOpportunityStats
+    ): String? {
+        opportunityStats.pairsExamined++
+
         if (first.contains("<aapt:attr", ignoreCase = true) ||
             second.contains("<aapt:attr", ignoreCase = true)
         ) {
+            opportunityStats.rejectedNestedPaint++
             return null
         }
 
-        val firstPathData = attributeValue(first, "android:pathData") ?: return null
-        val secondPathData = attributeValue(second, "android:pathData") ?: return null
+        val firstPathData = attributeValue(first, "android:pathData")
+        val secondPathData = attributeValue(second, "android:pathData")
+        if (firstPathData == null || secondPathData == null) {
+            opportunityStats.rejectedMissingPathData++
+            return null
+        }
 
         val firstAttributes = canonicalPathAttributes(first)
         val secondAttributes = canonicalPathAttributes(second)
-        if (firstAttributes != secondAttributes) return null
+        if (firstAttributes != secondAttributes) {
+            opportunityStats.rejectedPaintMismatch++
+            return null
+        }
+        opportunityStats.samePaintPairs++
 
-        val firstBounds = compatiblePathBounds(firstPathData) ?: return null
-        val secondBounds = compatiblePathBounds(secondPathData) ?: return null
+        val firstBounds = compatiblePathBounds(firstPathData)
+        val secondBounds = compatiblePathBounds(secondPathData)
+        if (firstBounds == null || secondBounds == null) {
+            opportunityStats.rejectedUnsupportedGeometry++
+            return null
+        }
         val strokeExpansion = sharedStrokeExpansion(firstAttributes)
 
         val expandedBoundsAreDisjoint =
@@ -4690,6 +4748,7 @@ internal object SvgPathDataOptimizer {
                 arcFlagsAreMergeCompatible(firstPathData, secondPathData)
 
         if (!expandedBoundsAreDisjoint && !safeOpaqueStrokeOnlyJoin) {
+            opportunityStats.rejectedOverlapSafety++
             return null
         }
 

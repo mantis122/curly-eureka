@@ -3,7 +3,7 @@ package com.example.svgvectorconverter
 import java.util.Locale
 
 /**
- * H1.1 production corpus profiler.
+ * H1.2 production corpus opportunity profiler.
  *
  * Diagnostic-only infrastructure. It converts real SVG inputs through the
  * normal production pipeline and aggregates the structured metrics already
@@ -125,6 +125,27 @@ object SvgProductionCorpusProfiler {
 
                     appendLine()
                     appendLine("────────────────────────────────")
+                    appendLine("H1.2 opportunity / rejection diagnostics")
+                    appendLine("────────────────────────────────")
+                    appendCounter("Adjacent path pairs examined", sumInt { it.adjacentPathPairsExamined })
+                    appendCounter("Adjacent path pairs with identical render attributes", sumInt { it.adjacentPathPairsSamePaint })
+                    appendCounter("Rejected: nested aapt paint", sumInt { it.adjacentPathMergeRejectedNestedPaint })
+                    appendCounter("Rejected: missing pathData", sumInt { it.adjacentPathMergeRejectedMissingPathData })
+                    appendCounter("Rejected: render-attribute mismatch", sumInt { it.adjacentPathMergeRejectedPaintMismatch })
+                    appendCounter("Rejected: unsupported geometry for exact bounds proof", sumInt { it.adjacentPathMergeRejectedUnsupportedGeometry })
+                    appendCounter("Rejected: overlap / compositing safety", sumInt { it.adjacentPathMergeRejectedOverlapSafety })
+                    appendCounter("Rejected: safe merge was not smaller", sumInt { it.adjacentPathMergeRejectedForSize })
+                    appendCounter("Safe compatible merges accepted", sumInt { it.compatiblePathsMerged })
+                    appendLine()
+                    appendLine("Transform size decisions (already-safe candidates)")
+                    appendCounter("Translation groups preserved because flattening was not smaller", sumInt { it.translationGroupsPreservedForSize })
+                    appendCounter("Uniform-scale groups preserved because flattening was not smaller", sumInt { it.scaleGroupsPreservedForSize })
+                    appendCounter("Non-uniform-scale groups preserved because flattening was not smaller", sumInt { it.nonUniformScaleGroupsPreservedForSize })
+                    appendCounter("Rotation groups preserved because flattening was not smaller", sumInt { it.rotationGroupsPreservedForSize })
+                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H1.2 does not relax those rules.")
+
+                    appendLine()
+                    appendLine("────────────────────────────────")
                     appendLine("Stage savings")
                     appendLine("────────────────────────────────")
                     stageSavings.sortedByDescending { it.second }.forEach { (label, saved) ->
@@ -155,6 +176,28 @@ object SvgProductionCorpusProfiler {
                                 "${formatCount(saved.toLong())} chars saved, " +
                                 "${formatNanos(file.elapsedNanos)}"
                         )
+                        appendLine(
+                            "    stages: path=${formatNanos(data.optimizationPathSyntaxNanos)}, " +
+                                "numeric=${formatNanos(data.optimizationNumericCleanupNanos)}, " +
+                                "merge=${formatNanos(data.optimizationDeduplicationNanos)}, " +
+                                "transform=${formatNanos(data.optimizationTransformsNanos)}, " +
+                                "prune=${formatNanos(data.optimizationPruningCleanupNanos)}, " +
+                                "format=${formatNanos(data.optimizationFormattingNanos)}"
+                        )
+                        if (data.adjacentPathPairsExamined > 0 ||
+                            data.compatiblePathsMerged > 0 ||
+                            data.compatiblePathMergesPreservedForSize > 0
+                        ) {
+                            appendLine(
+                                "    merge opportunities: examined=${data.adjacentPathPairsExamined}, " +
+                                    "samePaint=${data.adjacentPathPairsSamePaint}, " +
+                                    "accepted=${data.compatiblePathsMerged}, " +
+                                    "sizeRejected=${data.adjacentPathMergeRejectedForSize}, " +
+                                    "safetyRejected=${data.adjacentPathMergeRejectedOverlapSafety}, " +
+                                    "geometryRejected=${data.adjacentPathMergeRejectedUnsupportedGeometry}, " +
+                                    "paintMismatch=${data.adjacentPathMergeRejectedPaintMismatch}"
+                            )
+                        }
                     }
                 }
 
