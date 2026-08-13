@@ -2,7 +2,8 @@ package com.example.svgvectorconverter
 
 data class ConversionResult(
     val xml: String,
-    val report: String
+    val report: String,
+    val reportData: SvgConversionReportData? = null
 )
 
 data class BatchResult(

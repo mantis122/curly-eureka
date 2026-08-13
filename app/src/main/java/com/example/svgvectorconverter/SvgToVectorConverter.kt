@@ -585,7 +585,11 @@ object SvgToVectorConverter {
             conversionStartNanos = startTime
         )
 
-        return ConversionResult(finalXml, report)
+        return ConversionResult(
+            xml = finalXml,
+            report = report,
+            reportData = reportData
+        )
     }
 
 

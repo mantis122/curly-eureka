@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.OpenableColumns
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -63,6 +64,7 @@ class MainActivity : ComponentActivity() {
     private var currentG316GuardedTrialReport = ""
     private var currentG317ValidationClassificationReport = ""
     private var currentG318EmptyMoveOnlyIntegrationReport = ""
+    private var currentH11CorpusProfileReport = ""
 
     private fun makeButton(
         label: String,
@@ -158,6 +160,27 @@ class MainActivity : ComponentActivity() {
                     bitmap.recycle()
                 }
             }
+        }
+    }
+
+    private val openH11CorpusSvgs = registerForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            runH11ProductionCorpusProfile(uris)
+        }
+    }
+
+    private val saveH11CorpusProfileReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentH11CorpusProfileReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(
+                this,
+                uri,
+                currentH11CorpusProfileReport
+            )
+            toast("H1.1 corpus profile saved")
         }
     }
 
@@ -854,6 +877,42 @@ class MainActivity : ComponentActivity() {
                 Runs the five bundled E1.2 fixtures and checks conversion,
                 path counts, warnings, optimizer idempotence, final-output
                 validation, and required or forbidden XML fragments.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        layout.addView(
+            makeText(
+                "Production Corpus Profiling",
+                16f,
+                Color.DKGRAY,
+                Gravity.START,
+                paddingBottom = 8
+            )
+        )
+
+        val h11CorpusProfileButton =
+            makeButton("Run H1.1 Production Corpus Profile") {
+                openH11CorpusSvgs.launch(
+                    arrayOf("image/svg+xml", "text/xml", "text/plain")
+                )
+            }
+        layout.addView(
+            h11CorpusProfileButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Select a real-world SVG corpus. H1.1 runs each file through
+                the normal production converter and aggregates existing
+                structured optimization, size, validation, and runtime metrics.
+                This is diagnostic-only and does not change production output.
                 """.trimIndent(),
                 14f,
                 Color.GRAY,
@@ -4277,6 +4336,212 @@ class MainActivity : ComponentActivity() {
             )
         )
         toast("G3.10 bidirectional-polyline report copied")
+    }
+
+    private fun runH11ProductionCorpusProfile(uris: List<Uri>) {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+
+        val progressBar = ProgressBar(this).apply {
+            isIndeterminate = false
+            max = uris.size.coerceAtLeast(1)
+            progress = 0
+        }
+        val statusText = makeText(
+            "Preparing ${uris.size} SVG file${if (uris.size == 1) "" else "s"}…",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply {
+            setPadding(0, 24, 0, 0)
+        }
+
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("H1.1 Production Corpus Profile")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+
+        progressDialog.show()
+
+        Thread {
+            val overallStart = System.nanoTime()
+            val inputs = mutableListOf<SvgProductionCorpusProfiler.CorpusInput>()
+            val readFailures = mutableListOf<Pair<String, String>>()
+
+            uris.forEachIndexed { index, uri ->
+                val fileName = h11DisplayName(uri, index + 1)
+                try {
+                    inputs += SvgProductionCorpusProfiler.CorpusInput(
+                        fileName = fileName,
+                        svg = FileIoHelpers.readTextFromUri(this, uri)
+                    )
+                } catch (throwable: Throwable) {
+                    val detail = throwable.message?.trim().orEmpty()
+                    readFailures += fileName to if (detail.isBlank()) {
+                        throwable::class.java.simpleName.ifBlank { "Read error" }
+                    } else {
+                        detail
+                    }
+                }
+            }
+
+            val profileResult = SvgProductionCorpusProfiler.run(
+                inputs = inputs,
+                outputDpSize = outputDpSize,
+                conversionProfile = conversionProfile
+            ) { completed, total, fileName ->
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        progressBar.max = total.coerceAtLeast(1)
+                        progressBar.progress = completed
+                        statusText.text = "Profiling $completed / $total\n$fileName"
+                    }
+                }
+            }
+
+            val report = buildString {
+                append(profileResult.toPlainTextReport())
+                if (readFailures.isNotEmpty()) {
+                    appendLine()
+                    appendLine()
+                    appendLine("────────────────────────────────")
+                    appendLine("Input read failures")
+                    appendLine("────────────────────────────────")
+                    readFailures.forEach { (fileName, error) ->
+                        appendLine("✕ $fileName: $error")
+                    }
+                }
+                if (inputs.isEmpty()) {
+                    appendLine()
+                    appendLine("No readable SVG inputs were available for profiling.")
+                }
+                appendLine()
+                appendLine()
+                appendLine(
+                    "Total H1.1 wall time including input reads: " +
+                        String.format(
+                            java.util.Locale.US,
+                            "%.2f ms",
+                            (System.nanoTime() - overallStart) / 1_000_000.0
+                        )
+                )
+            }.trimEnd()
+
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentH11CorpusProfileReport = report
+                    showH11CorpusProfileResultsDialog(report)
+                }
+            }
+        }.start()
+    }
+
+    private fun h11DisplayName(uri: Uri, fallbackIndex: Int): String {
+        return try {
+            contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (column >= 0) cursor.getString(column) else null
+                } else {
+                    null
+                }
+            }?.takeIf { it.isNotBlank() }
+                ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                ?: "corpus_$fallbackIndex.svg"
+        } catch (_: Throwable) {
+            uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                ?: "corpus_$fallbackIndex.svg"
+        }
+    }
+
+    private fun showH11CorpusProfileResultsDialog(report: String) {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+
+        val reportScroll = ScrollView(this).apply {
+            addView(reportView)
+        }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val copyButton = makeButton("Copy Report") {
+            copyH11CorpusProfileReport()
+        }
+        val saveButton = makeButton("Save .txt") {
+            saveH11CorpusProfileReport.launch("h1_1_production_corpus_profile.txt")
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+
+        val runAgainButton = makeButton("Choose Another Corpus") {
+            openH11CorpusSvgs.launch(
+                arrayOf("image/svg+xml", "text/xml", "text/plain")
+            )
+        }
+        layout.addView(runAgainButton, LinearLayout.LayoutParams(-1, -2))
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("H1.1 Corpus Profile Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+
+        dialog.show()
+    }
+
+    private fun copyH11CorpusProfileReport() {
+        if (currentH11CorpusProfileReport.isBlank()) {
+            toast("No H1.1 corpus profile to copy")
+            return
+        }
+
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "h1_1_production_corpus_profile.txt",
+                currentH11CorpusProfileReport
+            )
+        )
+        toast("H1.1 corpus profile copied")
     }
 
     private fun runBundledRegressionSuite() {
