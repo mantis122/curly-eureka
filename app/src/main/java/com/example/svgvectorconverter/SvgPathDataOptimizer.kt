@@ -12186,7 +12186,28 @@ internal object SvgPathDataOptimizer {
     }
 
     private fun parseNormalizedSegments(pathData: String): List<ParsedSegment>? {
-        val tokens = tokenRegex.findAll(pathData).map { it.value }.toList()
+        val matches = tokenRegex.findAll(pathData).toList()
+        if (matches.isEmpty()) {
+            return if (pathData.isBlank()) emptyList() else null
+        }
+
+        // G3.20a: tokenRegex.findAll() is intentionally useful in many diagnostic
+        // callers, but a parser/validator must not silently skip malformed text
+        // between otherwise valid tokens. Require complete lexical coverage here:
+        // every gap before, between, and after recognized command/number tokens
+        // must contain only legal SVG separators.
+        var cursor = 0
+        for (match in matches) {
+            if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
+                return null
+            }
+            cursor = match.range.last + 1
+        }
+        if (!containsOnlySeparators(pathData.substring(cursor))) {
+            return null
+        }
+
+        val tokens = matches.map { it.value }
         return parseNormalizedSegmentsFromTokens(tokens)
     }
 
