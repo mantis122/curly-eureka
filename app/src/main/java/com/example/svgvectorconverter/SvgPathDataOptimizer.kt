@@ -319,6 +319,9 @@ internal object SvgPathDataOptimizer {
         // H2.1: signed stage deltas. Positive means the stage reduced XML;
         // negative means the stage increased XML. These are diagnostic-only.
         val h21PathSyntaxCharacterDelta: Int = 0,
+        // H2.2: split the combined path-syntax/color stage into its real sub-steps.
+        val h22PathDataSyntaxCharacterDelta: Int = 0,
+        val h22ColorNormalizationCharacterDelta: Int = 0,
         val h21PruningCharacterDelta: Int = 0,
         val h21TransformCharacterDelta: Int = 0,
         val h21NearIntegerCharacterDelta: Int = 0,
@@ -1008,6 +1011,9 @@ internal object SvgPathDataOptimizer {
         val colorNormalizationNanos = System.nanoTime() - colorNormalizationStartTime
         val pathSyntaxOptimizationNanos = System.nanoTime() - pathSyntaxStartTime
         val pathSyntaxCharactersSaved = charactersSaved(xml, colorNormalizedXml)
+        val h22PathDataSyntaxCharacterDelta = characterDelta(xml, syntaxOptimizedXml)
+        val h22ColorNormalizationCharacterDelta =
+            characterDelta(syntaxOptimizedXml, colorNormalizedXml)
         val h21PathSyntaxCharacterDelta = characterDelta(xml, colorNormalizedXml)
 
         val pruningStartTime = System.nanoTime()
@@ -1368,6 +1374,8 @@ internal object SvgPathDataOptimizer {
                 numericCleanupCharactersSaved = numericCleanupCharactersSaved,
                 formattingCharactersSaved = formattingCharactersSaved,
                 h21PathSyntaxCharacterDelta = h21PathSyntaxCharacterDelta,
+                h22PathDataSyntaxCharacterDelta = h22PathDataSyntaxCharacterDelta,
+                h22ColorNormalizationCharacterDelta = h22ColorNormalizationCharacterDelta,
                 h21PruningCharacterDelta = h21PruningCharacterDelta,
                 h21TransformCharacterDelta = h21TransformCharacterDelta,
                 h21NearIntegerCharacterDelta = h21NearIntegerCharacterDelta,

@@ -102,7 +102,7 @@ object SvgProductionCorpusProfiler {
 
             return buildString {
                 appendLine("H1 production corpus profile")
-                appendLine("Instrumentation level: H2.1")
+                appendLine("Instrumentation level: H2.2")
                 appendLine()
                 appendLine("Mode: diagnostic only; normal production conversion pipeline")
                 appendLine("Files selected: ${files.size}")
@@ -191,7 +191,7 @@ object SvgProductionCorpusProfiler {
                     appendCounter("Uniform-scale groups preserved because flattening was not smaller", sumInt { it.scaleGroupsPreservedForSize })
                     appendCounter("Non-uniform-scale groups preserved because flattening was not smaller", sumInt { it.nonUniformScaleGroupsPreservedForSize })
                     appendCounter("Rotation groups preserved because flattening was not smaller", sumInt { it.rotationGroupsPreservedForSize })
-                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H1.6 does not relax those rules.")
+                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H2.2 does not relax those rules.")
 
                     val validationFailures = successful.filter { (_, d) -> !d.finalOutputValidationPassed }
                     appendLine()
@@ -226,7 +226,7 @@ object SvgProductionCorpusProfiler {
 
                     appendLine()
                     appendLine("────────────────────────────────")
-                    appendLine("H2.1 signed stage attribution")
+                    appendLine("H2.1 signed stage attribution (retained)")
                     appendLine("────────────────────────────────")
                     val signedStageDeltas = listOf(
                         "Path syntax and colors" to sumInt { it.h21PathSyntaxCharacterDelta },
@@ -241,6 +241,23 @@ object SvgProductionCorpusProfiler {
                         appendLine("$label: ${formatSignedStageDelta(delta)}")
                     }
                     appendLine("Note: positive means the stage removed characters; negative means it added characters.")
+
+                    appendLine()
+                    appendLine("H2.2 path-syntax/color substage attribution")
+                    appendLine("────────────────────────────────")
+                    appendLine(
+                        "PathData syntax rewriting: " +
+                            formatSignedStageDelta(sumInt { it.h22PathDataSyntaxCharacterDelta })
+                    )
+                    appendLine(
+                        "Android color normalization: " +
+                            formatSignedStageDelta(sumInt { it.h22ColorNormalizationCharacterDelta })
+                    )
+                    appendLine(
+                        "Combined path syntax/colors: " +
+                            formatSignedStageDelta(sumInt { it.h21PathSyntaxCharacterDelta })
+                    )
+                    appendLine("Note: these two H2.2 substages sum to the combined H2.1 path-syntax/color delta.")
 
                     val regressionFiles = successful.filter { (_, data) ->
                         data.optimizedXmlCharactersAfter > data.optimizedXmlCharactersBefore
@@ -267,6 +284,14 @@ object SvgProductionCorpusProfiler {
                                 .minByOrNull { it.second }
 
                             appendLine("⚠ ${file.fileName}: +${formatCount(netAdded.toLong())} characters net")
+                            appendLine(
+                                "    H2.2 pathData syntax: " +
+                                    formatSignedStageDelta(data.h22PathDataSyntaxCharacterDelta.toLong())
+                            )
+                            appendLine(
+                                "    H2.2 color normalization: " +
+                                    formatSignedStageDelta(data.h22ColorNormalizationCharacterDelta.toLong())
+                            )
                             appendLine(
                                 "    first growth stage: " +
                                     (firstGrowth?.let { "${it.first} (${formatSignedStageDelta(it.second.toLong())})" }

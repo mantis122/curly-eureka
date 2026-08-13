@@ -606,6 +606,9 @@ object SvgToVectorConverter {
         reportData.optimizationFormattingCharactersSaved = pathOptimizationStats.formattingCharactersSaved
 
         reportData.h21PathSyntaxCharacterDelta = pathOptimizationStats.h21PathSyntaxCharacterDelta
+        reportData.h22PathDataSyntaxCharacterDelta = pathOptimizationStats.h22PathDataSyntaxCharacterDelta
+        reportData.h22ColorNormalizationCharacterDelta =
+            pathOptimizationStats.h22ColorNormalizationCharacterDelta
         reportData.h21PruningCharacterDelta = pathOptimizationStats.h21PruningCharacterDelta
         reportData.h21TransformCharacterDelta = pathOptimizationStats.h21TransformCharacterDelta
         reportData.h21NearIntegerCharacterDelta = pathOptimizationStats.h21NearIntegerCharacterDelta
