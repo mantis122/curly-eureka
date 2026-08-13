@@ -528,33 +528,81 @@ internal object SvgPathDataOptimizer {
         var comparatorFailures = 0
         var comparatorNanos = 0L
 
+        /*
+         * G3.20b production-path convergence.
+         *
+         * The full independent second pass has already been computed above, and
+         * pass 3 independently tells us whether that result is a fixed point.
+         * Production therefore must not try to reconstruct pass 2 with the
+         * narrower historical G3.15/G3.14 candidate: final decimal
+         * canonicalization and other production-only path stages may have
+         * changed the spelling before this guard sees firstPassXml.
+         *
+         * Instead, promote the independently computed pass-2 XML itself, but
+         * only when:
+         *   1. first pass and pass 2 are structurally identical outside
+         *      android:pathData values;
+         *   2. path counts are identical;
+         *   3. every changed path is geometry-equivalent under G3.13;
+         *   4. pass 2 is independently verified as fixed by pass 3; and
+         *   5. final VectorDrawable validation passes.
+         *
+         * Any failure remains fail-closed and retains firstPassXml.
+         */
+        val firstPathMatches = pathDataAttributeRegex.findAll(firstPassXml).toList()
+        val secondPathMatches = pathDataAttributeRegex.findAll(independentSecondPassXml).toList()
+
+        pathsExamined = firstPathMatches.size
+
+        fun pathDataSkeleton(xml: String): String =
+            pathDataAttributeRegex.replace(xml) {
+                "android:pathData=\"__G320B_PATHDATA__\""
+            }
+
+        val pathCountsMatch = firstPathMatches.size == secondPathMatches.size
+        val nonPathStructureMatches =
+            pathCountsMatch &&
+                pathDataSkeleton(firstPassXml) ==
+                    pathDataSkeleton(independentSecondPassXml)
+
         val candidateStart = System.nanoTime()
-        val candidateXml = pathDataAttributeRegex.replace(firstPassXml) { match ->
-            pathsExamined++
-            val before = match.groupValues[1]
-            val candidate = runPostSerializationGeometryConvergenceCandidate(before).pathData
-            if (candidate != before) {
-                pathsChanged++
-                geometryComparisons++
-                val comparatorStart = System.nanoTime()
-                val diagnostic = SvgPathSampler.exactTraversalShortCircuitGeometryDiagnostic(
-                    before,
-                    candidate
-                )
-                comparatorNanos += System.nanoTime() - comparatorStart
-                val exact =
-                    diagnostic.reason.contains("G3.13 exact ordered-traversal short-circuit")
-                if (exact) exactShortCircuits++ else fallbackBidirectional++
-                if (!diagnostic.equivalent) geometryMismatches++
-                if (
-                    diagnostic.reason.contains("parse failed", ignoreCase = true) ||
-                    diagnostic.reason.contains("could not be flattened", ignoreCase = true)
-                ) {
-                    comparatorFailures++
+
+        if (pathCountsMatch) {
+            for (index in firstPathMatches.indices) {
+                val before = firstPathMatches[index].groupValues[1]
+                val candidate = secondPathMatches[index].groupValues[1]
+                if (candidate != before) {
+                    pathsChanged++
+                    geometryComparisons++
+                    val comparatorStart = System.nanoTime()
+                    val diagnostic =
+                        SvgPathSampler.exactTraversalShortCircuitGeometryDiagnostic(
+                            before,
+                            candidate
+                        )
+                    comparatorNanos += System.nanoTime() - comparatorStart
+
+                    val exact =
+                        diagnostic.reason.contains(
+                            "G3.13 exact ordered-traversal short-circuit"
+                        )
+                    if (exact) exactShortCircuits++ else fallbackBidirectional++
+
+                    if (!diagnostic.equivalent) geometryMismatches++
+                    if (
+                        diagnostic.reason.contains("parse failed", ignoreCase = true) ||
+                        diagnostic.reason.contains(
+                            "could not be flattened",
+                            ignoreCase = true
+                        )
+                    ) {
+                        comparatorFailures++
+                    }
                 }
             }
-            "android:pathData=\"$candidate\""
         }
+
+        val candidateXml = independentSecondPassXml
         val candidateAndComparatorNanos = System.nanoTime() - candidateStart
         val candidateNanos =
             (candidateAndComparatorNanos - comparatorNanos).coerceAtLeast(0L)
@@ -562,11 +610,18 @@ internal object SvgPathDataOptimizer {
         val candidateChanged = candidateXml != firstPassXml
         val matchedIndependent = candidateXml == independentSecondPassXml
         val validation =
-            if (candidateChanged) validateFinalVectorXml(candidateXml)
-            else validateFinalVectorXml(firstPassXml)
+            if (candidateChanged && nonPathStructureMatches) {
+                validateFinalVectorXml(candidateXml)
+            } else {
+                validateFinalVectorXml(firstPassXml)
+            }
 
         val rejectionReason = when {
             !candidateChanged -> ""
+            !pathCountsMatch ->
+                "independent full pass 2 changed path count"
+            !nonPathStructureMatches ->
+                "independent full pass 2 changed non-path XML structure"
             comparatorFailures > 0 ->
                 "G3.13 comparator failure"
             geometryMismatches > 0 ->
@@ -582,6 +637,8 @@ internal object SvgPathDataOptimizer {
 
         val accepted =
             candidateChanged &&
+                pathCountsMatch &&
+                nonPathStructureMatches &&
                 comparatorFailures == 0 &&
                 geometryMismatches == 0 &&
                 matchedIndependent &&
