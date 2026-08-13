@@ -3,7 +3,7 @@ package com.example.svgvectorconverter
 import java.util.Locale
 
 /**
- * H1.2 production corpus opportunity profiler.
+ * H1.3 production corpus profiler.
  *
  * Diagnostic-only infrastructure. It converts real SVG inputs through the
  * normal production pipeline and aggregates the structured metrics already
@@ -68,8 +68,21 @@ object SvgProductionCorpusProfiler {
                 "Final formatting" to sumLong { it.optimizationFormattingNanos }
             )
 
+            val optimizationNanos = sumLong { it.outputOptimizationNanos }
+            val productionPassNanos = sumLong { it.optimizerProductionPassNanos }
+            val idempotencePassNanos = sumLong { it.optimizerIdempotencePassNanos }
+            val fixedPointPassNanos = sumLong { it.optimizerFixedPointPassNanos }
+            val convergenceGuardNanos = sumLong { it.g315GuardNanos }
+            val finalValidationNanos = sumLong { it.finalOutputValidationNanos }
+            val knownTopLevelNanos = productionPassNanos + idempotencePassNanos +
+                fixedPointPassNanos + convergenceGuardNanos + finalValidationNanos
+            val wrapperOtherNanos = (optimizationNanos - knownTopLevelNanos).coerceAtLeast(0L)
+            val firstPassStageNanos = stageTimes.sumOf { it.second }
+            val firstPassOtherNanos = (productionPassNanos - firstPassStageNanos).coerceAtLeast(0L)
+
             return buildString {
-                appendLine("H1.1 production corpus profile")
+                appendLine("H1 production corpus profile")
+                appendLine("Instrumentation level: H1.3")
                 appendLine()
                 appendLine("Mode: diagnostic only; normal production conversion pipeline")
                 appendLine("Files selected: ${files.size}")
@@ -125,7 +138,7 @@ object SvgProductionCorpusProfiler {
 
                     appendLine()
                     appendLine("────────────────────────────────")
-                    appendLine("H1.2 opportunity / rejection diagnostics")
+                    appendLine("Opportunity / rejection diagnostics")
                     appendLine("────────────────────────────────")
                     appendCounter("Adjacent path pairs examined", sumInt { it.adjacentPathPairsExamined })
                     appendCounter("Adjacent path pairs with identical render attributes", sumInt { it.adjacentPathPairsSamePaint })
@@ -142,7 +155,7 @@ object SvgProductionCorpusProfiler {
                     appendCounter("Uniform-scale groups preserved because flattening was not smaller", sumInt { it.scaleGroupsPreservedForSize })
                     appendCounter("Non-uniform-scale groups preserved because flattening was not smaller", sumInt { it.nonUniformScaleGroupsPreservedForSize })
                     appendCounter("Rotation groups preserved because flattening was not smaller", sumInt { it.rotationGroupsPreservedForSize })
-                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H1.2 does not relax those rules.")
+                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H1.3 does not relax those rules.")
 
                     appendLine()
                     appendLine("────────────────────────────────")
@@ -155,13 +168,27 @@ object SvgProductionCorpusProfiler {
 
                     appendLine()
                     appendLine("────────────────────────────────")
-                    appendLine("Stage runtime")
+                    appendLine("Optimizer pass attribution")
                     appendLine("────────────────────────────────")
-                    val optimizationNanos = sumLong { it.outputOptimizationNanos }
-                    appendLine("Total optimization time: ${formatNanos(optimizationNanos)}")
+                    appendLine("Total optimization wrapper time: ${formatNanos(optimizationNanos)}")
+                    appendLine("Production pass 1: ${formatNanos(productionPassNanos)} (${percentNanos(productionPassNanos, optimizationNanos)})")
+                    appendLine("Independent idempotence pass 2: ${formatNanos(idempotencePassNanos)} (${percentNanos(idempotencePassNanos, optimizationNanos)})")
+                    appendLine("Fixed-point verification pass 3: ${formatNanos(fixedPointPassNanos)} (${percentNanos(fixedPointPassNanos, optimizationNanos)})")
+                    appendLine("Guarded production convergence: ${formatNanos(convergenceGuardNanos)} (${percentNanos(convergenceGuardNanos, optimizationNanos)})")
+                    appendLine("Final VectorDrawable validation: ${formatNanos(finalValidationNanos)} (${percentNanos(finalValidationNanos, optimizationNanos)})")
+                    appendLine("Wrapper / clip optimization / setup / accounting remainder: ${formatNanos(wrapperOtherNanos)} (${percentNanos(wrapperOtherNanos, optimizationNanos)})")
+                    appendLine("Note: pass 2 and pass 3 are correctness verification work, not missing production-pass stages.")
+
+                    appendLine()
+                    appendLine("────────────────────────────────")
+                    appendLine("Production-pass stage runtime (pass 1)")
+                    appendLine("────────────────────────────────")
+                    appendLine("Production pass 1 total: ${formatNanos(productionPassNanos)}")
                     stageTimes.sortedByDescending { it.second }.forEach { (label, nanos) ->
-                        appendLine("$label: ${formatNanos(nanos)} (${percentNanos(nanos, optimizationNanos)})")
+                        appendLine("$label: ${formatNanos(nanos)} (${percentNanos(nanos, productionPassNanos)})")
                     }
+                    appendLine("Other pass-1 overhead: ${formatNanos(firstPassOtherNanos)} (${percentNanos(firstPassOtherNanos, productionPassNanos)})")
+                    appendLine("Note: stage timers above describe pass 1 only and should not be compared directly with total multi-pass optimization time.")
 
                     appendLine()
                     appendLine("────────────────────────────────")
@@ -176,13 +203,41 @@ object SvgProductionCorpusProfiler {
                                 "${formatCount(saved.toLong())} chars saved, " +
                                 "${formatNanos(file.elapsedNanos)}"
                         )
+                        val fileKnownTopLevel =
+                            data.optimizerProductionPassNanos.coerceAtLeast(0L) +
+                                data.optimizerIdempotencePassNanos.coerceAtLeast(0L) +
+                                data.optimizerFixedPointPassNanos.coerceAtLeast(0L) +
+                                data.g315GuardNanos.coerceAtLeast(0L) +
+                                data.finalOutputValidationNanos.coerceAtLeast(0L)
+                        val fileWrapperOther =
+                            (data.outputOptimizationNanos.coerceAtLeast(0L) - fileKnownTopLevel)
+                                .coerceAtLeast(0L)
+                        val fileFirstPassStages =
+                            data.optimizationPathSyntaxNanos.coerceAtLeast(0L) +
+                                data.optimizationNumericCleanupNanos.coerceAtLeast(0L) +
+                                data.optimizationDeduplicationNanos.coerceAtLeast(0L) +
+                                data.optimizationTransformsNanos.coerceAtLeast(0L) +
+                                data.optimizationPruningCleanupNanos.coerceAtLeast(0L) +
+                                data.optimizationFormattingNanos.coerceAtLeast(0L)
+                        val fileFirstPassOther =
+                            (data.optimizerProductionPassNanos.coerceAtLeast(0L) - fileFirstPassStages)
+                                .coerceAtLeast(0L)
                         appendLine(
-                            "    stages: path=${formatNanos(data.optimizationPathSyntaxNanos)}, " +
+                            "    passes: p1=${formatNanos(data.optimizerProductionPassNanos)}, " +
+                                "p2=${formatNanos(data.optimizerIdempotencePassNanos)}, " +
+                                "p3=${formatNanos(data.optimizerFixedPointPassNanos)}, " +
+                                "guard=${formatNanos(data.g315GuardNanos)}, " +
+                                "validate=${formatNanos(data.finalOutputValidationNanos)}, " +
+                                "wrapperOther=${formatNanos(fileWrapperOther)}"
+                        )
+                        appendLine(
+                            "    pass1 stages: path=${formatNanos(data.optimizationPathSyntaxNanos)}, " +
                                 "numeric=${formatNanos(data.optimizationNumericCleanupNanos)}, " +
                                 "merge=${formatNanos(data.optimizationDeduplicationNanos)}, " +
                                 "transform=${formatNanos(data.optimizationTransformsNanos)}, " +
                                 "prune=${formatNanos(data.optimizationPruningCleanupNanos)}, " +
-                                "format=${formatNanos(data.optimizationFormattingNanos)}"
+                                "format=${formatNanos(data.optimizationFormattingNanos)}, " +
+                                "other=${formatNanos(fileFirstPassOther)}"
                         )
                         if (data.adjacentPathPairsExamined > 0 ||
                             data.compatiblePathsMerged > 0 ||
