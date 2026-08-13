@@ -316,6 +316,15 @@ internal object SvgPathDataOptimizer {
         val deduplicationCharactersSaved: Int = 0,
         val numericCleanupCharactersSaved: Int = 0,
         val formattingCharactersSaved: Int = 0,
+        // H2.1: signed stage deltas. Positive means the stage reduced XML;
+        // negative means the stage increased XML. These are diagnostic-only.
+        val h21PathSyntaxCharacterDelta: Int = 0,
+        val h21PruningCharacterDelta: Int = 0,
+        val h21TransformCharacterDelta: Int = 0,
+        val h21NearIntegerCharacterDelta: Int = 0,
+        val h21DedupMergeCharacterDelta: Int = 0,
+        val h21DecimalCanonicalizationCharacterDelta: Int = 0,
+        val h21FormattingCharacterDelta: Int = 0,
         val xmlCharactersBefore: Int = 0,
         val xmlCharactersAfter: Int = 0,
         val g315GuardedProductionTrial: G315GuardedProductionTrialStats =
@@ -904,8 +913,11 @@ internal object SvgPathDataOptimizer {
         pathCache: PathOptimizationCache,
         validationPass: Boolean
     ): Result {
+        fun characterDelta(before: String, after: String): Int =
+            before.length - after.length
+
         fun charactersSaved(before: String, after: String): Int =
-            (before.length - after.length).coerceAtLeast(0)
+            characterDelta(before, after).coerceAtLeast(0)
 
         var pathCount = 0
         var charactersBefore = 0
@@ -996,6 +1008,7 @@ internal object SvgPathDataOptimizer {
         val colorNormalizationNanos = System.nanoTime() - colorNormalizationStartTime
         val pathSyntaxOptimizationNanos = System.nanoTime() - pathSyntaxStartTime
         val pathSyntaxCharactersSaved = charactersSaved(xml, colorNormalizedXml)
+        val h21PathSyntaxCharacterDelta = characterDelta(xml, colorNormalizedXml)
 
         val pruningStartTime = System.nanoTime()
         var emptyPathDataRemoved = 0
@@ -1028,6 +1041,8 @@ internal object SvgPathDataOptimizer {
         val pruningAndGroupCleanupNanos = System.nanoTime() - pruningStartTime
         val pruningCleanupCharactersSaved =
             charactersSaved(colorNormalizedXml, groupCleanup.xml)
+        val h21PruningCharacterDelta =
+            characterDelta(colorNormalizedXml, groupCleanup.xml)
 
         val transformStartTime = System.nanoTime()
 
@@ -1083,10 +1098,14 @@ internal object SvgPathDataOptimizer {
         val transformOptimizationNanos = System.nanoTime() - transformStartTime
         val transformCharactersSaved =
             charactersSaved(groupCleanup.xml, transformCanonicalization.xml)
+        val h21TransformCharacterDelta =
+            characterDelta(groupCleanup.xml, transformCanonicalization.xml)
 
         val numericCleanupStartTime = System.nanoTime()
         val nearIntegerSnapping = snapNearIntegerPathValues(transformCanonicalization.xml)
         val nearIntegerSnappingNanos = System.nanoTime() - numericCleanupStartTime
+        val h21NearIntegerCharacterDelta =
+            characterDelta(transformCanonicalization.xml, nearIntegerSnapping.xml)
 
         val deduplicationStartTime = System.nanoTime()
         val duplicateRemoval =
@@ -1095,6 +1114,8 @@ internal object SvgPathDataOptimizer {
         val deduplicationAndMergeNanos = System.nanoTime() - deduplicationStartTime
         val deduplicationCharactersSaved =
             charactersSaved(nearIntegerSnapping.xml, pathMerging.xml)
+        val h21DedupMergeCharacterDelta =
+            characterDelta(nearIntegerSnapping.xml, pathMerging.xml)
 
         // A11.2.1: run decimal canonicalization after every geometry-producing
         // optimization. Earlier passes may create new relative deltas, so this
@@ -1108,6 +1129,8 @@ internal object SvgPathDataOptimizer {
             )
         val numericCleanupNanos =
             nearIntegerSnappingNanos + (System.nanoTime() - decimalCanonicalizationStartTime)
+        val h21DecimalCanonicalizationCharacterDelta =
+            characterDelta(pathMerging.xml, decimalCanonicalization.xml)
         val numericCleanupCharactersSaved =
             charactersSaved(transformCanonicalization.xml, nearIntegerSnapping.xml) +
                 charactersSaved(pathMerging.xml, decimalCanonicalization.xml)
@@ -1117,6 +1140,8 @@ internal object SvgPathDataOptimizer {
         val finalFormattingNanos = System.nanoTime() - finalFormattingStartTime
         val formattingCharactersSaved =
             charactersSaved(decimalCanonicalization.xml, finalXml)
+        val h21FormattingCharacterDelta =
+            characterDelta(decimalCanonicalization.xml, finalXml)
         val charactersAfter = pathDataAttributeRegex.findAll(finalXml)
             .sumOf { it.groupValues[1].length }
 
@@ -1342,6 +1367,14 @@ internal object SvgPathDataOptimizer {
                 deduplicationCharactersSaved = deduplicationCharactersSaved,
                 numericCleanupCharactersSaved = numericCleanupCharactersSaved,
                 formattingCharactersSaved = formattingCharactersSaved,
+                h21PathSyntaxCharacterDelta = h21PathSyntaxCharacterDelta,
+                h21PruningCharacterDelta = h21PruningCharacterDelta,
+                h21TransformCharacterDelta = h21TransformCharacterDelta,
+                h21NearIntegerCharacterDelta = h21NearIntegerCharacterDelta,
+                h21DedupMergeCharacterDelta = h21DedupMergeCharacterDelta,
+                h21DecimalCanonicalizationCharacterDelta =
+                    h21DecimalCanonicalizationCharacterDelta,
+                h21FormattingCharacterDelta = h21FormattingCharacterDelta,
                 xmlCharactersBefore = xml.length,
                 xmlCharactersAfter = finalXml.length
             )

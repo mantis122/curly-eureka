@@ -3,7 +3,7 @@ package com.example.svgvectorconverter
 import java.util.Locale
 
 /**
- * H1.6 production corpus profiler.
+ * H2.1 production corpus profiler.
  *
  * Diagnostic-only infrastructure. It converts real SVG inputs through the
  * normal production pipeline and aggregates the structured metrics already
@@ -102,7 +102,7 @@ object SvgProductionCorpusProfiler {
 
             return buildString {
                 appendLine("H1 production corpus profile")
-                appendLine("Instrumentation level: H1.6")
+                appendLine("Instrumentation level: H2.1")
                 appendLine()
                 appendLine("Mode: diagnostic only; normal production conversion pipeline")
                 appendLine("Files selected: ${files.size}")
@@ -196,7 +196,7 @@ object SvgProductionCorpusProfiler {
                     val validationFailures = successful.filter { (_, d) -> !d.finalOutputValidationPassed }
                     appendLine()
                     appendLine("────────────────────────────────")
-                    appendLine("H1.6 validation failure classification")
+                    appendLine("H1.6 validation failure classification (retained forensic diagnostics)")
                     appendLine("────────────────────────────────")
                     appendLine("Files with selected-output validation failure: ${validationFailures.size}")
                     if (validationFailures.isEmpty()) {
@@ -226,12 +226,73 @@ object SvgProductionCorpusProfiler {
 
                     appendLine()
                     appendLine("────────────────────────────────")
-                    appendLine("Stage savings")
+                    appendLine("H2.1 signed stage attribution")
+                    appendLine("────────────────────────────────")
+                    val signedStageDeltas = listOf(
+                        "Path syntax and colors" to sumInt { it.h21PathSyntaxCharacterDelta },
+                        "Pruning and group cleanup" to sumInt { it.h21PruningCharacterDelta },
+                        "Transform optimization" to sumInt { it.h21TransformCharacterDelta },
+                        "Near-integer snapping" to sumInt { it.h21NearIntegerCharacterDelta },
+                        "Deduplication and merging" to sumInt { it.h21DedupMergeCharacterDelta },
+                        "Decimal canonicalization" to sumInt { it.h21DecimalCanonicalizationCharacterDelta },
+                        "Final formatting" to sumInt { it.h21FormattingCharacterDelta }
+                    )
+                    signedStageDeltas.forEach { (label, delta) ->
+                        appendLine("$label: ${formatSignedStageDelta(delta)}")
+                    }
+                    appendLine("Note: positive means the stage removed characters; negative means it added characters.")
+
+                    val regressionFiles = successful.filter { (_, data) ->
+                        data.optimizedXmlCharactersAfter > data.optimizedXmlCharactersBefore
+                    }
+                    appendLine()
+                    appendLine("Files with net optimization size regression: ${regressionFiles.size}")
+                    if (regressionFiles.isNotEmpty()) {
+                        appendLine("Per-regression attribution")
+                        regressionFiles.forEach { (file, data) ->
+                            val netAdded =
+                                data.optimizedXmlCharactersAfter - data.optimizedXmlCharactersBefore
+                            val stages = listOf(
+                                "path syntax/colors" to data.h21PathSyntaxCharacterDelta,
+                                "pruning/group cleanup" to data.h21PruningCharacterDelta,
+                                "transform optimization" to data.h21TransformCharacterDelta,
+                                "near-integer snapping" to data.h21NearIntegerCharacterDelta,
+                                "deduplication/merging" to data.h21DedupMergeCharacterDelta,
+                                "decimal canonicalization" to data.h21DecimalCanonicalizationCharacterDelta,
+                                "final formatting" to data.h21FormattingCharacterDelta
+                            )
+                            val firstGrowth = stages.firstOrNull { it.second < 0 }
+                            val largestGrowth = stages
+                                .filter { it.second < 0 }
+                                .minByOrNull { it.second }
+
+                            appendLine("⚠ ${file.fileName}: +${formatCount(netAdded.toLong())} characters net")
+                            appendLine(
+                                "    first growth stage: " +
+                                    (firstGrowth?.let { "${it.first} (${formatSignedStageDelta(it.second.toLong())})" }
+                                        ?: "none recorded")
+                            )
+                            appendLine(
+                                "    largest growth stage: " +
+                                    (largestGrowth?.let { "${it.first} (${formatSignedStageDelta(it.second.toLong())})" }
+                                        ?: "none recorded")
+                            )
+                            appendLine(
+                                "    stages: " +
+                                    stages.joinToString(", ") { (label, delta) ->
+                                        "$label=${formatSignedStageDelta(delta.toLong())}"
+                                    }
+                            )
+                        }
+                    }
+
+                    appendLine()
+                    appendLine("Stage savings (legacy non-negative counters)")
                     appendLine("────────────────────────────────")
                     stageSavings.sortedByDescending { it.second }.forEach { (label, saved) ->
                         appendLine("$label: ${formatCount(saved)} characters")
                     }
-                    appendLine("Note: stage savings are instrumentation totals and are not necessarily additive.")
+                    appendLine("Note: legacy stage-savings counters clamp growth to zero; use H2.1 signed attribution above for regression analysis.")
 
                     appendLine()
                     appendLine("────────────────────────────────")
@@ -457,6 +518,13 @@ object SvgProductionCorpusProfiler {
             delta > 0L -> "+${formatCount(delta)} chars saved"
             delta < 0L -> "${formatCount(delta)} chars (${formatCount(-delta)} added)"
             else -> "0 chars changed"
+        }
+
+    private fun formatSignedStageDelta(delta: Long): String =
+        when {
+            delta > 0L -> "+${formatCount(delta)} saved"
+            delta < 0L -> "${formatCount(delta)} (${formatCount(-delta)} added)"
+            else -> "0"
         }
 
     private fun percent(part: Long, whole: Long): String =

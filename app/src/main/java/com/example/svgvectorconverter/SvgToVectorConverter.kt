@@ -604,6 +604,16 @@ object SvgToVectorConverter {
         reportData.optimizationDeduplicationCharactersSaved = pathOptimizationStats.deduplicationCharactersSaved
         reportData.optimizationNumericCleanupCharactersSaved = pathOptimizationStats.numericCleanupCharactersSaved
         reportData.optimizationFormattingCharactersSaved = pathOptimizationStats.formattingCharactersSaved
+
+        reportData.h21PathSyntaxCharacterDelta = pathOptimizationStats.h21PathSyntaxCharacterDelta
+        reportData.h21PruningCharacterDelta = pathOptimizationStats.h21PruningCharacterDelta
+        reportData.h21TransformCharacterDelta = pathOptimizationStats.h21TransformCharacterDelta
+        reportData.h21NearIntegerCharacterDelta = pathOptimizationStats.h21NearIntegerCharacterDelta
+        reportData.h21DedupMergeCharacterDelta = pathOptimizationStats.h21DedupMergeCharacterDelta
+        reportData.h21DecimalCanonicalizationCharacterDelta =
+            pathOptimizationStats.h21DecimalCanonicalizationCharacterDelta
+        reportData.h21FormattingCharacterDelta = pathOptimizationStats.h21FormattingCharacterDelta
+
         reportData.reportAnalysisNanos = reportAnalysisNanos
         reportData.reportGenerationNanos = 0
         reportData.elapsedNanos = elapsedNanos

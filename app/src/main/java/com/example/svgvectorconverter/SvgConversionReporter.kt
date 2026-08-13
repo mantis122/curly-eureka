@@ -406,6 +406,16 @@ class SvgConversionReportData {
     var optimizationDeduplicationCharactersSaved: Int = 0
     var optimizationNumericCleanupCharactersSaved: Int = 0
     var optimizationFormattingCharactersSaved: Int = 0
+
+    // H2.1 signed stage deltas. Positive = characters removed; negative = added.
+    var h21PathSyntaxCharacterDelta: Int = 0
+    var h21PruningCharacterDelta: Int = 0
+    var h21TransformCharacterDelta: Int = 0
+    var h21NearIntegerCharacterDelta: Int = 0
+    var h21DedupMergeCharacterDelta: Int = 0
+    var h21DecimalCanonicalizationCharacterDelta: Int = 0
+    var h21FormattingCharacterDelta: Int = 0
+
     var reportAnalysisNanos: Long = 0
     var reportGenerationNanos: Long = 0
     var elapsedNanos: Long = 0
