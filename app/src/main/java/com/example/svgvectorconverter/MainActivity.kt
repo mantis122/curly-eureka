@@ -180,7 +180,7 @@ class MainActivity : ComponentActivity() {
                 uri,
                 currentH11CorpusProfileReport
             )
-            toast("H1.3 corpus profile saved")
+            toast("H1.4 corpus profile saved")
         }
     }
 
@@ -896,7 +896,7 @@ class MainActivity : ComponentActivity() {
         )
 
         val h11CorpusProfileButton =
-            makeButton("Run H1.3 Production Corpus Profile") {
+            makeButton("Run H1.4 Production Corpus Profile") {
                 openH11CorpusSvgs.launch(
                     arrayOf("image/svg+xml", "text/xml", "text/plain")
                 )
@@ -909,7 +909,7 @@ class MainActivity : ComponentActivity() {
         layout.addView(
             makeText(
                 """
-                Select a real-world SVG corpus. H1.3 runs each file through
+                Select a real-world SVG corpus. H1.4 runs each file through
                 the normal production converter and aggregates existing
                 structured optimization, size, validation, opportunity, and full-pass runtime metrics.
                 This is diagnostic-only and does not change production output.
@@ -4363,7 +4363,7 @@ class MainActivity : ComponentActivity() {
         progressLayout.addView(statusText)
 
         val progressDialog = android.app.AlertDialog.Builder(this)
-            .setTitle("H1.3 Production Corpus Profile")
+            .setTitle("H1.4 Production Corpus Profile")
             .setView(progressLayout)
             .setCancelable(false)
             .create()
@@ -4425,7 +4425,7 @@ class MainActivity : ComponentActivity() {
                 appendLine()
                 appendLine()
                 appendLine(
-                    "Total H1.3 wall time including input reads: " +
+                    "Total H1.4 wall time including input reads: " +
                         String.format(
                             java.util.Locale.US,
                             "%.2f ms",
@@ -4512,7 +4512,7 @@ class MainActivity : ComponentActivity() {
         layout.addView(runAgainButton, LinearLayout.LayoutParams(-1, -2))
 
         val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle("H1.3 Corpus Profile Results")
+            .setTitle("H1.4 Corpus Profile Results")
             .setView(layout)
             .setPositiveButton("Close", null)
             .create()
@@ -4530,7 +4530,7 @@ class MainActivity : ComponentActivity() {
 
     private fun copyH11CorpusProfileReport() {
         if (currentH11CorpusProfileReport.isBlank()) {
-            toast("No H1.3 corpus profile to copy")
+            toast("No H1.4 corpus profile to copy")
             return
         }
 
@@ -4541,7 +4541,7 @@ class MainActivity : ComponentActivity() {
                 currentH11CorpusProfileReport
             )
         )
-        toast("H1.3 corpus profile copied")
+        toast("H1.4 corpus profile copied")
     }
 
     private fun runBundledRegressionSuite() {

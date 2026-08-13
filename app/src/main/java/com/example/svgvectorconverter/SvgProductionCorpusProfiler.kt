@@ -3,7 +3,7 @@ package com.example.svgvectorconverter
 import java.util.Locale
 
 /**
- * H1.3 production corpus profiler.
+ * H1.4 production corpus profiler.
  *
  * Diagnostic-only infrastructure. It converts real SVG inputs through the
  * normal production pipeline and aggregates the structured metrics already
@@ -22,6 +22,14 @@ object SvgProductionCorpusProfiler {
         val reportData: SvgConversionReportData?,
         val outputCharacters: Int,
         val elapsedNanos: Long,
+        val sourcePathElementCount: Int = 0,
+        val sourceHasGroup: Boolean = false,
+        val sourceHasTransform: Boolean = false,
+        val sourceHasStroke: Boolean = false,
+        val sourceHasGradient: Boolean = false,
+        val sourceHasClipPath: Boolean = false,
+        val sourceHasMask: Boolean = false,
+        val sourceHasUse: Boolean = false,
         val error: String? = null
     )
 
@@ -45,10 +53,22 @@ object SvgProductionCorpusProfiler {
             val sourceChars = sumInt { it.sourceSvgCharacters }
             val xmlBefore = sumInt { it.optimizedXmlCharactersBefore }
             val xmlAfter = sumInt { it.optimizedXmlCharactersAfter }
-            val xmlSaved = (xmlBefore - xmlAfter).coerceAtLeast(0L)
+            val xmlDelta = xmlBefore - xmlAfter
             val pathBefore = sumInt { it.pathDataCharactersBefore }
             val pathAfter = sumInt { it.pathDataCharactersAfter }
-            val pathSaved = (pathBefore - pathAfter).coerceAtLeast(0L)
+            val pathDelta = pathBefore - pathAfter
+
+            val successfulFiles = successful.map { it.first }
+            val sourcePathElements = successfulFiles.sumOf { it.sourcePathElementCount.toLong() }
+            val sourceMultiPathFiles = successfulFiles.count { it.sourcePathElementCount > 1 }
+            val maxSourcePathElements = successfulFiles.maxOfOrNull { it.sourcePathElementCount } ?: 0
+            val sourceGroupFiles = successfulFiles.count { it.sourceHasGroup }
+            val sourceTransformFiles = successfulFiles.count { it.sourceHasTransform }
+            val sourceStrokeFiles = successfulFiles.count { it.sourceHasStroke }
+            val sourceGradientFiles = successfulFiles.count { it.sourceHasGradient }
+            val sourceClipPathFiles = successfulFiles.count { it.sourceHasClipPath }
+            val sourceMaskFiles = successfulFiles.count { it.sourceHasMask }
+            val sourceUseFiles = successfulFiles.count { it.sourceHasUse }
 
             val stageSavings = listOf(
                 "Path syntax and colors" to sumInt { it.optimizationPathSyntaxCharactersSaved },
@@ -82,7 +102,7 @@ object SvgProductionCorpusProfiler {
 
             return buildString {
                 appendLine("H1 production corpus profile")
-                appendLine("Instrumentation level: H1.3")
+                appendLine("Instrumentation level: H1.4")
                 appendLine()
                 appendLine("Mode: diagnostic only; normal production conversion pipeline")
                 appendLine("Files selected: ${files.size}")
@@ -98,16 +118,32 @@ object SvgProductionCorpusProfiler {
                     appendLine("Source SVG characters: ${formatCount(sourceChars)}")
                     appendLine("Pre-optimizer VectorDrawable characters: ${formatCount(xmlBefore)}")
                     appendLine("Final VectorDrawable characters: ${formatCount(xmlAfter)}")
-                    appendLine("Net optimizer characters saved: ${formatCount(xmlSaved)} (${percent(xmlSaved, xmlBefore)})")
+                    appendLine("Net optimizer character delta: ${formatSignedDelta(xmlDelta, xmlBefore)}")
                     appendLine("PathData characters before: ${formatCount(pathBefore)}")
                     appendLine("PathData characters after: ${formatCount(pathAfter)}")
-                    appendLine("PathData characters saved: ${formatCount(pathSaved)} (${percent(pathSaved, pathBefore)})")
+                    appendLine("PathData character delta: ${formatSignedDelta(pathDelta, pathBefore)}")
                     appendLine("Final drawable paths: ${formatCount(sumInt { it.convertedPathCount })}")
                     appendLine("Final groups: ${formatCount(sumInt { it.generatedGroupCount })}")
                     appendLine("Paths optimized: ${formatCount(sumInt { it.pathDataOptimizedCount })}")
                     appendLine("Files with warnings: ${successful.count { (_, d) -> d.warningCount > 0 }}")
                     appendLine("Final validation failures: ${successful.count { (_, d) -> !d.finalOutputValidationPassed }}")
                     appendLine("Optimizer fixed-point failures: ${successful.count { (_, d) -> !d.optimizerReachedFixedPoint }}")
+
+                    appendLine()
+                    appendLine("────────────────────────────────")
+                    appendLine("Corpus diversity (source SVG)")
+                    appendLine("────────────────────────────────")
+                    appendLine("Source <path> elements: ${formatCount(sourcePathElements)}")
+                    appendLine("Files with multiple source <path> elements: $sourceMultiPathFiles")
+                    appendLine("Maximum source <path> elements in one file: $maxSourcePathElements")
+                    appendLine("Files containing <g>: $sourceGroupFiles")
+                    appendLine("Files containing transform attributes: $sourceTransformFiles")
+                    appendLine("Files containing stroke styling: $sourceStrokeFiles")
+                    appendLine("Files containing gradients: $sourceGradientFiles")
+                    appendLine("Files containing <clipPath>: $sourceClipPathFiles")
+                    appendLine("Files containing <mask>: $sourceMaskFiles")
+                    appendLine("Files containing <use>: $sourceUseFiles")
+                    appendLine("Note: diversity counters inspect source SVG markup and remain visible even when production conversion safely flattens or removes those constructs.")
 
                     appendLine()
                     appendLine("────────────────────────────────")
@@ -155,7 +191,7 @@ object SvgProductionCorpusProfiler {
                     appendCounter("Uniform-scale groups preserved because flattening was not smaller", sumInt { it.scaleGroupsPreservedForSize })
                     appendCounter("Non-uniform-scale groups preserved because flattening was not smaller", sumInt { it.nonUniformScaleGroupsPreservedForSize })
                     appendCounter("Rotation groups preserved because flattening was not smaller", sumInt { it.rotationGroupsPreservedForSize })
-                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H1.3 does not relax those rules.")
+                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H1.4 does not relax those rules.")
 
                     appendLine()
                     appendLine("────────────────────────────────")
@@ -195,12 +231,14 @@ object SvgProductionCorpusProfiler {
                     appendLine("Per-file summary")
                     appendLine("────────────────────────────────")
                     successful.forEach { (file, data) ->
-                        val saved = (data.optimizedXmlCharactersBefore - data.optimizedXmlCharactersAfter).coerceAtLeast(0)
+                        val fileDelta =
+                            data.optimizedXmlCharactersBefore.toLong() -
+                                data.optimizedXmlCharactersAfter.toLong()
                         appendLine(
                             "✓ ${file.fileName}: " +
                                 "${data.convertedPathCount} paths, " +
                                 "${data.generatedGroupCount} groups, " +
-                                "${formatCount(saved.toLong())} chars saved, " +
+                                "${formatSignedDeltaShort(fileDelta)}, " +
                                 "${formatNanos(file.elapsedNanos)}"
                         )
                         val fileKnownTopLevel =
@@ -275,6 +313,7 @@ object SvgProductionCorpusProfiler {
 
         inputs.forEachIndexed { index, input ->
             val fileStart = System.nanoTime()
+            val sourceFeatures = inspectSourceFeatures(input.svg)
             val result = try {
                 val conversion = SvgToVectorConverter.convert(
                     svg = input.svg,
@@ -286,7 +325,15 @@ object SvgProductionCorpusProfiler {
                     success = true,
                     reportData = conversion.reportData,
                     outputCharacters = conversion.xml.length,
-                    elapsedNanos = System.nanoTime() - fileStart
+                    elapsedNanos = System.nanoTime() - fileStart,
+                    sourcePathElementCount = sourceFeatures.pathElementCount,
+                    sourceHasGroup = sourceFeatures.hasGroup,
+                    sourceHasTransform = sourceFeatures.hasTransform,
+                    sourceHasStroke = sourceFeatures.hasStroke,
+                    sourceHasGradient = sourceFeatures.hasGradient,
+                    sourceHasClipPath = sourceFeatures.hasClipPath,
+                    sourceHasMask = sourceFeatures.hasMask,
+                    sourceHasUse = sourceFeatures.hasUse
                 )
             } catch (throwable: Throwable) {
                 FileResult(
@@ -295,6 +342,14 @@ object SvgProductionCorpusProfiler {
                     reportData = null,
                     outputCharacters = 0,
                     elapsedNanos = System.nanoTime() - fileStart,
+                    sourcePathElementCount = sourceFeatures.pathElementCount,
+                    sourceHasGroup = sourceFeatures.hasGroup,
+                    sourceHasTransform = sourceFeatures.hasTransform,
+                    sourceHasStroke = sourceFeatures.hasStroke,
+                    sourceHasGradient = sourceFeatures.hasGradient,
+                    sourceHasClipPath = sourceFeatures.hasClipPath,
+                    sourceHasMask = sourceFeatures.hasMask,
+                    sourceHasUse = sourceFeatures.hasUse,
                     error = throwable.describeForProfile()
                 )
             }
@@ -308,6 +363,30 @@ object SvgProductionCorpusProfiler {
         )
     }
 
+    private data class SourceFeatures(
+        val pathElementCount: Int,
+        val hasGroup: Boolean,
+        val hasTransform: Boolean,
+        val hasStroke: Boolean,
+        val hasGradient: Boolean,
+        val hasClipPath: Boolean,
+        val hasMask: Boolean,
+        val hasUse: Boolean
+    )
+
+    private fun inspectSourceFeatures(svg: String): SourceFeatures =
+        SourceFeatures(
+            pathElementCount = SOURCE_PATH_TAG.findAll(svg).count(),
+            hasGroup = SOURCE_GROUP_TAG.containsMatchIn(svg),
+            hasTransform = SOURCE_TRANSFORM_ATTRIBUTE.containsMatchIn(svg),
+            hasStroke = SOURCE_STROKE_ATTRIBUTE.containsMatchIn(svg) ||
+                SOURCE_STROKE_STYLE.containsMatchIn(svg),
+            hasGradient = SOURCE_GRADIENT_TAG.containsMatchIn(svg),
+            hasClipPath = SOURCE_CLIP_PATH_TAG.containsMatchIn(svg),
+            hasMask = SOURCE_MASK_TAG.containsMatchIn(svg),
+            hasUse = SOURCE_USE_TAG.containsMatchIn(svg)
+        )
+
     private fun StringBuilder.appendCounter(label: String, value: Long) {
         appendLine("$label: ${formatCount(value)}")
     }
@@ -318,6 +397,24 @@ object SvgProductionCorpusProfiler {
     private fun formatNanos(nanos: Long): String =
         String.format(Locale.US, "%.2f ms", nanos.coerceAtLeast(0L) / 1_000_000.0)
 
+    private fun formatSignedDelta(delta: Long, before: Long): String {
+        val signed = if (delta > 0L) "+${formatCount(delta)}" else formatCount(delta)
+        val percent = if (before <= 0L) 0.0 else delta * 100.0 / before.toDouble()
+        val meaning = when {
+            delta > 0L -> "${formatCount(delta)} characters saved"
+            delta < 0L -> "${formatCount(-delta)} characters added"
+            else -> "no size change"
+        }
+        return "$signed (${String.format(Locale.US, "%+.1f%%", percent)}; $meaning)"
+    }
+
+    private fun formatSignedDeltaShort(delta: Long): String =
+        when {
+            delta > 0L -> "+${formatCount(delta)} chars saved"
+            delta < 0L -> "${formatCount(delta)} chars (${formatCount(-delta)} added)"
+            else -> "0 chars changed"
+        }
+
     private fun percent(part: Long, whole: Long): String =
         if (whole <= 0L) "0.0%" else
             String.format(Locale.US, "%.1f%%", part * 100.0 / whole.toDouble())
@@ -325,6 +422,25 @@ object SvgProductionCorpusProfiler {
     private fun percentNanos(part: Long, whole: Long): String =
         if (whole <= 0L) "0.0%" else
             String.format(Locale.US, "%.1f%%", part * 100.0 / whole.toDouble())
+
+    private val SOURCE_PATH_TAG =
+        Regex("""<\s*path(?:\s|/?>)""", RegexOption.IGNORE_CASE)
+    private val SOURCE_GROUP_TAG =
+        Regex("""<\s*g(?:\s|/?>)""", RegexOption.IGNORE_CASE)
+    private val SOURCE_TRANSFORM_ATTRIBUTE =
+        Regex("""\btransform\s*=""", RegexOption.IGNORE_CASE)
+    private val SOURCE_STROKE_ATTRIBUTE =
+        Regex("""\bstroke(?:-[A-Za-z]+)?\s*=""", RegexOption.IGNORE_CASE)
+    private val SOURCE_STROKE_STYLE =
+        Regex("""(?:^|[;"'])\s*stroke(?:-[A-Za-z]+)?\s*:""", RegexOption.IGNORE_CASE)
+    private val SOURCE_GRADIENT_TAG =
+        Regex("""<\s*(?:linearGradient|radialGradient)(?:\s|/?>)""", RegexOption.IGNORE_CASE)
+    private val SOURCE_CLIP_PATH_TAG =
+        Regex("""<\s*clipPath(?:\s|/?>)""", RegexOption.IGNORE_CASE)
+    private val SOURCE_MASK_TAG =
+        Regex("""<\s*mask(?:\s|/?>)""", RegexOption.IGNORE_CASE)
+    private val SOURCE_USE_TAG =
+        Regex("""<\s*use(?:\s|/?>)""", RegexOption.IGNORE_CASE)
 
     private fun Throwable.describeForProfile(): String {
         val type = this::class.java.simpleName.ifBlank { "Throwable" }
