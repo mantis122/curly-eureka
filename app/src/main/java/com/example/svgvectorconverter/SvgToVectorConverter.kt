@@ -456,6 +456,25 @@ object SvgToVectorConverter {
         reportData.malformedStructureCount = pathOptimizationStats.malformedStructureCount
         reportData.invalidViewportCount = pathOptimizationStats.invalidViewportCount
         reportData.unsupportedOutputConstructCount = pathOptimizationStats.unsupportedOutputConstructCount
+        fun validationStageReport(
+            stage: SvgPathDataOptimizer.ValidationSnapshotStats
+        ): SvgValidationStageReport = SvgValidationStageReport(
+            attempted = stage.attempted,
+            passed = stage.passed,
+            validatedPathDataCount = stage.validatedPathDataCount,
+            invalidPathDataCount = stage.invalidPathDataCount,
+            nonFiniteNumberCount = stage.nonFiniteNumberCount,
+            malformedStructureCount = stage.malformedStructureCount,
+            invalidViewportCount = stage.invalidViewportCount,
+            unsupportedOutputConstructCount = stage.unsupportedOutputConstructCount,
+            witness = stage.witness
+        )
+        val validationClassification = pathOptimizationStats.validationClassification
+        reportData.h16InputValidation = validationStageReport(validationClassification.input)
+        reportData.h16Pass1Validation = validationStageReport(validationClassification.pass1)
+        reportData.h16Pass2Validation = validationStageReport(validationClassification.pass2)
+        reportData.h16Pass3Validation = validationStageReport(validationClassification.pass3)
+        reportData.h16SelectedValidation = validationStageReport(validationClassification.selected)
         reportData.shorterCommandFormsSelected = pathOptimizationStats.shorterCommandFormsSelected
         reportData.relativeCommandsSelected = pathOptimizationStats.relativeCommandsSelected
         reportData.axisCommandsSelected = pathOptimizationStats.axisCommandsSelected

@@ -31,6 +31,18 @@ data class SvgPatternApproximationStats(
     val sparsePatternApproximationCount: Int = 0
 )
 
+data class SvgValidationStageReport(
+    var attempted: Boolean = false,
+    var passed: Boolean = false,
+    var validatedPathDataCount: Int = 0,
+    var invalidPathDataCount: Int = 0,
+    var nonFiniteNumberCount: Int = 0,
+    var malformedStructureCount: Int = 0,
+    var invalidViewportCount: Int = 0,
+    var unsupportedOutputConstructCount: Int = 0,
+    var witness: String = ""
+)
+
 class SvgConversionReportData {
     var convertedPathCount: Int = 0
     var convertedOriginalPathCount: Int = 0
@@ -260,6 +272,11 @@ class SvgConversionReportData {
     var malformedStructureCount: Int = 0
     var invalidViewportCount: Int = 0
     var unsupportedOutputConstructCount: Int = 0
+    var h16InputValidation: SvgValidationStageReport = SvgValidationStageReport()
+    var h16Pass1Validation: SvgValidationStageReport = SvgValidationStageReport()
+    var h16Pass2Validation: SvgValidationStageReport = SvgValidationStageReport()
+    var h16Pass3Validation: SvgValidationStageReport = SvgValidationStageReport()
+    var h16SelectedValidation: SvgValidationStageReport = SvgValidationStageReport()
     var shorterCommandFormsSelected: Int = 0
     var relativeCommandsSelected: Int = 0
     var axisCommandsSelected: Int = 0

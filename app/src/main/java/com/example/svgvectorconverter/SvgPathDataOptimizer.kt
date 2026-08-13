@@ -173,6 +173,26 @@ internal object SvgPathDataOptimizer {
         val candidateXml: String = ""
     )
 
+    data class ValidationSnapshotStats(
+        val attempted: Boolean = false,
+        val passed: Boolean = false,
+        val validatedPathDataCount: Int = 0,
+        val invalidPathDataCount: Int = 0,
+        val nonFiniteNumberCount: Int = 0,
+        val malformedStructureCount: Int = 0,
+        val invalidViewportCount: Int = 0,
+        val unsupportedOutputConstructCount: Int = 0,
+        val witness: String = ""
+    )
+
+    data class ValidationClassificationStats(
+        val input: ValidationSnapshotStats = ValidationSnapshotStats(),
+        val pass1: ValidationSnapshotStats = ValidationSnapshotStats(),
+        val pass2: ValidationSnapshotStats = ValidationSnapshotStats(),
+        val pass3: ValidationSnapshotStats = ValidationSnapshotStats(),
+        val selected: ValidationSnapshotStats = ValidationSnapshotStats()
+    )
+
     data class Stats(
         val pathCount: Int = 0,
         val charactersBefore: Int = 0,
@@ -299,7 +319,9 @@ internal object SvgPathDataOptimizer {
         val xmlCharactersBefore: Int = 0,
         val xmlCharactersAfter: Int = 0,
         val g315GuardedProductionTrial: G315GuardedProductionTrialStats =
-            G315GuardedProductionTrialStats()
+            G315GuardedProductionTrialStats(),
+        val validationClassification: ValidationClassificationStats =
+            ValidationClassificationStats()
     ) {
         val charactersSaved: Int
             get() = (charactersBefore - charactersAfter).coerceAtLeast(0)
@@ -368,6 +390,7 @@ internal object SvgPathDataOptimizer {
     )
 
     fun optimizeVectorXml(xml: String): Result {
+        val inputValidationSnapshot = validationSnapshot(xml)
         val pathCache = PathOptimizationCache()
 
         val firstPassStartTime = System.nanoTime()
@@ -377,6 +400,7 @@ internal object SvgPathDataOptimizer {
             validationPass = false
         )
         val firstPassNanos = System.nanoTime() - firstPassStartTime
+        val firstPassValidationSnapshot = validationSnapshot(firstPass.xml)
 
         // G3.5 safety rollback: production idempotence validation performs a
         // fully independent path recomputation. Stable-output reuse remains
@@ -391,6 +415,7 @@ internal object SvgPathDataOptimizer {
             validationPass = true
         )
         val secondPassNanos = System.nanoTime() - secondPassStartTime
+        val secondPassValidationSnapshot = validationSnapshot(secondPass.xml)
         val secondPassCacheHits = secondPassCache.validationHits
         val secondPassStableHits = secondPassCache.validationStableOutputHits
         val secondPassRegularHits = secondPassCache.validationRegularHits
@@ -438,6 +463,14 @@ internal object SvgPathDataOptimizer {
                 if (productionConvergenceTrial.guardAccepted) productionConvergenceTrial.candidateXml else firstPass.xml
             val selectedPathCharacters = pathDataAttributeRegex.findAll(selectedXml)
                 .sumOf { it.groupValues[1].length }
+            val selectedValidationSnapshot = validationSnapshot(selectedXml)
+            val validationClassification = ValidationClassificationStats(
+                input = inputValidationSnapshot,
+                pass1 = firstPassValidationSnapshot,
+                pass2 = secondPassValidationSnapshot,
+                pass3 = ValidationSnapshotStats(attempted = false),
+                selected = selectedValidationSnapshot
+            )
             return attachFinalOutputValidation(
                 firstPass.copy(
                     xml = selectedXml,
@@ -458,7 +491,8 @@ internal object SvgPathDataOptimizer {
                         optimizerFirstPassChangedXml = firstPass.xml != xml,
                         optimizerSecondPassChangedXml = false,
                         optimizerThirdPassChangedXml = false,
-                        g315GuardedProductionTrial = productionConvergenceTrial
+                        g315GuardedProductionTrial = productionConvergenceTrial,
+                        validationClassification = validationClassification
                     )
                 )
             )
@@ -476,6 +510,7 @@ internal object SvgPathDataOptimizer {
             validationPass = true
         )
         val thirdPassNanos = System.nanoTime() - thirdPassStartTime
+        val thirdPassValidationSnapshot = validationSnapshot(thirdPass.xml)
         val reachedFixedPoint = thirdPass.xml == secondPass.xml
         val productionConvergenceTrial = runGuardedProductionConvergenceTrial(
             firstPassXml = firstPass.xml,
@@ -487,6 +522,14 @@ internal object SvgPathDataOptimizer {
             if (productionConvergenceTrial.guardAccepted) productionConvergenceTrial.candidateXml else firstPass.xml
         val selectedPathCharacters = pathDataAttributeRegex.findAll(selectedXml)
             .sumOf { it.groupValues[1].length }
+        val selectedValidationSnapshot = validationSnapshot(selectedXml)
+        val validationClassification = ValidationClassificationStats(
+            input = inputValidationSnapshot,
+            pass1 = firstPassValidationSnapshot,
+            pass2 = secondPassValidationSnapshot,
+            pass3 = thirdPassValidationSnapshot,
+            selected = selectedValidationSnapshot
+        )
 
         return attachFinalOutputValidation(
             firstPass.copy(
@@ -508,7 +551,8 @@ internal object SvgPathDataOptimizer {
                     optimizerFirstPassChangedXml = firstPass.xml != xml,
                     optimizerSecondPassChangedXml = secondPass.xml != firstPass.xml,
                     optimizerThirdPassChangedXml = thirdPass.xml != secondPass.xml,
-                    g315GuardedProductionTrial = productionConvergenceTrial
+                    g315GuardedProductionTrial = productionConvergenceTrial,
+                    validationClassification = validationClassification
                 )
             )
         )
@@ -684,8 +728,24 @@ internal object SvgPathDataOptimizer {
         val nonFiniteNumberCount: Int,
         val malformedStructureCount: Int,
         val invalidViewportCount: Int,
-        val unsupportedOutputConstructCount: Int
+        val unsupportedOutputConstructCount: Int,
+        val witness: String = ""
     )
+
+    private fun validationSnapshot(xml: String): ValidationSnapshotStats {
+        val validation = validateFinalVectorXml(xml)
+        return ValidationSnapshotStats(
+            attempted = true,
+            passed = validation.passed,
+            validatedPathDataCount = validation.validatedPathDataCount,
+            invalidPathDataCount = validation.invalidPathDataCount,
+            nonFiniteNumberCount = validation.nonFiniteNumberCount,
+            malformedStructureCount = validation.malformedStructureCount,
+            invalidViewportCount = validation.invalidViewportCount,
+            unsupportedOutputConstructCount = validation.unsupportedOutputConstructCount,
+            witness = validation.witness
+        )
+    }
 
     private fun attachFinalOutputValidation(result: Result): Result {
         val startTime = System.nanoTime()
@@ -747,18 +807,24 @@ internal object SvgPathDataOptimizer {
     private fun validateFinalVectorXml(xml: String): FinalOutputValidation {
         var validatedPathDataCount = 0
         var invalidPathDataCount = 0
+        var firstInvalidPathData = ""
 
         pathDataAttributeRegex.findAll(xml).forEach { match ->
             validatedPathDataCount++
             val pathData = match.groupValues[1]
             if (pathData.isBlank() || parseNormalizedSegments(pathData) == null) {
                 invalidPathDataCount++
+                if (firstInvalidPathData.isEmpty()) {
+                    firstInvalidPathData = pathData.take(240)
+                }
             }
         }
 
-        val nonFiniteNumberCount = Regex(
+        val nonFiniteRegex = Regex(
             """(?i)(?<![A-Za-z0-9_])(?:NaN|[-+]?Infinity)(?![A-Za-z0-9_])"""
-        ).findAll(xml).count()
+        )
+        val firstNonFinite = nonFiniteRegex.find(xml)?.value.orEmpty()
+        val nonFiniteNumberCount = nonFiniteRegex.findAll(xml).count()
 
         // Use a real XML parser rather than tag-counting regular expressions.
         // This correctly handles comments, quoted attribute values, self-closing
@@ -784,16 +850,25 @@ internal object SvgPathDataOptimizer {
             invalidViewportCount++
         }
 
-        val unsupportedOutputConstructCount = listOf(
-            Regex("""<svg\b""", RegexOption.IGNORE_CASE),
-            Regex("""<defs\b""", RegexOption.IGNORE_CASE),
-            Regex("""<use\b""", RegexOption.IGNORE_CASE),
-            Regex("""<mask\b""", RegexOption.IGNORE_CASE),
-            Regex("""<filter\b""", RegexOption.IGNORE_CASE),
-            Regex("""<linearGradient\b""", RegexOption.IGNORE_CASE),
-            Regex("""<radialGradient\b""", RegexOption.IGNORE_CASE),
-            Regex("""\btransform\s*=""", RegexOption.IGNORE_CASE)
-        ).sumOf { regex -> regex.findAll(xml).count() }
+        val unsupportedPatterns = listOf(
+            "svg" to Regex("""<svg\b""", RegexOption.IGNORE_CASE),
+            "defs" to Regex("""<defs\b""", RegexOption.IGNORE_CASE),
+            "use" to Regex("""<use\b""", RegexOption.IGNORE_CASE),
+            "mask" to Regex("""<mask\b""", RegexOption.IGNORE_CASE),
+            "filter" to Regex("""<filter\b""", RegexOption.IGNORE_CASE),
+            "linearGradient" to Regex("""<linearGradient\b""", RegexOption.IGNORE_CASE),
+            "radialGradient" to Regex("""<radialGradient\b""", RegexOption.IGNORE_CASE),
+            "transform attribute" to Regex("""\btransform\s*=""", RegexOption.IGNORE_CASE)
+        )
+        var firstUnsupported = ""
+        var unsupportedOutputConstructCount = 0
+        unsupportedPatterns.forEach { (label, regex) ->
+            val matches = regex.findAll(xml).toList()
+            unsupportedOutputConstructCount += matches.size
+            if (firstUnsupported.isEmpty() && matches.isNotEmpty()) {
+                firstUnsupported = label
+            }
+        }
 
         val passed =
             invalidPathDataCount == 0 &&
@@ -802,6 +877,16 @@ internal object SvgPathDataOptimizer {
                 invalidViewportCount == 0 &&
                 unsupportedOutputConstructCount == 0
 
+        val witness = when {
+            invalidPathDataCount > 0 -> "invalid pathData: $firstInvalidPathData"
+            nonFiniteNumberCount > 0 -> "non-finite number: $firstNonFinite"
+            malformedStructureCount > 0 -> "malformed VectorDrawable XML structure"
+            invalidViewportCount > 0 ->
+                "invalid viewport: width=${viewportWidth ?: "missing"}, height=${viewportHeight ?: "missing"}"
+            unsupportedOutputConstructCount > 0 -> "unsupported final construct: $firstUnsupported"
+            else -> ""
+        }
+
         return FinalOutputValidation(
             passed = passed,
             validatedPathDataCount = validatedPathDataCount,
@@ -809,7 +894,8 @@ internal object SvgPathDataOptimizer {
             nonFiniteNumberCount = nonFiniteNumberCount,
             malformedStructureCount = malformedStructureCount,
             invalidViewportCount = invalidViewportCount,
-            unsupportedOutputConstructCount = unsupportedOutputConstructCount
+            unsupportedOutputConstructCount = unsupportedOutputConstructCount,
+            witness = witness
         )
     }
 

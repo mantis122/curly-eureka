@@ -3,7 +3,7 @@ package com.example.svgvectorconverter
 import java.util.Locale
 
 /**
- * H1.4 production corpus profiler.
+ * H1.6 production corpus profiler.
  *
  * Diagnostic-only infrastructure. It converts real SVG inputs through the
  * normal production pipeline and aggregates the structured metrics already
@@ -102,7 +102,7 @@ object SvgProductionCorpusProfiler {
 
             return buildString {
                 appendLine("H1 production corpus profile")
-                appendLine("Instrumentation level: H1.4")
+                appendLine("Instrumentation level: H1.6")
                 appendLine()
                 appendLine("Mode: diagnostic only; normal production conversion pipeline")
                 appendLine("Files selected: ${files.size}")
@@ -191,7 +191,38 @@ object SvgProductionCorpusProfiler {
                     appendCounter("Uniform-scale groups preserved because flattening was not smaller", sumInt { it.scaleGroupsPreservedForSize })
                     appendCounter("Non-uniform-scale groups preserved because flattening was not smaller", sumInt { it.nonUniformScaleGroupsPreservedForSize })
                     appendCounter("Rotation groups preserved because flattening was not smaller", sumInt { it.rotationGroupsPreservedForSize })
-                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H1.4 does not relax those rules.")
+                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H1.6 does not relax those rules.")
+
+                    val validationFailures = successful.filter { (_, d) -> !d.finalOutputValidationPassed }
+                    appendLine()
+                    appendLine("────────────────────────────────")
+                    appendLine("H1.6 validation failure classification")
+                    appendLine("────────────────────────────────")
+                    appendLine("Files with selected-output validation failure: ${validationFailures.size}")
+                    if (validationFailures.isEmpty()) {
+                        appendLine("No validation failures to classify.")
+                    } else {
+                        appendLine("Input invalid: ${validationFailures.count { (_, d) -> d.h16InputValidation.attempted && !d.h16InputValidation.passed }}")
+                        appendLine("Pass 1 invalid: ${validationFailures.count { (_, d) -> d.h16Pass1Validation.attempted && !d.h16Pass1Validation.passed }}")
+                        appendLine("Pass 2 invalid: ${validationFailures.count { (_, d) -> d.h16Pass2Validation.attempted && !d.h16Pass2Validation.passed }}")
+                        appendLine("Pass 3 attempted: ${validationFailures.count { (_, d) -> d.h16Pass3Validation.attempted }}")
+                        appendLine("Pass 3 invalid when attempted: ${validationFailures.count { (_, d) -> d.h16Pass3Validation.attempted && !d.h16Pass3Validation.passed }}")
+                        appendLine("Selected output invalid: ${validationFailures.count { (_, d) -> d.h16SelectedValidation.attempted && !d.h16SelectedValidation.passed }}")
+                        appendLine("Failures already present before optimizer: ${validationFailures.count { (_, d) -> d.h16InputValidation.attempted && !d.h16InputValidation.passed }}")
+                        appendLine("Failures first appearing on pass 1: ${validationFailures.count { (_, d) -> d.h16InputValidation.passed && !d.h16Pass1Validation.passed }}")
+                        appendLine("Failures first appearing on pass 2: ${validationFailures.count { (_, d) -> d.h16Pass1Validation.passed && !d.h16Pass2Validation.passed }}")
+                        appendLine("Failures first appearing on selected output only: ${validationFailures.count { (_, d) -> d.h16Pass1Validation.passed && d.h16Pass2Validation.passed && (!d.h16Pass3Validation.attempted || d.h16Pass3Validation.passed) && !d.h16SelectedValidation.passed }}")
+                        appendLine()
+                        appendLine("Per-failure classification")
+                        validationFailures.forEach { (file, data) ->
+                            appendLine("⚠ ${file.fileName}")
+                            appendLine("    input: ${formatValidationStage(data.h16InputValidation)}")
+                            appendLine("    pass1: ${formatValidationStage(data.h16Pass1Validation)}")
+                            appendLine("    pass2: ${formatValidationStage(data.h16Pass2Validation)}")
+                            appendLine("    pass3: ${formatValidationStage(data.h16Pass3Validation)}")
+                            appendLine("    selected: ${formatValidationStage(data.h16SelectedValidation)}")
+                        }
+                    }
 
                     appendLine()
                     appendLine("────────────────────────────────")
@@ -393,6 +424,19 @@ object SvgProductionCorpusProfiler {
 
     private fun formatCount(value: Long): String =
         String.format(Locale.US, "%,d", value)
+
+    private fun formatValidationStage(stage: SvgValidationStageReport): String {
+        if (!stage.attempted) return "not attempted"
+        if (stage.passed) return "PASS"
+        val details = mutableListOf<String>()
+        if (stage.invalidPathDataCount > 0) details += "invalidPathData=${stage.invalidPathDataCount}"
+        if (stage.nonFiniteNumberCount > 0) details += "nonFinite=${stage.nonFiniteNumberCount}"
+        if (stage.malformedStructureCount > 0) details += "malformedXml=${stage.malformedStructureCount}"
+        if (stage.invalidViewportCount > 0) details += "invalidViewport=${stage.invalidViewportCount}"
+        if (stage.unsupportedOutputConstructCount > 0) details += "unsupported=${stage.unsupportedOutputConstructCount}"
+        val witness = stage.witness.takeIf { it.isNotBlank() }?.let { "; witness=${it.replace("\n", " ")}" }.orEmpty()
+        return "FAIL (${details.joinToString(", ")})$witness"
+    }
 
     private fun formatNanos(nanos: Long): String =
         String.format(Locale.US, "%.2f ms", nanos.coerceAtLeast(0L) / 1_000_000.0)
