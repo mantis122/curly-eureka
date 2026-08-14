@@ -407,7 +407,7 @@ class SvgConversionReportData {
     var optimizationNumericCleanupCharactersSaved: Int = 0
     var optimizationFormattingCharactersSaved: Int = 0
 
-    // H2.1 signed stage deltas. Positive = characters removed; negative = added.
+    // Diagnostic signed stage deltas. Positive = characters removed; negative = added.
     var h21PathSyntaxCharacterDelta: Int = 0
     var h22PathDataSyntaxCharacterDelta: Int = 0
     var h22ColorNormalizationCharacterDelta: Int = 0

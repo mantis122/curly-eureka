@@ -180,7 +180,7 @@ class MainActivity : ComponentActivity() {
                 uri,
                 currentH11CorpusProfileReport
             )
-            toast("H2.5 corpus profile saved")
+            toast("Production corpus profile saved")
         }
     }
 
@@ -896,7 +896,7 @@ class MainActivity : ComponentActivity() {
         )
 
         val h11CorpusProfileButton =
-            makeButton("Run H2.2 Path-Syntax Regression Attribution") {
+            makeButton("Run Production Corpus Profile") {
                 openH11CorpusSvgs.launch(
                     arrayOf("image/svg+xml", "text/xml", "text/plain")
                 )
@@ -909,7 +909,7 @@ class MainActivity : ComponentActivity() {
         layout.addView(
             makeText(
                 """
-                Select a real-world SVG corpus. H2.5 runs each file through
+                Select a real-world SVG corpus. The profiler runs each file through
                 the normal production converter and aggregates existing
                 structured optimization, size, validation, opportunity, and full-pass runtime metrics.
                 This is diagnostic-only and does not change production output.
@@ -4363,7 +4363,7 @@ class MainActivity : ComponentActivity() {
         progressLayout.addView(statusText)
 
         val progressDialog = android.app.AlertDialog.Builder(this)
-            .setTitle("H2.2 Path-Syntax Regression Attribution")
+            .setTitle("Production Corpus Profile")
             .setView(progressLayout)
             .setCancelable(false)
             .create()
@@ -4425,7 +4425,7 @@ class MainActivity : ComponentActivity() {
                 appendLine()
                 appendLine()
                 appendLine(
-                    "Total H2.5 wall time including input reads: " +
+                    "Total corpus-profile wall time including input reads: " +
                         String.format(
                             java.util.Locale.US,
                             "%.2f ms",
@@ -4500,7 +4500,7 @@ class MainActivity : ComponentActivity() {
             copyH11CorpusProfileReport()
         }
         val saveButton = makeButton("Save .txt") {
-            saveH11CorpusProfileReport.launch("h1_3_production_corpus_profile.txt")
+            saveH11CorpusProfileReport.launch("production_corpus_profile.txt")
         }
         layout.addView(horizontalRow(copyButton, saveButton))
 
@@ -4512,7 +4512,7 @@ class MainActivity : ComponentActivity() {
         layout.addView(runAgainButton, LinearLayout.LayoutParams(-1, -2))
 
         val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle("H2.2 Path-Syntax Regression Results")
+            .setTitle("Production Corpus Profile Results")
             .setView(layout)
             .setPositiveButton("Close", null)
             .create()
@@ -4530,18 +4530,18 @@ class MainActivity : ComponentActivity() {
 
     private fun copyH11CorpusProfileReport() {
         if (currentH11CorpusProfileReport.isBlank()) {
-            toast("No H2.5 corpus profile to copy")
+            toast("No production corpus profile to copy")
             return
         }
 
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(
             ClipData.newPlainText(
-                "h1_3_production_corpus_profile.txt",
+                "production_corpus_profile.txt",
                 currentH11CorpusProfileReport
             )
         )
-        toast("H2.5 corpus profile copied")
+        toast("Production corpus profile copied")
     }
 
     private fun runBundledRegressionSuite() {

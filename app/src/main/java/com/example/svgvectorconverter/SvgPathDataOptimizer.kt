@@ -316,13 +316,13 @@ internal object SvgPathDataOptimizer {
         val deduplicationCharactersSaved: Int = 0,
         val numericCleanupCharactersSaved: Int = 0,
         val formattingCharactersSaved: Int = 0,
-        // H2.1: signed stage deltas. Positive means the stage reduced XML;
+        // Diagnostic signed stage deltas. Positive means the stage reduced XML;
         // negative means the stage increased XML. These are diagnostic-only.
         val h21PathSyntaxCharacterDelta: Int = 0,
-        // H2.2: split the combined path-syntax/color stage into its real sub-steps.
+        // Diagnostic split of the combined path-syntax/color stage.
         val h22PathDataSyntaxCharacterDelta: Int = 0,
         val h22ColorNormalizationCharacterDelta: Int = 0,
-        // H2.3: signed internal PathData syntax-stage deltas. Positive = shorter.
+        // Forensic signed internal PathData syntax-stage deltas. Positive = shorter.
         val h23SyntaxNormalizationCharacterDelta: Int = 0,
         val h23RedundantGeometryCharacterDelta: Int = 0,
         val h23ArcCleanupCharacterDelta: Int = 0,
@@ -985,9 +985,9 @@ internal object SvgPathDataOptimizer {
             pathCount++
             charactersBefore += original.length
 
-            // H2.4: the complete PathData rewrite is a production candidate.
+            // Production size policy: the complete PathData rewrite is a candidate.
             // Reject only candidates that are strictly longer than the
-            // original. Equal-length optimized output remains canonical.
+            // incoming spelling. Equal-length optimized output remains canonical.
             val pathSyntaxAccepted = optimized.pathData.length <= original.length
             val selectedPathData = if (pathSyntaxAccepted) {
                 optimized.pathData
@@ -998,7 +998,7 @@ internal object SvgPathDataOptimizer {
                 original
             }
 
-            // H2.3 remains attempted-rewrite telemetry.
+            // Retain attempted-rewrite telemetry for forensic diagnostics.
             h23SyntaxNormalizationCharacterDelta += optimized.h23SyntaxNormalizationCharacterDelta
             h23RedundantGeometryCharacterDelta += optimized.h23RedundantGeometryCharacterDelta
             h23ArcCleanupCharacterDelta += optimized.h23ArcCleanupCharacterDelta
@@ -1544,9 +1544,9 @@ internal object SvgPathDataOptimizer {
                 validationPass = validationPass
             )
 
-            // H2.5 production policy: decimal canonicalization is a candidate
-            // spelling only. Accept it when it is no longer than the incoming
-            // pathData at this stage. Equal-length canonical output is kept.
+            // Production size policy: decimal canonicalization is a candidate spelling.
+            // Accept it only when it is no longer than the incoming pathData at
+            // this stage. Equal-length canonical output is retained.
             val accepted = canonicalized.pathData.length <= original.length
             val selectedPathData = if (accepted) {
                 changedValues += canonicalized.changedValues

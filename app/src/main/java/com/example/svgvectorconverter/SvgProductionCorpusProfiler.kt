@@ -3,7 +3,7 @@ package com.example.svgvectorconverter
 import java.util.Locale
 
 /**
- * H2.1 production corpus profiler.
+ * Production corpus profiler.
  *
  * Diagnostic-only infrastructure. It converts real SVG inputs through the
  * normal production pipeline and aggregates the structured metrics already
@@ -101,8 +101,8 @@ object SvgProductionCorpusProfiler {
             val firstPassOtherNanos = (productionPassNanos - firstPassStageNanos).coerceAtLeast(0L)
 
             return buildString {
-                appendLine("H1 production corpus profile")
-                appendLine("Instrumentation level: H2.5")
+                appendLine("Production corpus profile")
+                appendLine("Instrumentation: permanent optimization diagnostics")
                 appendLine()
                 appendLine("Mode: diagnostic only; normal production conversion pipeline")
                 appendLine("Files selected: ${files.size}")
@@ -191,12 +191,12 @@ object SvgProductionCorpusProfiler {
                     appendCounter("Uniform-scale groups preserved because flattening was not smaller", sumInt { it.scaleGroupsPreservedForSize })
                     appendCounter("Non-uniform-scale groups preserved because flattening was not smaller", sumInt { it.nonUniformScaleGroupsPreservedForSize })
                     appendCounter("Rotation groups preserved because flattening was not smaller", sumInt { it.rotationGroupsPreservedForSize })
-                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H2.5 does not relax those rules.")
+                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules.")
 
                     val validationFailures = successful.filter { (_, d) -> !d.finalOutputValidationPassed }
                     appendLine()
                     appendLine("────────────────────────────────")
-                    appendLine("H1.6 validation failure classification (retained forensic diagnostics)")
+                    appendLine("Validation failure classification (forensic diagnostics)")
                     appendLine("────────────────────────────────")
                     appendLine("Files with selected-output validation failure: ${validationFailures.size}")
                     if (validationFailures.isEmpty()) {
@@ -226,7 +226,7 @@ object SvgProductionCorpusProfiler {
 
                     appendLine()
                     appendLine("────────────────────────────────")
-                    appendLine("H2.1 signed stage attribution (retained)")
+                    appendLine("Signed stage attribution")
                     appendLine("────────────────────────────────")
                     val signedStageDeltas = listOf(
                         "Path syntax and colors" to sumInt { it.h21PathSyntaxCharacterDelta },
@@ -243,70 +243,29 @@ object SvgProductionCorpusProfiler {
                     appendLine("Note: positive means the stage removed characters; negative means it added characters.")
 
                     appendLine()
-                    appendLine("H2.2 path-syntax/color substage attribution")
-                    appendLine("────────────────────────────────")
-                    appendLine(
-                        "PathData syntax rewriting: " +
-                            formatSignedStageDelta(sumInt { it.h22PathDataSyntaxCharacterDelta })
-                    )
-                    appendLine(
-                        "Android color normalization: " +
-                            formatSignedStageDelta(sumInt { it.h22ColorNormalizationCharacterDelta })
-                    )
-                    appendLine(
-                        "Combined path syntax/colors: " +
-                            formatSignedStageDelta(sumInt { it.h21PathSyntaxCharacterDelta })
-                    )
-                    appendLine("Note: these two H2.2 substages sum to the combined H2.1 path-syntax/color delta.")
-
-                    appendLine()
-                    appendLine("H2.3 PathData internal-stage attribution")
-                    appendLine("────────────────────────────────")
-                    val h23StageTotals = listOf(
-                        "Syntax/token normalization" to sumInt { it.h23SyntaxNormalizationCharacterDelta },
-                        "Redundant geometry cleanup" to sumInt { it.h23RedundantGeometryCharacterDelta },
-                        "Arc cleanup" to sumInt { it.h23ArcCleanupCharacterDelta },
-                        "Curve simplification" to sumInt { it.h23CurveSimplificationCharacterDelta },
-                        "Collinear consolidation" to sumInt { it.h23CollinearConsolidationCharacterDelta },
-                        "Local command shortening" to sumInt { it.h23LocalCommandShorteningCharacterDelta },
-                        "Global command minimization" to sumInt { it.h23GlobalCommandMinimizationCharacterDelta },
-                        "Global numeric serialization" to sumInt { it.h23GlobalNumericSerializationCharacterDelta }
-                    )
-                    h23StageTotals.forEach { (label, delta) ->
-                        appendLine("$label: ${formatSignedStageDelta(delta)}")
-                    }
-                    appendLine("Note: H2.3 internal deltas describe attempted rewrites; H2.4 may reject a larger completed candidate.")
-
-                    appendLine()
-                    appendLine("H2.4 whole-path production size guard")
+                    appendLine("Serialization size guards")
                     appendLine("────────────────────────────────")
                     appendLine(
                         "Completed PathData rewrites rejected for size: " +
                             formatCount(sumInt { it.h24PathSyntaxCandidatesRejectedForSize })
                     )
                     appendLine(
-                        "Characters of path growth avoided: " +
-                            formatCount(sumInt { it.h24PathSyntaxCharactersAvoided })
+                        "PathData rewrite growth avoided: " +
+                            formatCount(sumInt { it.h24PathSyntaxCharactersAvoided }) +
+                            " characters"
                     )
-                    appendLine(
-                        "Policy: accept the completed PathData rewrite only when its length is <= the original; " +
-                            "equal-length optimized output is retained."
-                    )
-
-                    appendLine()
-                    appendLine("H2.5 decimal-canonicalization size guard")
-                    appendLine("────────────────────────────────")
                     appendLine(
                         "Decimal PathData rewrites rejected for size: " +
                             formatCount(sumInt { it.h25DecimalCandidatesRejectedForSize })
                     )
                     appendLine(
-                        "Characters of decimal-canonicalization growth avoided: " +
-                            formatCount(sumInt { it.h25DecimalCharactersAvoided })
+                        "Decimal-canonicalization growth avoided: " +
+                            formatCount(sumInt { it.h25DecimalCharactersAvoided }) +
+                            " characters"
                     )
                     appendLine(
-                        "Policy: accept decimal-canonicalized pathData only when its length is <= " +
-                            "the incoming path spelling at the decimal stage; equal-length canonical output is retained."
+                        "Policy: path-local serialization candidates are emitted only when they are no longer " +
+                            "than the incoming equivalent spelling; equal-length canonical output is retained."
                     )
 
                     val regressionFiles = successful.filter { (_, data) ->
@@ -329,72 +288,30 @@ object SvgProductionCorpusProfiler {
                                 "final formatting" to data.h21FormattingCharacterDelta
                             )
                             val firstGrowth = stages.firstOrNull { it.second < 0 }
-                            val largestGrowth = stages
-                                .filter { it.second < 0 }
-                                .minByOrNull { it.second }
+                            val largestGrowth = stages.filter { it.second < 0 }.minByOrNull { it.second }
 
                             appendLine("⚠ ${file.fileName}: +${formatCount(netAdded.toLong())} characters net")
                             appendLine(
-                                "    H2.2 pathData syntax: " +
-                                    formatSignedStageDelta(data.h22PathDataSyntaxCharacterDelta.toLong())
-                            )
-                            appendLine(
-                                "    H2.2 color normalization: " +
-                                    formatSignedStageDelta(data.h22ColorNormalizationCharacterDelta.toLong())
-                            )
-                            val h23Stages = listOf(
-                                "syntax/token normalization" to data.h23SyntaxNormalizationCharacterDelta,
-                                "redundant geometry cleanup" to data.h23RedundantGeometryCharacterDelta,
-                                "arc cleanup" to data.h23ArcCleanupCharacterDelta,
-                                "curve simplification" to data.h23CurveSimplificationCharacterDelta,
-                                "collinear consolidation" to data.h23CollinearConsolidationCharacterDelta,
-                                "local command shortening" to data.h23LocalCommandShorteningCharacterDelta,
-                                "global command minimization" to data.h23GlobalCommandMinimizationCharacterDelta,
-                                "global numeric serialization" to data.h23GlobalNumericSerializationCharacterDelta
-                            )
-                            val h23FirstGrowth = h23Stages.firstOrNull { it.second < 0 }
-                            val h23LargestGrowth = h23Stages.filter { it.second < 0 }.minByOrNull { it.second }
-                            appendLine(
-                                "    H2.3 first internal growth: " +
-                                    (h23FirstGrowth?.let { "${it.first} (${formatSignedStageDelta(it.second.toLong())})" }
-                                        ?: "none recorded")
-                            )
-                            appendLine(
-                                "    H2.3 largest internal growth: " +
-                                    (h23LargestGrowth?.let { "${it.first} (${formatSignedStageDelta(it.second.toLong())})" }
-                                        ?: "none recorded")
-                            )
-                            appendLine(
-                                "    H2.3 stages: " + h23Stages.joinToString(", ") { (label, delta) ->
-                                    "$label=${formatSignedStageDelta(delta.toLong())}"
-                                }
-                            )
-                            appendLine(
                                 "    first growth stage: " +
-                                    (firstGrowth?.let { "${it.first} (${formatSignedStageDelta(it.second.toLong())})" }
-                                        ?: "none recorded")
+                                    (firstGrowth?.let {
+                                        "${it.first} (${formatSignedStageDelta(it.second.toLong())})"
+                                    } ?: "none recorded")
                             )
                             appendLine(
                                 "    largest growth stage: " +
-                                    (largestGrowth?.let { "${it.first} (${formatSignedStageDelta(it.second.toLong())})" }
-                                        ?: "none recorded")
-                            )
-                            appendLine(
-                                "    stages: " +
-                                    stages.joinToString(", ") { (label, delta) ->
-                                        "$label=${formatSignedStageDelta(delta.toLong())}"
-                                    }
+                                    (largestGrowth?.let {
+                                        "${it.first} (${formatSignedStageDelta(it.second.toLong())})"
+                                    } ?: "none recorded")
                             )
                         }
                     }
 
-                    appendLine()
-                    appendLine("Stage savings (legacy non-negative counters)")
+                    appendLine("Stage savings")
                     appendLine("────────────────────────────────")
                     stageSavings.sortedByDescending { it.second }.forEach { (label, saved) ->
                         appendLine("$label: ${formatCount(saved)} characters")
                     }
-                    appendLine("Note: legacy stage-savings counters clamp growth to zero; use H2.1 signed attribution above for regression analysis.")
+                    appendLine("Note: stage-savings counters are non-negative activity metrics; use signed stage attribution above when investigating growth.")
 
                     appendLine()
                     appendLine("────────────────────────────────")
@@ -473,13 +390,13 @@ object SvgProductionCorpusProfiler {
                         )
                         if (data.h24PathSyntaxCandidatesRejectedForSize > 0) {
                             appendLine(
-                                "    H2.4 size guard: rejected=${data.h24PathSyntaxCandidatesRejectedForSize}, " +
+                                "    path syntax size guard: rejected=${data.h24PathSyntaxCandidatesRejectedForSize}, " +
                                     "growthAvoided=${data.h24PathSyntaxCharactersAvoided} chars"
                             )
                         }
                         if (data.h25DecimalCandidatesRejectedForSize > 0) {
                             appendLine(
-                                "    H2.5 decimal guard: rejected=${data.h25DecimalCandidatesRejectedForSize}, " +
+                                "    decimal size guard: rejected=${data.h25DecimalCandidatesRejectedForSize}, " +
                                     "growthAvoided=${data.h25DecimalCharactersAvoided} chars"
                             )
                         }
