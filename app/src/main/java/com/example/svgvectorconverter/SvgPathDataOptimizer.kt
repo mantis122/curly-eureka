@@ -333,6 +333,8 @@ internal object SvgPathDataOptimizer {
         val h23GlobalNumericSerializationCharacterDelta: Int = 0,
         val h24PathSyntaxCandidatesRejectedForSize: Int = 0,
         val h24PathSyntaxCharactersAvoided: Int = 0,
+        val h25DecimalCandidatesRejectedForSize: Int = 0,
+        val h25DecimalCharactersAvoided: Int = 0,
         val h21PruningCharacterDelta: Int = 0,
         val h21TransformCharacterDelta: Int = 0,
         val h21NearIntegerCharacterDelta: Int = 0,
@@ -1416,6 +1418,10 @@ internal object SvgPathDataOptimizer {
                 h23GlobalNumericSerializationCharacterDelta = h23GlobalNumericSerializationCharacterDelta,
                 h24PathSyntaxCandidatesRejectedForSize = h24PathSyntaxCandidatesRejectedForSize,
                 h24PathSyntaxCharactersAvoided = h24PathSyntaxCharactersAvoided,
+                h25DecimalCandidatesRejectedForSize =
+                    decimalCanonicalization.h25CandidatesRejectedForSize,
+                h25DecimalCharactersAvoided =
+                    decimalCanonicalization.h25CharactersAvoided,
                 h21PruningCharacterDelta = h21PruningCharacterDelta,
                 h21TransformCharacterDelta = h21TransformCharacterDelta,
                 h21NearIntegerCharacterDelta = h21NearIntegerCharacterDelta,
@@ -1475,7 +1481,9 @@ internal object SvgPathDataOptimizer {
 
     private data class DecimalCanonicalizationResult(
         val xml: String,
-        val changedValues: Int
+        val changedValues: Int,
+        val h25CandidatesRejectedForSize: Int = 0,
+        val h25CharactersAvoided: Int = 0
     )
 
     /**
@@ -1525,6 +1533,8 @@ internal object SvgPathDataOptimizer {
         validationPass: Boolean
     ): DecimalCanonicalizationResult {
         var changedValues = 0
+        var h25CandidatesRejectedForSize = 0
+        var h25CharactersAvoided = 0
 
         val rewritten = pathDataAttributeRegex.replace(xml) { match ->
             val original = match.groupValues[1]
@@ -1534,13 +1544,28 @@ internal object SvgPathDataOptimizer {
                 validationPass = validationPass
             )
 
-            changedValues += canonicalized.changedValues
-            "android:pathData=\"${canonicalized.pathData}\""
+            // H2.5 production policy: decimal canonicalization is a candidate
+            // spelling only. Accept it when it is no longer than the incoming
+            // pathData at this stage. Equal-length canonical output is kept.
+            val accepted = canonicalized.pathData.length <= original.length
+            val selectedPathData = if (accepted) {
+                changedValues += canonicalized.changedValues
+                canonicalized.pathData
+            } else {
+                h25CandidatesRejectedForSize++
+                h25CharactersAvoided +=
+                    canonicalized.pathData.length - original.length
+                original
+            }
+
+            "android:pathData=\"$selectedPathData\""
         }
 
         return DecimalCanonicalizationResult(
             xml = rewritten,
-            changedValues = changedValues
+            changedValues = changedValues,
+            h25CandidatesRejectedForSize = h25CandidatesRejectedForSize,
+            h25CharactersAvoided = h25CharactersAvoided
         )
     }
 

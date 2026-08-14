@@ -421,6 +421,8 @@ class SvgConversionReportData {
     var h23GlobalNumericSerializationCharacterDelta: Int = 0
     var h24PathSyntaxCandidatesRejectedForSize: Int = 0
     var h24PathSyntaxCharactersAvoided: Int = 0
+    var h25DecimalCandidatesRejectedForSize: Int = 0
+    var h25DecimalCharactersAvoided: Int = 0
     var h21PruningCharacterDelta: Int = 0
     var h21TransformCharacterDelta: Int = 0
     var h21NearIntegerCharacterDelta: Int = 0

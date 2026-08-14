@@ -102,7 +102,7 @@ object SvgProductionCorpusProfiler {
 
             return buildString {
                 appendLine("H1 production corpus profile")
-                appendLine("Instrumentation level: H2.4")
+                appendLine("Instrumentation level: H2.5")
                 appendLine()
                 appendLine("Mode: diagnostic only; normal production conversion pipeline")
                 appendLine("Files selected: ${files.size}")
@@ -191,7 +191,7 @@ object SvgProductionCorpusProfiler {
                     appendCounter("Uniform-scale groups preserved because flattening was not smaller", sumInt { it.scaleGroupsPreservedForSize })
                     appendCounter("Non-uniform-scale groups preserved because flattening was not smaller", sumInt { it.nonUniformScaleGroupsPreservedForSize })
                     appendCounter("Rotation groups preserved because flattening was not smaller", sumInt { it.rotationGroupsPreservedForSize })
-                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H2.4 does not relax those rules.")
+                    appendLine("Note: transform counters above describe candidates that already passed their existing safety eligibility rules; H2.5 does not relax those rules.")
 
                     val validationFailures = successful.filter { (_, d) -> !d.finalOutputValidationPassed }
                     appendLine()
@@ -291,6 +291,22 @@ object SvgProductionCorpusProfiler {
                     appendLine(
                         "Policy: accept the completed PathData rewrite only when its length is <= the original; " +
                             "equal-length optimized output is retained."
+                    )
+
+                    appendLine()
+                    appendLine("H2.5 decimal-canonicalization size guard")
+                    appendLine("────────────────────────────────")
+                    appendLine(
+                        "Decimal PathData rewrites rejected for size: " +
+                            formatCount(sumInt { it.h25DecimalCandidatesRejectedForSize })
+                    )
+                    appendLine(
+                        "Characters of decimal-canonicalization growth avoided: " +
+                            formatCount(sumInt { it.h25DecimalCharactersAvoided })
+                    )
+                    appendLine(
+                        "Policy: accept decimal-canonicalized pathData only when its length is <= " +
+                            "the incoming path spelling at the decimal stage; equal-length canonical output is retained."
                     )
 
                     val regressionFiles = successful.filter { (_, data) ->
@@ -459,6 +475,12 @@ object SvgProductionCorpusProfiler {
                             appendLine(
                                 "    H2.4 size guard: rejected=${data.h24PathSyntaxCandidatesRejectedForSize}, " +
                                     "growthAvoided=${data.h24PathSyntaxCharactersAvoided} chars"
+                            )
+                        }
+                        if (data.h25DecimalCandidatesRejectedForSize > 0) {
+                            appendLine(
+                                "    H2.5 decimal guard: rejected=${data.h25DecimalCandidatesRejectedForSize}, " +
+                                    "growthAvoided=${data.h25DecimalCharactersAvoided} chars"
                             )
                         }
                         if (data.adjacentPathPairsExamined > 0 ||
