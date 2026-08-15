@@ -401,6 +401,20 @@ object SvgToVectorConverter {
             pathOptimizationStats.idempotenceProfiling.deduplicationAndMergeNanos
         reportData.optimizerIdempotenceNumericCleanupNanos =
             pathOptimizationStats.idempotenceProfiling.numericCleanupNanos
+        reportData.optimizerIdempotenceNearIntegerSnappingNanos =
+            pathOptimizationStats.idempotenceProfiling.nearIntegerSnappingNanos
+        reportData.optimizerIdempotenceDecimalCanonicalizationNanos =
+            pathOptimizationStats.idempotenceProfiling.decimalCanonicalizationNanos
+        reportData.optimizerIdempotenceDecimalTokenizationNanos =
+            pathOptimizationStats.idempotenceProfiling.decimalTokenizationNanos
+        reportData.optimizerIdempotenceDecimalRebuildNanos =
+            pathOptimizationStats.idempotenceProfiling.decimalRebuildNanos
+        reportData.optimizerIdempotenceDecimalReoptimizationNanos =
+            pathOptimizationStats.idempotenceProfiling.decimalReoptimizationNanos
+        reportData.optimizerIdempotenceDecimalValidationNanos =
+            pathOptimizationStats.idempotenceProfiling.decimalValidationNanos
+        reportData.optimizerIdempotenceDecimalPathsExamined =
+            pathOptimizationStats.idempotenceProfiling.decimalPathsExamined
         reportData.optimizerIdempotenceFinalFormattingNanos =
             pathOptimizationStats.idempotenceProfiling.finalFormattingNanos
         reportData.optimizerIdempotenceEqualityComparisonNanos =
@@ -597,6 +611,15 @@ object SvgToVectorConverter {
         reportData.optimizationTransformCanonicalizationNanos = pathOptimizationStats.transformCanonicalizationNanos
         reportData.optimizationDeduplicationNanos = pathOptimizationStats.deduplicationAndMergeNanos
         reportData.optimizationNumericCleanupNanos = pathOptimizationStats.numericCleanupNanos
+        reportData.optimizationNearIntegerSnappingNanos = pathOptimizationStats.nearIntegerSnappingNanos
+        reportData.optimizationDecimalCanonicalizationNanos = pathOptimizationStats.decimalCanonicalizationNanos
+        reportData.optimizationDecimalTokenizationNanos = pathOptimizationStats.decimalTokenizationNanos
+        reportData.optimizationDecimalRebuildNanos = pathOptimizationStats.decimalRebuildNanos
+        reportData.optimizationDecimalReoptimizationNanos = pathOptimizationStats.decimalReoptimizationNanos
+        reportData.optimizationDecimalValidationNanos = pathOptimizationStats.decimalValidationNanos
+        reportData.optimizationDecimalPathsExamined = pathOptimizationStats.decimalPathsExamined
+        reportData.optimizationPathCacheHits = pathOptimizationStats.pathOptimizationCacheHits
+        reportData.optimizationPathCacheMisses = pathOptimizationStats.pathOptimizationCacheMisses
         reportData.optimizationFormattingNanos = pathOptimizationStats.finalFormattingNanos
         reportData.optimizationPathSyntaxCharactersSaved = pathOptimizationStats.pathSyntaxCharactersSaved
         reportData.optimizationPruningCleanupCharactersSaved = pathOptimizationStats.pruningCleanupCharactersSaved

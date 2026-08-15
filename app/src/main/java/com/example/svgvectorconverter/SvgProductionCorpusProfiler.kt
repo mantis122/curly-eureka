@@ -315,6 +315,49 @@ object SvgProductionCorpusProfiler {
 
                     appendLine()
                     appendLine("────────────────────────────────")
+                    appendLine("I1 hot-path performance diagnostics")
+                    appendLine("────────────────────────────────")
+                    val p1PathNanos = sumLong { it.optimizationPathSyntaxNanos }
+                    val p2PathNanos = sumLong { it.optimizerIdempotencePathSyntaxNanos }
+                    val p1NumericNanos = sumLong { it.optimizationNumericCleanupNanos }
+                    val p2NumericNanos = sumLong { it.optimizerIdempotenceNumericCleanupNanos }
+                    appendLine("Path syntax — pass 1: ${formatNanos(p1PathNanos)}")
+                    appendLine("  tokenization / normalization: ${formatNanos(sumLong { it.optimizationPathTokenizationNanos })}")
+                    appendLine("  geometry cleanup: ${formatNanos(sumLong { it.optimizationPathGeometryCleanupNanos })}")
+                    appendLine("  local command shortening: ${formatNanos(sumLong { it.optimizationPathCommandLocalShorteningNanos })}")
+                    appendLine("  global command parse/setup: ${formatNanos(sumLong { it.optimizationPathCommandGlobalParseSetupNanos })}")
+                    appendLine("  global candidate generation: ${formatNanos(sumLong { it.optimizationPathCommandGlobalCandidateGenerationNanos })}")
+                    appendLine("  global dynamic programming: ${formatNanos(sumLong { it.optimizationPathCommandGlobalDynamicProgrammingNanos })}")
+                    appendLine("  final numeric serialization: ${formatNanos(sumLong { it.optimizationPathNumericSerializationNanos })}")
+                    appendLine("Path syntax — pass 2: ${formatNanos(p2PathNanos)}")
+                    appendLine("  tokenization / normalization: ${formatNanos(sumLong { it.optimizerIdempotencePathTokenizationNormalizationNanos })}")
+                    appendLine("  geometry cleanup: ${formatNanos(sumLong { it.optimizerIdempotencePathGeometryCleanupNanos })}")
+                    appendLine("  command minimization: ${formatNanos(sumLong { it.optimizerIdempotencePathCommandMinimizationNanos })}")
+                    appendLine("  final numeric serialization: ${formatNanos(sumLong { it.optimizerIdempotencePathNumericSerializationNanos })}")
+                    appendLine("Numeric cleanup — pass 1: ${formatNanos(p1NumericNanos)}")
+                    appendLine("  near-integer snapping: ${formatNanos(sumLong { it.optimizationNearIntegerSnappingNanos })}")
+                    appendLine("  decimal canonicalization: ${formatNanos(sumLong { it.optimizationDecimalCanonicalizationNanos })}")
+                    appendLine("    tokenization: ${formatNanos(sumLong { it.optimizationDecimalTokenizationNanos })}")
+                    appendLine("    rebuild: ${formatNanos(sumLong { it.optimizationDecimalRebuildNanos })}")
+                    appendLine("    nested PathData re-optimization: ${formatNanos(sumLong { it.optimizationDecimalReoptimizationNanos })}")
+                    appendLine("    validation parse: ${formatNanos(sumLong { it.optimizationDecimalValidationNanos })}")
+                    appendLine("    paths examined: ${formatCount(sumInt { it.optimizationDecimalPathsExamined })}")
+                    appendLine("Numeric cleanup — pass 2: ${formatNanos(p2NumericNanos)}")
+                    appendLine("  near-integer snapping: ${formatNanos(sumLong { it.optimizerIdempotenceNearIntegerSnappingNanos })}")
+                    appendLine("  decimal canonicalization: ${formatNanos(sumLong { it.optimizerIdempotenceDecimalCanonicalizationNanos })}")
+                    appendLine("    tokenization: ${formatNanos(sumLong { it.optimizerIdempotenceDecimalTokenizationNanos })}")
+                    appendLine("    rebuild: ${formatNanos(sumLong { it.optimizerIdempotenceDecimalRebuildNanos })}")
+                    appendLine("    nested PathData re-optimization: ${formatNanos(sumLong { it.optimizerIdempotenceDecimalReoptimizationNanos })}")
+                    appendLine("    validation parse: ${formatNanos(sumLong { it.optimizerIdempotenceDecimalValidationNanos })}")
+                    appendLine("    paths examined: ${formatCount(sumInt { it.optimizerIdempotenceDecimalPathsExamined })}")
+                    val p1CacheHits = sumInt { it.optimizationPathCacheHits }
+                    val p1CacheMisses = sumInt { it.optimizationPathCacheMisses }
+                    val p2CacheHits = sumInt { it.optimizerIdempotencePathCacheHits }
+                    val p2CacheMisses = sumInt { it.optimizerIdempotencePathCacheMisses }
+                    appendLine("Path optimization cache — pass 1: hits=${formatCount(p1CacheHits)}, misses=${formatCount(p1CacheMisses)}, hitRate=${percent(p1CacheHits, p1CacheHits + p1CacheMisses)}")
+                    appendLine("Path optimization cache — pass 2: hits=${formatCount(p2CacheHits)}, misses=${formatCount(p2CacheMisses)}, hitRate=${percent(p2CacheHits, p2CacheHits + p2CacheMisses)}")
+                    appendLine("Note: I1 is diagnostic only; timings intentionally add small profiling overhead and do not change optimizer decisions.")
+
                     appendLine("Optimizer pass attribution")
                     appendLine("────────────────────────────────")
                     appendLine("Total optimization wrapper time: ${formatNanos(optimizationNanos)}")
@@ -388,6 +431,15 @@ object SvgProductionCorpusProfiler {
                                 "format=${formatNanos(data.optimizationFormattingNanos)}, " +
                                 "other=${formatNanos(fileFirstPassOther)}"
                         )
+                        if (data.optimizationPathSyntaxNanos + data.optimizationNumericCleanupNanos >= 20_000_000L) {
+                            appendLine(
+                                "    I1 hot paths: p1Path=${formatNanos(data.optimizationPathSyntaxNanos)}, " +
+                                    "p1Numeric=${formatNanos(data.optimizationNumericCleanupNanos)}, " +
+                                    "decimalReopt=${formatNanos(data.optimizationDecimalReoptimizationNanos)}, " +
+                                    "p2Path=${formatNanos(data.optimizerIdempotencePathSyntaxNanos)}, " +
+                                    "p2Numeric=${formatNanos(data.optimizerIdempotenceNumericCleanupNanos)}"
+                            )
+                        }
                         if (data.h24PathSyntaxCandidatesRejectedForSize > 0) {
                             appendLine(
                                 "    path syntax size guard: rejected=${data.h24PathSyntaxCandidatesRejectedForSize}, " +

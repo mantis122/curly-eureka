@@ -135,6 +135,13 @@ internal object SvgPathDataOptimizer {
         val transformOptimizationNanos: Long = 0,
         val deduplicationAndMergeNanos: Long = 0,
         val numericCleanupNanos: Long = 0,
+        val nearIntegerSnappingNanos: Long = 0,
+        val decimalCanonicalizationNanos: Long = 0,
+        val decimalTokenizationNanos: Long = 0,
+        val decimalRebuildNanos: Long = 0,
+        val decimalReoptimizationNanos: Long = 0,
+        val decimalValidationNanos: Long = 0,
+        val decimalPathsExamined: Int = 0,
         val finalFormattingNanos: Long = 0,
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
@@ -309,6 +316,15 @@ internal object SvgPathDataOptimizer {
         val transformCanonicalizationNanos: Long = 0,
         val deduplicationAndMergeNanos: Long = 0,
         val numericCleanupNanos: Long = 0,
+        val nearIntegerSnappingNanos: Long = 0,
+        val decimalCanonicalizationNanos: Long = 0,
+        val decimalTokenizationNanos: Long = 0,
+        val decimalRebuildNanos: Long = 0,
+        val decimalReoptimizationNanos: Long = 0,
+        val decimalValidationNanos: Long = 0,
+        val decimalPathsExamined: Int = 0,
+        val pathOptimizationCacheHits: Int = 0,
+        val pathOptimizationCacheMisses: Int = 0,
         val finalFormattingNanos: Long = 0,
         val pathSyntaxCharactersSaved: Int = 0,
         val pruningCleanupCharactersSaved: Int = 0,
@@ -408,6 +424,8 @@ internal object SvgPathDataOptimizer {
     private data class PathOptimizationCache(
         val values: MutableMap<String, PathResult> = linkedMapOf(),
         val stableOutputs: MutableMap<String, PathResult> = linkedMapOf(),
+        var totalHits: Int = 0,
+        var totalMisses: Int = 0,
         var validationHits: Int = 0,
         var validationStableOutputHits: Int = 0,
         var validationRegularHits: Int = 0,
@@ -466,6 +484,13 @@ internal object SvgPathDataOptimizer {
             deduplicationAndMergeNanos =
                 secondPass.stats.deduplicationAndMergeNanos,
             numericCleanupNanos = secondPass.stats.numericCleanupNanos,
+            nearIntegerSnappingNanos = secondPass.stats.nearIntegerSnappingNanos,
+            decimalCanonicalizationNanos = secondPass.stats.decimalCanonicalizationNanos,
+            decimalTokenizationNanos = secondPass.stats.decimalTokenizationNanos,
+            decimalRebuildNanos = secondPass.stats.decimalRebuildNanos,
+            decimalReoptimizationNanos = secondPass.stats.decimalReoptimizationNanos,
+            decimalValidationNanos = secondPass.stats.decimalValidationNanos,
+            decimalPathsExamined = secondPass.stats.decimalPathsExamined,
             finalFormattingNanos = secondPass.stats.finalFormattingNanos,
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
@@ -1139,6 +1164,7 @@ internal object SvgPathDataOptimizer {
         val h21TransformCharacterDelta =
             characterDelta(groupCleanup.xml, transformCanonicalization.xml)
 
+        val numericProfiling = NumericCleanupProfiling()
         val numericCleanupStartTime = System.nanoTime()
         val nearIntegerSnapping = snapNearIntegerPathValues(transformCanonicalization.xml)
         val nearIntegerSnappingNanos = System.nanoTime() - numericCleanupStartTime
@@ -1163,10 +1189,13 @@ internal object SvgPathDataOptimizer {
             canonicalizePathDecimalPrecisionCached(
                 xml = pathMerging.xml,
                 pathCache = pathCache,
-                validationPass = validationPass
+                validationPass = validationPass,
+                profiling = numericProfiling
             )
+        val decimalCanonicalizationNanos =
+            System.nanoTime() - decimalCanonicalizationStartTime
         val numericCleanupNanos =
-            nearIntegerSnappingNanos + (System.nanoTime() - decimalCanonicalizationStartTime)
+            nearIntegerSnappingNanos + decimalCanonicalizationNanos
         val h21DecimalCanonicalizationCharacterDelta =
             characterDelta(pathMerging.xml, decimalCanonicalization.xml)
         val numericCleanupCharactersSaved =
@@ -1398,6 +1427,15 @@ internal object SvgPathDataOptimizer {
                 transformCanonicalizationNanos = transformCanonicalizationNanos,
                 deduplicationAndMergeNanos = deduplicationAndMergeNanos,
                 numericCleanupNanos = numericCleanupNanos,
+                nearIntegerSnappingNanos = nearIntegerSnappingNanos,
+                decimalCanonicalizationNanos = decimalCanonicalizationNanos,
+                decimalTokenizationNanos = numericProfiling.decimalTokenizationNanos,
+                decimalRebuildNanos = numericProfiling.decimalRebuildNanos,
+                decimalReoptimizationNanos = numericProfiling.decimalReoptimizationNanos,
+                decimalValidationNanos = numericProfiling.decimalValidationNanos,
+                decimalPathsExamined = numericProfiling.decimalPathsExamined,
+                pathOptimizationCacheHits = pathCache.totalHits,
+                pathOptimizationCacheMisses = pathCache.totalMisses,
                 finalFormattingNanos = finalFormattingNanos,
                 pathSyntaxCharactersSaved = pathSyntaxCharactersSaved,
                 pruningCleanupCharactersSaved = pruningCleanupCharactersSaved,
@@ -1479,6 +1517,14 @@ internal object SvgPathDataOptimizer {
 
 
 
+    private data class NumericCleanupProfiling(
+        var decimalTokenizationNanos: Long = 0,
+        var decimalRebuildNanos: Long = 0,
+        var decimalReoptimizationNanos: Long = 0,
+        var decimalValidationNanos: Long = 0,
+        var decimalPathsExamined: Int = 0
+    )
+
     private data class DecimalCanonicalizationResult(
         val xml: String,
         val changedValues: Int,
@@ -1530,7 +1576,8 @@ internal object SvgPathDataOptimizer {
     private fun canonicalizePathDecimalPrecisionCached(
         xml: String,
         pathCache: PathOptimizationCache,
-        validationPass: Boolean
+        validationPass: Boolean,
+        profiling: NumericCleanupProfiling? = null
     ): DecimalCanonicalizationResult {
         var changedValues = 0
         var h25CandidatesRejectedForSize = 0
@@ -1541,7 +1588,8 @@ internal object SvgPathDataOptimizer {
             val canonicalized = canonicalizePathDecimalsCached(
                 pathData = original,
                 pathCache = pathCache,
-                validationPass = validationPass
+                validationPass = validationPass,
+                profiling = profiling
             )
 
             // Production size policy: decimal canonicalization is a candidate spelling.
@@ -1577,9 +1625,13 @@ internal object SvgPathDataOptimizer {
     private fun canonicalizePathDecimalsCached(
         pathData: String,
         pathCache: PathOptimizationCache,
-        validationPass: Boolean
+        validationPass: Boolean,
+        profiling: NumericCleanupProfiling? = null
     ): CanonicalizedPathData {
+        profiling?.decimalPathsExamined = (profiling?.decimalPathsExamined ?: 0) + 1
+        val tokenizationStart = System.nanoTime()
         val matches = tokenRegex.findAll(pathData).toList()
+        profiling?.let { it.decimalTokenizationNanos += System.nanoTime() - tokenizationStart }
         if (matches.isEmpty()) return CanonicalizedPathData(pathData, 0)
 
         var cursor = 0
@@ -1593,6 +1645,7 @@ internal object SvgPathDataOptimizer {
             return CanonicalizedPathData(pathData, 0)
         }
 
+        val rebuildStart = System.nanoTime()
         val rebuilt = StringBuilder(pathData.length)
         var lastEnd = 0
         var changedCount = 0
@@ -1634,6 +1687,7 @@ internal object SvgPathDataOptimizer {
         rebuilt.append(pathData, lastEnd, pathData.length)
 
         val rebuiltPathData = rebuilt.toString()
+        profiling?.let { it.decimalRebuildNanos += System.nanoTime() - rebuildStart }
         if (changedCount == 0 && rebuiltPathData == pathData) {
             return CanonicalizedPathData(pathData, 0)
         }
@@ -1641,12 +1695,17 @@ internal object SvgPathDataOptimizer {
         // Reapply the existing lossless command/separator optimizer only to
         // the rebuilt canonical data. No earlier high-precision spelling is
         // available to be selected again.
+        val reoptimizationStart = System.nanoTime()
         val optimized = optimizePathDataCached(
             pathData = rebuiltPathData,
             cache = pathCache,
             validationPass = validationPass
         ).pathData
-        return if (parseNormalizedSegments(optimized) != null) {
+        profiling?.let { it.decimalReoptimizationNanos += System.nanoTime() - reoptimizationStart }
+        val validationStart = System.nanoTime()
+        val valid = parseNormalizedSegments(optimized) != null
+        profiling?.let { it.decimalValidationNanos += System.nanoTime() - validationStart }
+        return if (valid) {
             CanonicalizedPathData(optimized, changedCount)
         } else {
             CanonicalizedPathData(pathData, 0)
@@ -9837,6 +9896,7 @@ internal object SvgPathDataOptimizer {
         if (validationPass) {
             val stable = cache.stableOutputs[pathData]
             if (stable != null) {
+                cache.totalHits++
                 cache.validationHits++
                 cache.validationStableOutputHits++
                 return stable
@@ -9845,6 +9905,7 @@ internal object SvgPathDataOptimizer {
 
         val cached = cache.values[pathData]
         if (cached != null) {
+            cache.totalHits++
             if (validationPass) {
                 cache.validationHits++
                 cache.validationRegularHits++
@@ -9852,6 +9913,7 @@ internal object SvgPathDataOptimizer {
             return cached
         }
 
+        cache.totalMisses++
         if (validationPass) cache.validationMisses++
         return optimizePathData(pathData, profiling).also { result ->
             cache.values[pathData] = result
