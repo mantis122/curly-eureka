@@ -618,6 +618,57 @@ object SvgToVectorConverter {
         reportData.optimizationDecimalReoptimizationNanos = pathOptimizationStats.decimalReoptimizationNanos
         reportData.optimizationDecimalValidationNanos = pathOptimizationStats.decimalValidationNanos
         reportData.optimizationDecimalPathsExamined = pathOptimizationStats.decimalPathsExamined
+
+        reportData.i2Pass1PathSyntaxStableInputs = pathOptimizationStats.i2PathSyntaxStableInputs
+        reportData.i2Pass1PathSyntaxStableInputNanos =
+            pathOptimizationStats.i2PathSyntaxStableInputNanos
+        reportData.i2Pass2PathSyntaxStableInputs =
+            pathOptimizationStats.idempotenceProfiling.i2PathSyntaxStableInputs
+        reportData.i2Pass2PathSyntaxStableInputNanos =
+            pathOptimizationStats.idempotenceProfiling.i2PathSyntaxStableInputNanos
+
+        reportData.i2Pass1DecimalShadowPathsCompared =
+            pathOptimizationStats.i2DecimalShadowPathsCompared
+        reportData.i2Pass1DecimalShadowByteIdentical =
+            pathOptimizationStats.i2DecimalShadowByteIdentical
+        reportData.i2Pass1DecimalShadowDifferent =
+            pathOptimizationStats.i2DecimalShadowDifferent
+        reportData.i2Pass1DecimalShadowFastShorter =
+            pathOptimizationStats.i2DecimalShadowFastShorter
+        reportData.i2Pass1DecimalShadowReferenceShorter =
+            pathOptimizationStats.i2DecimalShadowReferenceShorter
+        reportData.i2Pass1DecimalShadowEqualLengthDifferent =
+            pathOptimizationStats.i2DecimalShadowEqualLengthDifferent
+        reportData.i2Pass1DecimalShadowFastInvalid =
+            pathOptimizationStats.i2DecimalShadowFastInvalid
+        reportData.i2Pass1DecimalShadowFastNonFixed =
+            pathOptimizationStats.i2DecimalShadowFastNonFixed
+        reportData.i2Pass1DecimalShadowCharacterDeltaVsReference =
+            pathOptimizationStats.i2DecimalShadowCharacterDeltaVsReference
+        reportData.i2Pass1DecimalShadowNanos =
+            pathOptimizationStats.i2DecimalShadowNanos
+
+        reportData.i2Pass2DecimalShadowPathsCompared =
+            pathOptimizationStats.idempotenceProfiling.i2DecimalShadowPathsCompared
+        reportData.i2Pass2DecimalShadowByteIdentical =
+            pathOptimizationStats.idempotenceProfiling.i2DecimalShadowByteIdentical
+        reportData.i2Pass2DecimalShadowDifferent =
+            pathOptimizationStats.idempotenceProfiling.i2DecimalShadowDifferent
+        reportData.i2Pass2DecimalShadowFastShorter =
+            pathOptimizationStats.idempotenceProfiling.i2DecimalShadowFastShorter
+        reportData.i2Pass2DecimalShadowReferenceShorter =
+            pathOptimizationStats.idempotenceProfiling.i2DecimalShadowReferenceShorter
+        reportData.i2Pass2DecimalShadowEqualLengthDifferent =
+            pathOptimizationStats.idempotenceProfiling.i2DecimalShadowEqualLengthDifferent
+        reportData.i2Pass2DecimalShadowFastInvalid =
+            pathOptimizationStats.idempotenceProfiling.i2DecimalShadowFastInvalid
+        reportData.i2Pass2DecimalShadowFastNonFixed =
+            pathOptimizationStats.idempotenceProfiling.i2DecimalShadowFastNonFixed
+        reportData.i2Pass2DecimalShadowCharacterDeltaVsReference =
+            pathOptimizationStats.idempotenceProfiling.i2DecimalShadowCharacterDeltaVsReference
+        reportData.i2Pass2DecimalShadowNanos =
+            pathOptimizationStats.idempotenceProfiling.i2DecimalShadowNanos
+
         reportData.optimizationPathCacheHits = pathOptimizationStats.pathOptimizationCacheHits
         reportData.optimizationPathCacheMisses = pathOptimizationStats.pathOptimizationCacheMisses
         reportData.optimizationFormattingNanos = pathOptimizationStats.finalFormattingNanos

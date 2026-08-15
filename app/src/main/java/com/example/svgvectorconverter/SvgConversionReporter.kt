@@ -413,6 +413,35 @@ class SvgConversionReportData {
     var optimizationDecimalReoptimizationNanos: Long = 0
     var optimizationDecimalValidationNanos: Long = 0
     var optimizationDecimalPathsExamined: Int = 0
+
+    // I2 diagnostic-only redundancy / fast-path shadow study.
+    var i2Pass1PathSyntaxStableInputs: Int = 0
+    var i2Pass1PathSyntaxStableInputNanos: Long = 0
+    var i2Pass2PathSyntaxStableInputs: Int = 0
+    var i2Pass2PathSyntaxStableInputNanos: Long = 0
+
+    var i2Pass1DecimalShadowPathsCompared: Int = 0
+    var i2Pass1DecimalShadowByteIdentical: Int = 0
+    var i2Pass1DecimalShadowDifferent: Int = 0
+    var i2Pass1DecimalShadowFastShorter: Int = 0
+    var i2Pass1DecimalShadowReferenceShorter: Int = 0
+    var i2Pass1DecimalShadowEqualLengthDifferent: Int = 0
+    var i2Pass1DecimalShadowFastInvalid: Int = 0
+    var i2Pass1DecimalShadowFastNonFixed: Int = 0
+    var i2Pass1DecimalShadowCharacterDeltaVsReference: Int = 0
+    var i2Pass1DecimalShadowNanos: Long = 0
+
+    var i2Pass2DecimalShadowPathsCompared: Int = 0
+    var i2Pass2DecimalShadowByteIdentical: Int = 0
+    var i2Pass2DecimalShadowDifferent: Int = 0
+    var i2Pass2DecimalShadowFastShorter: Int = 0
+    var i2Pass2DecimalShadowReferenceShorter: Int = 0
+    var i2Pass2DecimalShadowEqualLengthDifferent: Int = 0
+    var i2Pass2DecimalShadowFastInvalid: Int = 0
+    var i2Pass2DecimalShadowFastNonFixed: Int = 0
+    var i2Pass2DecimalShadowCharacterDeltaVsReference: Int = 0
+    var i2Pass2DecimalShadowNanos: Long = 0
+
     var optimizationPathCacheHits: Int = 0
     var optimizationPathCacheMisses: Int = 0
     var optimizationFormattingNanos: Long = 0

@@ -142,6 +142,18 @@ internal object SvgPathDataOptimizer {
         val decimalReoptimizationNanos: Long = 0,
         val decimalValidationNanos: Long = 0,
         val decimalPathsExamined: Int = 0,
+        val i2PathSyntaxStableInputs: Int = 0,
+        val i2PathSyntaxStableInputNanos: Long = 0,
+        val i2DecimalShadowPathsCompared: Int = 0,
+        val i2DecimalShadowByteIdentical: Int = 0,
+        val i2DecimalShadowDifferent: Int = 0,
+        val i2DecimalShadowFastShorter: Int = 0,
+        val i2DecimalShadowReferenceShorter: Int = 0,
+        val i2DecimalShadowEqualLengthDifferent: Int = 0,
+        val i2DecimalShadowFastInvalid: Int = 0,
+        val i2DecimalShadowFastNonFixed: Int = 0,
+        val i2DecimalShadowCharacterDeltaVsReference: Int = 0,
+        val i2DecimalShadowNanos: Long = 0,
         val finalFormattingNanos: Long = 0,
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
@@ -323,6 +335,19 @@ internal object SvgPathDataOptimizer {
         val decimalReoptimizationNanos: Long = 0,
         val decimalValidationNanos: Long = 0,
         val decimalPathsExamined: Int = 0,
+        // I2 diagnostic-only redundancy study.
+        val i2PathSyntaxStableInputs: Int = 0,
+        val i2PathSyntaxStableInputNanos: Long = 0,
+        val i2DecimalShadowPathsCompared: Int = 0,
+        val i2DecimalShadowByteIdentical: Int = 0,
+        val i2DecimalShadowDifferent: Int = 0,
+        val i2DecimalShadowFastShorter: Int = 0,
+        val i2DecimalShadowReferenceShorter: Int = 0,
+        val i2DecimalShadowEqualLengthDifferent: Int = 0,
+        val i2DecimalShadowFastInvalid: Int = 0,
+        val i2DecimalShadowFastNonFixed: Int = 0,
+        val i2DecimalShadowCharacterDeltaVsReference: Int = 0,
+        val i2DecimalShadowNanos: Long = 0,
         val pathOptimizationCacheHits: Int = 0,
         val pathOptimizationCacheMisses: Int = 0,
         val finalFormattingNanos: Long = 0,
@@ -491,6 +516,20 @@ internal object SvgPathDataOptimizer {
             decimalReoptimizationNanos = secondPass.stats.decimalReoptimizationNanos,
             decimalValidationNanos = secondPass.stats.decimalValidationNanos,
             decimalPathsExamined = secondPass.stats.decimalPathsExamined,
+            i2PathSyntaxStableInputs = secondPass.stats.i2PathSyntaxStableInputs,
+            i2PathSyntaxStableInputNanos = secondPass.stats.i2PathSyntaxStableInputNanos,
+            i2DecimalShadowPathsCompared = secondPass.stats.i2DecimalShadowPathsCompared,
+            i2DecimalShadowByteIdentical = secondPass.stats.i2DecimalShadowByteIdentical,
+            i2DecimalShadowDifferent = secondPass.stats.i2DecimalShadowDifferent,
+            i2DecimalShadowFastShorter = secondPass.stats.i2DecimalShadowFastShorter,
+            i2DecimalShadowReferenceShorter = secondPass.stats.i2DecimalShadowReferenceShorter,
+            i2DecimalShadowEqualLengthDifferent =
+                secondPass.stats.i2DecimalShadowEqualLengthDifferent,
+            i2DecimalShadowFastInvalid = secondPass.stats.i2DecimalShadowFastInvalid,
+            i2DecimalShadowFastNonFixed = secondPass.stats.i2DecimalShadowFastNonFixed,
+            i2DecimalShadowCharacterDeltaVsReference =
+                secondPass.stats.i2DecimalShadowCharacterDeltaVsReference,
+            i2DecimalShadowNanos = secondPass.stats.i2DecimalShadowNanos,
             finalFormattingNanos = secondPass.stats.finalFormattingNanos,
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
@@ -996,16 +1035,24 @@ internal object SvgPathDataOptimizer {
         var h23GlobalNumericSerializationCharacterDelta = 0
         var h24PathSyntaxCandidatesRejectedForSize = 0
         var h24PathSyntaxCharactersAvoided = 0
+        var i2PathSyntaxStableInputs = 0
+        var i2PathSyntaxStableInputNanos = 0L
 
         val pathSyntaxStartTime = System.nanoTime()
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
             val original = match.groupValues[1]
+            val i2PathCallStart = System.nanoTime()
             val optimized = optimizePathDataCached(
                 pathData = original,
                 cache = pathCache,
                 validationPass = validationPass,
                 profiling = pathProfiling
             )
+            val i2PathCallNanos = System.nanoTime() - i2PathCallStart
+            if (optimized.pathData == original) {
+                i2PathSyntaxStableInputs++
+                i2PathSyntaxStableInputNanos += i2PathCallNanos
+            }
 
             pathCount++
             charactersBefore += original.length
@@ -1434,6 +1481,20 @@ internal object SvgPathDataOptimizer {
                 decimalReoptimizationNanos = numericProfiling.decimalReoptimizationNanos,
                 decimalValidationNanos = numericProfiling.decimalValidationNanos,
                 decimalPathsExamined = numericProfiling.decimalPathsExamined,
+                i2PathSyntaxStableInputs = i2PathSyntaxStableInputs,
+                i2PathSyntaxStableInputNanos = i2PathSyntaxStableInputNanos,
+                i2DecimalShadowPathsCompared = numericProfiling.i2ShadowPathsCompared,
+                i2DecimalShadowByteIdentical = numericProfiling.i2ShadowByteIdentical,
+                i2DecimalShadowDifferent = numericProfiling.i2ShadowDifferent,
+                i2DecimalShadowFastShorter = numericProfiling.i2ShadowFastShorter,
+                i2DecimalShadowReferenceShorter = numericProfiling.i2ShadowReferenceShorter,
+                i2DecimalShadowEqualLengthDifferent =
+                    numericProfiling.i2ShadowEqualLengthDifferent,
+                i2DecimalShadowFastInvalid = numericProfiling.i2ShadowFastInvalid,
+                i2DecimalShadowFastNonFixed = numericProfiling.i2ShadowFastNonFixed,
+                i2DecimalShadowCharacterDeltaVsReference =
+                    numericProfiling.i2ShadowCharacterDeltaVsReference,
+                i2DecimalShadowNanos = numericProfiling.i2ShadowNanos,
                 pathOptimizationCacheHits = pathCache.totalHits,
                 pathOptimizationCacheMisses = pathCache.totalMisses,
                 finalFormattingNanos = finalFormattingNanos,
@@ -1522,7 +1583,17 @@ internal object SvgPathDataOptimizer {
         var decimalRebuildNanos: Long = 0,
         var decimalReoptimizationNanos: Long = 0,
         var decimalValidationNanos: Long = 0,
-        var decimalPathsExamined: Int = 0
+        var decimalPathsExamined: Int = 0,
+        var i2ShadowPathsCompared: Int = 0,
+        var i2ShadowByteIdentical: Int = 0,
+        var i2ShadowDifferent: Int = 0,
+        var i2ShadowFastShorter: Int = 0,
+        var i2ShadowReferenceShorter: Int = 0,
+        var i2ShadowEqualLengthDifferent: Int = 0,
+        var i2ShadowFastInvalid: Int = 0,
+        var i2ShadowFastNonFixed: Int = 0,
+        var i2ShadowCharacterDeltaVsReference: Int = 0,
+        var i2ShadowNanos: Long = 0
     )
 
     private data class DecimalCanonicalizationResult(
@@ -1606,6 +1677,46 @@ internal object SvgPathDataOptimizer {
                 original
             }
 
+            canonicalized.i2FastPathData?.let { fastRaw ->
+                profiling?.let { p ->
+                    p.i2ShadowPathsCompared++
+                    p.i2ShadowNanos += canonicalized.i2ShadowNanos
+
+                    if (!canonicalized.i2FastValid) {
+                        p.i2ShadowFastInvalid++
+                    }
+                    if (!canonicalized.i2FastFixed) {
+                        p.i2ShadowFastNonFixed++
+                    }
+
+                    val fastSelected =
+                        if (canonicalized.i2FastValid && fastRaw.length <= original.length) {
+                            fastRaw
+                        } else {
+                            original
+                        }
+
+                    when {
+                        fastSelected == selectedPathData -> p.i2ShadowByteIdentical++
+                        fastSelected.length < selectedPathData.length -> {
+                            p.i2ShadowDifferent++
+                            p.i2ShadowFastShorter++
+                        }
+                        fastSelected.length > selectedPathData.length -> {
+                            p.i2ShadowDifferent++
+                            p.i2ShadowReferenceShorter++
+                        }
+                        else -> {
+                            p.i2ShadowDifferent++
+                            p.i2ShadowEqualLengthDifferent++
+                        }
+                    }
+                    // Positive means the no-reoptimization shadow is shorter.
+                    p.i2ShadowCharacterDeltaVsReference +=
+                        selectedPathData.length - fastSelected.length
+                }
+            }
+
             "android:pathData=\"$selectedPathData\""
         }
 
@@ -1619,8 +1730,50 @@ internal object SvgPathDataOptimizer {
 
     private data class CanonicalizedPathData(
         val pathData: String,
-        val changedValues: Int
+        val changedValues: Int,
+        val i2FastPathData: String? = null,
+        val i2FastValid: Boolean = true,
+        val i2FastFixed: Boolean = true,
+        val i2ShadowNanos: Long = 0
     )
+
+    private fun i2CanonicalizeDecimalTokensOnly(pathData: String): String? {
+        val matches = tokenRegex.findAll(pathData).toList()
+        if (matches.isEmpty()) return pathData
+
+        var cursor = 0
+        for (match in matches) {
+            if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
+                return null
+            }
+            cursor = match.range.last + 1
+        }
+        if (!containsOnlySeparators(pathData.substring(cursor))) {
+            return null
+        }
+
+        val rebuilt = StringBuilder(pathData.length)
+        var lastEnd = 0
+        for (match in matches) {
+            rebuilt.append(pathData, lastEnd, match.range.first)
+            val token = match.value
+            if (isCommand(token)) {
+                rebuilt.append(token)
+            } else {
+                val value = token.toBigDecimalOrNull() ?: return null
+                val canonicalValue =
+                    if (value.scale().coerceAtLeast(0) > MAX_PATH_DECIMAL_PLACES) {
+                        value.setScale(MAX_PATH_DECIMAL_PLACES, RoundingMode.HALF_UP)
+                    } else {
+                        value
+                    }
+                rebuilt.append(formatPathNumber(canonicalValue))
+            }
+            lastEnd = match.range.last + 1
+        }
+        rebuilt.append(pathData, lastEnd, pathData.length)
+        return rebuilt.toString()
+    }
 
     private fun canonicalizePathDecimalsCached(
         pathData: String,
@@ -1692,6 +1845,18 @@ internal object SvgPathDataOptimizer {
             return CanonicalizedPathData(pathData, 0)
         }
 
+        // I2 diagnostic shadow: test the decimal-only rebuilt spelling without
+        // the nested full PathData optimizer. Production continues to use the
+        // reference path below.
+        val i2ShadowStart = System.nanoTime()
+        val i2FastValid = parseNormalizedSegments(rebuiltPathData) != null
+        val i2FastFixed = if (i2FastValid) {
+            i2CanonicalizeDecimalTokensOnly(rebuiltPathData) == rebuiltPathData
+        } else {
+            false
+        }
+        val i2ShadowNanos = System.nanoTime() - i2ShadowStart
+
         // Reapply the existing lossless command/separator optimizer only to
         // the rebuilt canonical data. No earlier high-precision spelling is
         // available to be selected again.
@@ -1706,9 +1871,23 @@ internal object SvgPathDataOptimizer {
         val valid = parseNormalizedSegments(optimized) != null
         profiling?.let { it.decimalValidationNanos += System.nanoTime() - validationStart }
         return if (valid) {
-            CanonicalizedPathData(optimized, changedCount)
+            CanonicalizedPathData(
+                pathData = optimized,
+                changedValues = changedCount,
+                i2FastPathData = rebuiltPathData,
+                i2FastValid = i2FastValid,
+                i2FastFixed = i2FastFixed,
+                i2ShadowNanos = i2ShadowNanos
+            )
         } else {
-            CanonicalizedPathData(pathData, 0)
+            CanonicalizedPathData(
+                pathData = pathData,
+                changedValues = 0,
+                i2FastPathData = rebuiltPathData,
+                i2FastValid = i2FastValid,
+                i2FastFixed = i2FastFixed,
+                i2ShadowNanos = i2ShadowNanos
+            )
         }
     }
 

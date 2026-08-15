@@ -358,6 +358,97 @@ object SvgProductionCorpusProfiler {
                     appendLine("Path optimization cache — pass 2: hits=${formatCount(p2CacheHits)}, misses=${formatCount(p2CacheMisses)}, hitRate=${percent(p2CacheHits, p2CacheHits + p2CacheMisses)}")
                     appendLine("Note: I1 is diagnostic only; timings intentionally add small profiling overhead and do not change optimizer decisions.")
 
+                    appendLine()
+                    appendLine("I2 redundancy / fast-path shadow diagnostics")
+                    appendLine("────────────────────────────────")
+                    val i2P1Stable = sumInt { it.i2Pass1PathSyntaxStableInputs }
+                    val i2P2Stable = sumInt { it.i2Pass2PathSyntaxStableInputs }
+                    val i2P1StableNanos = sumLong { it.i2Pass1PathSyntaxStableInputNanos }
+                    val i2P2StableNanos = sumLong { it.i2Pass2PathSyntaxStableInputNanos }
+                    appendLine(
+                        "Path syntax inputs already byte-stable after full optimization — pass 1: " +
+                            "${formatCount(i2P1Stable)} (${formatNanos(i2P1StableNanos)})"
+                    )
+                    appendLine(
+                        "Path syntax inputs already byte-stable after full optimization — pass 2: " +
+                            "${formatCount(i2P2Stable)} (${formatNanos(i2P2StableNanos)})"
+                    )
+
+                    fun appendI2Shadow(label: String, pass2: Boolean) {
+                        val compared = if (pass2) {
+                            sumInt { it.i2Pass2DecimalShadowPathsCompared }
+                        } else {
+                            sumInt { it.i2Pass1DecimalShadowPathsCompared }
+                        }
+                        val identical = if (pass2) {
+                            sumInt { it.i2Pass2DecimalShadowByteIdentical }
+                        } else {
+                            sumInt { it.i2Pass1DecimalShadowByteIdentical }
+                        }
+                        val different = if (pass2) {
+                            sumInt { it.i2Pass2DecimalShadowDifferent }
+                        } else {
+                            sumInt { it.i2Pass1DecimalShadowDifferent }
+                        }
+                        val fastShorter = if (pass2) {
+                            sumInt { it.i2Pass2DecimalShadowFastShorter }
+                        } else {
+                            sumInt { it.i2Pass1DecimalShadowFastShorter }
+                        }
+                        val referenceShorter = if (pass2) {
+                            sumInt { it.i2Pass2DecimalShadowReferenceShorter }
+                        } else {
+                            sumInt { it.i2Pass1DecimalShadowReferenceShorter }
+                        }
+                        val equalDifferent = if (pass2) {
+                            sumInt { it.i2Pass2DecimalShadowEqualLengthDifferent }
+                        } else {
+                            sumInt { it.i2Pass1DecimalShadowEqualLengthDifferent }
+                        }
+                        val invalid = if (pass2) {
+                            sumInt { it.i2Pass2DecimalShadowFastInvalid }
+                        } else {
+                            sumInt { it.i2Pass1DecimalShadowFastInvalid }
+                        }
+                        val nonFixed = if (pass2) {
+                            sumInt { it.i2Pass2DecimalShadowFastNonFixed }
+                        } else {
+                            sumInt { it.i2Pass1DecimalShadowFastNonFixed }
+                        }
+                        val charDelta = if (pass2) {
+                            sumInt { it.i2Pass2DecimalShadowCharacterDeltaVsReference }
+                        } else {
+                            sumInt { it.i2Pass1DecimalShadowCharacterDeltaVsReference }
+                        }
+                        val shadowNanos = if (pass2) {
+                            sumLong { it.i2Pass2DecimalShadowNanos }
+                        } else {
+                            sumLong { it.i2Pass1DecimalShadowNanos }
+                        }
+
+                        appendLine("$label:")
+                        appendLine("  paths compared: ${formatCount(compared)}")
+                        appendLine("  byte-identical to reference: ${formatCount(identical)}")
+                        appendLine("  different: ${formatCount(different)}")
+                        appendLine("    fast candidate shorter: ${formatCount(fastShorter)}")
+                        appendLine("    reference shorter: ${formatCount(referenceShorter)}")
+                        appendLine("    equal length, different spelling: ${formatCount(equalDifferent)}")
+                        appendLine("  fast candidate invalid: ${formatCount(invalid)}")
+                        appendLine("  fast candidate not fixed under decimal-only rebuild: ${formatCount(nonFixed)}")
+                        appendLine(
+                            "  aggregate fast-vs-reference character delta: " +
+                                formatSignedStageDelta(charDelta)
+                        )
+                        appendLine("  shadow-analysis overhead: ${formatNanos(shadowNanos)}")
+                    }
+
+                    appendI2Shadow("Decimal no-reoptimization shadow — pass 1", false)
+                    appendI2Shadow("Decimal no-reoptimization shadow — pass 2", true)
+                    appendLine(
+                        "Note: I2 is diagnostic only. Production still uses the full nested PathData " +
+                            "re-optimization and the independent second pass."
+                    )
+
                     appendLine("Optimizer pass attribution")
                     appendLine("────────────────────────────────")
                     appendLine("Total optimization wrapper time: ${formatNanos(optimizationNanos)}")
