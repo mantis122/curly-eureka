@@ -154,6 +154,10 @@ internal object SvgPathDataOptimizer {
         val i2DecimalShadowFastNonFixed: Int = 0,
         val i2DecimalShadowCharacterDeltaVsReference: Int = 0,
         val i2DecimalShadowNanos: Long = 0,
+        val i3DecimalFastPathAccepted: Int = 0,
+        val i3DecimalFallbackInvalid: Int = 0,
+        val i3DecimalFallbackNonFixed: Int = 0,
+        val i3DecimalFastPathCheckNanos: Long = 0,
         val finalFormattingNanos: Long = 0,
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
@@ -348,6 +352,10 @@ internal object SvgPathDataOptimizer {
         val i2DecimalShadowFastNonFixed: Int = 0,
         val i2DecimalShadowCharacterDeltaVsReference: Int = 0,
         val i2DecimalShadowNanos: Long = 0,
+        val i3DecimalFastPathAccepted: Int = 0,
+        val i3DecimalFallbackInvalid: Int = 0,
+        val i3DecimalFallbackNonFixed: Int = 0,
+        val i3DecimalFastPathCheckNanos: Long = 0,
         val pathOptimizationCacheHits: Int = 0,
         val pathOptimizationCacheMisses: Int = 0,
         val finalFormattingNanos: Long = 0,
@@ -530,6 +538,10 @@ internal object SvgPathDataOptimizer {
             i2DecimalShadowCharacterDeltaVsReference =
                 secondPass.stats.i2DecimalShadowCharacterDeltaVsReference,
             i2DecimalShadowNanos = secondPass.stats.i2DecimalShadowNanos,
+            i3DecimalFastPathAccepted = secondPass.stats.i3DecimalFastPathAccepted,
+            i3DecimalFallbackInvalid = secondPass.stats.i3DecimalFallbackInvalid,
+            i3DecimalFallbackNonFixed = secondPass.stats.i3DecimalFallbackNonFixed,
+            i3DecimalFastPathCheckNanos = secondPass.stats.i3DecimalFastPathCheckNanos,
             finalFormattingNanos = secondPass.stats.finalFormattingNanos,
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
@@ -1495,6 +1507,10 @@ internal object SvgPathDataOptimizer {
                 i2DecimalShadowCharacterDeltaVsReference =
                     numericProfiling.i2ShadowCharacterDeltaVsReference,
                 i2DecimalShadowNanos = numericProfiling.i2ShadowNanos,
+                i3DecimalFastPathAccepted = numericProfiling.i3FastPathAccepted,
+                i3DecimalFallbackInvalid = numericProfiling.i3FallbackInvalid,
+                i3DecimalFallbackNonFixed = numericProfiling.i3FallbackNonFixed,
+                i3DecimalFastPathCheckNanos = numericProfiling.i3FastPathCheckNanos,
                 pathOptimizationCacheHits = pathCache.totalHits,
                 pathOptimizationCacheMisses = pathCache.totalMisses,
                 finalFormattingNanos = finalFormattingNanos,
@@ -1593,7 +1609,11 @@ internal object SvgPathDataOptimizer {
         var i2ShadowFastInvalid: Int = 0,
         var i2ShadowFastNonFixed: Int = 0,
         var i2ShadowCharacterDeltaVsReference: Int = 0,
-        var i2ShadowNanos: Long = 0
+        var i2ShadowNanos: Long = 0,
+        var i3FastPathAccepted: Int = 0,
+        var i3FallbackInvalid: Int = 0,
+        var i3FallbackNonFixed: Int = 0,
+        var i3FastPathCheckNanos: Long = 0
     )
 
     private data class DecimalCanonicalizationResult(
@@ -1675,46 +1695,6 @@ internal object SvgPathDataOptimizer {
                 h25CharactersAvoided +=
                     canonicalized.pathData.length - original.length
                 original
-            }
-
-            canonicalized.i2FastPathData?.let { fastRaw ->
-                profiling?.let { p ->
-                    p.i2ShadowPathsCompared++
-                    p.i2ShadowNanos += canonicalized.i2ShadowNanos
-
-                    if (!canonicalized.i2FastValid) {
-                        p.i2ShadowFastInvalid++
-                    }
-                    if (!canonicalized.i2FastFixed) {
-                        p.i2ShadowFastNonFixed++
-                    }
-
-                    val fastSelected =
-                        if (canonicalized.i2FastValid && fastRaw.length <= original.length) {
-                            fastRaw
-                        } else {
-                            original
-                        }
-
-                    when {
-                        fastSelected == selectedPathData -> p.i2ShadowByteIdentical++
-                        fastSelected.length < selectedPathData.length -> {
-                            p.i2ShadowDifferent++
-                            p.i2ShadowFastShorter++
-                        }
-                        fastSelected.length > selectedPathData.length -> {
-                            p.i2ShadowDifferent++
-                            p.i2ShadowReferenceShorter++
-                        }
-                        else -> {
-                            p.i2ShadowDifferent++
-                            p.i2ShadowEqualLengthDifferent++
-                        }
-                    }
-                    // Positive means the no-reoptimization shadow is shorter.
-                    p.i2ShadowCharacterDeltaVsReference +=
-                        selectedPathData.length - fastSelected.length
-                }
             }
 
             "android:pathData=\"$selectedPathData\""
@@ -1845,48 +1825,64 @@ internal object SvgPathDataOptimizer {
             return CanonicalizedPathData(pathData, 0)
         }
 
-        // I2 diagnostic shadow: test the decimal-only rebuilt spelling without
-        // the nested full PathData optimizer. Production continues to use the
-        // reference path below.
-        val i2ShadowStart = System.nanoTime()
-        val i2FastValid = parseNormalizedSegments(rebuiltPathData) != null
-        val i2FastFixed = if (i2FastValid) {
+        // Production fast path: decimal-only canonicalization may bypass the
+        // nested full PathData optimizer only when exact cheap checks prove the
+        // rebuilt spelling is valid and already fixed under the decimal-only
+        // canonicalizer. Otherwise fail closed to the established reference
+        // route below.
+        val fastPathCheckStart = System.nanoTime()
+        val fastValid = parseNormalizedSegments(rebuiltPathData) != null
+        val fastFixed = if (fastValid) {
             i2CanonicalizeDecimalTokensOnly(rebuiltPathData) == rebuiltPathData
         } else {
             false
         }
-        val i2ShadowNanos = System.nanoTime() - i2ShadowStart
+        profiling?.let {
+            it.i3FastPathCheckNanos += System.nanoTime() - fastPathCheckStart
+        }
 
-        // Reapply the existing lossless command/separator optimizer only to
-        // the rebuilt canonical data. No earlier high-precision spelling is
-        // available to be selected again.
+        if (fastValid && fastFixed) {
+            profiling?.i3FastPathAccepted =
+                (profiling?.i3FastPathAccepted ?: 0) + 1
+            return CanonicalizedPathData(
+                pathData = rebuiltPathData,
+                changedValues = changedCount
+            )
+        }
+
+        profiling?.let {
+            if (!fastValid) {
+                it.i3FallbackInvalid++
+            } else {
+                it.i3FallbackNonFixed++
+            }
+        }
+
+        // Fail-closed fallback: preserve the established nested full PathData
+        // re-optimization whenever the fast path cannot be proven safe/fixed.
         val reoptimizationStart = System.nanoTime()
         val optimized = optimizePathDataCached(
             pathData = rebuiltPathData,
             cache = pathCache,
             validationPass = validationPass
         ).pathData
-        profiling?.let { it.decimalReoptimizationNanos += System.nanoTime() - reoptimizationStart }
+        profiling?.let {
+            it.decimalReoptimizationNanos += System.nanoTime() - reoptimizationStart
+        }
         val validationStart = System.nanoTime()
         val valid = parseNormalizedSegments(optimized) != null
-        profiling?.let { it.decimalValidationNanos += System.nanoTime() - validationStart }
+        profiling?.let {
+            it.decimalValidationNanos += System.nanoTime() - validationStart
+        }
         return if (valid) {
             CanonicalizedPathData(
                 pathData = optimized,
-                changedValues = changedCount,
-                i2FastPathData = rebuiltPathData,
-                i2FastValid = i2FastValid,
-                i2FastFixed = i2FastFixed,
-                i2ShadowNanos = i2ShadowNanos
+                changedValues = changedCount
             )
         } else {
             CanonicalizedPathData(
                 pathData = pathData,
-                changedValues = 0,
-                i2FastPathData = rebuiltPathData,
-                i2FastValid = i2FastValid,
-                i2FastFixed = i2FastFixed,
-                i2ShadowNanos = i2ShadowNanos
+                changedValues = 0
             )
         }
     }

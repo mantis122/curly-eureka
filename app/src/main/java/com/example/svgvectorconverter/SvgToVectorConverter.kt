@@ -669,6 +669,24 @@ object SvgToVectorConverter {
         reportData.i2Pass2DecimalShadowNanos =
             pathOptimizationStats.idempotenceProfiling.i2DecimalShadowNanos
 
+        reportData.i3Pass1DecimalFastPathAccepted =
+            pathOptimizationStats.i3DecimalFastPathAccepted
+        reportData.i3Pass1DecimalFallbackInvalid =
+            pathOptimizationStats.i3DecimalFallbackInvalid
+        reportData.i3Pass1DecimalFallbackNonFixed =
+            pathOptimizationStats.i3DecimalFallbackNonFixed
+        reportData.i3Pass1DecimalFastPathCheckNanos =
+            pathOptimizationStats.i3DecimalFastPathCheckNanos
+
+        reportData.i3Pass2DecimalFastPathAccepted =
+            pathOptimizationStats.idempotenceProfiling.i3DecimalFastPathAccepted
+        reportData.i3Pass2DecimalFallbackInvalid =
+            pathOptimizationStats.idempotenceProfiling.i3DecimalFallbackInvalid
+        reportData.i3Pass2DecimalFallbackNonFixed =
+            pathOptimizationStats.idempotenceProfiling.i3DecimalFallbackNonFixed
+        reportData.i3Pass2DecimalFastPathCheckNanos =
+            pathOptimizationStats.idempotenceProfiling.i3DecimalFastPathCheckNanos
+
         reportData.optimizationPathCacheHits = pathOptimizationStats.pathOptimizationCacheHits
         reportData.optimizationPathCacheMisses = pathOptimizationStats.pathOptimizationCacheMisses
         reportData.optimizationFormattingNanos = pathOptimizationStats.finalFormattingNanos

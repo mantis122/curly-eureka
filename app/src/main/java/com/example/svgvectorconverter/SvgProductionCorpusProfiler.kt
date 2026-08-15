@@ -339,7 +339,7 @@ object SvgProductionCorpusProfiler {
                     appendLine("  decimal canonicalization: ${formatNanos(sumLong { it.optimizationDecimalCanonicalizationNanos })}")
                     appendLine("    tokenization: ${formatNanos(sumLong { it.optimizationDecimalTokenizationNanos })}")
                     appendLine("    rebuild: ${formatNanos(sumLong { it.optimizationDecimalRebuildNanos })}")
-                    appendLine("    nested PathData re-optimization: ${formatNanos(sumLong { it.optimizationDecimalReoptimizationNanos })}")
+                    appendLine("    nested PathData re-optimization fallback: ${formatNanos(sumLong { it.optimizationDecimalReoptimizationNanos })}")
                     appendLine("    validation parse: ${formatNanos(sumLong { it.optimizationDecimalValidationNanos })}")
                     appendLine("    paths examined: ${formatCount(sumInt { it.optimizationDecimalPathsExamined })}")
                     appendLine("Numeric cleanup — pass 2: ${formatNanos(p2NumericNanos)}")
@@ -347,7 +347,7 @@ object SvgProductionCorpusProfiler {
                     appendLine("  decimal canonicalization: ${formatNanos(sumLong { it.optimizerIdempotenceDecimalCanonicalizationNanos })}")
                     appendLine("    tokenization: ${formatNanos(sumLong { it.optimizerIdempotenceDecimalTokenizationNanos })}")
                     appendLine("    rebuild: ${formatNanos(sumLong { it.optimizerIdempotenceDecimalRebuildNanos })}")
-                    appendLine("    nested PathData re-optimization: ${formatNanos(sumLong { it.optimizerIdempotenceDecimalReoptimizationNanos })}")
+                    appendLine("    nested PathData re-optimization fallback: ${formatNanos(sumLong { it.optimizerIdempotenceDecimalReoptimizationNanos })}")
                     appendLine("    validation parse: ${formatNanos(sumLong { it.optimizerIdempotenceDecimalValidationNanos })}")
                     appendLine("    paths examined: ${formatCount(sumInt { it.optimizerIdempotenceDecimalPathsExamined })}")
                     val p1CacheHits = sumInt { it.optimizationPathCacheHits }
@@ -359,96 +359,40 @@ object SvgProductionCorpusProfiler {
                     appendLine("Note: I1 is diagnostic only; timings intentionally add small profiling overhead and do not change optimizer decisions.")
 
                     appendLine()
-                    appendLine("I2 redundancy / fast-path shadow diagnostics")
+                    appendLine("I3 guarded decimal fast-path diagnostics")
                     appendLine("────────────────────────────────")
-                    val i2P1Stable = sumInt { it.i2Pass1PathSyntaxStableInputs }
+                    val i3P1Accepted = sumInt { it.i3Pass1DecimalFastPathAccepted }
+                    val i3P1Invalid = sumInt { it.i3Pass1DecimalFallbackInvalid }
+                    val i3P1NonFixed = sumInt { it.i3Pass1DecimalFallbackNonFixed }
+                    val i3P1CheckNanos = sumLong { it.i3Pass1DecimalFastPathCheckNanos }
+                    val i3P2Accepted = sumInt { it.i3Pass2DecimalFastPathAccepted }
+                    val i3P2Invalid = sumInt { it.i3Pass2DecimalFallbackInvalid }
+                    val i3P2NonFixed = sumInt { it.i3Pass2DecimalFallbackNonFixed }
+                    val i3P2CheckNanos = sumLong { it.i3Pass2DecimalFastPathCheckNanos }
+
+                    appendLine("Decimal fast path — pass 1:")
+                    appendLine("  accepted without nested full PathData optimization: ${formatCount(i3P1Accepted)}")
+                    appendLine("  fallback: invalid rebuilt path: ${formatCount(i3P1Invalid)}")
+                    appendLine("  fallback: decimal-only result not fixed: ${formatCount(i3P1NonFixed)}")
+                    appendLine("  exact fast-path check time: ${formatNanos(i3P1CheckNanos)}")
+
+                    appendLine("Decimal fast path — pass 2:")
+                    appendLine("  accepted without nested full PathData optimization: ${formatCount(i3P2Accepted)}")
+                    appendLine("  fallback: invalid rebuilt path: ${formatCount(i3P2Invalid)}")
+                    appendLine("  fallback: decimal-only result not fixed: ${formatCount(i3P2NonFixed)}")
+                    appendLine("  exact fast-path check time: ${formatNanos(i3P2CheckNanos)}")
+
                     val i2P2Stable = sumInt { it.i2Pass2PathSyntaxStableInputs }
-                    val i2P1StableNanos = sumLong { it.i2Pass1PathSyntaxStableInputNanos }
                     val i2P2StableNanos = sumLong { it.i2Pass2PathSyntaxStableInputNanos }
                     appendLine(
-                        "Path syntax inputs already byte-stable after full optimization — pass 1: " +
-                            "${formatCount(i2P1Stable)} (${formatNanos(i2P1StableNanos)})"
-                    )
-                    appendLine(
-                        "Path syntax inputs already byte-stable after full optimization — pass 2: " +
+                        "Pass-2 path syntax inputs that still return byte-identical: " +
                             "${formatCount(i2P2Stable)} (${formatNanos(i2P2StableNanos)})"
                     )
-
-                    fun appendI2Shadow(label: String, pass2: Boolean) {
-                        val compared = if (pass2) {
-                            sumInt { it.i2Pass2DecimalShadowPathsCompared }
-                        } else {
-                            sumInt { it.i2Pass1DecimalShadowPathsCompared }
-                        }
-                        val identical = if (pass2) {
-                            sumInt { it.i2Pass2DecimalShadowByteIdentical }
-                        } else {
-                            sumInt { it.i2Pass1DecimalShadowByteIdentical }
-                        }
-                        val different = if (pass2) {
-                            sumInt { it.i2Pass2DecimalShadowDifferent }
-                        } else {
-                            sumInt { it.i2Pass1DecimalShadowDifferent }
-                        }
-                        val fastShorter = if (pass2) {
-                            sumInt { it.i2Pass2DecimalShadowFastShorter }
-                        } else {
-                            sumInt { it.i2Pass1DecimalShadowFastShorter }
-                        }
-                        val referenceShorter = if (pass2) {
-                            sumInt { it.i2Pass2DecimalShadowReferenceShorter }
-                        } else {
-                            sumInt { it.i2Pass1DecimalShadowReferenceShorter }
-                        }
-                        val equalDifferent = if (pass2) {
-                            sumInt { it.i2Pass2DecimalShadowEqualLengthDifferent }
-                        } else {
-                            sumInt { it.i2Pass1DecimalShadowEqualLengthDifferent }
-                        }
-                        val invalid = if (pass2) {
-                            sumInt { it.i2Pass2DecimalShadowFastInvalid }
-                        } else {
-                            sumInt { it.i2Pass1DecimalShadowFastInvalid }
-                        }
-                        val nonFixed = if (pass2) {
-                            sumInt { it.i2Pass2DecimalShadowFastNonFixed }
-                        } else {
-                            sumInt { it.i2Pass1DecimalShadowFastNonFixed }
-                        }
-                        val charDelta = if (pass2) {
-                            sumInt { it.i2Pass2DecimalShadowCharacterDeltaVsReference }
-                        } else {
-                            sumInt { it.i2Pass1DecimalShadowCharacterDeltaVsReference }
-                        }
-                        val shadowNanos = if (pass2) {
-                            sumLong { it.i2Pass2DecimalShadowNanos }
-                        } else {
-                            sumLong { it.i2Pass1DecimalShadowNanos }
-                        }
-
-                        appendLine("$label:")
-                        appendLine("  paths compared: ${formatCount(compared)}")
-                        appendLine("  byte-identical to reference: ${formatCount(identical)}")
-                        appendLine("  different: ${formatCount(different)}")
-                        appendLine("    fast candidate shorter: ${formatCount(fastShorter)}")
-                        appendLine("    reference shorter: ${formatCount(referenceShorter)}")
-                        appendLine("    equal length, different spelling: ${formatCount(equalDifferent)}")
-                        appendLine("  fast candidate invalid: ${formatCount(invalid)}")
-                        appendLine("  fast candidate not fixed under decimal-only rebuild: ${formatCount(nonFixed)}")
-                        appendLine(
-                            "  aggregate fast-vs-reference character delta: " +
-                                formatSignedStageDelta(charDelta)
-                        )
-                        appendLine("  shadow-analysis overhead: ${formatNanos(shadowNanos)}")
-                    }
-
-                    appendI2Shadow("Decimal no-reoptimization shadow — pass 1", false)
-                    appendI2Shadow("Decimal no-reoptimization shadow — pass 2", true)
                     appendLine(
-                        "Note: I2 is diagnostic only. Production still uses the full nested PathData " +
-                            "re-optimization and the independent second pass."
+                        "Policy: the fast path is production-active only when parsing succeeds and the " +
+                            "decimal-only spelling is already fixed; otherwise it fails closed to the " +
+                            "established nested optimizer. Independent pass 2 remains enabled."
                     )
-
                     appendLine("Optimizer pass attribution")
                     appendLine("────────────────────────────────")
                     appendLine("Total optimization wrapper time: ${formatNanos(optimizationNanos)}")
@@ -526,7 +470,7 @@ object SvgProductionCorpusProfiler {
                             appendLine(
                                 "    I1 hot paths: p1Path=${formatNanos(data.optimizationPathSyntaxNanos)}, " +
                                     "p1Numeric=${formatNanos(data.optimizationNumericCleanupNanos)}, " +
-                                    "decimalReopt=${formatNanos(data.optimizationDecimalReoptimizationNanos)}, " +
+                                    "decimalFallbackReopt=${formatNanos(data.optimizationDecimalReoptimizationNanos)}, " +
                                     "p2Path=${formatNanos(data.optimizerIdempotencePathSyntaxNanos)}, " +
                                     "p2Numeric=${formatNanos(data.optimizerIdempotenceNumericCleanupNanos)}"
                             )

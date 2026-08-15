@@ -442,6 +442,16 @@ class SvgConversionReportData {
     var i2Pass2DecimalShadowCharacterDeltaVsReference: Int = 0
     var i2Pass2DecimalShadowNanos: Long = 0
 
+    // I3 guarded production decimal fast path.
+    var i3Pass1DecimalFastPathAccepted: Int = 0
+    var i3Pass1DecimalFallbackInvalid: Int = 0
+    var i3Pass1DecimalFallbackNonFixed: Int = 0
+    var i3Pass1DecimalFastPathCheckNanos: Long = 0
+    var i3Pass2DecimalFastPathAccepted: Int = 0
+    var i3Pass2DecimalFallbackInvalid: Int = 0
+    var i3Pass2DecimalFallbackNonFixed: Int = 0
+    var i3Pass2DecimalFastPathCheckNanos: Long = 0
+
     var optimizationPathCacheHits: Int = 0
     var optimizationPathCacheMisses: Int = 0
     var optimizationFormattingNanos: Long = 0
