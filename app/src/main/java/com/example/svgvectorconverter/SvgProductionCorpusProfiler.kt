@@ -393,6 +393,79 @@ object SvgProductionCorpusProfiler {
                             "decimal-only spelling is already fixed; otherwise it fails closed to the " +
                             "established nested optimizer. Independent pass 2 remains enabled."
                     )
+
+                    appendLine()
+                    appendLine("I3.1 old-route byte-identity proof")
+                    appendLine("────────────────────────────────")
+
+                    fun appendI31ReferenceProof(label: String, pass2: Boolean) {
+                        val comparisons = if (pass2) {
+                            sumInt { it.i31Pass2ReferenceComparisons }
+                        } else {
+                            sumInt { it.i31Pass1ReferenceComparisons }
+                        }
+                        val identical = if (pass2) {
+                            sumInt { it.i31Pass2ReferenceByteIdentical }
+                        } else {
+                            sumInt { it.i31Pass1ReferenceByteIdentical }
+                        }
+                        val different = if (pass2) {
+                            sumInt { it.i31Pass2ReferenceDifferent }
+                        } else {
+                            sumInt { it.i31Pass1ReferenceDifferent }
+                        }
+                        val fastShorter = if (pass2) {
+                            sumInt { it.i31Pass2ReferenceFastShorter }
+                        } else {
+                            sumInt { it.i31Pass1ReferenceFastShorter }
+                        }
+                        val oldShorter = if (pass2) {
+                            sumInt { it.i31Pass2ReferenceOldRouteShorter }
+                        } else {
+                            sumInt { it.i31Pass1ReferenceOldRouteShorter }
+                        }
+                        val equalDifferent = if (pass2) {
+                            sumInt { it.i31Pass2ReferenceEqualLengthDifferent }
+                        } else {
+                            sumInt { it.i31Pass1ReferenceEqualLengthDifferent }
+                        }
+                        val invalid = if (pass2) {
+                            sumInt { it.i31Pass2ReferenceInvalid }
+                        } else {
+                            sumInt { it.i31Pass1ReferenceInvalid }
+                        }
+                        val charDelta = if (pass2) {
+                            sumInt { it.i31Pass2ReferenceCharacterDelta }
+                        } else {
+                            sumInt { it.i31Pass1ReferenceCharacterDelta }
+                        }
+                        val shadowNanos = if (pass2) {
+                            sumLong { it.i31Pass2ReferenceShadowNanos }
+                        } else {
+                            sumLong { it.i31Pass1ReferenceShadowNanos }
+                        }
+
+                        appendLine("$label:")
+                        appendLine("  accepted fast-path cases compared: ${formatCount(comparisons)}")
+                        appendLine("  selected output byte-identical to old route: ${formatCount(identical)}")
+                        appendLine("  selected output different: ${formatCount(different)}")
+                        appendLine("    I3 selected output shorter: ${formatCount(fastShorter)}")
+                        appendLine("    old-route selected output shorter: ${formatCount(oldShorter)}")
+                        appendLine("    equal length, different spelling: ${formatCount(equalDifferent)}")
+                        appendLine("  old-route shadow invalid: ${formatCount(invalid)}")
+                        appendLine(
+                            "  aggregate I3-vs-old-route character delta: " +
+                                formatSignedStageDelta(charDelta)
+                        )
+                        appendLine("  one-time shadow overhead: ${formatNanos(shadowNanos)}")
+                    }
+
+                    appendI31ReferenceProof("Pass 1", false)
+                    appendI31ReferenceProof("Pass 2", true)
+                    appendLine(
+                        "Note: I3.1 is a temporary proof-only diagnostic. Production selection remains I3; " +
+                            "the old route is computed only in an isolated shadow cache."
+                    )
                     appendLine("Optimizer pass attribution")
                     appendLine("────────────────────────────────")
                     appendLine("Total optimization wrapper time: ${formatNanos(optimizationNanos)}")
