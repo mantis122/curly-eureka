@@ -124,6 +124,82 @@ internal object SvgPathDataOptimizer {
         val proposalsAccepted: Int = 0,
     )
 
+    data class I43ComplexSummary(
+        val candidatesExamined: Int = 0,
+        val predictedFixed: Int = 0,
+        val truePositive: Int = 0,
+        val falsePositive: Int = 0,
+        val falseNegative: Int = 0,
+        val trueNegative: Int = 0,
+        val checkNanos: Long = 0,
+        val potentialAvoidableOptimizerNanos: Long = 0,
+        val falsePositiveOptimizerNanos: Long = 0,
+        val rejectedReflectiveShorthand: Int = 0,
+        val rejectedNumericSpelling: Int = 0,
+        val rejectedExplicitRepeat: Int = 0,
+        val rejectedProvenance: Int = 0,
+    )
+
+    data class I43ComplexFamilies(
+        val cubicPredicted: Int = 0,
+        val cubicTruePositive: Int = 0,
+        val cubicFalsePositive: Int = 0,
+        val quadraticPredicted: Int = 0,
+        val quadraticTruePositive: Int = 0,
+        val quadraticFalsePositive: Int = 0,
+        val arcPredicted: Int = 0,
+        val arcTruePositive: Int = 0,
+        val arcFalsePositive: Int = 0,
+        val mixedPredicted: Int = 0,
+        val mixedTruePositive: Int = 0,
+        val mixedFalsePositive: Int = 0,
+    )
+
+    data class I43ComplexChanges(
+        val falsePositiveGeometryCleanup: Int = 0,
+        val falsePositiveLocalShortening: Int = 0,
+        val falsePositiveGlobalCommand: Int = 0,
+        val falsePositiveGlobalNumeric: Int = 0,
+        val falsePositiveOther: Int = 0,
+    )
+
+    data class I43ComplexStats(
+        val summary: I43ComplexSummary = I43ComplexSummary(),
+        val families: I43ComplexFamilies = I43ComplexFamilies(),
+        val changes: I43ComplexChanges = I43ComplexChanges(),
+    ) {
+        val complexCandidatesExamined get() = summary.candidatesExamined
+        val complexPredictedFixed get() = summary.predictedFixed
+        val complexTruePositive get() = summary.truePositive
+        val complexFalsePositive get() = summary.falsePositive
+        val complexFalseNegative get() = summary.falseNegative
+        val complexTrueNegative get() = summary.trueNegative
+        val complexCheckNanos get() = summary.checkNanos
+        val complexPotentialAvoidableOptimizerNanos get() = summary.potentialAvoidableOptimizerNanos
+        val complexFalsePositiveOptimizerNanos get() = summary.falsePositiveOptimizerNanos
+        val rejectedReflectiveShorthand get() = summary.rejectedReflectiveShorthand
+        val rejectedNumericSpelling get() = summary.rejectedNumericSpelling
+        val rejectedExplicitRepeat get() = summary.rejectedExplicitRepeat
+        val rejectedProvenance get() = summary.rejectedProvenance
+        val cubicPredicted get() = families.cubicPredicted
+        val cubicTruePositive get() = families.cubicTruePositive
+        val cubicFalsePositive get() = families.cubicFalsePositive
+        val quadraticPredicted get() = families.quadraticPredicted
+        val quadraticTruePositive get() = families.quadraticTruePositive
+        val quadraticFalsePositive get() = families.quadraticFalsePositive
+        val arcPredicted get() = families.arcPredicted
+        val arcTruePositive get() = families.arcTruePositive
+        val arcFalsePositive get() = families.arcFalsePositive
+        val mixedPredicted get() = families.mixedPredicted
+        val mixedTruePositive get() = families.mixedTruePositive
+        val mixedFalsePositive get() = families.mixedFalsePositive
+        val falsePositiveGeometryCleanup get() = changes.falsePositiveGeometryCleanup
+        val falsePositiveLocalShortening get() = changes.falsePositiveLocalShortening
+        val falsePositiveGlobalCommand get() = changes.falsePositiveGlobalCommand
+        val falsePositiveGlobalNumeric get() = changes.falsePositiveGlobalNumeric
+        val falsePositiveOther get() = changes.falsePositiveOther
+    }
+
     data class IdempotenceProfilingStats(
         val pathSyntaxNanos: Long = 0,
         val pathTokenizationNormalizationNanos: Long = 0,
@@ -185,36 +261,7 @@ internal object SvgPathDataOptimizer {
         val i42PreventedChangedGlobalNumeric: Int = 0,
         val i42PreventedChangedOther: Int = 0,
         // I4.3 diagnostic-only complex-command certificate expansion.
-        val i43ComplexCandidatesExamined: Int = 0,
-        val i43ComplexPredictedFixed: Int = 0,
-        val i43ComplexTruePositive: Int = 0,
-        val i43ComplexFalsePositive: Int = 0,
-        val i43ComplexFalseNegative: Int = 0,
-        val i43ComplexTrueNegative: Int = 0,
-        val i43ComplexCheckNanos: Long = 0,
-        val i43ComplexPotentialAvoidableOptimizerNanos: Long = 0,
-        val i43ComplexFalsePositiveOptimizerNanos: Long = 0,
-        val i43RejectedReflectiveShorthand: Int = 0,
-        val i43RejectedNumericSpelling: Int = 0,
-        val i43RejectedExplicitRepeat: Int = 0,
-        val i43RejectedProvenance: Int = 0,
-        val i43CubicPredicted: Int = 0,
-        val i43CubicTruePositive: Int = 0,
-        val i43CubicFalsePositive: Int = 0,
-        val i43QuadraticPredicted: Int = 0,
-        val i43QuadraticTruePositive: Int = 0,
-        val i43QuadraticFalsePositive: Int = 0,
-        val i43ArcPredicted: Int = 0,
-        val i43ArcTruePositive: Int = 0,
-        val i43ArcFalsePositive: Int = 0,
-        val i43MixedPredicted: Int = 0,
-        val i43MixedTruePositive: Int = 0,
-        val i43MixedFalsePositive: Int = 0,
-        val i43FalsePositiveGeometryCleanup: Int = 0,
-        val i43FalsePositiveLocalShortening: Int = 0,
-        val i43FalsePositiveGlobalCommand: Int = 0,
-        val i43FalsePositiveGlobalNumeric: Int = 0,
-        val i43FalsePositiveOther: Int = 0,
+        val i43: I43ComplexStats = I43ComplexStats(),
         val finalFormattingNanos: Long = 0,
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
@@ -437,36 +484,7 @@ internal object SvgPathDataOptimizer {
         val i42PreventedChangedGlobalCommand: Int = 0,
         val i42PreventedChangedGlobalNumeric: Int = 0,
         val i42PreventedChangedOther: Int = 0,
-        val i43ComplexCandidatesExamined: Int = 0,
-        val i43ComplexPredictedFixed: Int = 0,
-        val i43ComplexTruePositive: Int = 0,
-        val i43ComplexFalsePositive: Int = 0,
-        val i43ComplexFalseNegative: Int = 0,
-        val i43ComplexTrueNegative: Int = 0,
-        val i43ComplexCheckNanos: Long = 0,
-        val i43ComplexPotentialAvoidableOptimizerNanos: Long = 0,
-        val i43ComplexFalsePositiveOptimizerNanos: Long = 0,
-        val i43RejectedReflectiveShorthand: Int = 0,
-        val i43RejectedNumericSpelling: Int = 0,
-        val i43RejectedExplicitRepeat: Int = 0,
-        val i43RejectedProvenance: Int = 0,
-        val i43CubicPredicted: Int = 0,
-        val i43CubicTruePositive: Int = 0,
-        val i43CubicFalsePositive: Int = 0,
-        val i43QuadraticPredicted: Int = 0,
-        val i43QuadraticTruePositive: Int = 0,
-        val i43QuadraticFalsePositive: Int = 0,
-        val i43ArcPredicted: Int = 0,
-        val i43ArcTruePositive: Int = 0,
-        val i43ArcFalsePositive: Int = 0,
-        val i43MixedPredicted: Int = 0,
-        val i43MixedTruePositive: Int = 0,
-        val i43MixedFalsePositive: Int = 0,
-        val i43FalsePositiveGeometryCleanup: Int = 0,
-        val i43FalsePositiveLocalShortening: Int = 0,
-        val i43FalsePositiveGlobalCommand: Int = 0,
-        val i43FalsePositiveGlobalNumeric: Int = 0,
-        val i43FalsePositiveOther: Int = 0,
+        val i43: I43ComplexStats = I43ComplexStats(),
         val pathOptimizationCacheHits: Int = 0,
         val pathOptimizationCacheMisses: Int = 0,
         val finalFormattingNanos: Long = 0,
@@ -691,43 +709,44 @@ internal object SvgPathDataOptimizer {
             i42PreventedChangedGlobalNumeric =
                 secondPass.stats.i42PreventedChangedGlobalNumeric,
             i42PreventedChangedOther = secondPass.stats.i42PreventedChangedOther,
-            i43ComplexCandidatesExamined = secondPass.stats.i43ComplexCandidatesExamined,
-            i43ComplexPredictedFixed = secondPass.stats.i43ComplexPredictedFixed,
-            i43ComplexTruePositive = secondPass.stats.i43ComplexTruePositive,
-            i43ComplexFalsePositive = secondPass.stats.i43ComplexFalsePositive,
-            i43ComplexFalseNegative = secondPass.stats.i43ComplexFalseNegative,
-            i43ComplexTrueNegative = secondPass.stats.i43ComplexTrueNegative,
-            i43ComplexCheckNanos = secondPass.stats.i43ComplexCheckNanos,
-            i43ComplexPotentialAvoidableOptimizerNanos =
-                secondPass.stats.i43ComplexPotentialAvoidableOptimizerNanos,
-            i43ComplexFalsePositiveOptimizerNanos =
-                secondPass.stats.i43ComplexFalsePositiveOptimizerNanos,
-            i43RejectedReflectiveShorthand =
-                secondPass.stats.i43RejectedReflectiveShorthand,
-            i43RejectedNumericSpelling = secondPass.stats.i43RejectedNumericSpelling,
-            i43RejectedExplicitRepeat = secondPass.stats.i43RejectedExplicitRepeat,
-            i43RejectedProvenance = secondPass.stats.i43RejectedProvenance,
-            i43CubicPredicted = secondPass.stats.i43CubicPredicted,
-            i43CubicTruePositive = secondPass.stats.i43CubicTruePositive,
-            i43CubicFalsePositive = secondPass.stats.i43CubicFalsePositive,
-            i43QuadraticPredicted = secondPass.stats.i43QuadraticPredicted,
-            i43QuadraticTruePositive = secondPass.stats.i43QuadraticTruePositive,
-            i43QuadraticFalsePositive = secondPass.stats.i43QuadraticFalsePositive,
-            i43ArcPredicted = secondPass.stats.i43ArcPredicted,
-            i43ArcTruePositive = secondPass.stats.i43ArcTruePositive,
-            i43ArcFalsePositive = secondPass.stats.i43ArcFalsePositive,
-            i43MixedPredicted = secondPass.stats.i43MixedPredicted,
-            i43MixedTruePositive = secondPass.stats.i43MixedTruePositive,
-            i43MixedFalsePositive = secondPass.stats.i43MixedFalsePositive,
-            i43FalsePositiveGeometryCleanup =
-                secondPass.stats.i43FalsePositiveGeometryCleanup,
-            i43FalsePositiveLocalShortening =
-                secondPass.stats.i43FalsePositiveLocalShortening,
-            i43FalsePositiveGlobalCommand =
-                secondPass.stats.i43FalsePositiveGlobalCommand,
-            i43FalsePositiveGlobalNumeric =
-                secondPass.stats.i43FalsePositiveGlobalNumeric,
-            i43FalsePositiveOther = secondPass.stats.i43FalsePositiveOther,
+            i43 = I43ComplexStats(
+                summary = I43ComplexSummary(
+                    candidatesExamined = secondPass.stats.i43.complexCandidatesExamined,
+                    predictedFixed = secondPass.stats.i43.complexPredictedFixed,
+                    truePositive = secondPass.stats.i43.complexTruePositive,
+                    falsePositive = secondPass.stats.i43.complexFalsePositive,
+                    falseNegative = secondPass.stats.i43.complexFalseNegative,
+                    trueNegative = secondPass.stats.i43.complexTrueNegative,
+                    checkNanos = secondPass.stats.i43.complexCheckNanos,
+                    potentialAvoidableOptimizerNanos = secondPass.stats.i43.complexPotentialAvoidableOptimizerNanos,
+                    falsePositiveOptimizerNanos = secondPass.stats.i43.complexFalsePositiveOptimizerNanos,
+                    rejectedReflectiveShorthand = secondPass.stats.i43.rejectedReflectiveShorthand,
+                    rejectedNumericSpelling = secondPass.stats.i43.rejectedNumericSpelling,
+                    rejectedExplicitRepeat = secondPass.stats.i43.rejectedExplicitRepeat,
+                    rejectedProvenance = secondPass.stats.i43.rejectedProvenance,
+                ),
+                families = I43ComplexFamilies(
+                    cubicPredicted = secondPass.stats.i43.cubicPredicted,
+                    cubicTruePositive = secondPass.stats.i43.cubicTruePositive,
+                    cubicFalsePositive = secondPass.stats.i43.cubicFalsePositive,
+                    quadraticPredicted = secondPass.stats.i43.quadraticPredicted,
+                    quadraticTruePositive = secondPass.stats.i43.quadraticTruePositive,
+                    quadraticFalsePositive = secondPass.stats.i43.quadraticFalsePositive,
+                    arcPredicted = secondPass.stats.i43.arcPredicted,
+                    arcTruePositive = secondPass.stats.i43.arcTruePositive,
+                    arcFalsePositive = secondPass.stats.i43.arcFalsePositive,
+                    mixedPredicted = secondPass.stats.i43.mixedPredicted,
+                    mixedTruePositive = secondPass.stats.i43.mixedTruePositive,
+                    mixedFalsePositive = secondPass.stats.i43.mixedFalsePositive,
+                ),
+                changes = I43ComplexChanges(
+                    falsePositiveGeometryCleanup = secondPass.stats.i43.falsePositiveGeometryCleanup,
+                    falsePositiveLocalShortening = secondPass.stats.i43.falsePositiveLocalShortening,
+                    falsePositiveGlobalCommand = secondPass.stats.i43.falsePositiveGlobalCommand,
+                    falsePositiveGlobalNumeric = secondPass.stats.i43.falsePositiveGlobalNumeric,
+                    falsePositiveOther = secondPass.stats.i43.falsePositiveOther,
+                ),
+            ),
             finalFormattingNanos = secondPass.stats.finalFormattingNanos,
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
@@ -1944,38 +1963,44 @@ internal object SvgPathDataOptimizer {
                 i42PreventedChangedGlobalNumeric =
                     i42PreventedChangedGlobalNumeric,
                 i42PreventedChangedOther = i42PreventedChangedOther,
-                i43ComplexCandidatesExamined = i43ComplexCandidatesExamined,
-                i43ComplexPredictedFixed = i43ComplexPredictedFixed,
-                i43ComplexTruePositive = i43ComplexTruePositive,
-                i43ComplexFalsePositive = i43ComplexFalsePositive,
-                i43ComplexFalseNegative = i43ComplexFalseNegative,
-                i43ComplexTrueNegative = i43ComplexTrueNegative,
-                i43ComplexCheckNanos = i43ComplexCheckNanos,
-                i43ComplexPotentialAvoidableOptimizerNanos =
-                    i43ComplexPotentialAvoidableOptimizerNanos,
-                i43ComplexFalsePositiveOptimizerNanos =
-                    i43ComplexFalsePositiveOptimizerNanos,
-                i43RejectedReflectiveShorthand = i43RejectedReflectiveShorthand,
-                i43RejectedNumericSpelling = i43RejectedNumericSpelling,
-                i43RejectedExplicitRepeat = i43RejectedExplicitRepeat,
-                i43RejectedProvenance = i43RejectedProvenance,
-                i43CubicPredicted = i43CubicPredicted,
-                i43CubicTruePositive = i43CubicTruePositive,
-                i43CubicFalsePositive = i43CubicFalsePositive,
-                i43QuadraticPredicted = i43QuadraticPredicted,
-                i43QuadraticTruePositive = i43QuadraticTruePositive,
-                i43QuadraticFalsePositive = i43QuadraticFalsePositive,
-                i43ArcPredicted = i43ArcPredicted,
-                i43ArcTruePositive = i43ArcTruePositive,
-                i43ArcFalsePositive = i43ArcFalsePositive,
-                i43MixedPredicted = i43MixedPredicted,
-                i43MixedTruePositive = i43MixedTruePositive,
-                i43MixedFalsePositive = i43MixedFalsePositive,
-                i43FalsePositiveGeometryCleanup = i43FalsePositiveGeometryCleanup,
-                i43FalsePositiveLocalShortening = i43FalsePositiveLocalShortening,
-                i43FalsePositiveGlobalCommand = i43FalsePositiveGlobalCommand,
-                i43FalsePositiveGlobalNumeric = i43FalsePositiveGlobalNumeric,
-                i43FalsePositiveOther = i43FalsePositiveOther,
+                i43 = I43ComplexStats(
+                    summary = I43ComplexSummary(
+                        candidatesExamined = i43ComplexCandidatesExamined,
+                        predictedFixed = i43ComplexPredictedFixed,
+                        truePositive = i43ComplexTruePositive,
+                        falsePositive = i43ComplexFalsePositive,
+                        falseNegative = i43ComplexFalseNegative,
+                        trueNegative = i43ComplexTrueNegative,
+                        checkNanos = i43ComplexCheckNanos,
+                        potentialAvoidableOptimizerNanos = i43ComplexPotentialAvoidableOptimizerNanos,
+                        falsePositiveOptimizerNanos = i43ComplexFalsePositiveOptimizerNanos,
+                        rejectedReflectiveShorthand = i43RejectedReflectiveShorthand,
+                        rejectedNumericSpelling = i43RejectedNumericSpelling,
+                        rejectedExplicitRepeat = i43RejectedExplicitRepeat,
+                        rejectedProvenance = i43RejectedProvenance,
+                    ),
+                    families = I43ComplexFamilies(
+                        cubicPredicted = i43CubicPredicted,
+                        cubicTruePositive = i43CubicTruePositive,
+                        cubicFalsePositive = i43CubicFalsePositive,
+                        quadraticPredicted = i43QuadraticPredicted,
+                        quadraticTruePositive = i43QuadraticTruePositive,
+                        quadraticFalsePositive = i43QuadraticFalsePositive,
+                        arcPredicted = i43ArcPredicted,
+                        arcTruePositive = i43ArcTruePositive,
+                        arcFalsePositive = i43ArcFalsePositive,
+                        mixedPredicted = i43MixedPredicted,
+                        mixedTruePositive = i43MixedTruePositive,
+                        mixedFalsePositive = i43MixedFalsePositive,
+                    ),
+                    changes = I43ComplexChanges(
+                        falsePositiveGeometryCleanup = i43FalsePositiveGeometryCleanup,
+                        falsePositiveLocalShortening = i43FalsePositiveLocalShortening,
+                        falsePositiveGlobalCommand = i43FalsePositiveGlobalCommand,
+                        falsePositiveGlobalNumeric = i43FalsePositiveGlobalNumeric,
+                        falsePositiveOther = i43FalsePositiveOther,
+                    ),
+                ),
                 pathOptimizationCacheHits = pathCache.totalHits,
                 pathOptimizationCacheMisses = pathCache.totalMisses,
                 finalFormattingNanos = finalFormattingNanos,
