@@ -395,7 +395,7 @@ object SvgProductionCorpusProfiler {
                     )
 
                     appendLine()
-                    appendLine("I4.1 pass-2 fixed-point certificate study")
+                    appendLine("I4.2 provenance-aware pass-2 fixed-point certificate study")
                     appendLine("────────────────────────────────")
                     val i41Predicted = sumInt { it.i41Pass2CertificatePredictedFixed }
                     val i41TruePositive = sumInt { it.i41Pass2CertificateTruePositive }
@@ -438,9 +438,58 @@ object SvgProductionCorpusProfiler {
                             formatCount(sumInt { it.i41Pass2RejectedExplicitRepeat })
                     )
                     appendLine(
-                        "Note: I4.1 is diagnostic only. The certificate never skips pass-2 work; " +
+                        "Note: I4.2 is diagnostic only. The provenance-aware certificate never skips pass-2 work; " +
                             "the full optimizer still runs and supplies ground truth. A future " +
                             "production certificate must demonstrate zero false positives."
+                    )
+
+                    appendLine()
+                    appendLine("I4.2 merge-provenance gate")
+                    appendLine("────────────────────────────────")
+                    appendLine(
+                        "Merge-synthesized paths excluded from an otherwise-positive certificate: " +
+                            formatCount(sumInt { it.i42Pass2ProvenanceExcluded })
+                    )
+                    appendLine(
+                        "Excluded paths that were actually fixed (coverage intentionally sacrificed): " +
+                            formatCount(sumInt { it.i42Pass2ProvenanceExcludedActuallyFixed })
+                    )
+                    appendLine(
+                        "Excluded paths that would have been false positives: " +
+                            formatCount(sumInt { it.i42Pass2ProvenancePreventedFalsePositive })
+                    )
+                    appendLine(
+                        "Full optimizer time on all provenance exclusions: " +
+                            formatNanos(sumLong { it.i42Pass2ProvenanceExcludedOptimizerNanos })
+                    )
+                    appendLine(
+                        "Full optimizer time on prevented false positives: " +
+                            formatNanos(sumLong { it.i42Pass2PreventedFalsePositiveOptimizerNanos })
+                    )
+                    appendLine("Prevented false-positive change classification")
+                    appendLine(
+                        "  syntax/token normalization: " +
+                            formatCount(sumInt { it.i42Pass2PreventedChangedSyntaxNormalization })
+                    )
+                    appendLine(
+                        "  geometry/arc/curve/collinear cleanup: " +
+                            formatCount(sumInt { it.i42Pass2PreventedChangedGeometryCleanup })
+                    )
+                    appendLine(
+                        "  local command shortening: " +
+                            formatCount(sumInt { it.i42Pass2PreventedChangedLocalShortening })
+                    )
+                    appendLine(
+                        "  global command minimization: " +
+                            formatCount(sumInt { it.i42Pass2PreventedChangedGlobalCommand })
+                    )
+                    appendLine(
+                        "  global numeric serialization: " +
+                            formatCount(sumInt { it.i42Pass2PreventedChangedGlobalNumeric })
+                    )
+                    appendLine(
+                        "  other/unattributed: " +
+                            formatCount(sumInt { it.i42Pass2PreventedChangedOther })
                     )
 
                     appendLine()
@@ -532,11 +581,18 @@ object SvgProductionCorpusProfiler {
                             data.i41Pass2CertificateFalseNegative > 0
                         ) {
                             appendLine(
-                                "    I4.1 certificate: predicted=${data.i41Pass2CertificatePredictedFixed}, " +
+                                "    I4.2 certificate: predicted=${data.i41Pass2CertificatePredictedFixed}, " +
                                     "tp=${data.i41Pass2CertificateTruePositive}, " +
                                     "fp=${data.i41Pass2CertificateFalsePositive}, " +
                                     "fn=${data.i41Pass2CertificateFalseNegative}"
                             )
+                            if (data.i42Pass2ProvenanceExcluded > 0) {
+                                appendLine(
+                                    "    I4.2 provenance gate: excluded=${data.i42Pass2ProvenanceExcluded}, " +
+                                        "preventedFP=${data.i42Pass2ProvenancePreventedFalsePositive}, " +
+                                        "excludedButFixed=${data.i42Pass2ProvenanceExcludedActuallyFixed}"
+                                )
+                            }
                         }
                         if (data.h24PathSyntaxCandidatesRejectedForSize > 0) {
                             appendLine(

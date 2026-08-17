@@ -172,6 +172,18 @@ internal object SvgPathDataOptimizer {
         val i41RejectedWhitespace: Int = 0,
         val i41RejectedComplexCommandFamily: Int = 0,
         val i41RejectedExplicitRepeat: Int = 0,
+        // I4.2 provenance-aware certificate study.
+        val i42ProvenanceExcluded: Int = 0,
+        val i42ProvenanceExcludedActuallyFixed: Int = 0,
+        val i42ProvenancePreventedFalsePositive: Int = 0,
+        val i42ProvenanceExcludedOptimizerNanos: Long = 0,
+        val i42PreventedFalsePositiveOptimizerNanos: Long = 0,
+        val i42PreventedChangedSyntaxNormalization: Int = 0,
+        val i42PreventedChangedGeometryCleanup: Int = 0,
+        val i42PreventedChangedLocalShortening: Int = 0,
+        val i42PreventedChangedGlobalCommand: Int = 0,
+        val i42PreventedChangedGlobalNumeric: Int = 0,
+        val i42PreventedChangedOther: Int = 0,
         val finalFormattingNanos: Long = 0,
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
@@ -383,6 +395,17 @@ internal object SvgPathDataOptimizer {
         val i41RejectedWhitespace: Int = 0,
         val i41RejectedComplexCommandFamily: Int = 0,
         val i41RejectedExplicitRepeat: Int = 0,
+        val i42ProvenanceExcluded: Int = 0,
+        val i42ProvenanceExcludedActuallyFixed: Int = 0,
+        val i42ProvenancePreventedFalsePositive: Int = 0,
+        val i42ProvenanceExcludedOptimizerNanos: Long = 0,
+        val i42PreventedFalsePositiveOptimizerNanos: Long = 0,
+        val i42PreventedChangedSyntaxNormalization: Int = 0,
+        val i42PreventedChangedGeometryCleanup: Int = 0,
+        val i42PreventedChangedLocalShortening: Int = 0,
+        val i42PreventedChangedGlobalCommand: Int = 0,
+        val i42PreventedChangedGlobalNumeric: Int = 0,
+        val i42PreventedChangedOther: Int = 0,
         val pathOptimizationCacheHits: Int = 0,
         val pathOptimizationCacheMisses: Int = 0,
         val finalFormattingNanos: Long = 0,
@@ -450,7 +473,10 @@ internal object SvgPathDataOptimizer {
 
     data class Result(
         val xml: String,
-        val stats: Stats
+        val stats: Stats,
+        // I4.2 diagnostic provenance: final/near-final PathData spellings that
+        // originate from compatible-path merging in this pass.
+        val mergeSynthesizedPathData: Set<String> = emptySet()
     )
 
     private const val MAX_PATH_DECIMAL_PLACES = 6
@@ -515,7 +541,8 @@ internal object SvgPathDataOptimizer {
         val secondPass = optimizeVectorXmlSinglePass(
             xml = firstPass.xml,
             pathCache = secondPassCache,
-            validationPass = true
+            validationPass = true,
+            certificateExcludedPathData = firstPass.mergeSynthesizedPathData
         )
         val secondPassNanos = System.nanoTime() - secondPassStartTime
         val secondPassValidationSnapshot = validationSnapshot(secondPass.xml)
@@ -583,6 +610,26 @@ internal object SvgPathDataOptimizer {
             i41RejectedWhitespace = secondPass.stats.i41RejectedWhitespace,
             i41RejectedComplexCommandFamily = secondPass.stats.i41RejectedComplexCommandFamily,
             i41RejectedExplicitRepeat = secondPass.stats.i41RejectedExplicitRepeat,
+            i42ProvenanceExcluded = secondPass.stats.i42ProvenanceExcluded,
+            i42ProvenanceExcludedActuallyFixed =
+                secondPass.stats.i42ProvenanceExcludedActuallyFixed,
+            i42ProvenancePreventedFalsePositive =
+                secondPass.stats.i42ProvenancePreventedFalsePositive,
+            i42ProvenanceExcludedOptimizerNanos =
+                secondPass.stats.i42ProvenanceExcludedOptimizerNanos,
+            i42PreventedFalsePositiveOptimizerNanos =
+                secondPass.stats.i42PreventedFalsePositiveOptimizerNanos,
+            i42PreventedChangedSyntaxNormalization =
+                secondPass.stats.i42PreventedChangedSyntaxNormalization,
+            i42PreventedChangedGeometryCleanup =
+                secondPass.stats.i42PreventedChangedGeometryCleanup,
+            i42PreventedChangedLocalShortening =
+                secondPass.stats.i42PreventedChangedLocalShortening,
+            i42PreventedChangedGlobalCommand =
+                secondPass.stats.i42PreventedChangedGlobalCommand,
+            i42PreventedChangedGlobalNumeric =
+                secondPass.stats.i42PreventedChangedGlobalNumeric,
+            i42PreventedChangedOther = secondPass.stats.i42PreventedChangedOther,
             finalFormattingNanos = secondPass.stats.finalFormattingNanos,
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
@@ -649,7 +696,8 @@ internal object SvgPathDataOptimizer {
         val thirdPass = optimizeVectorXmlSinglePass(
             xml = secondPass.xml,
             pathCache = thirdPassCache,
-            validationPass = true
+            validationPass = true,
+            certificateExcludedPathData = secondPass.mergeSynthesizedPathData
         )
         val thirdPassNanos = System.nanoTime() - thirdPassStartTime
         val thirdPassValidationSnapshot = validationSnapshot(thirdPass.xml)
@@ -1044,7 +1092,8 @@ internal object SvgPathDataOptimizer {
     private fun optimizeVectorXmlSinglePass(
         xml: String,
         pathCache: PathOptimizationCache,
-        validationPass: Boolean
+        validationPass: Boolean,
+        certificateExcludedPathData: Set<String> = emptySet()
     ): Result {
         fun characterDelta(before: String, after: String): Int =
             before.length - after.length
@@ -1103,16 +1152,43 @@ internal object SvgPathDataOptimizer {
         var i41RejectedWhitespace = 0
         var i41RejectedComplexCommandFamily = 0
         var i41RejectedExplicitRepeat = 0
+        var i42ProvenanceExcluded = 0
+        var i42ProvenanceExcludedActuallyFixed = 0
+        var i42ProvenancePreventedFalsePositive = 0
+        var i42ProvenanceExcludedOptimizerNanos = 0L
+        var i42PreventedFalsePositiveOptimizerNanos = 0L
+        var i42PreventedChangedSyntaxNormalization = 0
+        var i42PreventedChangedGeometryCleanup = 0
+        var i42PreventedChangedLocalShortening = 0
+        var i42PreventedChangedGlobalCommand = 0
+        var i42PreventedChangedGlobalNumeric = 0
+        var i42PreventedChangedOther = 0
 
         val pathSyntaxStartTime = System.nanoTime()
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
             val original = match.groupValues[1]
 
             var i41Certificate: I41FixedPointCertificate? = null
+            var i42ExcludedByProvenance = false
+            var i42WouldPredictFixedWithoutProvenance = false
             if (validationPass) {
                 val certificateStart = System.nanoTime()
-                i41Certificate = i41CheapFixedPointCertificate(original)
+                val rawCertificate = i41CheapFixedPointCertificate(original)
+                i42WouldPredictFixedWithoutProvenance = rawCertificate.predictedFixed
+                i42ExcludedByProvenance =
+                    rawCertificate.predictedFixed && original in certificateExcludedPathData
+
+                i41Certificate = if (i42ExcludedByProvenance) {
+                    I41FixedPointCertificate(false, "mergeProvenance")
+                } else {
+                    rawCertificate
+                }
                 i41CertificateCheckNanos += System.nanoTime() - certificateStart
+
+                if (i42ExcludedByProvenance) {
+                    i42ProvenanceExcluded++
+                }
+
                 if (i41Certificate.predictedFixed) {
                     i41CertificatePredictedFixed++
                 } else {
@@ -1138,6 +1214,32 @@ internal object SvgPathDataOptimizer {
             if (i41ActuallyFixed) {
                 i2PathSyntaxStableInputs++
                 i2PathSyntaxStableInputNanos += i2PathCallNanos
+            }
+
+            if (validationPass && i42ExcludedByProvenance && i42WouldPredictFixedWithoutProvenance) {
+                i42ProvenanceExcludedOptimizerNanos += i2PathCallNanos
+                if (i41ActuallyFixed) {
+                    i42ProvenanceExcludedActuallyFixed++
+                } else {
+                    i42ProvenancePreventedFalsePositive++
+                    i42PreventedFalsePositiveOptimizerNanos += i2PathCallNanos
+                    when {
+                        optimized.h23SyntaxNormalizationCharacterDelta != 0 ->
+                            i42PreventedChangedSyntaxNormalization++
+                        optimized.h23RedundantGeometryCharacterDelta != 0 ||
+                            optimized.h23ArcCleanupCharacterDelta != 0 ||
+                            optimized.h23CurveSimplificationCharacterDelta != 0 ||
+                            optimized.h23CollinearConsolidationCharacterDelta != 0 ->
+                            i42PreventedChangedGeometryCleanup++
+                        optimized.h23LocalCommandShorteningCharacterDelta != 0 ->
+                            i42PreventedChangedLocalShortening++
+                        optimized.h23GlobalCommandMinimizationCharacterDelta != 0 ->
+                            i42PreventedChangedGlobalCommand++
+                        optimized.h23GlobalNumericSerializationCharacterDelta != 0 ->
+                            i42PreventedChangedGlobalNumeric++
+                        else -> i42PreventedChangedOther++
+                    }
+                }
             }
 
             if (validationPass && i41Certificate != null) {
@@ -1615,6 +1717,23 @@ internal object SvgPathDataOptimizer {
                 i41RejectedWhitespace = i41RejectedWhitespace,
                 i41RejectedComplexCommandFamily = i41RejectedComplexCommandFamily,
                 i41RejectedExplicitRepeat = i41RejectedExplicitRepeat,
+                i42ProvenanceExcluded = i42ProvenanceExcluded,
+                i42ProvenanceExcludedActuallyFixed = i42ProvenanceExcludedActuallyFixed,
+                i42ProvenancePreventedFalsePositive = i42ProvenancePreventedFalsePositive,
+                i42ProvenanceExcludedOptimizerNanos = i42ProvenanceExcludedOptimizerNanos,
+                i42PreventedFalsePositiveOptimizerNanos =
+                    i42PreventedFalsePositiveOptimizerNanos,
+                i42PreventedChangedSyntaxNormalization =
+                    i42PreventedChangedSyntaxNormalization,
+                i42PreventedChangedGeometryCleanup =
+                    i42PreventedChangedGeometryCleanup,
+                i42PreventedChangedLocalShortening =
+                    i42PreventedChangedLocalShortening,
+                i42PreventedChangedGlobalCommand =
+                    i42PreventedChangedGlobalCommand,
+                i42PreventedChangedGlobalNumeric =
+                    i42PreventedChangedGlobalNumeric,
+                i42PreventedChangedOther = i42PreventedChangedOther,
                 pathOptimizationCacheHits = pathCache.totalHits,
                 pathOptimizationCacheMisses = pathCache.totalMisses,
                 finalFormattingNanos = finalFormattingNanos,
@@ -1650,7 +1769,8 @@ internal object SvgPathDataOptimizer {
                 h21FormattingCharacterDelta = h21FormattingCharacterDelta,
                 xmlCharactersBefore = xml.length,
                 xmlCharactersAfter = finalXml.length
-            )
+            ),
+            mergeSynthesizedPathData = pathMerging.synthesizedPathData
         )
     }
 
@@ -5016,7 +5136,8 @@ internal object SvgPathDataOptimizer {
         val xml: String,
         val mergedCount: Int,
         val preservedForSize: Int,
-        val opportunityStats: PathMergeOpportunityStats
+        val opportunityStats: PathMergeOpportunityStats,
+        val synthesizedPathData: Set<String>
     )
 
 
@@ -5166,6 +5287,7 @@ internal object SvgPathDataOptimizer {
         var totalMerged = 0
         val rejectedSignatures = mutableSetOf<String>()
         val opportunityStats = PathMergeOpportunityStats()
+        val synthesizedPathData = linkedSetOf<String>()
 
         while (true) {
             var mergedThisPass = false
@@ -5208,6 +5330,15 @@ internal object SvgPathDataOptimizer {
 
                 mergedThisPass = true
                 totalMerged++
+                attributeValue(merged, "android:pathData")?.let { mergedPath ->
+                    synthesizedPathData += mergedPath
+                    // Include the cheap decimal-only spelling as well because
+                    // decimal canonicalization is the only path-local mutation
+                    // that follows merging before the next full pass.
+                    i2CanonicalizeDecimalTokensOnly(mergedPath)?.let {
+                        synthesizedPathData += it
+                    }
+                }
                 mergedFragment
             }
 
@@ -5221,7 +5352,8 @@ internal object SvgPathDataOptimizer {
             xml = current,
             mergedCount = totalMerged,
             preservedForSize = rejectedSignatures.size,
-            opportunityStats = opportunityStats
+            opportunityStats = opportunityStats,
+            synthesizedPathData = synthesizedPathData
         )
     }
 

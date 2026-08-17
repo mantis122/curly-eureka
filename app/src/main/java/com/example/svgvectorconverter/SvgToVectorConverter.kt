@@ -714,6 +714,29 @@ object SvgToVectorConverter {
         reportData.i41Pass2RejectedExplicitRepeat =
             pathOptimizationStats.idempotenceProfiling.i41RejectedExplicitRepeat
 
+        reportData.i42Pass2ProvenanceExcluded =
+            pathOptimizationStats.idempotenceProfiling.i42ProvenanceExcluded
+        reportData.i42Pass2ProvenanceExcludedActuallyFixed =
+            pathOptimizationStats.idempotenceProfiling.i42ProvenanceExcludedActuallyFixed
+        reportData.i42Pass2ProvenancePreventedFalsePositive =
+            pathOptimizationStats.idempotenceProfiling.i42ProvenancePreventedFalsePositive
+        reportData.i42Pass2ProvenanceExcludedOptimizerNanos =
+            pathOptimizationStats.idempotenceProfiling.i42ProvenanceExcludedOptimizerNanos
+        reportData.i42Pass2PreventedFalsePositiveOptimizerNanos =
+            pathOptimizationStats.idempotenceProfiling.i42PreventedFalsePositiveOptimizerNanos
+        reportData.i42Pass2PreventedChangedSyntaxNormalization =
+            pathOptimizationStats.idempotenceProfiling.i42PreventedChangedSyntaxNormalization
+        reportData.i42Pass2PreventedChangedGeometryCleanup =
+            pathOptimizationStats.idempotenceProfiling.i42PreventedChangedGeometryCleanup
+        reportData.i42Pass2PreventedChangedLocalShortening =
+            pathOptimizationStats.idempotenceProfiling.i42PreventedChangedLocalShortening
+        reportData.i42Pass2PreventedChangedGlobalCommand =
+            pathOptimizationStats.idempotenceProfiling.i42PreventedChangedGlobalCommand
+        reportData.i42Pass2PreventedChangedGlobalNumeric =
+            pathOptimizationStats.idempotenceProfiling.i42PreventedChangedGlobalNumeric
+        reportData.i42Pass2PreventedChangedOther =
+            pathOptimizationStats.idempotenceProfiling.i42PreventedChangedOther
+
         reportData.optimizationPathCacheHits = pathOptimizationStats.pathOptimizationCacheHits
         reportData.optimizationPathCacheMisses = pathOptimizationStats.pathOptimizationCacheMisses
         reportData.optimizationFormattingNanos = pathOptimizationStats.finalFormattingNanos

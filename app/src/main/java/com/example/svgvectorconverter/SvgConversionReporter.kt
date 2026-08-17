@@ -467,6 +467,19 @@ class SvgConversionReportData {
     var i41Pass2RejectedComplexCommandFamily: Int = 0
     var i41Pass2RejectedExplicitRepeat: Int = 0
 
+    // I4.2 provenance-aware pass-2 certificate diagnostics.
+    var i42Pass2ProvenanceExcluded: Int = 0
+    var i42Pass2ProvenanceExcludedActuallyFixed: Int = 0
+    var i42Pass2ProvenancePreventedFalsePositive: Int = 0
+    var i42Pass2ProvenanceExcludedOptimizerNanos: Long = 0
+    var i42Pass2PreventedFalsePositiveOptimizerNanos: Long = 0
+    var i42Pass2PreventedChangedSyntaxNormalization: Int = 0
+    var i42Pass2PreventedChangedGeometryCleanup: Int = 0
+    var i42Pass2PreventedChangedLocalShortening: Int = 0
+    var i42Pass2PreventedChangedGlobalCommand: Int = 0
+    var i42Pass2PreventedChangedGlobalNumeric: Int = 0
+    var i42Pass2PreventedChangedOther: Int = 0
+
     var optimizationPathCacheHits: Int = 0
     var optimizationPathCacheMisses: Int = 0
     var optimizationFormattingNanos: Long = 0
