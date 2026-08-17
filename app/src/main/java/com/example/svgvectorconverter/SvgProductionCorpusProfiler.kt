@@ -596,6 +596,49 @@ object SvgProductionCorpusProfiler {
                     )
 
                     appendLine()
+                    appendLine("I4.5 hypothetical pass-2 path skip trial")
+                    appendLine("────────────────────────────────")
+                    val i45Certified = sumInt { it.i45Pass2CertifiedPaths }
+                    val i45Matches = sumInt { it.i45Pass2MatchesFullOptimizer }
+                    val i45Mismatches = sumInt { it.i45Pass2MismatchesFullOptimizer }
+                    appendLine(
+                        "Paths the combined certificate would skip: " +
+                            formatCount(i45Certified)
+                    )
+                    appendLine(
+                        "  certified by I4.2 basic certificate: " +
+                            formatCount(sumInt { it.i45Pass2CertifiedByBasic })
+                    )
+                    appendLine(
+                        "  certified by I4.3 complex certificate: " +
+                            formatCount(sumInt { it.i45Pass2CertifiedByComplex })
+                    )
+                    appendLine(
+                        "Hypothetical unchanged result matched full optimizer: " +
+                            formatCount(i45Matches)
+                    )
+                    appendLine(
+                        "Hypothetical unchanged result differed from full optimizer: " +
+                            formatCount(i45Mismatches)
+                    )
+                    appendLine(
+                        "Full optimizer time represented by matching skips: " +
+                            formatNanos(sumLong { it.i45Pass2PotentiallyAvoidableOptimizerNanos })
+                    )
+                    appendLine(
+                        "Full optimizer time on mismatching skips: " +
+                            formatNanos(sumLong { it.i45Pass2MismatchOptimizerNanos })
+                    )
+                    appendLine(
+                        "Shadow pass-2 path selection would be byte-identical: " +
+                            if (i45Mismatches == 0) "true" else "false"
+                    )
+                    appendLine(
+                        "Note: I4.5 is diagnostic only. Certified paths are still fully optimized; " +
+                            "the incoming PathData is only the hypothetical skipped result."
+                    )
+
+                    appendLine()
                     appendLine("Optimizer pass attribution")
                     appendLine("────────────────────────────────")
                     appendLine("Total optimization wrapper time: ${formatNanos(optimizationNanos)}")
@@ -703,6 +746,13 @@ object SvgProductionCorpusProfiler {
                                         "tp=${data.i43Pass2ComplexTruePositive}, " +
                                         "fp=${data.i43Pass2ComplexFalsePositive}, " +
                                         "fn=${data.i43Pass2ComplexFalseNegative}"
+                                )
+                            }
+                            if (data.i45Pass2CertifiedPaths > 0) {
+                                appendLine(
+                                    "    I4.5 shadow skip: certified=${data.i45Pass2CertifiedPaths}, " +
+                                        "match=${data.i45Pass2MatchesFullOptimizer}, " +
+                                        "mismatch=${data.i45Pass2MismatchesFullOptimizer}"
                                 )
                             }
                         }

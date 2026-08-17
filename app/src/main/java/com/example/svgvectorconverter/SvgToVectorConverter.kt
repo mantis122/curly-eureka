@@ -798,6 +798,21 @@ object SvgToVectorConverter {
         reportData.i43Pass2FalsePositiveOther =
             pathOptimizationStats.idempotenceProfiling.i43.falsePositiveOther
 
+        reportData.i45Pass2CertifiedPaths =
+            pathOptimizationStats.idempotenceProfiling.i45.certifiedPaths
+        reportData.i45Pass2CertifiedByBasic =
+            pathOptimizationStats.idempotenceProfiling.i45.certifiedByBasic
+        reportData.i45Pass2CertifiedByComplex =
+            pathOptimizationStats.idempotenceProfiling.i45.certifiedByComplex
+        reportData.i45Pass2MatchesFullOptimizer =
+            pathOptimizationStats.idempotenceProfiling.i45.matchesFullOptimizer
+        reportData.i45Pass2MismatchesFullOptimizer =
+            pathOptimizationStats.idempotenceProfiling.i45.mismatchesFullOptimizer
+        reportData.i45Pass2PotentiallyAvoidableOptimizerNanos =
+            pathOptimizationStats.idempotenceProfiling.i45.potentiallyAvoidableOptimizerNanos
+        reportData.i45Pass2MismatchOptimizerNanos =
+            pathOptimizationStats.idempotenceProfiling.i45.mismatchOptimizerNanos
+
         reportData.optimizationPathCacheHits = pathOptimizationStats.pathOptimizationCacheHits
         reportData.optimizationPathCacheMisses = pathOptimizationStats.pathOptimizationCacheMisses
         reportData.optimizationFormattingNanos = pathOptimizationStats.finalFormattingNanos

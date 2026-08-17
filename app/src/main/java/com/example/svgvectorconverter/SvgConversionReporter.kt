@@ -512,6 +512,15 @@ class SvgConversionReportData {
     var i43Pass2FalsePositiveGlobalNumeric: Int = 0
     var i43Pass2FalsePositiveOther: Int = 0
 
+    // I4.5 diagnostic-only hypothetical pass-2 skip trial.
+    var i45Pass2CertifiedPaths: Int = 0
+    var i45Pass2CertifiedByBasic: Int = 0
+    var i45Pass2CertifiedByComplex: Int = 0
+    var i45Pass2MatchesFullOptimizer: Int = 0
+    var i45Pass2MismatchesFullOptimizer: Int = 0
+    var i45Pass2PotentiallyAvoidableOptimizerNanos: Long = 0
+    var i45Pass2MismatchOptimizerNanos: Long = 0
+
     var optimizationPathCacheHits: Int = 0
     var optimizationPathCacheMisses: Int = 0
     var optimizationFormattingNanos: Long = 0
