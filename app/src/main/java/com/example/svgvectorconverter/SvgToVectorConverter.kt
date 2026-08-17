@@ -798,20 +798,20 @@ object SvgToVectorConverter {
         reportData.i43Pass2FalsePositiveOther =
             pathOptimizationStats.idempotenceProfiling.i43.falsePositiveOther
 
-        reportData.i45Pass2CertifiedPaths =
-            pathOptimizationStats.idempotenceProfiling.i45.certifiedPaths
-        reportData.i45Pass2CertifiedByBasic =
-            pathOptimizationStats.idempotenceProfiling.i45.certifiedByBasic
-        reportData.i45Pass2CertifiedByComplex =
-            pathOptimizationStats.idempotenceProfiling.i45.certifiedByComplex
-        reportData.i45Pass2MatchesFullOptimizer =
-            pathOptimizationStats.idempotenceProfiling.i45.matchesFullOptimizer
-        reportData.i45Pass2MismatchesFullOptimizer =
-            pathOptimizationStats.idempotenceProfiling.i45.mismatchesFullOptimizer
-        reportData.i45Pass2PotentiallyAvoidableOptimizerNanos =
-            pathOptimizationStats.idempotenceProfiling.i45.potentiallyAvoidableOptimizerNanos
-        reportData.i45Pass2MismatchOptimizerNanos =
-            pathOptimizationStats.idempotenceProfiling.i45.mismatchOptimizerNanos
+        reportData.i46Pass2CertifiedSkips =
+            pathOptimizationStats.idempotenceProfiling.i46.certifiedSkips
+        reportData.i46Pass2CertifiedByBasic =
+            pathOptimizationStats.idempotenceProfiling.i46.certifiedByBasic
+        reportData.i46Pass2CertifiedByComplex =
+            pathOptimizationStats.idempotenceProfiling.i46.certifiedByComplex
+        reportData.i46Pass2NonCertifiedFallbacks =
+            pathOptimizationStats.idempotenceProfiling.i46.nonCertifiedFallbacks
+        reportData.i46Pass2ProvenanceBlocked =
+            pathOptimizationStats.idempotenceProfiling.i46.provenanceBlocked
+        reportData.i46Pass2CertificateNanos =
+            pathOptimizationStats.idempotenceProfiling.i46.certificateNanos
+        reportData.i46Pass2FullOptimizerNanosOnFallbacks =
+            pathOptimizationStats.idempotenceProfiling.i46.fullOptimizerNanosOnFallbacks
 
         reportData.optimizationPathCacheHits = pathOptimizationStats.pathOptimizationCacheHits
         reportData.optimizationPathCacheMisses = pathOptimizationStats.pathOptimizationCacheMisses

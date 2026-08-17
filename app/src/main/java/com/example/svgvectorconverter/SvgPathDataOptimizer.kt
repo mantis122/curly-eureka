@@ -200,14 +200,14 @@ internal object SvgPathDataOptimizer {
         val falsePositiveOther get() = changes.falsePositiveOther
     }
 
-    data class I45ShadowSkipStats(
-        val certifiedPaths: Int = 0,
+    data class I46ProductionSkipStats(
+        val certifiedSkips: Int = 0,
         val certifiedByBasic: Int = 0,
         val certifiedByComplex: Int = 0,
-        val matchesFullOptimizer: Int = 0,
-        val mismatchesFullOptimizer: Int = 0,
-        val potentiallyAvoidableOptimizerNanos: Long = 0,
-        val mismatchOptimizerNanos: Long = 0,
+        val nonCertifiedFallbacks: Int = 0,
+        val provenanceBlocked: Int = 0,
+        val certificateNanos: Long = 0,
+        val fullOptimizerNanosOnFallbacks: Long = 0,
     )
 
     data class IdempotenceProfilingStats(
@@ -272,8 +272,8 @@ internal object SvgPathDataOptimizer {
         val i42PreventedChangedOther: Int = 0,
         // I4.3 diagnostic-only complex-command certificate expansion.
         val i43: I43ComplexStats = I43ComplexStats(),
-        // I4.5 diagnostic-only hypothetical pass-2 path skip trial.
-        val i45: I45ShadowSkipStats = I45ShadowSkipStats(),
+        // I4.6 production-active guarded pass-2 path skip.
+        val i46: I46ProductionSkipStats = I46ProductionSkipStats(),
         val finalFormattingNanos: Long = 0,
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
@@ -497,7 +497,7 @@ internal object SvgPathDataOptimizer {
         val i42PreventedChangedGlobalNumeric: Int = 0,
         val i42PreventedChangedOther: Int = 0,
         val i43: I43ComplexStats = I43ComplexStats(),
-        val i45: I45ShadowSkipStats = I45ShadowSkipStats(),
+        val i46: I46ProductionSkipStats = I46ProductionSkipStats(),
         val pathOptimizationCacheHits: Int = 0,
         val pathOptimizationCacheMisses: Int = 0,
         val finalFormattingNanos: Long = 0,
@@ -634,7 +634,8 @@ internal object SvgPathDataOptimizer {
             xml = firstPass.xml,
             pathCache = secondPassCache,
             validationPass = true,
-            certificateExcludedPathData = firstPass.mergeSynthesizedPathData
+            certificateExcludedPathData = firstPass.mergeSynthesizedPathData,
+            enableI46CertifiedPass2Skip = true
         )
         val secondPassNanos = System.nanoTime() - secondPassStartTime
         val secondPassValidationSnapshot = validationSnapshot(secondPass.xml)
@@ -760,7 +761,7 @@ internal object SvgPathDataOptimizer {
                     falsePositiveOther = secondPass.stats.i43.falsePositiveOther,
                 ),
             ),
-            i45 = secondPass.stats.i45,
+            i46 = secondPass.stats.i46,
             finalFormattingNanos = secondPass.stats.finalFormattingNanos,
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
@@ -1224,7 +1225,8 @@ internal object SvgPathDataOptimizer {
         xml: String,
         pathCache: PathOptimizationCache,
         validationPass: Boolean,
-        certificateExcludedPathData: Set<String> = emptySet()
+        certificateExcludedPathData: Set<String> = emptySet(),
+        enableI46CertifiedPass2Skip: Boolean = false
     ): Result {
         fun characterDelta(before: String, after: String): Int =
             before.length - after.length
@@ -1325,13 +1327,13 @@ internal object SvgPathDataOptimizer {
         var i43FalsePositiveGlobalNumeric = 0
         var i43FalsePositiveOther = 0
 
-        var i45CertifiedPaths = 0
-        var i45CertifiedByBasic = 0
-        var i45CertifiedByComplex = 0
-        var i45MatchesFullOptimizer = 0
-        var i45MismatchesFullOptimizer = 0
-        var i45PotentiallyAvoidableOptimizerNanos = 0L
-        var i45MismatchOptimizerNanos = 0L
+        var i46CertifiedSkips = 0
+        var i46CertifiedByBasic = 0
+        var i46CertifiedByComplex = 0
+        var i46NonCertifiedFallbacks = 0
+        var i46ProvenanceBlocked = 0
+        var i46CertificateNanos = 0L
+        var i46FullOptimizerNanosOnFallbacks = 0L
 
         val pathSyntaxStartTime = System.nanoTime()
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
@@ -1389,9 +1391,16 @@ internal object SvgPathDataOptimizer {
                 } else {
                     rawCertificate
                 }
-                i41CertificateCheckNanos += System.nanoTime() - certificateStart
+                val certificateElapsed = System.nanoTime() - certificateStart
+                i41CertificateCheckNanos += certificateElapsed
+                if (enableI46CertifiedPass2Skip) {
+                    i46CertificateNanos += certificateElapsed
+                }
 
                 if (i42ExcludedByProvenance) {
+                    if (enableI46CertifiedPass2Skip) {
+                        i46ProvenanceBlocked++
+                    }
                     i42ProvenanceExcluded++
                 }
 
@@ -1408,43 +1417,55 @@ internal object SvgPathDataOptimizer {
                 }
             }
 
+            val i46BasicCertified =
+                enableI46CertifiedPass2Skip &&
+                    validationPass &&
+                    i41Certificate?.predictedFixed == true
+            val i46ComplexCertified =
+                enableI46CertifiedPass2Skip &&
+                    validationPass &&
+                    i43Certificate?.predictedFixed == true
+            val i46SkipFullPathOptimizer = i46BasicCertified || i46ComplexCertified
+
             val i2PathCallStart = System.nanoTime()
-            val optimized = optimizePathDataCached(
-                pathData = original,
-                cache = pathCache,
-                validationPass = validationPass,
-                profiling = pathProfiling
-            )
-            val i2PathCallNanos = System.nanoTime() - i2PathCallStart
-            val i41ActuallyFixed = optimized.pathData == original
-
-            if (validationPass) {
-                val i45BasicCertified = i41Certificate?.predictedFixed == true
-                val i45ComplexCertified = i43Certificate?.predictedFixed == true
-                if (i45BasicCertified || i45ComplexCertified) {
-                    i45CertifiedPaths++
-                    if (i45BasicCertified) i45CertifiedByBasic++
-                    if (i45ComplexCertified) i45CertifiedByComplex++
-
-                    // The hypothetical production skip returns the incoming
-                    // pass-2 PathData unchanged. The real optimizer below is
-                    // still the ground truth for this diagnostic trial.
-                    if (optimized.pathData == original) {
-                        i45MatchesFullOptimizer++
-                        i45PotentiallyAvoidableOptimizerNanos += i2PathCallNanos
-                    } else {
-                        i45MismatchesFullOptimizer++
-                        i45MismatchOptimizerNanos += i2PathCallNanos
-                    }
+            val optimized = if (i46SkipFullPathOptimizer) {
+                // I4.6 production activation: the certificate proves the incoming
+                // pass-2 spelling is already a fixed point. Return the exact
+                // incoming PathData with zero optimization deltas.
+                stableReusePathResult(original)
+            } else {
+                if (enableI46CertifiedPass2Skip && validationPass) {
+                    i46NonCertifiedFallbacks++
                 }
+                optimizePathDataCached(
+                    pathData = original,
+                    cache = pathCache,
+                    validationPass = validationPass,
+                    profiling = pathProfiling
+                )
+            }
+            val i2PathCallNanos = System.nanoTime() - i2PathCallStart
+            if (
+                enableI46CertifiedPass2Skip &&
+                validationPass &&
+                !i46SkipFullPathOptimizer
+            ) {
+                i46FullOptimizerNanosOnFallbacks += i2PathCallNanos
+            }
+            if (i46SkipFullPathOptimizer) {
+                i46CertifiedSkips++
+                if (i46BasicCertified) i46CertifiedByBasic++
+                if (i46ComplexCertified) i46CertifiedByComplex++
             }
 
-            if (i41ActuallyFixed) {
+            val i41ActuallyFixed = optimized.pathData == original
+
+            if (i41ActuallyFixed && !i46SkipFullPathOptimizer) {
                 i2PathSyntaxStableInputs++
                 i2PathSyntaxStableInputNanos += i2PathCallNanos
             }
 
-            if (validationPass && i43Certificate != null) {
+            if (validationPass && !i46SkipFullPathOptimizer && i43Certificate != null) {
                 when {
                     i43Certificate?.predictedFixed == true && i41ActuallyFixed -> {
                         i43ComplexTruePositive++
@@ -1489,7 +1510,7 @@ internal object SvgPathDataOptimizer {
                 }
             }
 
-            if (validationPass && i42ExcludedByProvenance && i42WouldPredictFixedWithoutProvenance) {
+            if (validationPass && !i46SkipFullPathOptimizer && i42ExcludedByProvenance && i42WouldPredictFixedWithoutProvenance) {
                 i42ProvenanceExcludedOptimizerNanos += i2PathCallNanos
                 if (i41ActuallyFixed) {
                     i42ProvenanceExcludedActuallyFixed++
@@ -1515,7 +1536,7 @@ internal object SvgPathDataOptimizer {
                 }
             }
 
-            if (validationPass && i41Certificate != null) {
+            if (validationPass && !i46SkipFullPathOptimizer && i41Certificate != null) {
                 when {
                     i41Certificate.predictedFixed && i41ActuallyFixed -> {
                         i41CertificateTruePositive++
@@ -2045,15 +2066,15 @@ internal object SvgPathDataOptimizer {
                         falsePositiveOther = i43FalsePositiveOther,
                     ),
                 ),
-                i45 = I45ShadowSkipStats(
-                    certifiedPaths = i45CertifiedPaths,
-                    certifiedByBasic = i45CertifiedByBasic,
-                    certifiedByComplex = i45CertifiedByComplex,
-                    matchesFullOptimizer = i45MatchesFullOptimizer,
-                    mismatchesFullOptimizer = i45MismatchesFullOptimizer,
-                    potentiallyAvoidableOptimizerNanos =
-                        i45PotentiallyAvoidableOptimizerNanos,
-                    mismatchOptimizerNanos = i45MismatchOptimizerNanos,
+                i46 = I46ProductionSkipStats(
+                    certifiedSkips = i46CertifiedSkips,
+                    certifiedByBasic = i46CertifiedByBasic,
+                    certifiedByComplex = i46CertifiedByComplex,
+                    nonCertifiedFallbacks = i46NonCertifiedFallbacks,
+                    provenanceBlocked = i46ProvenanceBlocked,
+                    certificateNanos = i46CertificateNanos,
+                    fullOptimizerNanosOnFallbacks =
+                        i46FullOptimizerNanosOnFallbacks,
                 ),
                 pathOptimizationCacheHits = pathCache.totalHits,
                 pathOptimizationCacheMisses = pathCache.totalMisses,

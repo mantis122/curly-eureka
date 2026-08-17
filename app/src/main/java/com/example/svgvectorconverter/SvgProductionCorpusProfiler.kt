@@ -438,9 +438,9 @@ object SvgProductionCorpusProfiler {
                             formatCount(sumInt { it.i41Pass2RejectedExplicitRepeat })
                     )
                     appendLine(
-                        "Note: I4.2 is diagnostic only. The provenance-aware certificate never skips pass-2 work; " +
-                            "the full optimizer still runs and supplies ground truth. A future " +
-                            "production certificate must demonstrate zero false positives."
+                        "Note: I4.2 certificate decisions are now production-active through I4.6. " +
+                            "Legacy TP/FP ground-truth counters apply only to paths that still run " +
+                            "the full optimizer."
                     )
 
                     appendLine()
@@ -591,53 +591,47 @@ object SvgProductionCorpusProfiler {
                             formatCount(sumInt { it.i43Pass2FalsePositiveOther })
                     )
                     appendLine(
-                        "Note: I4.3 is diagnostic only. The proven I4.2 certificate and provenance gate " +
-                            "remain unchanged; this experimental branch never skips pass-2 work."
+                        "Note: I4.3 complex certificate decisions are now production-active through I4.6; " +
+                            "the I4.2 provenance gate remains mandatory. Legacy TP/FP ground-truth " +
+                            "counters exclude production-skipped paths."
                     )
 
                     appendLine()
-                    appendLine("I4.5 hypothetical pass-2 path skip trial")
+                    appendLine("I4.6 production-active pass-2 fixed-point skip")
                     appendLine("────────────────────────────────")
-                    val i45Certified = sumInt { it.i45Pass2CertifiedPaths }
-                    val i45Matches = sumInt { it.i45Pass2MatchesFullOptimizer }
-                    val i45Mismatches = sumInt { it.i45Pass2MismatchesFullOptimizer }
                     appendLine(
-                        "Paths the combined certificate would skip: " +
-                            formatCount(i45Certified)
+                        "Certified pass-2 path optimizations skipped: " +
+                            formatCount(sumInt { it.i46Pass2CertifiedSkips })
                     )
                     appendLine(
                         "  certified by I4.2 basic certificate: " +
-                            formatCount(sumInt { it.i45Pass2CertifiedByBasic })
+                            formatCount(sumInt { it.i46Pass2CertifiedByBasic })
                     )
                     appendLine(
                         "  certified by I4.3 complex certificate: " +
-                            formatCount(sumInt { it.i45Pass2CertifiedByComplex })
+                            formatCount(sumInt { it.i46Pass2CertifiedByComplex })
                     )
                     appendLine(
-                        "Hypothetical unchanged result matched full optimizer: " +
-                            formatCount(i45Matches)
+                        "Non-certified paths sent to full optimizer: " +
+                            formatCount(sumInt { it.i46Pass2NonCertifiedFallbacks })
                     )
                     appendLine(
-                        "Hypothetical unchanged result differed from full optimizer: " +
-                            formatCount(i45Mismatches)
+                        "Merge-provenance certificate blocks: " +
+                            formatCount(sumInt { it.i46Pass2ProvenanceBlocked })
                     )
                     appendLine(
-                        "Full optimizer time represented by matching skips: " +
-                            formatNanos(sumLong { it.i45Pass2PotentiallyAvoidableOptimizerNanos })
+                        "Certificate evaluation time: " +
+                            formatNanos(sumLong { it.i46Pass2CertificateNanos })
                     )
                     appendLine(
-                        "Full optimizer time on mismatching skips: " +
-                            formatNanos(sumLong { it.i45Pass2MismatchOptimizerNanos })
+                        "Full path-optimizer time remaining on fallbacks: " +
+                            formatNanos(sumLong { it.i46Pass2FullOptimizerNanosOnFallbacks })
                     )
                     appendLine(
-                        "Shadow pass-2 path selection would be byte-identical: " +
-                            if (i45Mismatches == 0L) "true" else "false"
+                        "Policy: production skips are allowed only for paths accepted by the proven " +
+                            "I4.2/I4.3 certificate with the I4.2 merge-provenance gate. All other " +
+                            "pass-2 paths fail closed to the established full optimizer."
                     )
-                    appendLine(
-                        "Note: I4.5 is diagnostic only. Certified paths are still fully optimized; " +
-                            "the incoming PathData is only the hypothetical skipped result."
-                    )
-
                     appendLine()
                     appendLine("Optimizer pass attribution")
                     appendLine("────────────────────────────────")
@@ -748,11 +742,15 @@ object SvgProductionCorpusProfiler {
                                         "fn=${data.i43Pass2ComplexFalseNegative}"
                                 )
                             }
-                            if (data.i45Pass2CertifiedPaths > 0) {
+                            if (
+                                data.i46Pass2CertifiedSkips > 0 ||
+                                data.i46Pass2NonCertifiedFallbacks > 0
+                            ) {
                                 appendLine(
-                                    "    I4.5 shadow skip: certified=${data.i45Pass2CertifiedPaths}, " +
-                                        "match=${data.i45Pass2MatchesFullOptimizer}, " +
-                                        "mismatch=${data.i45Pass2MismatchesFullOptimizer}"
+                                    "    I4.6 pass2: skipped=${data.i46Pass2CertifiedSkips}, " +
+                                        "basic=${data.i46Pass2CertifiedByBasic}, " +
+                                        "complex=${data.i46Pass2CertifiedByComplex}, " +
+                                        "fallback=${data.i46Pass2NonCertifiedFallbacks}"
                                 )
                             }
                         }
