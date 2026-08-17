@@ -395,6 +395,55 @@ object SvgProductionCorpusProfiler {
                     )
 
                     appendLine()
+                    appendLine("I4.1 pass-2 fixed-point certificate study")
+                    appendLine("────────────────────────────────")
+                    val i41Predicted = sumInt { it.i41Pass2CertificatePredictedFixed }
+                    val i41TruePositive = sumInt { it.i41Pass2CertificateTruePositive }
+                    val i41FalsePositive = sumInt { it.i41Pass2CertificateFalsePositive }
+                    val i41FalseNegative = sumInt { it.i41Pass2CertificateFalseNegative }
+                    val i41TrueNegative = sumInt { it.i41Pass2CertificateTrueNegative }
+                    val i41CheckNanos = sumLong { it.i41Pass2CertificateCheckNanos }
+                    val i41AvoidableNanos =
+                        sumLong { it.i41Pass2PotentialAvoidableOptimizerNanos }
+                    val i41FalsePositiveNanos =
+                        sumLong { it.i41Pass2FalsePositiveOptimizerNanos }
+
+                    appendLine("Cheap certificate predicted fixed: ${formatCount(i41Predicted)}")
+                    appendLine("True positives: ${formatCount(i41TruePositive)}")
+                    appendLine("False positives: ${formatCount(i41FalsePositive)}")
+                    appendLine("False negatives: ${formatCount(i41FalseNegative)}")
+                    appendLine("True negatives: ${formatCount(i41TrueNegative)}")
+                    appendLine("Certificate check time: ${formatNanos(i41CheckNanos)}")
+                    appendLine(
+                        "Full path-optimizer time on true positives (potentially avoidable): " +
+                            formatNanos(i41AvoidableNanos)
+                    )
+                    appendLine(
+                        "Full optimizer time on false positives: " +
+                            formatNanos(i41FalsePositiveNanos)
+                    )
+                    appendLine("Certificate rejection reasons")
+                    appendLine("  lexical coverage: ${formatCount(sumInt { it.i41Pass2RejectedLexical })}")
+                    appendLine(
+                        "  non-canonical numeric spelling: " +
+                            formatCount(sumInt { it.i41Pass2RejectedNumericSpelling })
+                    )
+                    appendLine("  whitespace present: ${formatCount(sumInt { it.i41Pass2RejectedWhitespace })}")
+                    appendLine(
+                        "  complex curve/arc command family: " +
+                            formatCount(sumInt { it.i41Pass2RejectedComplexCommandFamily })
+                    )
+                    appendLine(
+                        "  explicit repeated command: " +
+                            formatCount(sumInt { it.i41Pass2RejectedExplicitRepeat })
+                    )
+                    appendLine(
+                        "Note: I4.1 is diagnostic only. The certificate never skips pass-2 work; " +
+                            "the full optimizer still runs and supplies ground truth. A future " +
+                            "production certificate must demonstrate zero false positives."
+                    )
+
+                    appendLine()
                     appendLine("Optimizer pass attribution")
                     appendLine("────────────────────────────────")
                     appendLine("Total optimization wrapper time: ${formatNanos(optimizationNanos)}")
@@ -475,6 +524,18 @@ object SvgProductionCorpusProfiler {
                                     "decimalFallbackReopt=${formatNanos(data.optimizationDecimalReoptimizationNanos)}, " +
                                     "p2Path=${formatNanos(data.optimizerIdempotencePathSyntaxNanos)}, " +
                                     "p2Numeric=${formatNanos(data.optimizerIdempotenceNumericCleanupNanos)}"
+                            )
+                        }
+                        if (
+                            data.i41Pass2CertificateTruePositive > 0 ||
+                            data.i41Pass2CertificateFalsePositive > 0 ||
+                            data.i41Pass2CertificateFalseNegative > 0
+                        ) {
+                            appendLine(
+                                "    I4.1 certificate: predicted=${data.i41Pass2CertificatePredictedFixed}, " +
+                                    "tp=${data.i41Pass2CertificateTruePositive}, " +
+                                    "fp=${data.i41Pass2CertificateFalsePositive}, " +
+                                    "fn=${data.i41Pass2CertificateFalseNegative}"
                             )
                         }
                         if (data.h24PathSyntaxCandidatesRejectedForSize > 0) {

@@ -687,6 +687,33 @@ object SvgToVectorConverter {
         reportData.i3Pass2DecimalFastPathCheckNanos =
             pathOptimizationStats.idempotenceProfiling.i3DecimalFastPathCheckNanos
 
+        reportData.i41Pass2CertificatePredictedFixed =
+            pathOptimizationStats.idempotenceProfiling.i41CertificatePredictedFixed
+        reportData.i41Pass2CertificateTruePositive =
+            pathOptimizationStats.idempotenceProfiling.i41CertificateTruePositive
+        reportData.i41Pass2CertificateFalsePositive =
+            pathOptimizationStats.idempotenceProfiling.i41CertificateFalsePositive
+        reportData.i41Pass2CertificateFalseNegative =
+            pathOptimizationStats.idempotenceProfiling.i41CertificateFalseNegative
+        reportData.i41Pass2CertificateTrueNegative =
+            pathOptimizationStats.idempotenceProfiling.i41CertificateTrueNegative
+        reportData.i41Pass2CertificateCheckNanos =
+            pathOptimizationStats.idempotenceProfiling.i41CertificateCheckNanos
+        reportData.i41Pass2PotentialAvoidableOptimizerNanos =
+            pathOptimizationStats.idempotenceProfiling.i41PotentialAvoidableOptimizerNanos
+        reportData.i41Pass2FalsePositiveOptimizerNanos =
+            pathOptimizationStats.idempotenceProfiling.i41FalsePositiveOptimizerNanos
+        reportData.i41Pass2RejectedLexical =
+            pathOptimizationStats.idempotenceProfiling.i41RejectedLexical
+        reportData.i41Pass2RejectedNumericSpelling =
+            pathOptimizationStats.idempotenceProfiling.i41RejectedNumericSpelling
+        reportData.i41Pass2RejectedWhitespace =
+            pathOptimizationStats.idempotenceProfiling.i41RejectedWhitespace
+        reportData.i41Pass2RejectedComplexCommandFamily =
+            pathOptimizationStats.idempotenceProfiling.i41RejectedComplexCommandFamily
+        reportData.i41Pass2RejectedExplicitRepeat =
+            pathOptimizationStats.idempotenceProfiling.i41RejectedExplicitRepeat
+
         reportData.optimizationPathCacheHits = pathOptimizationStats.pathOptimizationCacheHits
         reportData.optimizationPathCacheMisses = pathOptimizationStats.pathOptimizationCacheMisses
         reportData.optimizationFormattingNanos = pathOptimizationStats.finalFormattingNanos

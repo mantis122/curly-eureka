@@ -158,6 +158,20 @@ internal object SvgPathDataOptimizer {
         val i3DecimalFallbackInvalid: Int = 0,
         val i3DecimalFallbackNonFixed: Int = 0,
         val i3DecimalFastPathCheckNanos: Long = 0,
+        // I4.1 diagnostic-only pass-2 fixed-point certificate study.
+        val i41CertificatePredictedFixed: Int = 0,
+        val i41CertificateTruePositive: Int = 0,
+        val i41CertificateFalsePositive: Int = 0,
+        val i41CertificateFalseNegative: Int = 0,
+        val i41CertificateTrueNegative: Int = 0,
+        val i41CertificateCheckNanos: Long = 0,
+        val i41PotentialAvoidableOptimizerNanos: Long = 0,
+        val i41FalsePositiveOptimizerNanos: Long = 0,
+        val i41RejectedLexical: Int = 0,
+        val i41RejectedNumericSpelling: Int = 0,
+        val i41RejectedWhitespace: Int = 0,
+        val i41RejectedComplexCommandFamily: Int = 0,
+        val i41RejectedExplicitRepeat: Int = 0,
         val finalFormattingNanos: Long = 0,
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
@@ -356,6 +370,19 @@ internal object SvgPathDataOptimizer {
         val i3DecimalFallbackInvalid: Int = 0,
         val i3DecimalFallbackNonFixed: Int = 0,
         val i3DecimalFastPathCheckNanos: Long = 0,
+        val i41CertificatePredictedFixed: Int = 0,
+        val i41CertificateTruePositive: Int = 0,
+        val i41CertificateFalsePositive: Int = 0,
+        val i41CertificateFalseNegative: Int = 0,
+        val i41CertificateTrueNegative: Int = 0,
+        val i41CertificateCheckNanos: Long = 0,
+        val i41PotentialAvoidableOptimizerNanos: Long = 0,
+        val i41FalsePositiveOptimizerNanos: Long = 0,
+        val i41RejectedLexical: Int = 0,
+        val i41RejectedNumericSpelling: Int = 0,
+        val i41RejectedWhitespace: Int = 0,
+        val i41RejectedComplexCommandFamily: Int = 0,
+        val i41RejectedExplicitRepeat: Int = 0,
         val pathOptimizationCacheHits: Int = 0,
         val pathOptimizationCacheMisses: Int = 0,
         val finalFormattingNanos: Long = 0,
@@ -542,6 +569,20 @@ internal object SvgPathDataOptimizer {
             i3DecimalFallbackInvalid = secondPass.stats.i3DecimalFallbackInvalid,
             i3DecimalFallbackNonFixed = secondPass.stats.i3DecimalFallbackNonFixed,
             i3DecimalFastPathCheckNanos = secondPass.stats.i3DecimalFastPathCheckNanos,
+            i41CertificatePredictedFixed = secondPass.stats.i41CertificatePredictedFixed,
+            i41CertificateTruePositive = secondPass.stats.i41CertificateTruePositive,
+            i41CertificateFalsePositive = secondPass.stats.i41CertificateFalsePositive,
+            i41CertificateFalseNegative = secondPass.stats.i41CertificateFalseNegative,
+            i41CertificateTrueNegative = secondPass.stats.i41CertificateTrueNegative,
+            i41CertificateCheckNanos = secondPass.stats.i41CertificateCheckNanos,
+            i41PotentialAvoidableOptimizerNanos =
+                secondPass.stats.i41PotentialAvoidableOptimizerNanos,
+            i41FalsePositiveOptimizerNanos = secondPass.stats.i41FalsePositiveOptimizerNanos,
+            i41RejectedLexical = secondPass.stats.i41RejectedLexical,
+            i41RejectedNumericSpelling = secondPass.stats.i41RejectedNumericSpelling,
+            i41RejectedWhitespace = secondPass.stats.i41RejectedWhitespace,
+            i41RejectedComplexCommandFamily = secondPass.stats.i41RejectedComplexCommandFamily,
+            i41RejectedExplicitRepeat = secondPass.stats.i41RejectedExplicitRepeat,
             finalFormattingNanos = secondPass.stats.finalFormattingNanos,
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
@@ -1049,10 +1090,42 @@ internal object SvgPathDataOptimizer {
         var h24PathSyntaxCharactersAvoided = 0
         var i2PathSyntaxStableInputs = 0
         var i2PathSyntaxStableInputNanos = 0L
+        var i41CertificatePredictedFixed = 0
+        var i41CertificateTruePositive = 0
+        var i41CertificateFalsePositive = 0
+        var i41CertificateFalseNegative = 0
+        var i41CertificateTrueNegative = 0
+        var i41CertificateCheckNanos = 0L
+        var i41PotentialAvoidableOptimizerNanos = 0L
+        var i41FalsePositiveOptimizerNanos = 0L
+        var i41RejectedLexical = 0
+        var i41RejectedNumericSpelling = 0
+        var i41RejectedWhitespace = 0
+        var i41RejectedComplexCommandFamily = 0
+        var i41RejectedExplicitRepeat = 0
 
         val pathSyntaxStartTime = System.nanoTime()
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
             val original = match.groupValues[1]
+
+            var i41Certificate: I41FixedPointCertificate? = null
+            if (validationPass) {
+                val certificateStart = System.nanoTime()
+                i41Certificate = i41CheapFixedPointCertificate(original)
+                i41CertificateCheckNanos += System.nanoTime() - certificateStart
+                if (i41Certificate.predictedFixed) {
+                    i41CertificatePredictedFixed++
+                } else {
+                    when (i41Certificate.rejectionReason) {
+                        "lexical" -> i41RejectedLexical++
+                        "numericSpelling" -> i41RejectedNumericSpelling++
+                        "whitespace" -> i41RejectedWhitespace++
+                        "complexCommand" -> i41RejectedComplexCommandFamily++
+                        "explicitRepeat" -> i41RejectedExplicitRepeat++
+                    }
+                }
+            }
+
             val i2PathCallStart = System.nanoTime()
             val optimized = optimizePathDataCached(
                 pathData = original,
@@ -1061,9 +1134,27 @@ internal object SvgPathDataOptimizer {
                 profiling = pathProfiling
             )
             val i2PathCallNanos = System.nanoTime() - i2PathCallStart
-            if (optimized.pathData == original) {
+            val i41ActuallyFixed = optimized.pathData == original
+            if (i41ActuallyFixed) {
                 i2PathSyntaxStableInputs++
                 i2PathSyntaxStableInputNanos += i2PathCallNanos
+            }
+
+            if (validationPass && i41Certificate != null) {
+                when {
+                    i41Certificate.predictedFixed && i41ActuallyFixed -> {
+                        i41CertificateTruePositive++
+                        i41PotentialAvoidableOptimizerNanos += i2PathCallNanos
+                    }
+                    i41Certificate.predictedFixed && !i41ActuallyFixed -> {
+                        i41CertificateFalsePositive++
+                        i41FalsePositiveOptimizerNanos += i2PathCallNanos
+                    }
+                    !i41Certificate.predictedFixed && i41ActuallyFixed -> {
+                        i41CertificateFalseNegative++
+                    }
+                    else -> i41CertificateTrueNegative++
+                }
             }
 
             pathCount++
@@ -1511,6 +1602,19 @@ internal object SvgPathDataOptimizer {
                 i3DecimalFallbackInvalid = numericProfiling.i3FallbackInvalid,
                 i3DecimalFallbackNonFixed = numericProfiling.i3FallbackNonFixed,
                 i3DecimalFastPathCheckNanos = numericProfiling.i3FastPathCheckNanos,
+                i41CertificatePredictedFixed = i41CertificatePredictedFixed,
+                i41CertificateTruePositive = i41CertificateTruePositive,
+                i41CertificateFalsePositive = i41CertificateFalsePositive,
+                i41CertificateFalseNegative = i41CertificateFalseNegative,
+                i41CertificateTrueNegative = i41CertificateTrueNegative,
+                i41CertificateCheckNanos = i41CertificateCheckNanos,
+                i41PotentialAvoidableOptimizerNanos = i41PotentialAvoidableOptimizerNanos,
+                i41FalsePositiveOptimizerNanos = i41FalsePositiveOptimizerNanos,
+                i41RejectedLexical = i41RejectedLexical,
+                i41RejectedNumericSpelling = i41RejectedNumericSpelling,
+                i41RejectedWhitespace = i41RejectedWhitespace,
+                i41RejectedComplexCommandFamily = i41RejectedComplexCommandFamily,
+                i41RejectedExplicitRepeat = i41RejectedExplicitRepeat,
                 pathOptimizationCacheHits = pathCache.totalHits,
                 pathOptimizationCacheMisses = pathCache.totalMisses,
                 finalFormattingNanos = finalFormattingNanos,
@@ -10059,6 +10163,66 @@ internal object SvgPathDataOptimizer {
             cache.stableOutputs[pathData] = stableReusePathResult(pathData)
         }
         return finalPathData.size
+    }
+
+    private data class I41FixedPointCertificate(
+        val predictedFixed: Boolean,
+        val rejectionReason: String = ""
+    )
+
+    /**
+     * I4.1 diagnostic-only conservative pre-check for pass-2 PathData.
+     *
+     * This deliberately inspects only cheap lexical/command invariants. It
+     * never replaces the real optimizer in I4.1; the full optimizer still runs
+     * afterward so every prediction can be classified against ground truth.
+     */
+    private fun i41CheapFixedPointCertificate(pathData: String): I41FixedPointCertificate {
+        if (pathData != pathData.trim() || pathData.any { it.isWhitespace() }) {
+            return I41FixedPointCertificate(false, "whitespace")
+        }
+
+        val matches = tokenRegex.findAll(pathData).toList()
+        if (matches.isEmpty()) {
+            return I41FixedPointCertificate(false, "lexical")
+        }
+
+        var cursor = 0
+        for (match in matches) {
+            if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
+                return I41FixedPointCertificate(false, "lexical")
+            }
+            cursor = match.range.last + 1
+        }
+        if (!containsOnlySeparators(pathData.substring(cursor))) {
+            return I41FixedPointCertificate(false, "lexical")
+        }
+
+        var activeCommand: Char? = null
+        for (match in matches) {
+            val token = match.value
+            if (isCommand(token)) {
+                val command = token[0]
+                if (command.uppercaseChar() in charArrayOf('A', 'C', 'Q', 'S', 'T')) {
+                    return I41FixedPointCertificate(false, "complexCommand")
+                }
+                if (
+                    activeCommand == command &&
+                    command.uppercaseChar() !in charArrayOf('M', 'Z')
+                ) {
+                    return I41FixedPointCertificate(false, "explicitRepeat")
+                }
+                activeCommand = command
+            } else {
+                val canonical = token.toBigDecimalOrNull()?.let(::formatPathNumber)
+                    ?: normalizeNumber(token)
+                if (canonical != token) {
+                    return I41FixedPointCertificate(false, "numericSpelling")
+                }
+            }
+        }
+
+        return I41FixedPointCertificate(true)
     }
 
     private fun optimizePathDataCached(

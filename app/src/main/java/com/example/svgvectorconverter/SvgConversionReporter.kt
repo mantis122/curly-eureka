@@ -452,6 +452,21 @@ class SvgConversionReportData {
     var i3Pass2DecimalFallbackNonFixed: Int = 0
     var i3Pass2DecimalFastPathCheckNanos: Long = 0
 
+    // I4.1 diagnostic-only pass-2 fixed-point certificate study.
+    var i41Pass2CertificatePredictedFixed: Int = 0
+    var i41Pass2CertificateTruePositive: Int = 0
+    var i41Pass2CertificateFalsePositive: Int = 0
+    var i41Pass2CertificateFalseNegative: Int = 0
+    var i41Pass2CertificateTrueNegative: Int = 0
+    var i41Pass2CertificateCheckNanos: Long = 0
+    var i41Pass2PotentialAvoidableOptimizerNanos: Long = 0
+    var i41Pass2FalsePositiveOptimizerNanos: Long = 0
+    var i41Pass2RejectedLexical: Int = 0
+    var i41Pass2RejectedNumericSpelling: Int = 0
+    var i41Pass2RejectedWhitespace: Int = 0
+    var i41Pass2RejectedComplexCommandFamily: Int = 0
+    var i41Pass2RejectedExplicitRepeat: Int = 0
+
     var optimizationPathCacheHits: Int = 0
     var optimizationPathCacheMisses: Int = 0
     var optimizationFormattingNanos: Long = 0
