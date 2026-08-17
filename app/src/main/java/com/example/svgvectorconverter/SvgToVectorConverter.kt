@@ -687,44 +687,6 @@ object SvgToVectorConverter {
         reportData.i3Pass2DecimalFastPathCheckNanos =
             pathOptimizationStats.idempotenceProfiling.i3DecimalFastPathCheckNanos
 
-        reportData.i31Pass1ReferenceComparisons =
-            pathOptimizationStats.i31ReferenceComparisons
-        reportData.i31Pass1ReferenceByteIdentical =
-            pathOptimizationStats.i31ReferenceByteIdentical
-        reportData.i31Pass1ReferenceDifferent =
-            pathOptimizationStats.i31ReferenceDifferent
-        reportData.i31Pass1ReferenceFastShorter =
-            pathOptimizationStats.i31ReferenceFastShorter
-        reportData.i31Pass1ReferenceOldRouteShorter =
-            pathOptimizationStats.i31ReferenceOldRouteShorter
-        reportData.i31Pass1ReferenceEqualLengthDifferent =
-            pathOptimizationStats.i31ReferenceEqualLengthDifferent
-        reportData.i31Pass1ReferenceInvalid =
-            pathOptimizationStats.i31ReferenceInvalid
-        reportData.i31Pass1ReferenceCharacterDelta =
-            pathOptimizationStats.i31ReferenceCharacterDelta
-        reportData.i31Pass1ReferenceShadowNanos =
-            pathOptimizationStats.i31ReferenceShadowNanos
-
-        reportData.i31Pass2ReferenceComparisons =
-            pathOptimizationStats.idempotenceProfiling.i31ReferenceComparisons
-        reportData.i31Pass2ReferenceByteIdentical =
-            pathOptimizationStats.idempotenceProfiling.i31ReferenceByteIdentical
-        reportData.i31Pass2ReferenceDifferent =
-            pathOptimizationStats.idempotenceProfiling.i31ReferenceDifferent
-        reportData.i31Pass2ReferenceFastShorter =
-            pathOptimizationStats.idempotenceProfiling.i31ReferenceFastShorter
-        reportData.i31Pass2ReferenceOldRouteShorter =
-            pathOptimizationStats.idempotenceProfiling.i31ReferenceOldRouteShorter
-        reportData.i31Pass2ReferenceEqualLengthDifferent =
-            pathOptimizationStats.idempotenceProfiling.i31ReferenceEqualLengthDifferent
-        reportData.i31Pass2ReferenceInvalid =
-            pathOptimizationStats.idempotenceProfiling.i31ReferenceInvalid
-        reportData.i31Pass2ReferenceCharacterDelta =
-            pathOptimizationStats.idempotenceProfiling.i31ReferenceCharacterDelta
-        reportData.i31Pass2ReferenceShadowNanos =
-            pathOptimizationStats.idempotenceProfiling.i31ReferenceShadowNanos
-
         reportData.optimizationPathCacheHits = pathOptimizationStats.pathOptimizationCacheHits
         reportData.optimizationPathCacheMisses = pathOptimizationStats.pathOptimizationCacheMisses
         reportData.optimizationFormattingNanos = pathOptimizationStats.finalFormattingNanos

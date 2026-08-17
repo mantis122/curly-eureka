@@ -158,15 +158,6 @@ internal object SvgPathDataOptimizer {
         val i3DecimalFallbackInvalid: Int = 0,
         val i3DecimalFallbackNonFixed: Int = 0,
         val i3DecimalFastPathCheckNanos: Long = 0,
-        val i31ReferenceComparisons: Int = 0,
-        val i31ReferenceByteIdentical: Int = 0,
-        val i31ReferenceDifferent: Int = 0,
-        val i31ReferenceFastShorter: Int = 0,
-        val i31ReferenceOldRouteShorter: Int = 0,
-        val i31ReferenceEqualLengthDifferent: Int = 0,
-        val i31ReferenceInvalid: Int = 0,
-        val i31ReferenceCharacterDelta: Int = 0,
-        val i31ReferenceShadowNanos: Long = 0,
         val finalFormattingNanos: Long = 0,
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
@@ -365,15 +356,6 @@ internal object SvgPathDataOptimizer {
         val i3DecimalFallbackInvalid: Int = 0,
         val i3DecimalFallbackNonFixed: Int = 0,
         val i3DecimalFastPathCheckNanos: Long = 0,
-        val i31ReferenceComparisons: Int = 0,
-        val i31ReferenceByteIdentical: Int = 0,
-        val i31ReferenceDifferent: Int = 0,
-        val i31ReferenceFastShorter: Int = 0,
-        val i31ReferenceOldRouteShorter: Int = 0,
-        val i31ReferenceEqualLengthDifferent: Int = 0,
-        val i31ReferenceInvalid: Int = 0,
-        val i31ReferenceCharacterDelta: Int = 0,
-        val i31ReferenceShadowNanos: Long = 0,
         val pathOptimizationCacheHits: Int = 0,
         val pathOptimizationCacheMisses: Int = 0,
         val finalFormattingNanos: Long = 0,
@@ -560,16 +542,6 @@ internal object SvgPathDataOptimizer {
             i3DecimalFallbackInvalid = secondPass.stats.i3DecimalFallbackInvalid,
             i3DecimalFallbackNonFixed = secondPass.stats.i3DecimalFallbackNonFixed,
             i3DecimalFastPathCheckNanos = secondPass.stats.i3DecimalFastPathCheckNanos,
-            i31ReferenceComparisons = secondPass.stats.i31ReferenceComparisons,
-            i31ReferenceByteIdentical = secondPass.stats.i31ReferenceByteIdentical,
-            i31ReferenceDifferent = secondPass.stats.i31ReferenceDifferent,
-            i31ReferenceFastShorter = secondPass.stats.i31ReferenceFastShorter,
-            i31ReferenceOldRouteShorter = secondPass.stats.i31ReferenceOldRouteShorter,
-            i31ReferenceEqualLengthDifferent =
-                secondPass.stats.i31ReferenceEqualLengthDifferent,
-            i31ReferenceInvalid = secondPass.stats.i31ReferenceInvalid,
-            i31ReferenceCharacterDelta = secondPass.stats.i31ReferenceCharacterDelta,
-            i31ReferenceShadowNanos = secondPass.stats.i31ReferenceShadowNanos,
             finalFormattingNanos = secondPass.stats.finalFormattingNanos,
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
@@ -1539,16 +1511,6 @@ internal object SvgPathDataOptimizer {
                 i3DecimalFallbackInvalid = numericProfiling.i3FallbackInvalid,
                 i3DecimalFallbackNonFixed = numericProfiling.i3FallbackNonFixed,
                 i3DecimalFastPathCheckNanos = numericProfiling.i3FastPathCheckNanos,
-                i31ReferenceComparisons = numericProfiling.i31ReferenceComparisons,
-                i31ReferenceByteIdentical = numericProfiling.i31ReferenceByteIdentical,
-                i31ReferenceDifferent = numericProfiling.i31ReferenceDifferent,
-                i31ReferenceFastShorter = numericProfiling.i31ReferenceFastShorter,
-                i31ReferenceOldRouteShorter = numericProfiling.i31ReferenceOldRouteShorter,
-                i31ReferenceEqualLengthDifferent =
-                    numericProfiling.i31ReferenceEqualLengthDifferent,
-                i31ReferenceInvalid = numericProfiling.i31ReferenceInvalid,
-                i31ReferenceCharacterDelta = numericProfiling.i31ReferenceCharacterDelta,
-                i31ReferenceShadowNanos = numericProfiling.i31ReferenceShadowNanos,
                 pathOptimizationCacheHits = pathCache.totalHits,
                 pathOptimizationCacheMisses = pathCache.totalMisses,
                 finalFormattingNanos = finalFormattingNanos,
@@ -1652,15 +1614,6 @@ internal object SvgPathDataOptimizer {
         var i3FallbackInvalid: Int = 0,
         var i3FallbackNonFixed: Int = 0,
         var i3FastPathCheckNanos: Long = 0,
-        var i31ReferenceComparisons: Int = 0,
-        var i31ReferenceByteIdentical: Int = 0,
-        var i31ReferenceDifferent: Int = 0,
-        var i31ReferenceFastShorter: Int = 0,
-        var i31ReferenceOldRouteShorter: Int = 0,
-        var i31ReferenceEqualLengthDifferent: Int = 0,
-        var i31ReferenceInvalid: Int = 0,
-        var i31ReferenceCharacterDelta: Int = 0,
-        var i31ReferenceShadowNanos: Long = 0
     )
 
     private data class DecimalCanonicalizationResult(
@@ -1744,49 +1697,6 @@ internal object SvgPathDataOptimizer {
                 original
             }
 
-            canonicalized.i31ReferencePathData?.let { referenceRaw ->
-                profiling?.let { p ->
-                    p.i31ReferenceComparisons++
-                    p.i31ReferenceShadowNanos += canonicalized.i31ReferenceShadowNanos
-
-                    if (!canonicalized.i31ReferenceValid) {
-                        p.i31ReferenceInvalid++
-                    }
-
-                    val referenceSelected =
-                        if (
-                            canonicalized.i31ReferenceValid &&
-                            referenceRaw.length <= original.length
-                        ) {
-                            referenceRaw
-                        } else {
-                            original
-                        }
-
-                    when {
-                        selectedPathData == referenceSelected -> {
-                            p.i31ReferenceByteIdentical++
-                        }
-                        selectedPathData.length < referenceSelected.length -> {
-                            p.i31ReferenceDifferent++
-                            p.i31ReferenceFastShorter++
-                        }
-                        selectedPathData.length > referenceSelected.length -> {
-                            p.i31ReferenceDifferent++
-                            p.i31ReferenceOldRouteShorter++
-                        }
-                        else -> {
-                            p.i31ReferenceDifferent++
-                            p.i31ReferenceEqualLengthDifferent++
-                        }
-                    }
-
-                    // Positive means the I3 selected spelling is shorter.
-                    p.i31ReferenceCharacterDelta +=
-                        referenceSelected.length - selectedPathData.length
-                }
-            }
-
             "android:pathData=\"$selectedPathData\""
         }
 
@@ -1804,11 +1714,7 @@ internal object SvgPathDataOptimizer {
         val i2FastPathData: String? = null,
         val i2FastValid: Boolean = true,
         val i2FastFixed: Boolean = true,
-        val i2ShadowNanos: Long = 0,
-        val i31ReferencePathData: String? = null,
-        val i31ReferenceValid: Boolean = true,
-        val i31ReferenceShadowNanos: Long = 0
-    )
+        val i2ShadowNanos: Long = 0    )
 
     private fun i2CanonicalizeDecimalTokensOnly(pathData: String): String? {
         val matches = tokenRegex.findAll(pathData).toList()
@@ -1937,26 +1843,9 @@ internal object SvgPathDataOptimizer {
         if (fastValid && fastFixed) {
             profiling?.i3FastPathAccepted =
                 (profiling?.i3FastPathAccepted ?: 0) + 1
-
-            // I3.1 one-time proof: compute the pre-I3 nested optimizer route
-            // in shadow for every accepted fast-path candidate. Use an
-            // isolated cache so this diagnostic work cannot change production
-            // cache state, cache counters, or output selection.
-            val referenceShadowStart = System.nanoTime()
-            val referencePathData = optimizePathDataCached(
-                pathData = rebuiltPathData,
-                cache = PathOptimizationCache(),
-                validationPass = validationPass
-            ).pathData
-            val referenceValid = parseNormalizedSegments(referencePathData) != null
-            val referenceShadowNanos = System.nanoTime() - referenceShadowStart
-
             return CanonicalizedPathData(
                 pathData = rebuiltPathData,
-                changedValues = changedCount,
-                i31ReferencePathData = referencePathData,
-                i31ReferenceValid = referenceValid,
-                i31ReferenceShadowNanos = referenceShadowNanos
+                changedValues = changedCount
             )
         }
 

@@ -452,27 +452,6 @@ class SvgConversionReportData {
     var i3Pass2DecimalFallbackNonFixed: Int = 0
     var i3Pass2DecimalFastPathCheckNanos: Long = 0
 
-    // I3.1 one-time old-route byte-identity proof.
-    var i31Pass1ReferenceComparisons: Int = 0
-    var i31Pass1ReferenceByteIdentical: Int = 0
-    var i31Pass1ReferenceDifferent: Int = 0
-    var i31Pass1ReferenceFastShorter: Int = 0
-    var i31Pass1ReferenceOldRouteShorter: Int = 0
-    var i31Pass1ReferenceEqualLengthDifferent: Int = 0
-    var i31Pass1ReferenceInvalid: Int = 0
-    var i31Pass1ReferenceCharacterDelta: Int = 0
-    var i31Pass1ReferenceShadowNanos: Long = 0
-
-    var i31Pass2ReferenceComparisons: Int = 0
-    var i31Pass2ReferenceByteIdentical: Int = 0
-    var i31Pass2ReferenceDifferent: Int = 0
-    var i31Pass2ReferenceFastShorter: Int = 0
-    var i31Pass2ReferenceOldRouteShorter: Int = 0
-    var i31Pass2ReferenceEqualLengthDifferent: Int = 0
-    var i31Pass2ReferenceInvalid: Int = 0
-    var i31Pass2ReferenceCharacterDelta: Int = 0
-    var i31Pass2ReferenceShadowNanos: Long = 0
-
     var optimizationPathCacheHits: Int = 0
     var optimizationPathCacheMisses: Int = 0
     var optimizationFormattingNanos: Long = 0
