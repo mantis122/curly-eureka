@@ -737,6 +737,67 @@ object SvgToVectorConverter {
         reportData.i42Pass2PreventedChangedOther =
             pathOptimizationStats.idempotenceProfiling.i42PreventedChangedOther
 
+        reportData.i43Pass2ComplexCandidatesExamined =
+            pathOptimizationStats.idempotenceProfiling.i43ComplexCandidatesExamined
+        reportData.i43Pass2ComplexPredictedFixed =
+            pathOptimizationStats.idempotenceProfiling.i43ComplexPredictedFixed
+        reportData.i43Pass2ComplexTruePositive =
+            pathOptimizationStats.idempotenceProfiling.i43ComplexTruePositive
+        reportData.i43Pass2ComplexFalsePositive =
+            pathOptimizationStats.idempotenceProfiling.i43ComplexFalsePositive
+        reportData.i43Pass2ComplexFalseNegative =
+            pathOptimizationStats.idempotenceProfiling.i43ComplexFalseNegative
+        reportData.i43Pass2ComplexTrueNegative =
+            pathOptimizationStats.idempotenceProfiling.i43ComplexTrueNegative
+        reportData.i43Pass2ComplexCheckNanos =
+            pathOptimizationStats.idempotenceProfiling.i43ComplexCheckNanos
+        reportData.i43Pass2ComplexPotentialAvoidableOptimizerNanos =
+            pathOptimizationStats.idempotenceProfiling.i43ComplexPotentialAvoidableOptimizerNanos
+        reportData.i43Pass2ComplexFalsePositiveOptimizerNanos =
+            pathOptimizationStats.idempotenceProfiling.i43ComplexFalsePositiveOptimizerNanos
+        reportData.i43Pass2RejectedReflectiveShorthand =
+            pathOptimizationStats.idempotenceProfiling.i43RejectedReflectiveShorthand
+        reportData.i43Pass2RejectedNumericSpelling =
+            pathOptimizationStats.idempotenceProfiling.i43RejectedNumericSpelling
+        reportData.i43Pass2RejectedExplicitRepeat =
+            pathOptimizationStats.idempotenceProfiling.i43RejectedExplicitRepeat
+        reportData.i43Pass2RejectedProvenance =
+            pathOptimizationStats.idempotenceProfiling.i43RejectedProvenance
+        reportData.i43Pass2CubicPredicted =
+            pathOptimizationStats.idempotenceProfiling.i43CubicPredicted
+        reportData.i43Pass2CubicTruePositive =
+            pathOptimizationStats.idempotenceProfiling.i43CubicTruePositive
+        reportData.i43Pass2CubicFalsePositive =
+            pathOptimizationStats.idempotenceProfiling.i43CubicFalsePositive
+        reportData.i43Pass2QuadraticPredicted =
+            pathOptimizationStats.idempotenceProfiling.i43QuadraticPredicted
+        reportData.i43Pass2QuadraticTruePositive =
+            pathOptimizationStats.idempotenceProfiling.i43QuadraticTruePositive
+        reportData.i43Pass2QuadraticFalsePositive =
+            pathOptimizationStats.idempotenceProfiling.i43QuadraticFalsePositive
+        reportData.i43Pass2ArcPredicted =
+            pathOptimizationStats.idempotenceProfiling.i43ArcPredicted
+        reportData.i43Pass2ArcTruePositive =
+            pathOptimizationStats.idempotenceProfiling.i43ArcTruePositive
+        reportData.i43Pass2ArcFalsePositive =
+            pathOptimizationStats.idempotenceProfiling.i43ArcFalsePositive
+        reportData.i43Pass2MixedPredicted =
+            pathOptimizationStats.idempotenceProfiling.i43MixedPredicted
+        reportData.i43Pass2MixedTruePositive =
+            pathOptimizationStats.idempotenceProfiling.i43MixedTruePositive
+        reportData.i43Pass2MixedFalsePositive =
+            pathOptimizationStats.idempotenceProfiling.i43MixedFalsePositive
+        reportData.i43Pass2FalsePositiveGeometryCleanup =
+            pathOptimizationStats.idempotenceProfiling.i43FalsePositiveGeometryCleanup
+        reportData.i43Pass2FalsePositiveLocalShortening =
+            pathOptimizationStats.idempotenceProfiling.i43FalsePositiveLocalShortening
+        reportData.i43Pass2FalsePositiveGlobalCommand =
+            pathOptimizationStats.idempotenceProfiling.i43FalsePositiveGlobalCommand
+        reportData.i43Pass2FalsePositiveGlobalNumeric =
+            pathOptimizationStats.idempotenceProfiling.i43FalsePositiveGlobalNumeric
+        reportData.i43Pass2FalsePositiveOther =
+            pathOptimizationStats.idempotenceProfiling.i43FalsePositiveOther
+
         reportData.optimizationPathCacheHits = pathOptimizationStats.pathOptimizationCacheHits
         reportData.optimizationPathCacheMisses = pathOptimizationStats.pathOptimizationCacheMisses
         reportData.optimizationFormattingNanos = pathOptimizationStats.finalFormattingNanos

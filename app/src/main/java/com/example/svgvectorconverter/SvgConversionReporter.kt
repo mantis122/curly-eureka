@@ -480,6 +480,38 @@ class SvgConversionReportData {
     var i42Pass2PreventedChangedGlobalNumeric: Int = 0
     var i42Pass2PreventedChangedOther: Int = 0
 
+    // I4.3 diagnostic-only complex-command certificate expansion.
+    var i43Pass2ComplexCandidatesExamined: Int = 0
+    var i43Pass2ComplexPredictedFixed: Int = 0
+    var i43Pass2ComplexTruePositive: Int = 0
+    var i43Pass2ComplexFalsePositive: Int = 0
+    var i43Pass2ComplexFalseNegative: Int = 0
+    var i43Pass2ComplexTrueNegative: Int = 0
+    var i43Pass2ComplexCheckNanos: Long = 0
+    var i43Pass2ComplexPotentialAvoidableOptimizerNanos: Long = 0
+    var i43Pass2ComplexFalsePositiveOptimizerNanos: Long = 0
+    var i43Pass2RejectedReflectiveShorthand: Int = 0
+    var i43Pass2RejectedNumericSpelling: Int = 0
+    var i43Pass2RejectedExplicitRepeat: Int = 0
+    var i43Pass2RejectedProvenance: Int = 0
+    var i43Pass2CubicPredicted: Int = 0
+    var i43Pass2CubicTruePositive: Int = 0
+    var i43Pass2CubicFalsePositive: Int = 0
+    var i43Pass2QuadraticPredicted: Int = 0
+    var i43Pass2QuadraticTruePositive: Int = 0
+    var i43Pass2QuadraticFalsePositive: Int = 0
+    var i43Pass2ArcPredicted: Int = 0
+    var i43Pass2ArcTruePositive: Int = 0
+    var i43Pass2ArcFalsePositive: Int = 0
+    var i43Pass2MixedPredicted: Int = 0
+    var i43Pass2MixedTruePositive: Int = 0
+    var i43Pass2MixedFalsePositive: Int = 0
+    var i43Pass2FalsePositiveGeometryCleanup: Int = 0
+    var i43Pass2FalsePositiveLocalShortening: Int = 0
+    var i43Pass2FalsePositiveGlobalCommand: Int = 0
+    var i43Pass2FalsePositiveGlobalNumeric: Int = 0
+    var i43Pass2FalsePositiveOther: Int = 0
+
     var optimizationPathCacheHits: Int = 0
     var optimizationPathCacheMisses: Int = 0
     var optimizationFormattingNanos: Long = 0

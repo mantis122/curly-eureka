@@ -493,6 +493,109 @@ object SvgProductionCorpusProfiler {
                     )
 
                     appendLine()
+                    appendLine("I4.3 complex-command certificate expansion")
+                    appendLine("────────────────────────────────")
+                    appendLine(
+                        "Complex-command candidates examined: " +
+                            formatCount(sumInt { it.i43Pass2ComplexCandidatesExamined })
+                    )
+                    appendLine(
+                        "Experimental complex certificate predicted fixed: " +
+                            formatCount(sumInt { it.i43Pass2ComplexPredictedFixed })
+                    )
+                    appendLine(
+                        "True positives: " +
+                            formatCount(sumInt { it.i43Pass2ComplexTruePositive })
+                    )
+                    appendLine(
+                        "False positives: " +
+                            formatCount(sumInt { it.i43Pass2ComplexFalsePositive })
+                    )
+                    appendLine(
+                        "False negatives within complex candidates: " +
+                            formatCount(sumInt { it.i43Pass2ComplexFalseNegative })
+                    )
+                    appendLine(
+                        "True negatives within complex candidates: " +
+                            formatCount(sumInt { it.i43Pass2ComplexTrueNegative })
+                    )
+                    appendLine(
+                        "Complex certificate check time: " +
+                            formatNanos(sumLong { it.i43Pass2ComplexCheckNanos })
+                    )
+                    appendLine(
+                        "Full optimizer time on complex true positives (potentially avoidable): " +
+                            formatNanos(sumLong { it.i43Pass2ComplexPotentialAvoidableOptimizerNanos })
+                    )
+                    appendLine(
+                        "Full optimizer time on complex false positives: " +
+                            formatNanos(sumLong { it.i43Pass2ComplexFalsePositiveOptimizerNanos })
+                    )
+                    appendLine("Family breakdown (predicted / TP / FP)")
+                    appendLine(
+                        "  cubic C: ${sumInt { it.i43Pass2CubicPredicted }} / " +
+                            "${sumInt { it.i43Pass2CubicTruePositive }} / " +
+                            "${sumInt { it.i43Pass2CubicFalsePositive }}"
+                    )
+                    appendLine(
+                        "  quadratic Q: ${sumInt { it.i43Pass2QuadraticPredicted }} / " +
+                            "${sumInt { it.i43Pass2QuadraticTruePositive }} / " +
+                            "${sumInt { it.i43Pass2QuadraticFalsePositive }}"
+                    )
+                    appendLine(
+                        "  arc A: ${sumInt { it.i43Pass2ArcPredicted }} / " +
+                            "${sumInt { it.i43Pass2ArcTruePositive }} / " +
+                            "${sumInt { it.i43Pass2ArcFalsePositive }}"
+                    )
+                    appendLine(
+                        "  mixed C/Q/A: ${sumInt { it.i43Pass2MixedPredicted }} / " +
+                            "${sumInt { it.i43Pass2MixedTruePositive }} / " +
+                            "${sumInt { it.i43Pass2MixedFalsePositive }}"
+                    )
+                    appendLine("Experimental rejection reasons")
+                    appendLine(
+                        "  reflective S/T shorthand: " +
+                            formatCount(sumInt { it.i43Pass2RejectedReflectiveShorthand })
+                    )
+                    appendLine(
+                        "  non-canonical numeric spelling: " +
+                            formatCount(sumInt { it.i43Pass2RejectedNumericSpelling })
+                    )
+                    appendLine(
+                        "  explicit repeated command: " +
+                            formatCount(sumInt { it.i43Pass2RejectedExplicitRepeat })
+                    )
+                    appendLine(
+                        "  merge provenance: " +
+                            formatCount(sumInt { it.i43Pass2RejectedProvenance })
+                    )
+                    appendLine("Complex false-positive change classification")
+                    appendLine(
+                        "  geometry/arc/curve/collinear cleanup: " +
+                            formatCount(sumInt { it.i43Pass2FalsePositiveGeometryCleanup })
+                    )
+                    appendLine(
+                        "  local command shortening: " +
+                            formatCount(sumInt { it.i43Pass2FalsePositiveLocalShortening })
+                    )
+                    appendLine(
+                        "  global command minimization: " +
+                            formatCount(sumInt { it.i43Pass2FalsePositiveGlobalCommand })
+                    )
+                    appendLine(
+                        "  global numeric serialization: " +
+                            formatCount(sumInt { it.i43Pass2FalsePositiveGlobalNumeric })
+                    )
+                    appendLine(
+                        "  other/unattributed: " +
+                            formatCount(sumInt { it.i43Pass2FalsePositiveOther })
+                    )
+                    appendLine(
+                        "Note: I4.3 is diagnostic only. The proven I4.2 certificate and provenance gate " +
+                            "remain unchanged; this experimental branch never skips pass-2 work."
+                    )
+
+                    appendLine()
                     appendLine("Optimizer pass attribution")
                     appendLine("────────────────────────────────")
                     appendLine("Total optimization wrapper time: ${formatNanos(optimizationNanos)}")
@@ -591,6 +694,15 @@ object SvgProductionCorpusProfiler {
                                     "    I4.2 provenance gate: excluded=${data.i42Pass2ProvenanceExcluded}, " +
                                         "preventedFP=${data.i42Pass2ProvenancePreventedFalsePositive}, " +
                                         "excludedButFixed=${data.i42Pass2ProvenanceExcludedActuallyFixed}"
+                                )
+                            }
+                            if (data.i43Pass2ComplexCandidatesExamined > 0) {
+                                appendLine(
+                                    "    I4.3 complex: examined=${data.i43Pass2ComplexCandidatesExamined}, " +
+                                        "predicted=${data.i43Pass2ComplexPredictedFixed}, " +
+                                        "tp=${data.i43Pass2ComplexTruePositive}, " +
+                                        "fp=${data.i43Pass2ComplexFalsePositive}, " +
+                                        "fn=${data.i43Pass2ComplexFalseNegative}"
                                 )
                             }
                         }

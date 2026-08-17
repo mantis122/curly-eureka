@@ -184,6 +184,37 @@ internal object SvgPathDataOptimizer {
         val i42PreventedChangedGlobalCommand: Int = 0,
         val i42PreventedChangedGlobalNumeric: Int = 0,
         val i42PreventedChangedOther: Int = 0,
+        // I4.3 diagnostic-only complex-command certificate expansion.
+        val i43ComplexCandidatesExamined: Int = 0,
+        val i43ComplexPredictedFixed: Int = 0,
+        val i43ComplexTruePositive: Int = 0,
+        val i43ComplexFalsePositive: Int = 0,
+        val i43ComplexFalseNegative: Int = 0,
+        val i43ComplexTrueNegative: Int = 0,
+        val i43ComplexCheckNanos: Long = 0,
+        val i43ComplexPotentialAvoidableOptimizerNanos: Long = 0,
+        val i43ComplexFalsePositiveOptimizerNanos: Long = 0,
+        val i43RejectedReflectiveShorthand: Int = 0,
+        val i43RejectedNumericSpelling: Int = 0,
+        val i43RejectedExplicitRepeat: Int = 0,
+        val i43RejectedProvenance: Int = 0,
+        val i43CubicPredicted: Int = 0,
+        val i43CubicTruePositive: Int = 0,
+        val i43CubicFalsePositive: Int = 0,
+        val i43QuadraticPredicted: Int = 0,
+        val i43QuadraticTruePositive: Int = 0,
+        val i43QuadraticFalsePositive: Int = 0,
+        val i43ArcPredicted: Int = 0,
+        val i43ArcTruePositive: Int = 0,
+        val i43ArcFalsePositive: Int = 0,
+        val i43MixedPredicted: Int = 0,
+        val i43MixedTruePositive: Int = 0,
+        val i43MixedFalsePositive: Int = 0,
+        val i43FalsePositiveGeometryCleanup: Int = 0,
+        val i43FalsePositiveLocalShortening: Int = 0,
+        val i43FalsePositiveGlobalCommand: Int = 0,
+        val i43FalsePositiveGlobalNumeric: Int = 0,
+        val i43FalsePositiveOther: Int = 0,
         val finalFormattingNanos: Long = 0,
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
@@ -406,6 +437,36 @@ internal object SvgPathDataOptimizer {
         val i42PreventedChangedGlobalCommand: Int = 0,
         val i42PreventedChangedGlobalNumeric: Int = 0,
         val i42PreventedChangedOther: Int = 0,
+        val i43ComplexCandidatesExamined: Int = 0,
+        val i43ComplexPredictedFixed: Int = 0,
+        val i43ComplexTruePositive: Int = 0,
+        val i43ComplexFalsePositive: Int = 0,
+        val i43ComplexFalseNegative: Int = 0,
+        val i43ComplexTrueNegative: Int = 0,
+        val i43ComplexCheckNanos: Long = 0,
+        val i43ComplexPotentialAvoidableOptimizerNanos: Long = 0,
+        val i43ComplexFalsePositiveOptimizerNanos: Long = 0,
+        val i43RejectedReflectiveShorthand: Int = 0,
+        val i43RejectedNumericSpelling: Int = 0,
+        val i43RejectedExplicitRepeat: Int = 0,
+        val i43RejectedProvenance: Int = 0,
+        val i43CubicPredicted: Int = 0,
+        val i43CubicTruePositive: Int = 0,
+        val i43CubicFalsePositive: Int = 0,
+        val i43QuadraticPredicted: Int = 0,
+        val i43QuadraticTruePositive: Int = 0,
+        val i43QuadraticFalsePositive: Int = 0,
+        val i43ArcPredicted: Int = 0,
+        val i43ArcTruePositive: Int = 0,
+        val i43ArcFalsePositive: Int = 0,
+        val i43MixedPredicted: Int = 0,
+        val i43MixedTruePositive: Int = 0,
+        val i43MixedFalsePositive: Int = 0,
+        val i43FalsePositiveGeometryCleanup: Int = 0,
+        val i43FalsePositiveLocalShortening: Int = 0,
+        val i43FalsePositiveGlobalCommand: Int = 0,
+        val i43FalsePositiveGlobalNumeric: Int = 0,
+        val i43FalsePositiveOther: Int = 0,
         val pathOptimizationCacheHits: Int = 0,
         val pathOptimizationCacheMisses: Int = 0,
         val finalFormattingNanos: Long = 0,
@@ -630,6 +691,43 @@ internal object SvgPathDataOptimizer {
             i42PreventedChangedGlobalNumeric =
                 secondPass.stats.i42PreventedChangedGlobalNumeric,
             i42PreventedChangedOther = secondPass.stats.i42PreventedChangedOther,
+            i43ComplexCandidatesExamined = secondPass.stats.i43ComplexCandidatesExamined,
+            i43ComplexPredictedFixed = secondPass.stats.i43ComplexPredictedFixed,
+            i43ComplexTruePositive = secondPass.stats.i43ComplexTruePositive,
+            i43ComplexFalsePositive = secondPass.stats.i43ComplexFalsePositive,
+            i43ComplexFalseNegative = secondPass.stats.i43ComplexFalseNegative,
+            i43ComplexTrueNegative = secondPass.stats.i43ComplexTrueNegative,
+            i43ComplexCheckNanos = secondPass.stats.i43ComplexCheckNanos,
+            i43ComplexPotentialAvoidableOptimizerNanos =
+                secondPass.stats.i43ComplexPotentialAvoidableOptimizerNanos,
+            i43ComplexFalsePositiveOptimizerNanos =
+                secondPass.stats.i43ComplexFalsePositiveOptimizerNanos,
+            i43RejectedReflectiveShorthand =
+                secondPass.stats.i43RejectedReflectiveShorthand,
+            i43RejectedNumericSpelling = secondPass.stats.i43RejectedNumericSpelling,
+            i43RejectedExplicitRepeat = secondPass.stats.i43RejectedExplicitRepeat,
+            i43RejectedProvenance = secondPass.stats.i43RejectedProvenance,
+            i43CubicPredicted = secondPass.stats.i43CubicPredicted,
+            i43CubicTruePositive = secondPass.stats.i43CubicTruePositive,
+            i43CubicFalsePositive = secondPass.stats.i43CubicFalsePositive,
+            i43QuadraticPredicted = secondPass.stats.i43QuadraticPredicted,
+            i43QuadraticTruePositive = secondPass.stats.i43QuadraticTruePositive,
+            i43QuadraticFalsePositive = secondPass.stats.i43QuadraticFalsePositive,
+            i43ArcPredicted = secondPass.stats.i43ArcPredicted,
+            i43ArcTruePositive = secondPass.stats.i43ArcTruePositive,
+            i43ArcFalsePositive = secondPass.stats.i43ArcFalsePositive,
+            i43MixedPredicted = secondPass.stats.i43MixedPredicted,
+            i43MixedTruePositive = secondPass.stats.i43MixedTruePositive,
+            i43MixedFalsePositive = secondPass.stats.i43MixedFalsePositive,
+            i43FalsePositiveGeometryCleanup =
+                secondPass.stats.i43FalsePositiveGeometryCleanup,
+            i43FalsePositiveLocalShortening =
+                secondPass.stats.i43FalsePositiveLocalShortening,
+            i43FalsePositiveGlobalCommand =
+                secondPass.stats.i43FalsePositiveGlobalCommand,
+            i43FalsePositiveGlobalNumeric =
+                secondPass.stats.i43FalsePositiveGlobalNumeric,
+            i43FalsePositiveOther = secondPass.stats.i43FalsePositiveOther,
             finalFormattingNanos = secondPass.stats.finalFormattingNanos,
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
@@ -1163,6 +1261,36 @@ internal object SvgPathDataOptimizer {
         var i42PreventedChangedGlobalCommand = 0
         var i42PreventedChangedGlobalNumeric = 0
         var i42PreventedChangedOther = 0
+        var i43ComplexCandidatesExamined = 0
+        var i43ComplexPredictedFixed = 0
+        var i43ComplexTruePositive = 0
+        var i43ComplexFalsePositive = 0
+        var i43ComplexFalseNegative = 0
+        var i43ComplexTrueNegative = 0
+        var i43ComplexCheckNanos = 0L
+        var i43ComplexPotentialAvoidableOptimizerNanos = 0L
+        var i43ComplexFalsePositiveOptimizerNanos = 0L
+        var i43RejectedReflectiveShorthand = 0
+        var i43RejectedNumericSpelling = 0
+        var i43RejectedExplicitRepeat = 0
+        var i43RejectedProvenance = 0
+        var i43CubicPredicted = 0
+        var i43CubicTruePositive = 0
+        var i43CubicFalsePositive = 0
+        var i43QuadraticPredicted = 0
+        var i43QuadraticTruePositive = 0
+        var i43QuadraticFalsePositive = 0
+        var i43ArcPredicted = 0
+        var i43ArcTruePositive = 0
+        var i43ArcFalsePositive = 0
+        var i43MixedPredicted = 0
+        var i43MixedTruePositive = 0
+        var i43MixedFalsePositive = 0
+        var i43FalsePositiveGeometryCleanup = 0
+        var i43FalsePositiveLocalShortening = 0
+        var i43FalsePositiveGlobalCommand = 0
+        var i43FalsePositiveGlobalNumeric = 0
+        var i43FalsePositiveOther = 0
 
         val pathSyntaxStartTime = System.nanoTime()
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
@@ -1171,9 +1299,46 @@ internal object SvgPathDataOptimizer {
             var i41Certificate: I41FixedPointCertificate? = null
             var i42ExcludedByProvenance = false
             var i42WouldPredictFixedWithoutProvenance = false
+            var i43Certificate: I43ComplexCertificate? = null
             if (validationPass) {
                 val certificateStart = System.nanoTime()
                 val rawCertificate = i41CheapFixedPointCertificate(original)
+
+                if (rawCertificate.rejectionReason == "complexCommand") {
+                    i43ComplexCandidatesExamined++
+                    val i43Start = System.nanoTime()
+                    val experimental = i43ComplexFixedPointCertificate(original)
+                    i43ComplexCheckNanos += System.nanoTime() - i43Start
+
+                    i43Certificate =
+                        if (experimental.predictedFixed && original in certificateExcludedPathData) {
+                            i43RejectedProvenance++
+                            I43ComplexCertificate(
+                                false,
+                                family = experimental.family,
+                                rejectionReason = "mergeProvenance"
+                            )
+                        } else {
+                            experimental
+                        }
+
+                    if (i43Certificate?.predictedFixed == true) {
+                        i43ComplexPredictedFixed++
+                        when (i43Certificate?.family) {
+                            "cubic" -> i43CubicPredicted++
+                            "quadratic" -> i43QuadraticPredicted++
+                            "arc" -> i43ArcPredicted++
+                            "mixed" -> i43MixedPredicted++
+                        }
+                    } else {
+                        when (i43Certificate?.rejectionReason) {
+                            "reflectiveShorthand" -> i43RejectedReflectiveShorthand++
+                            "numericSpelling" -> i43RejectedNumericSpelling++
+                            "explicitRepeat" -> i43RejectedExplicitRepeat++
+                        }
+                    }
+                }
+
                 i42WouldPredictFixedWithoutProvenance = rawCertificate.predictedFixed
                 i42ExcludedByProvenance =
                     rawCertificate.predictedFixed && original in certificateExcludedPathData
@@ -1214,6 +1379,51 @@ internal object SvgPathDataOptimizer {
             if (i41ActuallyFixed) {
                 i2PathSyntaxStableInputs++
                 i2PathSyntaxStableInputNanos += i2PathCallNanos
+            }
+
+            if (validationPass && i43Certificate != null) {
+                when {
+                    i43Certificate?.predictedFixed == true && i41ActuallyFixed -> {
+                        i43ComplexTruePositive++
+                        i43ComplexPotentialAvoidableOptimizerNanos += i2PathCallNanos
+                        when (i43Certificate?.family) {
+                            "cubic" -> i43CubicTruePositive++
+                            "quadratic" -> i43QuadraticTruePositive++
+                            "arc" -> i43ArcTruePositive++
+                            "mixed" -> i43MixedTruePositive++
+                        }
+                    }
+                    i43Certificate?.predictedFixed == true && !i41ActuallyFixed -> {
+                        i43ComplexFalsePositive++
+                        i43ComplexFalsePositiveOptimizerNanos += i2PathCallNanos
+                        when (i43Certificate?.family) {
+                            "cubic" -> i43CubicFalsePositive++
+                            "quadratic" -> i43QuadraticFalsePositive++
+                            "arc" -> i43ArcFalsePositive++
+                            "mixed" -> i43MixedFalsePositive++
+                        }
+                        when {
+                            optimized.h23RedundantGeometryCharacterDelta != 0 ||
+                                optimized.h23ArcCleanupCharacterDelta != 0 ||
+                                optimized.h23CurveSimplificationCharacterDelta != 0 ||
+                                optimized.h23CollinearConsolidationCharacterDelta != 0 ->
+                                i43FalsePositiveGeometryCleanup++
+                            optimized.h23LocalCommandShorteningCharacterDelta != 0 ->
+                                i43FalsePositiveLocalShortening++
+                            optimized.h23GlobalCommandMinimizationCharacterDelta != 0 ->
+                                i43FalsePositiveGlobalCommand++
+                            optimized.h23GlobalNumericSerializationCharacterDelta != 0 ->
+                                i43FalsePositiveGlobalNumeric++
+                            else -> i43FalsePositiveOther++
+                        }
+                    }
+                    i43Certificate?.predictedFixed == false && i41ActuallyFixed -> {
+                        i43ComplexFalseNegative++
+                    }
+                    else -> {
+                        i43ComplexTrueNegative++
+                    }
+                }
             }
 
             if (validationPass && i42ExcludedByProvenance && i42WouldPredictFixedWithoutProvenance) {
@@ -1734,6 +1944,38 @@ internal object SvgPathDataOptimizer {
                 i42PreventedChangedGlobalNumeric =
                     i42PreventedChangedGlobalNumeric,
                 i42PreventedChangedOther = i42PreventedChangedOther,
+                i43ComplexCandidatesExamined = i43ComplexCandidatesExamined,
+                i43ComplexPredictedFixed = i43ComplexPredictedFixed,
+                i43ComplexTruePositive = i43ComplexTruePositive,
+                i43ComplexFalsePositive = i43ComplexFalsePositive,
+                i43ComplexFalseNegative = i43ComplexFalseNegative,
+                i43ComplexTrueNegative = i43ComplexTrueNegative,
+                i43ComplexCheckNanos = i43ComplexCheckNanos,
+                i43ComplexPotentialAvoidableOptimizerNanos =
+                    i43ComplexPotentialAvoidableOptimizerNanos,
+                i43ComplexFalsePositiveOptimizerNanos =
+                    i43ComplexFalsePositiveOptimizerNanos,
+                i43RejectedReflectiveShorthand = i43RejectedReflectiveShorthand,
+                i43RejectedNumericSpelling = i43RejectedNumericSpelling,
+                i43RejectedExplicitRepeat = i43RejectedExplicitRepeat,
+                i43RejectedProvenance = i43RejectedProvenance,
+                i43CubicPredicted = i43CubicPredicted,
+                i43CubicTruePositive = i43CubicTruePositive,
+                i43CubicFalsePositive = i43CubicFalsePositive,
+                i43QuadraticPredicted = i43QuadraticPredicted,
+                i43QuadraticTruePositive = i43QuadraticTruePositive,
+                i43QuadraticFalsePositive = i43QuadraticFalsePositive,
+                i43ArcPredicted = i43ArcPredicted,
+                i43ArcTruePositive = i43ArcTruePositive,
+                i43ArcFalsePositive = i43ArcFalsePositive,
+                i43MixedPredicted = i43MixedPredicted,
+                i43MixedTruePositive = i43MixedTruePositive,
+                i43MixedFalsePositive = i43MixedFalsePositive,
+                i43FalsePositiveGeometryCleanup = i43FalsePositiveGeometryCleanup,
+                i43FalsePositiveLocalShortening = i43FalsePositiveLocalShortening,
+                i43FalsePositiveGlobalCommand = i43FalsePositiveGlobalCommand,
+                i43FalsePositiveGlobalNumeric = i43FalsePositiveGlobalNumeric,
+                i43FalsePositiveOther = i43FalsePositiveOther,
                 pathOptimizationCacheHits = pathCache.totalHits,
                 pathOptimizationCacheMisses = pathCache.totalMisses,
                 finalFormattingNanos = finalFormattingNanos,
@@ -10355,6 +10597,93 @@ internal object SvgPathDataOptimizer {
         }
 
         return I41FixedPointCertificate(true)
+    }
+
+    private data class I43ComplexCertificate(
+        val predictedFixed: Boolean,
+        val family: String = "",
+        val rejectionReason: String = ""
+    )
+
+    /**
+     * I4.3 diagnostic-only expansion for paths rejected by I4.2 solely because
+     * they contain complex commands. This intentionally admits only explicit
+     * C/Q/A families. Reflective S/T shorthand remains out of scope because
+     * its canonicality depends on preceding control-point state.
+     *
+     * The full optimizer still runs afterward and supplies ground truth.
+     */
+    private fun i43ComplexFixedPointCertificate(pathData: String): I43ComplexCertificate {
+        if (pathData != pathData.trim() || pathData.any { it.isWhitespace() }) {
+            return I43ComplexCertificate(false, rejectionReason = "whitespace")
+        }
+
+        val matches = tokenRegex.findAll(pathData).toList()
+        if (matches.isEmpty()) {
+            return I43ComplexCertificate(false, rejectionReason = "lexical")
+        }
+
+        var cursor = 0
+        for (match in matches) {
+            if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
+                return I43ComplexCertificate(false, rejectionReason = "lexical")
+            }
+            cursor = match.range.last + 1
+        }
+        if (!containsOnlySeparators(pathData.substring(cursor))) {
+            return I43ComplexCertificate(false, rejectionReason = "lexical")
+        }
+
+        val complexFamilies = linkedSetOf<Char>()
+        var activeCommand: Char? = null
+        for (match in matches) {
+            val token = match.value
+            if (isCommand(token)) {
+                val command = token[0]
+                when (command.uppercaseChar()) {
+                    'S', 'T' -> {
+                        return I43ComplexCertificate(
+                            false,
+                            rejectionReason = "reflectiveShorthand"
+                        )
+                    }
+                    'C', 'Q', 'A' -> complexFamilies += command.uppercaseChar()
+                }
+
+                if (
+                    activeCommand == command &&
+                    command.uppercaseChar() !in charArrayOf('M', 'Z')
+                ) {
+                    return I43ComplexCertificate(
+                        false,
+                        rejectionReason = "explicitRepeat"
+                    )
+                }
+                activeCommand = command
+            } else {
+                val canonical = token.toBigDecimalOrNull()?.let(::formatPathNumber)
+                    ?: normalizeNumber(token)
+                if (canonical != token) {
+                    return I43ComplexCertificate(
+                        false,
+                        rejectionReason = "numericSpelling"
+                    )
+                }
+            }
+        }
+
+        if (complexFamilies.isEmpty()) {
+            return I43ComplexCertificate(false, rejectionReason = "notComplex")
+        }
+
+        val family = when {
+            complexFamilies.size > 1 -> "mixed"
+            'C' in complexFamilies -> "cubic"
+            'Q' in complexFamilies -> "quadratic"
+            'A' in complexFamilies -> "arc"
+            else -> "mixed"
+        }
+        return I43ComplexCertificate(true, family = family)
     }
 
     private fun optimizePathDataCached(
