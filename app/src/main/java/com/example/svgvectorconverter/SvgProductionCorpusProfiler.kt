@@ -631,7 +631,7 @@ object SvgProductionCorpusProfiler {
                     )
                     appendLine(
                         "Shadow pass-2 path selection would be byte-identical: " +
-                            if (i45Mismatches == 0) "true" else "false"
+                            if (i45Mismatches == 0L) "true" else "false"
                     )
                     appendLine(
                         "Note: I4.5 is diagnostic only. Certified paths are still fully optimized; " +
