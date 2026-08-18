@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var saveReportImageButton: Button
     private lateinit var reportActionsRow: LinearLayout
     private var currentRegressionReport = ""
+    private var currentExtendedFeatureRegressionReport = ""
     private var currentDifferentialSearchReport = ""
     private var currentPostScaleDifferentialReport = ""
     private var currentPostScaleStageAddbackReport = ""
@@ -190,6 +191,19 @@ class MainActivity : ComponentActivity() {
         if (uri != null && currentRegressionReport.isNotBlank()) {
             FileIoHelpers.writeTextToUri(this, uri, currentRegressionReport)
             toast("Regression report saved")
+        }
+    }
+
+    private val saveExtendedFeatureRegressionReport = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && currentExtendedFeatureRegressionReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(
+                this,
+                uri,
+                currentExtendedFeatureRegressionReport
+            )
+            toast("Extended feature report saved")
         }
     }
 
@@ -874,9 +888,31 @@ class MainActivity : ComponentActivity() {
         layout.addView(
             makeText(
                 """
-                Runs the five bundled E1.2 fixtures and checks conversion,
+                Runs the twelve locked regression fixtures and checks conversion,
                 path counts, warnings, optimizer idempotence, final-output
                 validation, and required or forbidden XML fragments.
+                """.trimIndent(),
+                14f,
+                Color.GRAY,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        val extendedFeatureButton = makeButton("Run Extended Feature Suite") {
+            runExtendedFeatureRegressionSuite()
+        }
+        layout.addView(
+            extendedFeatureButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                """
+                Runs the broader J2 feature suite separately from the locked
+                gate. Covers additional gradient, clip, mask, defs/use,
+                stroke, CSS, and numeric-exporter cases.
                 """.trimIndent(),
                 14f,
                 Color.GRAY,
@@ -4553,7 +4589,7 @@ class MainActivity : ComponentActivity() {
 
         val progressBar = ProgressBar(this)
         val statusText = makeText(
-            "Running 5 bundled regression tests…",
+            "Running 12 locked regression tests…",
             16f,
             Color.DKGRAY,
             Gravity.CENTER
@@ -4603,6 +4639,163 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }.start()
+    }
+
+    private fun runExtendedFeatureRegressionSuite() {
+        val progressLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(64, 48, 64, 48)
+        }
+
+        val progressBar = ProgressBar(this)
+        val statusText = makeText(
+            "Running 20 extended feature tests…",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply {
+            setPadding(0, 24, 0, 0)
+        }
+
+        progressLayout.addView(progressBar)
+        progressLayout.addView(statusText)
+
+        val progressDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Extended Feature Suite")
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+
+        progressDialog.show()
+
+        Thread {
+            val suiteResult = try {
+                SvgFeatureRegressionSuiteJ2.run()
+            } catch (throwable: Throwable) {
+                null
+            }
+
+            val report = suiteResult?.toPlainTextReport()
+                ?: buildString {
+                    appendLine("Extended feature regression suite")
+                    appendLine()
+                    appendLine("Tests run: 0")
+                    appendLine("Passed: 0")
+                    appendLine("Failed: 1")
+                    appendLine()
+                    appendLine("✕ The extended feature suite could not be started.")
+                    appendLine("  Check that SvgFeatureRegressionSuiteJ2.kt is")
+                    appendLine("  included in the app.")
+                }
+
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    progressDialog.dismiss()
+                    currentExtendedFeatureRegressionReport = report
+                    showExtendedFeatureRegressionResultsDialog(
+                        suiteResult = suiteResult,
+                        report = report
+                    )
+                }
+            }
+        }.start()
+    }
+
+    private fun showExtendedFeatureRegressionResultsDialog(
+        suiteResult: SvgRegressionRunner.SuiteResult?,
+        report: String
+    ) {
+        val passed = suiteResult?.passed == true
+        val passedCount = suiteResult?.passedCount ?: 0
+        val failedCount = suiteResult?.failedCount ?: 1
+
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 16)
+        }
+
+        val summary = makeText(
+            if (passed) {
+                "✓ All $passedCount extended feature tests passed"
+            } else {
+                "✕ $failedCount extended feature test${if (failedCount == 1) "" else "s"} failed"
+            },
+            18f,
+            if (passed) Color.rgb(30, 120, 55) else Color.rgb(180, 35, 35),
+            Gravity.START,
+            paddingBottom = 16
+        )
+        layout.addView(summary)
+
+        val reportView = TextView(this).apply {
+            text = report
+            textSize = 13f
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.rgb(248, 248, 248))
+            setPadding(24, 24, 24, 24)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+
+        val reportScroll = ScrollView(this).apply {
+            addView(reportView)
+        }
+        layout.addView(
+            reportScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
+
+        val copyButton = makeButton("Copy Report") {
+            copyExtendedFeatureRegressionReport()
+        }
+        val saveButton = makeButton("Save .txt") {
+            saveExtendedFeatureRegressionReport.launch(
+                "svg_extended_feature_regression_report.txt"
+            )
+        }
+        layout.addView(horizontalRow(copyButton, saveButton))
+
+        val rerunButton = makeButton("Run Again") {
+            runExtendedFeatureRegressionSuite()
+        }
+        layout.addView(rerunButton, LinearLayout.LayoutParams(-1, -2))
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Extended Feature Suite Results")
+            .setView(layout)
+            .setPositiveButton("Close", null)
+            .create()
+
+        dialog.setOnShowListener {
+            val screenHeight = resources.displayMetrics.heightPixels
+            dialog.window?.setLayout(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (screenHeight * 0.86f).toInt()
+            )
+        }
+
+        dialog.show()
+    }
+
+    private fun copyExtendedFeatureRegressionReport() {
+        if (currentExtendedFeatureRegressionReport.isBlank()) {
+            toast("No extended feature report to copy")
+            return
+        }
+
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                "svg_extended_feature_regression_report.txt",
+                currentExtendedFeatureRegressionReport
+            )
+        )
+        toast("Extended feature report copied")
     }
 
     private fun showRegressionResultsDialog(
