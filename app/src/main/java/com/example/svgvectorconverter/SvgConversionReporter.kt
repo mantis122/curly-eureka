@@ -452,74 +452,74 @@ class SvgConversionReportData {
     var i3Pass2DecimalFallbackNonFixed: Int = 0
     var i3Pass2DecimalFastPathCheckNanos: Long = 0
 
-    // I4.1 diagnostic-only pass-2 fixed-point certificate study.
-    var i41Pass2CertificatePredictedFixed: Int = 0
-    var i41Pass2CertificateTruePositive: Int = 0
-    var i41Pass2CertificateFalsePositive: Int = 0
-    var i41Pass2CertificateFalseNegative: Int = 0
-    var i41Pass2CertificateTrueNegative: Int = 0
-    var i41Pass2CertificateCheckNanos: Long = 0
-    var i41Pass2PotentialAvoidableOptimizerNanos: Long = 0
-    var i41Pass2FalsePositiveOptimizerNanos: Long = 0
-    var i41Pass2RejectedLexical: Int = 0
-    var i41Pass2RejectedNumericSpelling: Int = 0
-    var i41Pass2RejectedWhitespace: Int = 0
-    var i41Pass2RejectedComplexCommandFamily: Int = 0
-    var i41Pass2RejectedExplicitRepeat: Int = 0
+    // Pass-2 fixed-point certificate diagnostics retained for forensic analysis.
+    var pass2CertificatePredictedFixed: Int = 0
+    var pass2CertificateTruePositive: Int = 0
+    var pass2CertificateFalsePositive: Int = 0
+    var pass2CertificateFalseNegative: Int = 0
+    var pass2CertificateTrueNegative: Int = 0
+    var pass2CertificateCheckNanos: Long = 0
+    var pass2CertificatePotentialAvoidableOptimizerNanos: Long = 0
+    var pass2CertificateFalsePositiveOptimizerNanos: Long = 0
+    var pass2CertificateRejectedLexical: Int = 0
+    var pass2CertificateRejectedNumericSpelling: Int = 0
+    var pass2CertificateRejectedWhitespace: Int = 0
+    var pass2CertificateRejectedComplexCommandFamily: Int = 0
+    var pass2CertificateRejectedExplicitRepeat: Int = 0
 
-    // I4.2 provenance-aware pass-2 certificate diagnostics.
-    var i42Pass2ProvenanceExcluded: Int = 0
-    var i42Pass2ProvenanceExcludedActuallyFixed: Int = 0
-    var i42Pass2ProvenancePreventedFalsePositive: Int = 0
-    var i42Pass2ProvenanceExcludedOptimizerNanos: Long = 0
-    var i42Pass2PreventedFalsePositiveOptimizerNanos: Long = 0
-    var i42Pass2PreventedChangedSyntaxNormalization: Int = 0
-    var i42Pass2PreventedChangedGeometryCleanup: Int = 0
-    var i42Pass2PreventedChangedLocalShortening: Int = 0
-    var i42Pass2PreventedChangedGlobalCommand: Int = 0
-    var i42Pass2PreventedChangedGlobalNumeric: Int = 0
-    var i42Pass2PreventedChangedOther: Int = 0
+    // Merge-provenance pass-2 certificate diagnostics.
+    var pass2ProvenanceExcluded: Int = 0
+    var pass2ProvenanceExcludedActuallyFixed: Int = 0
+    var pass2ProvenancePreventedFalsePositive: Int = 0
+    var pass2ProvenanceExcludedOptimizerNanos: Long = 0
+    var pass2ProvenancePreventedFalsePositiveOptimizerNanos: Long = 0
+    var pass2ProvenancePreventedChangedSyntaxNormalization: Int = 0
+    var pass2ProvenancePreventedChangedGeometryCleanup: Int = 0
+    var pass2ProvenancePreventedChangedLocalShortening: Int = 0
+    var pass2ProvenancePreventedChangedGlobalCommand: Int = 0
+    var pass2ProvenancePreventedChangedGlobalNumeric: Int = 0
+    var pass2ProvenancePreventedChangedOther: Int = 0
 
-    // I4.3 diagnostic-only complex-command certificate expansion.
-    var i43Pass2ComplexCandidatesExamined: Int = 0
-    var i43Pass2ComplexPredictedFixed: Int = 0
-    var i43Pass2ComplexTruePositive: Int = 0
-    var i43Pass2ComplexFalsePositive: Int = 0
-    var i43Pass2ComplexFalseNegative: Int = 0
-    var i43Pass2ComplexTrueNegative: Int = 0
-    var i43Pass2ComplexCheckNanos: Long = 0
-    var i43Pass2ComplexPotentialAvoidableOptimizerNanos: Long = 0
-    var i43Pass2ComplexFalsePositiveOptimizerNanos: Long = 0
-    var i43Pass2RejectedReflectiveShorthand: Int = 0
-    var i43Pass2RejectedNumericSpelling: Int = 0
-    var i43Pass2RejectedExplicitRepeat: Int = 0
-    var i43Pass2RejectedProvenance: Int = 0
-    var i43Pass2CubicPredicted: Int = 0
-    var i43Pass2CubicTruePositive: Int = 0
-    var i43Pass2CubicFalsePositive: Int = 0
-    var i43Pass2QuadraticPredicted: Int = 0
-    var i43Pass2QuadraticTruePositive: Int = 0
-    var i43Pass2QuadraticFalsePositive: Int = 0
-    var i43Pass2ArcPredicted: Int = 0
-    var i43Pass2ArcTruePositive: Int = 0
-    var i43Pass2ArcFalsePositive: Int = 0
-    var i43Pass2MixedPredicted: Int = 0
-    var i43Pass2MixedTruePositive: Int = 0
-    var i43Pass2MixedFalsePositive: Int = 0
-    var i43Pass2FalsePositiveGeometryCleanup: Int = 0
-    var i43Pass2FalsePositiveLocalShortening: Int = 0
-    var i43Pass2FalsePositiveGlobalCommand: Int = 0
-    var i43Pass2FalsePositiveGlobalNumeric: Int = 0
-    var i43Pass2FalsePositiveOther: Int = 0
+    // Complex-command fixed-point certificate diagnostics.
+    var pass2ComplexCertificateCandidatesExamined: Int = 0
+    var pass2ComplexCertificatePredictedFixed: Int = 0
+    var pass2ComplexCertificateTruePositive: Int = 0
+    var pass2ComplexCertificateFalsePositive: Int = 0
+    var pass2ComplexCertificateFalseNegative: Int = 0
+    var pass2ComplexCertificateTrueNegative: Int = 0
+    var pass2ComplexCertificateCheckNanos: Long = 0
+    var pass2ComplexCertificatePotentialAvoidableOptimizerNanos: Long = 0
+    var pass2ComplexCertificateFalsePositiveOptimizerNanos: Long = 0
+    var pass2ComplexCertificateRejectedReflectiveShorthand: Int = 0
+    var pass2ComplexCertificateRejectedNumericSpelling: Int = 0
+    var pass2ComplexCertificateRejectedExplicitRepeat: Int = 0
+    var pass2ComplexCertificateRejectedProvenance: Int = 0
+    var pass2ComplexCertificateCubicPredicted: Int = 0
+    var pass2ComplexCertificateCubicTruePositive: Int = 0
+    var pass2ComplexCertificateCubicFalsePositive: Int = 0
+    var pass2ComplexCertificateQuadraticPredicted: Int = 0
+    var pass2ComplexCertificateQuadraticTruePositive: Int = 0
+    var pass2ComplexCertificateQuadraticFalsePositive: Int = 0
+    var pass2ComplexCertificateArcPredicted: Int = 0
+    var pass2ComplexCertificateArcTruePositive: Int = 0
+    var pass2ComplexCertificateArcFalsePositive: Int = 0
+    var pass2ComplexCertificateMixedPredicted: Int = 0
+    var pass2ComplexCertificateMixedTruePositive: Int = 0
+    var pass2ComplexCertificateMixedFalsePositive: Int = 0
+    var pass2ComplexCertificateFalsePositiveGeometryCleanup: Int = 0
+    var pass2ComplexCertificateFalsePositiveLocalShortening: Int = 0
+    var pass2ComplexCertificateFalsePositiveGlobalCommand: Int = 0
+    var pass2ComplexCertificateFalsePositiveGlobalNumeric: Int = 0
+    var pass2ComplexCertificateFalsePositiveOther: Int = 0
 
-    // I4.6 production-active guarded pass-2 fixed-point skips.
-    var i46Pass2CertifiedSkips: Int = 0
-    var i46Pass2CertifiedByBasic: Int = 0
-    var i46Pass2CertifiedByComplex: Int = 0
-    var i46Pass2NonCertifiedFallbacks: Int = 0
-    var i46Pass2ProvenanceBlocked: Int = 0
-    var i46Pass2CertificateNanos: Long = 0
-    var i46Pass2FullOptimizerNanosOnFallbacks: Long = 0
+    // Production-active guarded pass-2 fixed-point skips.
+    var pass2FixedPointSkipCertifiedSkips: Int = 0
+    var pass2FixedPointSkipCertifiedByBasic: Int = 0
+    var pass2FixedPointSkipCertifiedByComplex: Int = 0
+    var pass2FixedPointSkipNonCertifiedFallbacks: Int = 0
+    var pass2FixedPointSkipProvenanceBlocked: Int = 0
+    var pass2FixedPointSkipCertificateNanos: Long = 0
+    var pass2FixedPointSkipFullOptimizerNanosOnFallbacks: Long = 0
 
     var optimizationPathCacheHits: Int = 0
     var optimizationPathCacheMisses: Int = 0

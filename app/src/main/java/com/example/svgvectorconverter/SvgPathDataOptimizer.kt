@@ -124,7 +124,7 @@ internal object SvgPathDataOptimizer {
         val proposalsAccepted: Int = 0,
     )
 
-    data class I43ComplexSummary(
+    data class ComplexCertificateSummary(
         val candidatesExamined: Int = 0,
         val predictedFixed: Int = 0,
         val truePositive: Int = 0,
@@ -140,7 +140,7 @@ internal object SvgPathDataOptimizer {
         val rejectedProvenance: Int = 0,
     )
 
-    data class I43ComplexFamilies(
+    data class ComplexCertificateFamilies(
         val cubicPredicted: Int = 0,
         val cubicTruePositive: Int = 0,
         val cubicFalsePositive: Int = 0,
@@ -155,7 +155,7 @@ internal object SvgPathDataOptimizer {
         val mixedFalsePositive: Int = 0,
     )
 
-    data class I43ComplexChanges(
+    data class ComplexCertificateChanges(
         val falsePositiveGeometryCleanup: Int = 0,
         val falsePositiveLocalShortening: Int = 0,
         val falsePositiveGlobalCommand: Int = 0,
@@ -163,10 +163,10 @@ internal object SvgPathDataOptimizer {
         val falsePositiveOther: Int = 0,
     )
 
-    data class I43ComplexStats(
-        val summary: I43ComplexSummary = I43ComplexSummary(),
-        val families: I43ComplexFamilies = I43ComplexFamilies(),
-        val changes: I43ComplexChanges = I43ComplexChanges(),
+    data class ComplexCertificateStats(
+        val summary: ComplexCertificateSummary = ComplexCertificateSummary(),
+        val families: ComplexCertificateFamilies = ComplexCertificateFamilies(),
+        val changes: ComplexCertificateChanges = ComplexCertificateChanges(),
     ) {
         val complexCandidatesExamined get() = summary.candidatesExamined
         val complexPredictedFixed get() = summary.predictedFixed
@@ -200,7 +200,7 @@ internal object SvgPathDataOptimizer {
         val falsePositiveOther get() = changes.falsePositiveOther
     }
 
-    data class I46ProductionSkipStats(
+    data class ProductionFixedPointSkipStats(
         val certifiedSkips: Int = 0,
         val certifiedByBasic: Int = 0,
         val certifiedByComplex: Int = 0,
@@ -244,36 +244,36 @@ internal object SvgPathDataOptimizer {
         val i3DecimalFallbackInvalid: Int = 0,
         val i3DecimalFallbackNonFixed: Int = 0,
         val i3DecimalFastPathCheckNanos: Long = 0,
-        // I4.1 diagnostic-only pass-2 fixed-point certificate study.
-        val i41CertificatePredictedFixed: Int = 0,
-        val i41CertificateTruePositive: Int = 0,
-        val i41CertificateFalsePositive: Int = 0,
-        val i41CertificateFalseNegative: Int = 0,
-        val i41CertificateTrueNegative: Int = 0,
-        val i41CertificateCheckNanos: Long = 0,
-        val i41PotentialAvoidableOptimizerNanos: Long = 0,
-        val i41FalsePositiveOptimizerNanos: Long = 0,
-        val i41RejectedLexical: Int = 0,
-        val i41RejectedNumericSpelling: Int = 0,
-        val i41RejectedWhitespace: Int = 0,
-        val i41RejectedComplexCommandFamily: Int = 0,
-        val i41RejectedExplicitRepeat: Int = 0,
-        // I4.2 provenance-aware certificate study.
-        val i42ProvenanceExcluded: Int = 0,
-        val i42ProvenanceExcludedActuallyFixed: Int = 0,
-        val i42ProvenancePreventedFalsePositive: Int = 0,
-        val i42ProvenanceExcludedOptimizerNanos: Long = 0,
-        val i42PreventedFalsePositiveOptimizerNanos: Long = 0,
-        val i42PreventedChangedSyntaxNormalization: Int = 0,
-        val i42PreventedChangedGeometryCleanup: Int = 0,
-        val i42PreventedChangedLocalShortening: Int = 0,
-        val i42PreventedChangedGlobalCommand: Int = 0,
-        val i42PreventedChangedGlobalNumeric: Int = 0,
-        val i42PreventedChangedOther: Int = 0,
-        // I4.3 diagnostic-only complex-command certificate expansion.
-        val i43: I43ComplexStats = I43ComplexStats(),
-        // I4.6 production-active guarded pass-2 path skip.
-        val i46: I46ProductionSkipStats = I46ProductionSkipStats(),
+        // Pass-2 fixed-point certificate diagnostics retained for forensic analysis.
+        val certificatePredictedFixed: Int = 0,
+        val certificateTruePositive: Int = 0,
+        val certificateFalsePositive: Int = 0,
+        val certificateFalseNegative: Int = 0,
+        val certificateTrueNegative: Int = 0,
+        val certificateCheckNanos: Long = 0,
+        val certificatePotentialAvoidableOptimizerNanos: Long = 0,
+        val certificateFalsePositiveOptimizerNanos: Long = 0,
+        val certificateRejectedLexical: Int = 0,
+        val certificateRejectedNumericSpelling: Int = 0,
+        val certificateRejectedWhitespace: Int = 0,
+        val certificateRejectedComplexCommandFamily: Int = 0,
+        val certificateRejectedExplicitRepeat: Int = 0,
+        // Merge-provenance safety diagnostics.
+        val provenanceExcluded: Int = 0,
+        val provenanceExcludedActuallyFixed: Int = 0,
+        val provenancePreventedFalsePositive: Int = 0,
+        val provenanceExcludedOptimizerNanos: Long = 0,
+        val provenancePreventedFalsePositiveOptimizerNanos: Long = 0,
+        val provenancePreventedChangedSyntaxNormalization: Int = 0,
+        val provenancePreventedChangedGeometryCleanup: Int = 0,
+        val provenancePreventedChangedLocalShortening: Int = 0,
+        val provenancePreventedChangedGlobalCommand: Int = 0,
+        val provenancePreventedChangedGlobalNumeric: Int = 0,
+        val provenancePreventedChangedOther: Int = 0,
+        // Complex-command fixed-point certificate diagnostics.
+        val complexCertificateStats: ComplexCertificateStats = ComplexCertificateStats(),
+        // Production-active guarded pass-2 fixed-point skip.
+        val productionFixedPointSkip: ProductionFixedPointSkipStats = ProductionFixedPointSkipStats(),
         val finalFormattingNanos: Long = 0,
         val equalityComparisonNanos: Long = 0,
         val pathsExamined: Int = 0,
@@ -472,32 +472,32 @@ internal object SvgPathDataOptimizer {
         val i3DecimalFallbackInvalid: Int = 0,
         val i3DecimalFallbackNonFixed: Int = 0,
         val i3DecimalFastPathCheckNanos: Long = 0,
-        val i41CertificatePredictedFixed: Int = 0,
-        val i41CertificateTruePositive: Int = 0,
-        val i41CertificateFalsePositive: Int = 0,
-        val i41CertificateFalseNegative: Int = 0,
-        val i41CertificateTrueNegative: Int = 0,
-        val i41CertificateCheckNanos: Long = 0,
-        val i41PotentialAvoidableOptimizerNanos: Long = 0,
-        val i41FalsePositiveOptimizerNanos: Long = 0,
-        val i41RejectedLexical: Int = 0,
-        val i41RejectedNumericSpelling: Int = 0,
-        val i41RejectedWhitespace: Int = 0,
-        val i41RejectedComplexCommandFamily: Int = 0,
-        val i41RejectedExplicitRepeat: Int = 0,
-        val i42ProvenanceExcluded: Int = 0,
-        val i42ProvenanceExcludedActuallyFixed: Int = 0,
-        val i42ProvenancePreventedFalsePositive: Int = 0,
-        val i42ProvenanceExcludedOptimizerNanos: Long = 0,
-        val i42PreventedFalsePositiveOptimizerNanos: Long = 0,
-        val i42PreventedChangedSyntaxNormalization: Int = 0,
-        val i42PreventedChangedGeometryCleanup: Int = 0,
-        val i42PreventedChangedLocalShortening: Int = 0,
-        val i42PreventedChangedGlobalCommand: Int = 0,
-        val i42PreventedChangedGlobalNumeric: Int = 0,
-        val i42PreventedChangedOther: Int = 0,
-        val i43: I43ComplexStats = I43ComplexStats(),
-        val i46: I46ProductionSkipStats = I46ProductionSkipStats(),
+        val certificatePredictedFixed: Int = 0,
+        val certificateTruePositive: Int = 0,
+        val certificateFalsePositive: Int = 0,
+        val certificateFalseNegative: Int = 0,
+        val certificateTrueNegative: Int = 0,
+        val certificateCheckNanos: Long = 0,
+        val certificatePotentialAvoidableOptimizerNanos: Long = 0,
+        val certificateFalsePositiveOptimizerNanos: Long = 0,
+        val certificateRejectedLexical: Int = 0,
+        val certificateRejectedNumericSpelling: Int = 0,
+        val certificateRejectedWhitespace: Int = 0,
+        val certificateRejectedComplexCommandFamily: Int = 0,
+        val certificateRejectedExplicitRepeat: Int = 0,
+        val provenanceExcluded: Int = 0,
+        val provenanceExcludedActuallyFixed: Int = 0,
+        val provenancePreventedFalsePositive: Int = 0,
+        val provenanceExcludedOptimizerNanos: Long = 0,
+        val provenancePreventedFalsePositiveOptimizerNanos: Long = 0,
+        val provenancePreventedChangedSyntaxNormalization: Int = 0,
+        val provenancePreventedChangedGeometryCleanup: Int = 0,
+        val provenancePreventedChangedLocalShortening: Int = 0,
+        val provenancePreventedChangedGlobalCommand: Int = 0,
+        val provenancePreventedChangedGlobalNumeric: Int = 0,
+        val provenancePreventedChangedOther: Int = 0,
+        val complexCertificateStats: ComplexCertificateStats = ComplexCertificateStats(),
+        val productionFixedPointSkip: ProductionFixedPointSkipStats = ProductionFixedPointSkipStats(),
         val pathOptimizationCacheHits: Int = 0,
         val pathOptimizationCacheMisses: Int = 0,
         val finalFormattingNanos: Long = 0,
@@ -566,7 +566,7 @@ internal object SvgPathDataOptimizer {
     data class Result(
         val xml: String,
         val stats: Stats,
-        // I4.2 diagnostic provenance: final/near-final PathData spellings that
+        // Merge-provenance diagnostics: final/near-final PathData spellings that
         // originate from compatible-path merging in this pass.
         val mergeSynthesizedPathData: Set<String> = emptySet()
     )
@@ -635,7 +635,7 @@ internal object SvgPathDataOptimizer {
             pathCache = secondPassCache,
             validationPass = true,
             certificateExcludedPathData = firstPass.mergeSynthesizedPathData,
-            enableI46CertifiedPass2Skip = true
+            enableCertifiedPass2Skip = true
         )
         val secondPassNanos = System.nanoTime() - secondPassStartTime
         val secondPassValidationSnapshot = validationSnapshot(secondPass.xml)
@@ -689,79 +689,79 @@ internal object SvgPathDataOptimizer {
             i3DecimalFallbackInvalid = secondPass.stats.i3DecimalFallbackInvalid,
             i3DecimalFallbackNonFixed = secondPass.stats.i3DecimalFallbackNonFixed,
             i3DecimalFastPathCheckNanos = secondPass.stats.i3DecimalFastPathCheckNanos,
-            i41CertificatePredictedFixed = secondPass.stats.i41CertificatePredictedFixed,
-            i41CertificateTruePositive = secondPass.stats.i41CertificateTruePositive,
-            i41CertificateFalsePositive = secondPass.stats.i41CertificateFalsePositive,
-            i41CertificateFalseNegative = secondPass.stats.i41CertificateFalseNegative,
-            i41CertificateTrueNegative = secondPass.stats.i41CertificateTrueNegative,
-            i41CertificateCheckNanos = secondPass.stats.i41CertificateCheckNanos,
-            i41PotentialAvoidableOptimizerNanos =
-                secondPass.stats.i41PotentialAvoidableOptimizerNanos,
-            i41FalsePositiveOptimizerNanos = secondPass.stats.i41FalsePositiveOptimizerNanos,
-            i41RejectedLexical = secondPass.stats.i41RejectedLexical,
-            i41RejectedNumericSpelling = secondPass.stats.i41RejectedNumericSpelling,
-            i41RejectedWhitespace = secondPass.stats.i41RejectedWhitespace,
-            i41RejectedComplexCommandFamily = secondPass.stats.i41RejectedComplexCommandFamily,
-            i41RejectedExplicitRepeat = secondPass.stats.i41RejectedExplicitRepeat,
-            i42ProvenanceExcluded = secondPass.stats.i42ProvenanceExcluded,
-            i42ProvenanceExcludedActuallyFixed =
-                secondPass.stats.i42ProvenanceExcludedActuallyFixed,
-            i42ProvenancePreventedFalsePositive =
-                secondPass.stats.i42ProvenancePreventedFalsePositive,
-            i42ProvenanceExcludedOptimizerNanos =
-                secondPass.stats.i42ProvenanceExcludedOptimizerNanos,
-            i42PreventedFalsePositiveOptimizerNanos =
-                secondPass.stats.i42PreventedFalsePositiveOptimizerNanos,
-            i42PreventedChangedSyntaxNormalization =
-                secondPass.stats.i42PreventedChangedSyntaxNormalization,
-            i42PreventedChangedGeometryCleanup =
-                secondPass.stats.i42PreventedChangedGeometryCleanup,
-            i42PreventedChangedLocalShortening =
-                secondPass.stats.i42PreventedChangedLocalShortening,
-            i42PreventedChangedGlobalCommand =
-                secondPass.stats.i42PreventedChangedGlobalCommand,
-            i42PreventedChangedGlobalNumeric =
-                secondPass.stats.i42PreventedChangedGlobalNumeric,
-            i42PreventedChangedOther = secondPass.stats.i42PreventedChangedOther,
-            i43 = I43ComplexStats(
-                summary = I43ComplexSummary(
-                    candidatesExamined = secondPass.stats.i43.complexCandidatesExamined,
-                    predictedFixed = secondPass.stats.i43.complexPredictedFixed,
-                    truePositive = secondPass.stats.i43.complexTruePositive,
-                    falsePositive = secondPass.stats.i43.complexFalsePositive,
-                    falseNegative = secondPass.stats.i43.complexFalseNegative,
-                    trueNegative = secondPass.stats.i43.complexTrueNegative,
-                    checkNanos = secondPass.stats.i43.complexCheckNanos,
-                    potentialAvoidableOptimizerNanos = secondPass.stats.i43.complexPotentialAvoidableOptimizerNanos,
-                    falsePositiveOptimizerNanos = secondPass.stats.i43.complexFalsePositiveOptimizerNanos,
-                    rejectedReflectiveShorthand = secondPass.stats.i43.rejectedReflectiveShorthand,
-                    rejectedNumericSpelling = secondPass.stats.i43.rejectedNumericSpelling,
-                    rejectedExplicitRepeat = secondPass.stats.i43.rejectedExplicitRepeat,
-                    rejectedProvenance = secondPass.stats.i43.rejectedProvenance,
+            certificatePredictedFixed = secondPass.stats.certificatePredictedFixed,
+            certificateTruePositive = secondPass.stats.certificateTruePositive,
+            certificateFalsePositive = secondPass.stats.certificateFalsePositive,
+            certificateFalseNegative = secondPass.stats.certificateFalseNegative,
+            certificateTrueNegative = secondPass.stats.certificateTrueNegative,
+            certificateCheckNanos = secondPass.stats.certificateCheckNanos,
+            certificatePotentialAvoidableOptimizerNanos =
+                secondPass.stats.certificatePotentialAvoidableOptimizerNanos,
+            certificateFalsePositiveOptimizerNanos = secondPass.stats.certificateFalsePositiveOptimizerNanos,
+            certificateRejectedLexical = secondPass.stats.certificateRejectedLexical,
+            certificateRejectedNumericSpelling = secondPass.stats.certificateRejectedNumericSpelling,
+            certificateRejectedWhitespace = secondPass.stats.certificateRejectedWhitespace,
+            certificateRejectedComplexCommandFamily = secondPass.stats.certificateRejectedComplexCommandFamily,
+            certificateRejectedExplicitRepeat = secondPass.stats.certificateRejectedExplicitRepeat,
+            provenanceExcluded = secondPass.stats.provenanceExcluded,
+            provenanceExcludedActuallyFixed =
+                secondPass.stats.provenanceExcludedActuallyFixed,
+            provenancePreventedFalsePositive =
+                secondPass.stats.provenancePreventedFalsePositive,
+            provenanceExcludedOptimizerNanos =
+                secondPass.stats.provenanceExcludedOptimizerNanos,
+            provenancePreventedFalsePositiveOptimizerNanos =
+                secondPass.stats.provenancePreventedFalsePositiveOptimizerNanos,
+            provenancePreventedChangedSyntaxNormalization =
+                secondPass.stats.provenancePreventedChangedSyntaxNormalization,
+            provenancePreventedChangedGeometryCleanup =
+                secondPass.stats.provenancePreventedChangedGeometryCleanup,
+            provenancePreventedChangedLocalShortening =
+                secondPass.stats.provenancePreventedChangedLocalShortening,
+            provenancePreventedChangedGlobalCommand =
+                secondPass.stats.provenancePreventedChangedGlobalCommand,
+            provenancePreventedChangedGlobalNumeric =
+                secondPass.stats.provenancePreventedChangedGlobalNumeric,
+            provenancePreventedChangedOther = secondPass.stats.provenancePreventedChangedOther,
+            complexCertificateStats = ComplexCertificateStats(
+                summary = ComplexCertificateSummary(
+                    candidatesExamined = secondPass.stats.complexCertificateStats.complexCandidatesExamined,
+                    predictedFixed = secondPass.stats.complexCertificateStats.complexPredictedFixed,
+                    truePositive = secondPass.stats.complexCertificateStats.complexTruePositive,
+                    falsePositive = secondPass.stats.complexCertificateStats.complexFalsePositive,
+                    falseNegative = secondPass.stats.complexCertificateStats.complexFalseNegative,
+                    trueNegative = secondPass.stats.complexCertificateStats.complexTrueNegative,
+                    checkNanos = secondPass.stats.complexCertificateStats.complexCheckNanos,
+                    potentialAvoidableOptimizerNanos = secondPass.stats.complexCertificateStats.complexPotentialAvoidableOptimizerNanos,
+                    falsePositiveOptimizerNanos = secondPass.stats.complexCertificateStats.complexFalsePositiveOptimizerNanos,
+                    rejectedReflectiveShorthand = secondPass.stats.complexCertificateStats.rejectedReflectiveShorthand,
+                    rejectedNumericSpelling = secondPass.stats.complexCertificateStats.rejectedNumericSpelling,
+                    rejectedExplicitRepeat = secondPass.stats.complexCertificateStats.rejectedExplicitRepeat,
+                    rejectedProvenance = secondPass.stats.complexCertificateStats.rejectedProvenance,
                 ),
-                families = I43ComplexFamilies(
-                    cubicPredicted = secondPass.stats.i43.cubicPredicted,
-                    cubicTruePositive = secondPass.stats.i43.cubicTruePositive,
-                    cubicFalsePositive = secondPass.stats.i43.cubicFalsePositive,
-                    quadraticPredicted = secondPass.stats.i43.quadraticPredicted,
-                    quadraticTruePositive = secondPass.stats.i43.quadraticTruePositive,
-                    quadraticFalsePositive = secondPass.stats.i43.quadraticFalsePositive,
-                    arcPredicted = secondPass.stats.i43.arcPredicted,
-                    arcTruePositive = secondPass.stats.i43.arcTruePositive,
-                    arcFalsePositive = secondPass.stats.i43.arcFalsePositive,
-                    mixedPredicted = secondPass.stats.i43.mixedPredicted,
-                    mixedTruePositive = secondPass.stats.i43.mixedTruePositive,
-                    mixedFalsePositive = secondPass.stats.i43.mixedFalsePositive,
+                families = ComplexCertificateFamilies(
+                    cubicPredicted = secondPass.stats.complexCertificateStats.cubicPredicted,
+                    cubicTruePositive = secondPass.stats.complexCertificateStats.cubicTruePositive,
+                    cubicFalsePositive = secondPass.stats.complexCertificateStats.cubicFalsePositive,
+                    quadraticPredicted = secondPass.stats.complexCertificateStats.quadraticPredicted,
+                    quadraticTruePositive = secondPass.stats.complexCertificateStats.quadraticTruePositive,
+                    quadraticFalsePositive = secondPass.stats.complexCertificateStats.quadraticFalsePositive,
+                    arcPredicted = secondPass.stats.complexCertificateStats.arcPredicted,
+                    arcTruePositive = secondPass.stats.complexCertificateStats.arcTruePositive,
+                    arcFalsePositive = secondPass.stats.complexCertificateStats.arcFalsePositive,
+                    mixedPredicted = secondPass.stats.complexCertificateStats.mixedPredicted,
+                    mixedTruePositive = secondPass.stats.complexCertificateStats.mixedTruePositive,
+                    mixedFalsePositive = secondPass.stats.complexCertificateStats.mixedFalsePositive,
                 ),
-                changes = I43ComplexChanges(
-                    falsePositiveGeometryCleanup = secondPass.stats.i43.falsePositiveGeometryCleanup,
-                    falsePositiveLocalShortening = secondPass.stats.i43.falsePositiveLocalShortening,
-                    falsePositiveGlobalCommand = secondPass.stats.i43.falsePositiveGlobalCommand,
-                    falsePositiveGlobalNumeric = secondPass.stats.i43.falsePositiveGlobalNumeric,
-                    falsePositiveOther = secondPass.stats.i43.falsePositiveOther,
+                changes = ComplexCertificateChanges(
+                    falsePositiveGeometryCleanup = secondPass.stats.complexCertificateStats.falsePositiveGeometryCleanup,
+                    falsePositiveLocalShortening = secondPass.stats.complexCertificateStats.falsePositiveLocalShortening,
+                    falsePositiveGlobalCommand = secondPass.stats.complexCertificateStats.falsePositiveGlobalCommand,
+                    falsePositiveGlobalNumeric = secondPass.stats.complexCertificateStats.falsePositiveGlobalNumeric,
+                    falsePositiveOther = secondPass.stats.complexCertificateStats.falsePositiveOther,
                 ),
             ),
-            i46 = secondPass.stats.i46,
+            productionFixedPointSkip = secondPass.stats.productionFixedPointSkip,
             finalFormattingNanos = secondPass.stats.finalFormattingNanos,
             equalityComparisonNanos = equalityComparisonNanos,
             pathsExamined = secondPass.stats.pathCount,
@@ -1226,7 +1226,7 @@ internal object SvgPathDataOptimizer {
         pathCache: PathOptimizationCache,
         validationPass: Boolean,
         certificateExcludedPathData: Set<String> = emptySet(),
-        enableI46CertifiedPass2Skip: Boolean = false
+        enableCertifiedPass2Skip: Boolean = false
     ): Result {
         fun characterDelta(before: String, after: String): Int =
             before.length - after.length
@@ -1272,91 +1272,91 @@ internal object SvgPathDataOptimizer {
         var h24PathSyntaxCharactersAvoided = 0
         var i2PathSyntaxStableInputs = 0
         var i2PathSyntaxStableInputNanos = 0L
-        var i41CertificatePredictedFixed = 0
-        var i41CertificateTruePositive = 0
-        var i41CertificateFalsePositive = 0
-        var i41CertificateFalseNegative = 0
-        var i41CertificateTrueNegative = 0
-        var i41CertificateCheckNanos = 0L
-        var i41PotentialAvoidableOptimizerNanos = 0L
-        var i41FalsePositiveOptimizerNanos = 0L
-        var i41RejectedLexical = 0
-        var i41RejectedNumericSpelling = 0
-        var i41RejectedWhitespace = 0
-        var i41RejectedComplexCommandFamily = 0
-        var i41RejectedExplicitRepeat = 0
-        var i42ProvenanceExcluded = 0
-        var i42ProvenanceExcludedActuallyFixed = 0
-        var i42ProvenancePreventedFalsePositive = 0
-        var i42ProvenanceExcludedOptimizerNanos = 0L
-        var i42PreventedFalsePositiveOptimizerNanos = 0L
-        var i42PreventedChangedSyntaxNormalization = 0
-        var i42PreventedChangedGeometryCleanup = 0
-        var i42PreventedChangedLocalShortening = 0
-        var i42PreventedChangedGlobalCommand = 0
-        var i42PreventedChangedGlobalNumeric = 0
-        var i42PreventedChangedOther = 0
-        var i43ComplexCandidatesExamined = 0
-        var i43ComplexPredictedFixed = 0
-        var i43ComplexTruePositive = 0
-        var i43ComplexFalsePositive = 0
-        var i43ComplexFalseNegative = 0
-        var i43ComplexTrueNegative = 0
-        var i43ComplexCheckNanos = 0L
-        var i43ComplexPotentialAvoidableOptimizerNanos = 0L
-        var i43ComplexFalsePositiveOptimizerNanos = 0L
-        var i43RejectedReflectiveShorthand = 0
-        var i43RejectedNumericSpelling = 0
-        var i43RejectedExplicitRepeat = 0
-        var i43RejectedProvenance = 0
-        var i43CubicPredicted = 0
-        var i43CubicTruePositive = 0
-        var i43CubicFalsePositive = 0
-        var i43QuadraticPredicted = 0
-        var i43QuadraticTruePositive = 0
-        var i43QuadraticFalsePositive = 0
-        var i43ArcPredicted = 0
-        var i43ArcTruePositive = 0
-        var i43ArcFalsePositive = 0
-        var i43MixedPredicted = 0
-        var i43MixedTruePositive = 0
-        var i43MixedFalsePositive = 0
-        var i43FalsePositiveGeometryCleanup = 0
-        var i43FalsePositiveLocalShortening = 0
-        var i43FalsePositiveGlobalCommand = 0
-        var i43FalsePositiveGlobalNumeric = 0
-        var i43FalsePositiveOther = 0
+        var certificatePredictedFixed = 0
+        var certificateTruePositive = 0
+        var certificateFalsePositive = 0
+        var certificateFalseNegative = 0
+        var certificateTrueNegative = 0
+        var certificateCheckNanos = 0L
+        var certificatePotentialAvoidableOptimizerNanos = 0L
+        var certificateFalsePositiveOptimizerNanos = 0L
+        var certificateRejectedLexical = 0
+        var certificateRejectedNumericSpelling = 0
+        var certificateRejectedWhitespace = 0
+        var certificateRejectedComplexCommandFamily = 0
+        var certificateRejectedExplicitRepeat = 0
+        var provenanceExcluded = 0
+        var provenanceExcludedActuallyFixed = 0
+        var provenancePreventedFalsePositive = 0
+        var provenanceExcludedOptimizerNanos = 0L
+        var provenancePreventedFalsePositiveOptimizerNanos = 0L
+        var provenancePreventedChangedSyntaxNormalization = 0
+        var provenancePreventedChangedGeometryCleanup = 0
+        var provenancePreventedChangedLocalShortening = 0
+        var provenancePreventedChangedGlobalCommand = 0
+        var provenancePreventedChangedGlobalNumeric = 0
+        var provenancePreventedChangedOther = 0
+        var complexCandidatesExamined = 0
+        var complexPredictedFixed = 0
+        var complexTruePositive = 0
+        var complexFalsePositive = 0
+        var complexFalseNegative = 0
+        var complexTrueNegative = 0
+        var complexCheckNanos = 0L
+        var complexPotentialAvoidableOptimizerNanos = 0L
+        var complexFalsePositiveOptimizerNanos = 0L
+        var complexRejectedReflectiveShorthand = 0
+        var complexRejectedNumericSpelling = 0
+        var complexRejectedExplicitRepeat = 0
+        var complexRejectedProvenance = 0
+        var complexCubicPredicted = 0
+        var complexCubicTruePositive = 0
+        var complexCubicFalsePositive = 0
+        var complexQuadraticPredicted = 0
+        var complexQuadraticTruePositive = 0
+        var complexQuadraticFalsePositive = 0
+        var complexArcPredicted = 0
+        var complexArcTruePositive = 0
+        var complexArcFalsePositive = 0
+        var complexMixedPredicted = 0
+        var complexMixedTruePositive = 0
+        var complexMixedFalsePositive = 0
+        var complexFalsePositiveGeometryCleanup = 0
+        var complexFalsePositiveLocalShortening = 0
+        var complexFalsePositiveGlobalCommand = 0
+        var complexFalsePositiveGlobalNumeric = 0
+        var complexFalsePositiveOther = 0
 
-        var i46CertifiedSkips = 0
-        var i46CertifiedByBasic = 0
-        var i46CertifiedByComplex = 0
-        var i46NonCertifiedFallbacks = 0
-        var i46ProvenanceBlocked = 0
-        var i46CertificateNanos = 0L
-        var i46FullOptimizerNanosOnFallbacks = 0L
+        var productionCertifiedSkips = 0
+        var productionCertifiedByBasic = 0
+        var productionCertifiedByComplex = 0
+        var productionNonCertifiedFallbacks = 0
+        var productionProvenanceBlocked = 0
+        var productionCertificateNanos = 0L
+        var productionFullOptimizerNanosOnFallbacks = 0L
 
         val pathSyntaxStartTime = System.nanoTime()
         val syntaxOptimizedXml = pathDataAttributeRegex.replace(xml) { match ->
             val original = match.groupValues[1]
 
-            var i41Certificate: I41FixedPointCertificate? = null
-            var i42ExcludedByProvenance = false
-            var i42WouldPredictFixedWithoutProvenance = false
-            var i43Certificate: I43ComplexCertificate? = null
+            var fixedPointCertificate: FixedPointCertificate? = null
+            var excludedByMergeProvenance = false
+            var wouldPredictFixedWithoutProvenance = false
+            var complexFixedPointCertificateResult: ComplexFixedPointCertificate? = null
             if (validationPass) {
                 val certificateStart = System.nanoTime()
-                val rawCertificate = i41CheapFixedPointCertificate(original)
+                val rawCertificate = cheapFixedPointCertificate(original)
 
                 if (rawCertificate.rejectionReason == "complexCommand") {
-                    i43ComplexCandidatesExamined++
-                    val i43Start = System.nanoTime()
-                    val experimental = i43ComplexFixedPointCertificate(original)
-                    i43ComplexCheckNanos += System.nanoTime() - i43Start
+                    complexCandidatesExamined++
+                    val complexCertificateStart = System.nanoTime()
+                    val experimental = complexFixedPointCertificate(original)
+                    complexCheckNanos += System.nanoTime() - complexCertificateStart
 
-                    i43Certificate =
+                    complexFixedPointCertificateResult =
                         if (experimental.predictedFixed && original in certificateExcludedPathData) {
-                            i43RejectedProvenance++
-                            I43ComplexCertificate(
+                            complexRejectedProvenance++
+                            ComplexFixedPointCertificate(
                                 false,
                                 family = experimental.family,
                                 rejectionReason = "mergeProvenance"
@@ -1365,77 +1365,77 @@ internal object SvgPathDataOptimizer {
                             experimental
                         }
 
-                    if (i43Certificate?.predictedFixed == true) {
-                        i43ComplexPredictedFixed++
-                        when (i43Certificate?.family) {
-                            "cubic" -> i43CubicPredicted++
-                            "quadratic" -> i43QuadraticPredicted++
-                            "arc" -> i43ArcPredicted++
-                            "mixed" -> i43MixedPredicted++
+                    if (complexFixedPointCertificateResult?.predictedFixed == true) {
+                        complexPredictedFixed++
+                        when (complexFixedPointCertificateResult?.family) {
+                            "cubic" -> complexCubicPredicted++
+                            "quadratic" -> complexQuadraticPredicted++
+                            "arc" -> complexArcPredicted++
+                            "mixed" -> complexMixedPredicted++
                         }
                     } else {
-                        when (i43Certificate?.rejectionReason) {
-                            "reflectiveShorthand" -> i43RejectedReflectiveShorthand++
-                            "numericSpelling" -> i43RejectedNumericSpelling++
-                            "explicitRepeat" -> i43RejectedExplicitRepeat++
+                        when (complexFixedPointCertificateResult?.rejectionReason) {
+                            "reflectiveShorthand" -> complexRejectedReflectiveShorthand++
+                            "numericSpelling" -> complexRejectedNumericSpelling++
+                            "explicitRepeat" -> complexRejectedExplicitRepeat++
                         }
                     }
                 }
 
-                i42WouldPredictFixedWithoutProvenance = rawCertificate.predictedFixed
-                i42ExcludedByProvenance =
+                wouldPredictFixedWithoutProvenance = rawCertificate.predictedFixed
+                excludedByMergeProvenance =
                     rawCertificate.predictedFixed && original in certificateExcludedPathData
 
-                i41Certificate = if (i42ExcludedByProvenance) {
-                    I41FixedPointCertificate(false, "mergeProvenance")
+                fixedPointCertificate = if (excludedByMergeProvenance) {
+                    FixedPointCertificate(false, "mergeProvenance")
                 } else {
                     rawCertificate
                 }
                 val certificateElapsed = System.nanoTime() - certificateStart
-                i41CertificateCheckNanos += certificateElapsed
-                if (enableI46CertifiedPass2Skip) {
-                    i46CertificateNanos += certificateElapsed
+                certificateCheckNanos += certificateElapsed
+                if (enableCertifiedPass2Skip) {
+                    productionCertificateNanos += certificateElapsed
                 }
 
-                if (i42ExcludedByProvenance) {
-                    if (enableI46CertifiedPass2Skip) {
-                        i46ProvenanceBlocked++
+                if (excludedByMergeProvenance) {
+                    if (enableCertifiedPass2Skip) {
+                        productionProvenanceBlocked++
                     }
-                    i42ProvenanceExcluded++
+                    provenanceExcluded++
                 }
 
-                if (i41Certificate.predictedFixed) {
-                    i41CertificatePredictedFixed++
+                if (fixedPointCertificate.predictedFixed) {
+                    certificatePredictedFixed++
                 } else {
-                    when (i41Certificate.rejectionReason) {
-                        "lexical" -> i41RejectedLexical++
-                        "numericSpelling" -> i41RejectedNumericSpelling++
-                        "whitespace" -> i41RejectedWhitespace++
-                        "complexCommand" -> i41RejectedComplexCommandFamily++
-                        "explicitRepeat" -> i41RejectedExplicitRepeat++
+                    when (fixedPointCertificate.rejectionReason) {
+                        "lexical" -> certificateRejectedLexical++
+                        "numericSpelling" -> certificateRejectedNumericSpelling++
+                        "whitespace" -> certificateRejectedWhitespace++
+                        "complexCommand" -> certificateRejectedComplexCommandFamily++
+                        "explicitRepeat" -> certificateRejectedExplicitRepeat++
                     }
                 }
             }
 
-            val i46BasicCertified =
-                enableI46CertifiedPass2Skip &&
+            val basicCertificateAccepted =
+                enableCertifiedPass2Skip &&
                     validationPass &&
-                    i41Certificate?.predictedFixed == true
-            val i46ComplexCertified =
-                enableI46CertifiedPass2Skip &&
+                    fixedPointCertificate?.predictedFixed == true
+            val complexCertificateAccepted =
+                enableCertifiedPass2Skip &&
                     validationPass &&
-                    i43Certificate?.predictedFixed == true
-            val i46SkipFullPathOptimizer = i46BasicCertified || i46ComplexCertified
+                    complexFixedPointCertificateResult?.predictedFixed == true
+            val skipFullPathOptimizer = basicCertificateAccepted || complexCertificateAccepted
 
             val i2PathCallStart = System.nanoTime()
-            val optimized = if (i46SkipFullPathOptimizer) {
-                // I4.6 production activation: the certificate proves the incoming
+            val optimized = if (skipFullPathOptimizer) {
+                // Production activation: the fixed-point certificate proves the incoming
                 // pass-2 spelling is already a fixed point. Return the exact
                 // incoming PathData with zero optimization deltas.
                 stableReusePathResult(original)
             } else {
-                if (enableI46CertifiedPass2Skip && validationPass) {
-                    i46NonCertifiedFallbacks++
+                if (enableCertifiedPass2Skip && validationPass) {
+                    productionNonCertifiedFallbacks++
                 }
                 optimizePathDataCached(
                     pathData = original,
@@ -1446,110 +1446,110 @@ internal object SvgPathDataOptimizer {
             }
             val i2PathCallNanos = System.nanoTime() - i2PathCallStart
             if (
-                enableI46CertifiedPass2Skip &&
+                enableCertifiedPass2Skip &&
                 validationPass &&
-                !i46SkipFullPathOptimizer
+                !skipFullPathOptimizer
             ) {
-                i46FullOptimizerNanosOnFallbacks += i2PathCallNanos
+                productionFullOptimizerNanosOnFallbacks += i2PathCallNanos
             }
-            if (i46SkipFullPathOptimizer) {
-                i46CertifiedSkips++
-                if (i46BasicCertified) i46CertifiedByBasic++
-                if (i46ComplexCertified) i46CertifiedByComplex++
+            if (skipFullPathOptimizer) {
+                productionCertifiedSkips++
+                if (basicCertificateAccepted) productionCertifiedByBasic++
+                if (complexCertificateAccepted) productionCertifiedByComplex++
             }
 
-            val i41ActuallyFixed = optimized.pathData == original
+            val actuallyFixed = optimized.pathData == original
 
-            if (i41ActuallyFixed && !i46SkipFullPathOptimizer) {
+            if (actuallyFixed && !skipFullPathOptimizer) {
                 i2PathSyntaxStableInputs++
                 i2PathSyntaxStableInputNanos += i2PathCallNanos
             }
 
-            if (validationPass && !i46SkipFullPathOptimizer && i43Certificate != null) {
+            if (validationPass && !skipFullPathOptimizer && complexFixedPointCertificateResult != null) {
                 when {
-                    i43Certificate?.predictedFixed == true && i41ActuallyFixed -> {
-                        i43ComplexTruePositive++
-                        i43ComplexPotentialAvoidableOptimizerNanos += i2PathCallNanos
-                        when (i43Certificate?.family) {
-                            "cubic" -> i43CubicTruePositive++
-                            "quadratic" -> i43QuadraticTruePositive++
-                            "arc" -> i43ArcTruePositive++
-                            "mixed" -> i43MixedTruePositive++
+                    complexFixedPointCertificateResult?.predictedFixed == true && actuallyFixed -> {
+                        complexTruePositive++
+                        complexPotentialAvoidableOptimizerNanos += i2PathCallNanos
+                        when (complexFixedPointCertificateResult?.family) {
+                            "cubic" -> complexCubicTruePositive++
+                            "quadratic" -> complexQuadraticTruePositive++
+                            "arc" -> complexArcTruePositive++
+                            "mixed" -> complexMixedTruePositive++
                         }
                     }
-                    i43Certificate?.predictedFixed == true && !i41ActuallyFixed -> {
-                        i43ComplexFalsePositive++
-                        i43ComplexFalsePositiveOptimizerNanos += i2PathCallNanos
-                        when (i43Certificate?.family) {
-                            "cubic" -> i43CubicFalsePositive++
-                            "quadratic" -> i43QuadraticFalsePositive++
-                            "arc" -> i43ArcFalsePositive++
-                            "mixed" -> i43MixedFalsePositive++
+                    complexFixedPointCertificateResult?.predictedFixed == true && !actuallyFixed -> {
+                        complexFalsePositive++
+                        complexFalsePositiveOptimizerNanos += i2PathCallNanos
+                        when (complexFixedPointCertificateResult?.family) {
+                            "cubic" -> complexCubicFalsePositive++
+                            "quadratic" -> complexQuadraticFalsePositive++
+                            "arc" -> complexArcFalsePositive++
+                            "mixed" -> complexMixedFalsePositive++
                         }
                         when {
                             optimized.h23RedundantGeometryCharacterDelta != 0 ||
                                 optimized.h23ArcCleanupCharacterDelta != 0 ||
                                 optimized.h23CurveSimplificationCharacterDelta != 0 ||
                                 optimized.h23CollinearConsolidationCharacterDelta != 0 ->
-                                i43FalsePositiveGeometryCleanup++
+                                complexFalsePositiveGeometryCleanup++
                             optimized.h23LocalCommandShorteningCharacterDelta != 0 ->
-                                i43FalsePositiveLocalShortening++
+                                complexFalsePositiveLocalShortening++
                             optimized.h23GlobalCommandMinimizationCharacterDelta != 0 ->
-                                i43FalsePositiveGlobalCommand++
+                                complexFalsePositiveGlobalCommand++
                             optimized.h23GlobalNumericSerializationCharacterDelta != 0 ->
-                                i43FalsePositiveGlobalNumeric++
-                            else -> i43FalsePositiveOther++
+                                complexFalsePositiveGlobalNumeric++
+                            else -> complexFalsePositiveOther++
                         }
                     }
-                    i43Certificate?.predictedFixed == false && i41ActuallyFixed -> {
-                        i43ComplexFalseNegative++
+                    complexFixedPointCertificateResult?.predictedFixed == false && actuallyFixed -> {
+                        complexFalseNegative++
                     }
                     else -> {
-                        i43ComplexTrueNegative++
+                        complexTrueNegative++
                     }
                 }
             }
 
-            if (validationPass && !i46SkipFullPathOptimizer && i42ExcludedByProvenance && i42WouldPredictFixedWithoutProvenance) {
-                i42ProvenanceExcludedOptimizerNanos += i2PathCallNanos
-                if (i41ActuallyFixed) {
-                    i42ProvenanceExcludedActuallyFixed++
+            if (validationPass && !skipFullPathOptimizer && excludedByMergeProvenance && wouldPredictFixedWithoutProvenance) {
+                provenanceExcludedOptimizerNanos += i2PathCallNanos
+                if (actuallyFixed) {
+                    provenanceExcludedActuallyFixed++
                 } else {
-                    i42ProvenancePreventedFalsePositive++
-                    i42PreventedFalsePositiveOptimizerNanos += i2PathCallNanos
+                    provenancePreventedFalsePositive++
+                    provenancePreventedFalsePositiveOptimizerNanos += i2PathCallNanos
                     when {
                         optimized.h23SyntaxNormalizationCharacterDelta != 0 ->
-                            i42PreventedChangedSyntaxNormalization++
+                            provenancePreventedChangedSyntaxNormalization++
                         optimized.h23RedundantGeometryCharacterDelta != 0 ||
                             optimized.h23ArcCleanupCharacterDelta != 0 ||
                             optimized.h23CurveSimplificationCharacterDelta != 0 ||
                             optimized.h23CollinearConsolidationCharacterDelta != 0 ->
-                            i42PreventedChangedGeometryCleanup++
+                            provenancePreventedChangedGeometryCleanup++
                         optimized.h23LocalCommandShorteningCharacterDelta != 0 ->
-                            i42PreventedChangedLocalShortening++
+                            provenancePreventedChangedLocalShortening++
                         optimized.h23GlobalCommandMinimizationCharacterDelta != 0 ->
-                            i42PreventedChangedGlobalCommand++
+                            provenancePreventedChangedGlobalCommand++
                         optimized.h23GlobalNumericSerializationCharacterDelta != 0 ->
-                            i42PreventedChangedGlobalNumeric++
-                        else -> i42PreventedChangedOther++
+                            provenancePreventedChangedGlobalNumeric++
+                        else -> provenancePreventedChangedOther++
                     }
                 }
             }
 
-            if (validationPass && !i46SkipFullPathOptimizer && i41Certificate != null) {
+            if (validationPass && !skipFullPathOptimizer && fixedPointCertificate != null) {
                 when {
-                    i41Certificate.predictedFixed && i41ActuallyFixed -> {
-                        i41CertificateTruePositive++
-                        i41PotentialAvoidableOptimizerNanos += i2PathCallNanos
+                    fixedPointCertificate.predictedFixed && actuallyFixed -> {
+                        certificateTruePositive++
+                        certificatePotentialAvoidableOptimizerNanos += i2PathCallNanos
                     }
-                    i41Certificate.predictedFixed && !i41ActuallyFixed -> {
-                        i41CertificateFalsePositive++
-                        i41FalsePositiveOptimizerNanos += i2PathCallNanos
+                    fixedPointCertificate.predictedFixed && !actuallyFixed -> {
+                        certificateFalsePositive++
+                        certificateFalsePositiveOptimizerNanos += i2PathCallNanos
                     }
-                    !i41Certificate.predictedFixed && i41ActuallyFixed -> {
-                        i41CertificateFalseNegative++
+                    !fixedPointCertificate.predictedFixed && actuallyFixed -> {
+                        certificateFalseNegative++
                     }
-                    else -> i41CertificateTrueNegative++
+                    else -> certificateTrueNegative++
                 }
             }
 
@@ -1998,83 +1998,83 @@ internal object SvgPathDataOptimizer {
                 i3DecimalFallbackInvalid = numericProfiling.i3FallbackInvalid,
                 i3DecimalFallbackNonFixed = numericProfiling.i3FallbackNonFixed,
                 i3DecimalFastPathCheckNanos = numericProfiling.i3FastPathCheckNanos,
-                i41CertificatePredictedFixed = i41CertificatePredictedFixed,
-                i41CertificateTruePositive = i41CertificateTruePositive,
-                i41CertificateFalsePositive = i41CertificateFalsePositive,
-                i41CertificateFalseNegative = i41CertificateFalseNegative,
-                i41CertificateTrueNegative = i41CertificateTrueNegative,
-                i41CertificateCheckNanos = i41CertificateCheckNanos,
-                i41PotentialAvoidableOptimizerNanos = i41PotentialAvoidableOptimizerNanos,
-                i41FalsePositiveOptimizerNanos = i41FalsePositiveOptimizerNanos,
-                i41RejectedLexical = i41RejectedLexical,
-                i41RejectedNumericSpelling = i41RejectedNumericSpelling,
-                i41RejectedWhitespace = i41RejectedWhitespace,
-                i41RejectedComplexCommandFamily = i41RejectedComplexCommandFamily,
-                i41RejectedExplicitRepeat = i41RejectedExplicitRepeat,
-                i42ProvenanceExcluded = i42ProvenanceExcluded,
-                i42ProvenanceExcludedActuallyFixed = i42ProvenanceExcludedActuallyFixed,
-                i42ProvenancePreventedFalsePositive = i42ProvenancePreventedFalsePositive,
-                i42ProvenanceExcludedOptimizerNanos = i42ProvenanceExcludedOptimizerNanos,
-                i42PreventedFalsePositiveOptimizerNanos =
-                    i42PreventedFalsePositiveOptimizerNanos,
-                i42PreventedChangedSyntaxNormalization =
-                    i42PreventedChangedSyntaxNormalization,
-                i42PreventedChangedGeometryCleanup =
-                    i42PreventedChangedGeometryCleanup,
-                i42PreventedChangedLocalShortening =
-                    i42PreventedChangedLocalShortening,
-                i42PreventedChangedGlobalCommand =
-                    i42PreventedChangedGlobalCommand,
-                i42PreventedChangedGlobalNumeric =
-                    i42PreventedChangedGlobalNumeric,
-                i42PreventedChangedOther = i42PreventedChangedOther,
-                i43 = I43ComplexStats(
-                    summary = I43ComplexSummary(
-                        candidatesExamined = i43ComplexCandidatesExamined,
-                        predictedFixed = i43ComplexPredictedFixed,
-                        truePositive = i43ComplexTruePositive,
-                        falsePositive = i43ComplexFalsePositive,
-                        falseNegative = i43ComplexFalseNegative,
-                        trueNegative = i43ComplexTrueNegative,
-                        checkNanos = i43ComplexCheckNanos,
-                        potentialAvoidableOptimizerNanos = i43ComplexPotentialAvoidableOptimizerNanos,
-                        falsePositiveOptimizerNanos = i43ComplexFalsePositiveOptimizerNanos,
-                        rejectedReflectiveShorthand = i43RejectedReflectiveShorthand,
-                        rejectedNumericSpelling = i43RejectedNumericSpelling,
-                        rejectedExplicitRepeat = i43RejectedExplicitRepeat,
-                        rejectedProvenance = i43RejectedProvenance,
+                certificatePredictedFixed = certificatePredictedFixed,
+                certificateTruePositive = certificateTruePositive,
+                certificateFalsePositive = certificateFalsePositive,
+                certificateFalseNegative = certificateFalseNegative,
+                certificateTrueNegative = certificateTrueNegative,
+                certificateCheckNanos = certificateCheckNanos,
+                certificatePotentialAvoidableOptimizerNanos = certificatePotentialAvoidableOptimizerNanos,
+                certificateFalsePositiveOptimizerNanos = certificateFalsePositiveOptimizerNanos,
+                certificateRejectedLexical = certificateRejectedLexical,
+                certificateRejectedNumericSpelling = certificateRejectedNumericSpelling,
+                certificateRejectedWhitespace = certificateRejectedWhitespace,
+                certificateRejectedComplexCommandFamily = certificateRejectedComplexCommandFamily,
+                certificateRejectedExplicitRepeat = certificateRejectedExplicitRepeat,
+                provenanceExcluded = provenanceExcluded,
+                provenanceExcludedActuallyFixed = provenanceExcludedActuallyFixed,
+                provenancePreventedFalsePositive = provenancePreventedFalsePositive,
+                provenanceExcludedOptimizerNanos = provenanceExcludedOptimizerNanos,
+                provenancePreventedFalsePositiveOptimizerNanos =
+                    provenancePreventedFalsePositiveOptimizerNanos,
+                provenancePreventedChangedSyntaxNormalization =
+                    provenancePreventedChangedSyntaxNormalization,
+                provenancePreventedChangedGeometryCleanup =
+                    provenancePreventedChangedGeometryCleanup,
+                provenancePreventedChangedLocalShortening =
+                    provenancePreventedChangedLocalShortening,
+                provenancePreventedChangedGlobalCommand =
+                    provenancePreventedChangedGlobalCommand,
+                provenancePreventedChangedGlobalNumeric =
+                    provenancePreventedChangedGlobalNumeric,
+                provenancePreventedChangedOther = provenancePreventedChangedOther,
+                complexCertificateStats = ComplexCertificateStats(
+                    summary = ComplexCertificateSummary(
+                        candidatesExamined = complexCandidatesExamined,
+                        predictedFixed = complexPredictedFixed,
+                        truePositive = complexTruePositive,
+                        falsePositive = complexFalsePositive,
+                        falseNegative = complexFalseNegative,
+                        trueNegative = complexTrueNegative,
+                        checkNanos = complexCheckNanos,
+                        potentialAvoidableOptimizerNanos = complexPotentialAvoidableOptimizerNanos,
+                        falsePositiveOptimizerNanos = complexFalsePositiveOptimizerNanos,
+                        rejectedReflectiveShorthand = complexRejectedReflectiveShorthand,
+                        rejectedNumericSpelling = complexRejectedNumericSpelling,
+                        rejectedExplicitRepeat = complexRejectedExplicitRepeat,
+                        rejectedProvenance = complexRejectedProvenance,
                     ),
-                    families = I43ComplexFamilies(
-                        cubicPredicted = i43CubicPredicted,
-                        cubicTruePositive = i43CubicTruePositive,
-                        cubicFalsePositive = i43CubicFalsePositive,
-                        quadraticPredicted = i43QuadraticPredicted,
-                        quadraticTruePositive = i43QuadraticTruePositive,
-                        quadraticFalsePositive = i43QuadraticFalsePositive,
-                        arcPredicted = i43ArcPredicted,
-                        arcTruePositive = i43ArcTruePositive,
-                        arcFalsePositive = i43ArcFalsePositive,
-                        mixedPredicted = i43MixedPredicted,
-                        mixedTruePositive = i43MixedTruePositive,
-                        mixedFalsePositive = i43MixedFalsePositive,
+                    families = ComplexCertificateFamilies(
+                        cubicPredicted = complexCubicPredicted,
+                        cubicTruePositive = complexCubicTruePositive,
+                        cubicFalsePositive = complexCubicFalsePositive,
+                        quadraticPredicted = complexQuadraticPredicted,
+                        quadraticTruePositive = complexQuadraticTruePositive,
+                        quadraticFalsePositive = complexQuadraticFalsePositive,
+                        arcPredicted = complexArcPredicted,
+                        arcTruePositive = complexArcTruePositive,
+                        arcFalsePositive = complexArcFalsePositive,
+                        mixedPredicted = complexMixedPredicted,
+                        mixedTruePositive = complexMixedTruePositive,
+                        mixedFalsePositive = complexMixedFalsePositive,
                     ),
-                    changes = I43ComplexChanges(
-                        falsePositiveGeometryCleanup = i43FalsePositiveGeometryCleanup,
-                        falsePositiveLocalShortening = i43FalsePositiveLocalShortening,
-                        falsePositiveGlobalCommand = i43FalsePositiveGlobalCommand,
-                        falsePositiveGlobalNumeric = i43FalsePositiveGlobalNumeric,
-                        falsePositiveOther = i43FalsePositiveOther,
+                    changes = ComplexCertificateChanges(
+                        falsePositiveGeometryCleanup = complexFalsePositiveGeometryCleanup,
+                        falsePositiveLocalShortening = complexFalsePositiveLocalShortening,
+                        falsePositiveGlobalCommand = complexFalsePositiveGlobalCommand,
+                        falsePositiveGlobalNumeric = complexFalsePositiveGlobalNumeric,
+                        falsePositiveOther = complexFalsePositiveOther,
                     ),
                 ),
-                i46 = I46ProductionSkipStats(
-                    certifiedSkips = i46CertifiedSkips,
-                    certifiedByBasic = i46CertifiedByBasic,
-                    certifiedByComplex = i46CertifiedByComplex,
-                    nonCertifiedFallbacks = i46NonCertifiedFallbacks,
-                    provenanceBlocked = i46ProvenanceBlocked,
-                    certificateNanos = i46CertificateNanos,
+                productionFixedPointSkip = ProductionFixedPointSkipStats(
+                    certifiedSkips = productionCertifiedSkips,
+                    certifiedByBasic = productionCertifiedByBasic,
+                    certifiedByComplex = productionCertifiedByComplex,
+                    nonCertifiedFallbacks = productionNonCertifiedFallbacks,
+                    provenanceBlocked = productionProvenanceBlocked,
+                    certificateNanos = productionCertificateNanos,
                     fullOptimizerNanosOnFallbacks =
-                        i46FullOptimizerNanosOnFallbacks,
+                        productionFullOptimizerNanosOnFallbacks,
                 ),
                 pathOptimizationCacheHits = pathCache.totalHits,
                 pathOptimizationCacheMisses = pathCache.totalMisses,
@@ -10639,37 +10639,37 @@ internal object SvgPathDataOptimizer {
         return finalPathData.size
     }
 
-    private data class I41FixedPointCertificate(
+    private data class FixedPointCertificate(
         val predictedFixed: Boolean,
         val rejectionReason: String = ""
     )
 
     /**
-     * I4.1 diagnostic-only conservative pre-check for pass-2 PathData.
+     * Conservative fixed-point pre-check for pass-2 PathData.
      *
-     * This deliberately inspects only cheap lexical/command invariants. It
-     * never replaces the real optimizer in I4.1; the full optimizer still runs
-     * afterward so every prediction can be classified against ground truth.
+     * This deliberately inspects only cheap lexical/command invariants. Research
+     * validation established the accepted subset against the full optimizer. In production,
+     * accepted pass-2 paths retain their incoming spelling and skip full path optimization.
      */
-    private fun i41CheapFixedPointCertificate(pathData: String): I41FixedPointCertificate {
+    private fun cheapFixedPointCertificate(pathData: String): FixedPointCertificate {
         if (pathData != pathData.trim() || pathData.any { it.isWhitespace() }) {
-            return I41FixedPointCertificate(false, "whitespace")
+            return FixedPointCertificate(false, "whitespace")
         }
 
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return I41FixedPointCertificate(false, "lexical")
+            return FixedPointCertificate(false, "lexical")
         }
 
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return I41FixedPointCertificate(false, "lexical")
+                return FixedPointCertificate(false, "lexical")
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return I41FixedPointCertificate(false, "lexical")
+            return FixedPointCertificate(false, "lexical")
         }
 
         var activeCommand: Char? = null
@@ -10678,60 +10678,61 @@ internal object SvgPathDataOptimizer {
             if (isCommand(token)) {
                 val command = token[0]
                 if (command.uppercaseChar() in charArrayOf('A', 'C', 'Q', 'S', 'T')) {
-                    return I41FixedPointCertificate(false, "complexCommand")
+                    return FixedPointCertificate(false, "complexCommand")
                 }
                 if (
                     activeCommand == command &&
                     command.uppercaseChar() !in charArrayOf('M', 'Z')
                 ) {
-                    return I41FixedPointCertificate(false, "explicitRepeat")
+                    return FixedPointCertificate(false, "explicitRepeat")
                 }
                 activeCommand = command
             } else {
                 val canonical = token.toBigDecimalOrNull()?.let(::formatPathNumber)
                     ?: normalizeNumber(token)
                 if (canonical != token) {
-                    return I41FixedPointCertificate(false, "numericSpelling")
+                    return FixedPointCertificate(false, "numericSpelling")
                 }
             }
         }
 
-        return I41FixedPointCertificate(true)
+        return FixedPointCertificate(true)
     }
 
-    private data class I43ComplexCertificate(
+    private data class ComplexFixedPointCertificate(
         val predictedFixed: Boolean,
         val family: String = "",
         val rejectionReason: String = ""
     )
 
     /**
-     * I4.3 diagnostic-only expansion for paths rejected by I4.2 solely because
+     * Complex-command certificate path for inputs rejected by the basic certificate solely because
      * they contain complex commands. This intentionally admits only explicit
      * C/Q/A families. Reflective S/T shorthand remains out of scope because
      * its canonicality depends on preceding control-point state.
      *
-     * The full optimizer still runs afterward and supplies ground truth.
+     * Research validation established this subset against the full optimizer. In
+     * production, accepted pass-2 paths retain their incoming spelling and skip full path optimization.
      */
-    private fun i43ComplexFixedPointCertificate(pathData: String): I43ComplexCertificate {
+    private fun complexFixedPointCertificate(pathData: String): ComplexFixedPointCertificate {
         if (pathData != pathData.trim() || pathData.any { it.isWhitespace() }) {
-            return I43ComplexCertificate(false, rejectionReason = "whitespace")
+            return ComplexFixedPointCertificate(false, rejectionReason = "whitespace")
         }
 
         val matches = tokenRegex.findAll(pathData).toList()
         if (matches.isEmpty()) {
-            return I43ComplexCertificate(false, rejectionReason = "lexical")
+            return ComplexFixedPointCertificate(false, rejectionReason = "lexical")
         }
 
         var cursor = 0
         for (match in matches) {
             if (!containsOnlySeparators(pathData.substring(cursor, match.range.first))) {
-                return I43ComplexCertificate(false, rejectionReason = "lexical")
+                return ComplexFixedPointCertificate(false, rejectionReason = "lexical")
             }
             cursor = match.range.last + 1
         }
         if (!containsOnlySeparators(pathData.substring(cursor))) {
-            return I43ComplexCertificate(false, rejectionReason = "lexical")
+            return ComplexFixedPointCertificate(false, rejectionReason = "lexical")
         }
 
         val complexFamilies = linkedSetOf<Char>()
@@ -10742,7 +10743,7 @@ internal object SvgPathDataOptimizer {
                 val command = token[0]
                 when (command.uppercaseChar()) {
                     'S', 'T' -> {
-                        return I43ComplexCertificate(
+                        return ComplexFixedPointCertificate(
                             false,
                             rejectionReason = "reflectiveShorthand"
                         )
@@ -10754,7 +10755,7 @@ internal object SvgPathDataOptimizer {
                     activeCommand == command &&
                     command.uppercaseChar() !in charArrayOf('M', 'Z')
                 ) {
-                    return I43ComplexCertificate(
+                    return ComplexFixedPointCertificate(
                         false,
                         rejectionReason = "explicitRepeat"
                     )
@@ -10764,7 +10765,7 @@ internal object SvgPathDataOptimizer {
                 val canonical = token.toBigDecimalOrNull()?.let(::formatPathNumber)
                     ?: normalizeNumber(token)
                 if (canonical != token) {
-                    return I43ComplexCertificate(
+                    return ComplexFixedPointCertificate(
                         false,
                         rejectionReason = "numericSpelling"
                     )
@@ -10773,7 +10774,7 @@ internal object SvgPathDataOptimizer {
         }
 
         if (complexFamilies.isEmpty()) {
-            return I43ComplexCertificate(false, rejectionReason = "notComplex")
+            return ComplexFixedPointCertificate(false, rejectionReason = "notComplex")
         }
 
         val family = when {
@@ -10783,7 +10784,7 @@ internal object SvgPathDataOptimizer {
             'A' in complexFamilies -> "arc"
             else -> "mixed"
         }
-        return I43ComplexCertificate(true, family = family)
+        return ComplexFixedPointCertificate(true, family = family)
     }
 
     private fun optimizePathDataCached(

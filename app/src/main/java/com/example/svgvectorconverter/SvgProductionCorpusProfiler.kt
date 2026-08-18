@@ -395,241 +395,241 @@ object SvgProductionCorpusProfiler {
                     )
 
                     appendLine()
-                    appendLine("I4.2 provenance-aware pass-2 fixed-point certificate study")
+                    appendLine("Pass-2 fixed-point certificate diagnostics")
                     appendLine("────────────────────────────────")
-                    val i41Predicted = sumInt { it.i41Pass2CertificatePredictedFixed }
-                    val i41TruePositive = sumInt { it.i41Pass2CertificateTruePositive }
-                    val i41FalsePositive = sumInt { it.i41Pass2CertificateFalsePositive }
-                    val i41FalseNegative = sumInt { it.i41Pass2CertificateFalseNegative }
-                    val i41TrueNegative = sumInt { it.i41Pass2CertificateTrueNegative }
-                    val i41CheckNanos = sumLong { it.i41Pass2CertificateCheckNanos }
-                    val i41AvoidableNanos =
-                        sumLong { it.i41Pass2PotentialAvoidableOptimizerNanos }
-                    val i41FalsePositiveNanos =
-                        sumLong { it.i41Pass2FalsePositiveOptimizerNanos }
+                    val certificatePredicted = sumInt { it.pass2CertificatePredictedFixed }
+                    val certificateTruePositiveCount = sumInt { it.pass2CertificateTruePositive }
+                    val certificateFalsePositiveCount = sumInt { it.pass2CertificateFalsePositive }
+                    val certificateFalseNegativeCount = sumInt { it.pass2CertificateFalseNegative }
+                    val certificateTrueNegativeCount = sumInt { it.pass2CertificateTrueNegative }
+                    val certificateCheckNanosTotal = sumLong { it.pass2CertificateCheckNanos }
+                    val certificateAvoidableNanos =
+                        sumLong { it.pass2CertificatePotentialAvoidableOptimizerNanos }
+                    val certificateFalsePositiveNanosTotal =
+                        sumLong { it.pass2CertificateFalsePositiveOptimizerNanos }
 
-                    appendLine("Cheap certificate predicted fixed: ${formatCount(i41Predicted)}")
-                    appendLine("True positives: ${formatCount(i41TruePositive)}")
-                    appendLine("False positives: ${formatCount(i41FalsePositive)}")
-                    appendLine("False negatives: ${formatCount(i41FalseNegative)}")
-                    appendLine("True negatives: ${formatCount(i41TrueNegative)}")
-                    appendLine("Certificate check time: ${formatNanos(i41CheckNanos)}")
+                    appendLine("Cheap certificate predicted fixed: ${formatCount(certificatePredicted)}")
+                    appendLine("True positives: ${formatCount(certificateTruePositiveCount)}")
+                    appendLine("False positives: ${formatCount(certificateFalsePositiveCount)}")
+                    appendLine("False negatives: ${formatCount(certificateFalseNegativeCount)}")
+                    appendLine("True negatives: ${formatCount(certificateTrueNegativeCount)}")
+                    appendLine("Certificate check time: ${formatNanos(certificateCheckNanosTotal)}")
                     appendLine(
                         "Full path-optimizer time on true positives (potentially avoidable): " +
-                            formatNanos(i41AvoidableNanos)
+                            formatNanos(certificateAvoidableNanos)
                     )
                     appendLine(
                         "Full optimizer time on false positives: " +
-                            formatNanos(i41FalsePositiveNanos)
+                            formatNanos(certificateFalsePositiveNanosTotal)
                     )
                     appendLine("Certificate rejection reasons")
-                    appendLine("  lexical coverage: ${formatCount(sumInt { it.i41Pass2RejectedLexical })}")
+                    appendLine("  lexical coverage: ${formatCount(sumInt { it.pass2CertificateRejectedLexical })}")
                     appendLine(
                         "  non-canonical numeric spelling: " +
-                            formatCount(sumInt { it.i41Pass2RejectedNumericSpelling })
+                            formatCount(sumInt { it.pass2CertificateRejectedNumericSpelling })
                     )
-                    appendLine("  whitespace present: ${formatCount(sumInt { it.i41Pass2RejectedWhitespace })}")
+                    appendLine("  whitespace present: ${formatCount(sumInt { it.pass2CertificateRejectedWhitespace })}")
                     appendLine(
                         "  complex curve/arc command family: " +
-                            formatCount(sumInt { it.i41Pass2RejectedComplexCommandFamily })
+                            formatCount(sumInt { it.pass2CertificateRejectedComplexCommandFamily })
                     )
                     appendLine(
                         "  explicit repeated command: " +
-                            formatCount(sumInt { it.i41Pass2RejectedExplicitRepeat })
+                            formatCount(sumInt { it.pass2CertificateRejectedExplicitRepeat })
                     )
                     appendLine(
-                        "Note: I4.2 certificate decisions are now production-active through I4.6. " +
+                        "Note: The basic fixed-point certificate is production-active. " +
                             "Legacy TP/FP ground-truth counters apply only to paths that still run " +
                             "the full optimizer."
                     )
 
                     appendLine()
-                    appendLine("I4.2 merge-provenance gate")
+                    appendLine("Merge-provenance safety gate")
                     appendLine("────────────────────────────────")
                     appendLine(
                         "Merge-synthesized paths excluded from an otherwise-positive certificate: " +
-                            formatCount(sumInt { it.i42Pass2ProvenanceExcluded })
+                            formatCount(sumInt { it.pass2ProvenanceExcluded })
                     )
                     appendLine(
                         "Excluded paths that were actually fixed (coverage intentionally sacrificed): " +
-                            formatCount(sumInt { it.i42Pass2ProvenanceExcludedActuallyFixed })
+                            formatCount(sumInt { it.pass2ProvenanceExcludedActuallyFixed })
                     )
                     appendLine(
                         "Excluded paths that would have been false positives: " +
-                            formatCount(sumInt { it.i42Pass2ProvenancePreventedFalsePositive })
+                            formatCount(sumInt { it.pass2ProvenancePreventedFalsePositive })
                     )
                     appendLine(
                         "Full optimizer time on all provenance exclusions: " +
-                            formatNanos(sumLong { it.i42Pass2ProvenanceExcludedOptimizerNanos })
+                            formatNanos(sumLong { it.pass2ProvenanceExcludedOptimizerNanos })
                     )
                     appendLine(
                         "Full optimizer time on prevented false positives: " +
-                            formatNanos(sumLong { it.i42Pass2PreventedFalsePositiveOptimizerNanos })
+                            formatNanos(sumLong { it.pass2ProvenancePreventedFalsePositiveOptimizerNanos })
                     )
                     appendLine("Prevented false-positive change classification")
                     appendLine(
                         "  syntax/token normalization: " +
-                            formatCount(sumInt { it.i42Pass2PreventedChangedSyntaxNormalization })
+                            formatCount(sumInt { it.pass2ProvenancePreventedChangedSyntaxNormalization })
                     )
                     appendLine(
                         "  geometry/arc/curve/collinear cleanup: " +
-                            formatCount(sumInt { it.i42Pass2PreventedChangedGeometryCleanup })
+                            formatCount(sumInt { it.pass2ProvenancePreventedChangedGeometryCleanup })
                     )
                     appendLine(
                         "  local command shortening: " +
-                            formatCount(sumInt { it.i42Pass2PreventedChangedLocalShortening })
+                            formatCount(sumInt { it.pass2ProvenancePreventedChangedLocalShortening })
                     )
                     appendLine(
                         "  global command minimization: " +
-                            formatCount(sumInt { it.i42Pass2PreventedChangedGlobalCommand })
+                            formatCount(sumInt { it.pass2ProvenancePreventedChangedGlobalCommand })
                     )
                     appendLine(
                         "  global numeric serialization: " +
-                            formatCount(sumInt { it.i42Pass2PreventedChangedGlobalNumeric })
+                            formatCount(sumInt { it.pass2ProvenancePreventedChangedGlobalNumeric })
                     )
                     appendLine(
                         "  other/unattributed: " +
-                            formatCount(sumInt { it.i42Pass2PreventedChangedOther })
+                            formatCount(sumInt { it.pass2ProvenancePreventedChangedOther })
                     )
 
                     appendLine()
-                    appendLine("I4.3 complex-command certificate expansion")
+                    appendLine("Complex-command fixed-point certificate diagnostics")
                     appendLine("────────────────────────────────")
                     appendLine(
                         "Complex-command candidates examined: " +
-                            formatCount(sumInt { it.i43Pass2ComplexCandidatesExamined })
+                            formatCount(sumInt { it.pass2ComplexCertificateCandidatesExamined })
                     )
                     appendLine(
                         "Experimental complex certificate predicted fixed: " +
-                            formatCount(sumInt { it.i43Pass2ComplexPredictedFixed })
+                            formatCount(sumInt { it.pass2ComplexCertificatePredictedFixed })
                     )
                     appendLine(
                         "True positives: " +
-                            formatCount(sumInt { it.i43Pass2ComplexTruePositive })
+                            formatCount(sumInt { it.pass2ComplexCertificateTruePositive })
                     )
                     appendLine(
                         "False positives: " +
-                            formatCount(sumInt { it.i43Pass2ComplexFalsePositive })
+                            formatCount(sumInt { it.pass2ComplexCertificateFalsePositive })
                     )
                     appendLine(
                         "False negatives within complex candidates: " +
-                            formatCount(sumInt { it.i43Pass2ComplexFalseNegative })
+                            formatCount(sumInt { it.pass2ComplexCertificateFalseNegative })
                     )
                     appendLine(
                         "True negatives within complex candidates: " +
-                            formatCount(sumInt { it.i43Pass2ComplexTrueNegative })
+                            formatCount(sumInt { it.pass2ComplexCertificateTrueNegative })
                     )
                     appendLine(
                         "Complex certificate check time: " +
-                            formatNanos(sumLong { it.i43Pass2ComplexCheckNanos })
+                            formatNanos(sumLong { it.pass2ComplexCertificateCheckNanos })
                     )
                     appendLine(
                         "Full optimizer time on complex true positives (potentially avoidable): " +
-                            formatNanos(sumLong { it.i43Pass2ComplexPotentialAvoidableOptimizerNanos })
+                            formatNanos(sumLong { it.pass2ComplexCertificatePotentialAvoidableOptimizerNanos })
                     )
                     appendLine(
                         "Full optimizer time on complex false positives: " +
-                            formatNanos(sumLong { it.i43Pass2ComplexFalsePositiveOptimizerNanos })
+                            formatNanos(sumLong { it.pass2ComplexCertificateFalsePositiveOptimizerNanos })
                     )
                     appendLine("Family breakdown (predicted / TP / FP)")
                     appendLine(
-                        "  cubic C: ${sumInt { it.i43Pass2CubicPredicted }} / " +
-                            "${sumInt { it.i43Pass2CubicTruePositive }} / " +
-                            "${sumInt { it.i43Pass2CubicFalsePositive }}"
+                        "  cubic C: ${sumInt { it.pass2ComplexCertificateCubicPredicted }} / " +
+                            "${sumInt { it.pass2ComplexCertificateCubicTruePositive }} / " +
+                            "${sumInt { it.pass2ComplexCertificateCubicFalsePositive }}"
                     )
                     appendLine(
-                        "  quadratic Q: ${sumInt { it.i43Pass2QuadraticPredicted }} / " +
-                            "${sumInt { it.i43Pass2QuadraticTruePositive }} / " +
-                            "${sumInt { it.i43Pass2QuadraticFalsePositive }}"
+                        "  quadratic Q: ${sumInt { it.pass2ComplexCertificateQuadraticPredicted }} / " +
+                            "${sumInt { it.pass2ComplexCertificateQuadraticTruePositive }} / " +
+                            "${sumInt { it.pass2ComplexCertificateQuadraticFalsePositive }}"
                     )
                     appendLine(
-                        "  arc A: ${sumInt { it.i43Pass2ArcPredicted }} / " +
-                            "${sumInt { it.i43Pass2ArcTruePositive }} / " +
-                            "${sumInt { it.i43Pass2ArcFalsePositive }}"
+                        "  arc A: ${sumInt { it.pass2ComplexCertificateArcPredicted }} / " +
+                            "${sumInt { it.pass2ComplexCertificateArcTruePositive }} / " +
+                            "${sumInt { it.pass2ComplexCertificateArcFalsePositive }}"
                     )
                     appendLine(
-                        "  mixed C/Q/A: ${sumInt { it.i43Pass2MixedPredicted }} / " +
-                            "${sumInt { it.i43Pass2MixedTruePositive }} / " +
-                            "${sumInt { it.i43Pass2MixedFalsePositive }}"
+                        "  mixed C/Q/A: ${sumInt { it.pass2ComplexCertificateMixedPredicted }} / " +
+                            "${sumInt { it.pass2ComplexCertificateMixedTruePositive }} / " +
+                            "${sumInt { it.pass2ComplexCertificateMixedFalsePositive }}"
                     )
-                    appendLine("Experimental rejection reasons")
+                    appendLine("Complex certificate rejection reasons")
                     appendLine(
                         "  reflective S/T shorthand: " +
-                            formatCount(sumInt { it.i43Pass2RejectedReflectiveShorthand })
+                            formatCount(sumInt { it.pass2ComplexCertificateRejectedReflectiveShorthand })
                     )
                     appendLine(
                         "  non-canonical numeric spelling: " +
-                            formatCount(sumInt { it.i43Pass2RejectedNumericSpelling })
+                            formatCount(sumInt { it.pass2ComplexCertificateRejectedNumericSpelling })
                     )
                     appendLine(
                         "  explicit repeated command: " +
-                            formatCount(sumInt { it.i43Pass2RejectedExplicitRepeat })
+                            formatCount(sumInt { it.pass2ComplexCertificateRejectedExplicitRepeat })
                     )
                     appendLine(
                         "  merge provenance: " +
-                            formatCount(sumInt { it.i43Pass2RejectedProvenance })
+                            formatCount(sumInt { it.pass2ComplexCertificateRejectedProvenance })
                     )
                     appendLine("Complex false-positive change classification")
                     appendLine(
                         "  geometry/arc/curve/collinear cleanup: " +
-                            formatCount(sumInt { it.i43Pass2FalsePositiveGeometryCleanup })
+                            formatCount(sumInt { it.pass2ComplexCertificateFalsePositiveGeometryCleanup })
                     )
                     appendLine(
                         "  local command shortening: " +
-                            formatCount(sumInt { it.i43Pass2FalsePositiveLocalShortening })
+                            formatCount(sumInt { it.pass2ComplexCertificateFalsePositiveLocalShortening })
                     )
                     appendLine(
                         "  global command minimization: " +
-                            formatCount(sumInt { it.i43Pass2FalsePositiveGlobalCommand })
+                            formatCount(sumInt { it.pass2ComplexCertificateFalsePositiveGlobalCommand })
                     )
                     appendLine(
                         "  global numeric serialization: " +
-                            formatCount(sumInt { it.i43Pass2FalsePositiveGlobalNumeric })
+                            formatCount(sumInt { it.pass2ComplexCertificateFalsePositiveGlobalNumeric })
                     )
                     appendLine(
                         "  other/unattributed: " +
-                            formatCount(sumInt { it.i43Pass2FalsePositiveOther })
+                            formatCount(sumInt { it.pass2ComplexCertificateFalsePositiveOther })
                     )
                     appendLine(
-                        "Note: I4.3 complex certificate decisions are now production-active through I4.6; " +
-                            "the I4.2 provenance gate remains mandatory. Legacy TP/FP ground-truth " +
+                        "Note: The complex-command fixed-point certificate is production-active; " +
+                            "the merge-provenance exclusion remains mandatory. Legacy TP/FP ground-truth " +
                             "counters exclude production-skipped paths."
                     )
 
                     appendLine()
-                    appendLine("I4.6 production-active pass-2 fixed-point skip")
+                    appendLine("Production-active pass-2 fixed-point skip")
                     appendLine("────────────────────────────────")
                     appendLine(
                         "Certified pass-2 path optimizations skipped: " +
-                            formatCount(sumInt { it.i46Pass2CertifiedSkips })
+                            formatCount(sumInt { it.pass2FixedPointSkipCertifiedSkips })
                     )
                     appendLine(
-                        "  certified by I4.2 basic certificate: " +
-                            formatCount(sumInt { it.i46Pass2CertifiedByBasic })
+                        "  certified by basic fixed-point certificate: " +
+                            formatCount(sumInt { it.pass2FixedPointSkipCertifiedByBasic })
                     )
                     appendLine(
-                        "  certified by I4.3 complex certificate: " +
-                            formatCount(sumInt { it.i46Pass2CertifiedByComplex })
+                        "  certified by complex-command fixed-point certificate: " +
+                            formatCount(sumInt { it.pass2FixedPointSkipCertifiedByComplex })
                     )
                     appendLine(
                         "Non-certified paths sent to full optimizer: " +
-                            formatCount(sumInt { it.i46Pass2NonCertifiedFallbacks })
+                            formatCount(sumInt { it.pass2FixedPointSkipNonCertifiedFallbacks })
                     )
                     appendLine(
                         "Merge-provenance certificate blocks: " +
-                            formatCount(sumInt { it.i46Pass2ProvenanceBlocked })
+                            formatCount(sumInt { it.pass2FixedPointSkipProvenanceBlocked })
                     )
                     appendLine(
                         "Certificate evaluation time: " +
-                            formatNanos(sumLong { it.i46Pass2CertificateNanos })
+                            formatNanos(sumLong { it.pass2FixedPointSkipCertificateNanos })
                     )
                     appendLine(
                         "Full path-optimizer time remaining on fallbacks: " +
-                            formatNanos(sumLong { it.i46Pass2FullOptimizerNanosOnFallbacks })
+                            formatNanos(sumLong { it.pass2FixedPointSkipFullOptimizerNanosOnFallbacks })
                     )
                     appendLine(
                         "Policy: production skips are allowed only for paths accepted by the proven " +
-                            "I4.2/I4.3 certificate with the I4.2 merge-provenance gate. All other " +
+                            "basic/complex fixed-point certificate with the merge-provenance safety gate. All other " +
                             "pass-2 paths fail closed to the established full optimizer."
                     )
                     appendLine()
@@ -716,41 +716,41 @@ object SvgProductionCorpusProfiler {
                             )
                         }
                         if (
-                            data.i41Pass2CertificateTruePositive > 0 ||
-                            data.i41Pass2CertificateFalsePositive > 0 ||
-                            data.i41Pass2CertificateFalseNegative > 0
+                            data.pass2CertificateTruePositive > 0 ||
+                            data.pass2CertificateFalsePositive > 0 ||
+                            data.pass2CertificateFalseNegative > 0
                         ) {
                             appendLine(
-                                "    I4.2 certificate: predicted=${data.i41Pass2CertificatePredictedFixed}, " +
-                                    "tp=${data.i41Pass2CertificateTruePositive}, " +
-                                    "fp=${data.i41Pass2CertificateFalsePositive}, " +
-                                    "fn=${data.i41Pass2CertificateFalseNegative}"
+                                "    certificate: predicted=${data.pass2CertificatePredictedFixed}, " +
+                                    "tp=${data.pass2CertificateTruePositive}, " +
+                                    "fp=${data.pass2CertificateFalsePositive}, " +
+                                    "fn=${data.pass2CertificateFalseNegative}"
                             )
-                            if (data.i42Pass2ProvenanceExcluded > 0) {
+                            if (data.pass2ProvenanceExcluded > 0) {
                                 appendLine(
-                                    "    I4.2 provenance gate: excluded=${data.i42Pass2ProvenanceExcluded}, " +
-                                        "preventedFP=${data.i42Pass2ProvenancePreventedFalsePositive}, " +
-                                        "excludedButFixed=${data.i42Pass2ProvenanceExcludedActuallyFixed}"
+                                    "    provenance gate: excluded=${data.pass2ProvenanceExcluded}, " +
+                                        "preventedFP=${data.pass2ProvenancePreventedFalsePositive}, " +
+                                        "excludedButFixed=${data.pass2ProvenanceExcludedActuallyFixed}"
                                 )
                             }
-                            if (data.i43Pass2ComplexCandidatesExamined > 0) {
+                            if (data.pass2ComplexCertificateCandidatesExamined > 0) {
                                 appendLine(
-                                    "    I4.3 complex: examined=${data.i43Pass2ComplexCandidatesExamined}, " +
-                                        "predicted=${data.i43Pass2ComplexPredictedFixed}, " +
-                                        "tp=${data.i43Pass2ComplexTruePositive}, " +
-                                        "fp=${data.i43Pass2ComplexFalsePositive}, " +
-                                        "fn=${data.i43Pass2ComplexFalseNegative}"
+                                    "    complex certificate: examined=${data.pass2ComplexCertificateCandidatesExamined}, " +
+                                        "predicted=${data.pass2ComplexCertificatePredictedFixed}, " +
+                                        "tp=${data.pass2ComplexCertificateTruePositive}, " +
+                                        "fp=${data.pass2ComplexCertificateFalsePositive}, " +
+                                        "fn=${data.pass2ComplexCertificateFalseNegative}"
                                 )
                             }
                             if (
-                                data.i46Pass2CertifiedSkips > 0 ||
-                                data.i46Pass2NonCertifiedFallbacks > 0
+                                data.pass2FixedPointSkipCertifiedSkips > 0 ||
+                                data.pass2FixedPointSkipNonCertifiedFallbacks > 0
                             ) {
                                 appendLine(
-                                    "    I4.6 pass2: skipped=${data.i46Pass2CertifiedSkips}, " +
-                                        "basic=${data.i46Pass2CertifiedByBasic}, " +
-                                        "complex=${data.i46Pass2CertifiedByComplex}, " +
-                                        "fallback=${data.i46Pass2NonCertifiedFallbacks}"
+                                    "    pass2 fixed-point skip: skipped=${data.pass2FixedPointSkipCertifiedSkips}, " +
+                                        "basic=${data.pass2FixedPointSkipCertifiedByBasic}, " +
+                                        "complex=${data.pass2FixedPointSkipCertifiedByComplex}, " +
+                                        "fallback=${data.pass2FixedPointSkipNonCertifiedFallbacks}"
                                 )
                             }
                         }
