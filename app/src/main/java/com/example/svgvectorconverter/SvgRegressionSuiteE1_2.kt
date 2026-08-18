@@ -4,7 +4,7 @@ package com.example.svgvectorconverter
  * E1.2 bundled smoke-regression suite.
  *
  * This is intentionally UI-independent. It exercises the E1.1 runner with
- * five representative SVG fixtures and returns the same plain-text report
+ * twelve representative SVG fixtures and returns the same plain-text report
  * format that can later be shown in a developer screen or exported to a file.
  */
 object SvgRegressionSuiteE2 {
@@ -14,7 +14,14 @@ object SvgRegressionSuiteE2 {
         translatedSiblings(),
         rotationFlattening(),
         arcPreservation(),
-        mixedLayering()
+        mixedLayering(),
+        mergeProvenance(),
+        deepNestedTransforms(),
+        geometryCleanup(),
+        gradientInheritance(),
+        nestedClipPath(),
+        nestedUseExpansion(),
+        strokeSensitiveTransform()
     )
 
     fun run(): SvgRegressionRunner.SuiteResult =
@@ -183,6 +190,302 @@ object SvgRegressionSuiteE2 {
             )
         )
     )
+    /**
+     * J1.1-06
+     *
+     * Two adjacent, identical-paint, non-overlapping paths are intentionally
+     * merge-compatible. This protects the path-merge/provenance interaction
+     * that must remain eligible for a later full pass when the merged spelling
+     * still has a command-shortening opportunity.
+     */
+    private fun mergeProvenance() = SvgRegressionRunner.Fixture(
+        name = "E1.2-06 Merge provenance and second-pass shortening",
+        svg = """
+            <svg xmlns="http://www.w3.org/2000/svg"
+                width="36"
+                height="20"
+                viewBox="0 0 36 20">
+                <path d="M2 3 H14 V17 H2 Z" fill="#3F51B5"/>
+                <path d="M22 3 H34 V17 H22 Z" fill="#3F51B5"/>
+            </svg>
+        """.trimIndent(),
+        expectations = SvgRegressionRunner.Expectations(
+            expectedDrawablePathCount = 1,
+            expectedWarningCount = 0,
+            requiredXmlFragments = listOf(
+                "android:pathData=",
+                "android:fillColor=\"#3F51B5\""
+            ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            forbiddenXmlFragments = listOf(
+                "<svg",
+                "NaN",
+                "Infinity"
+            )
+        )
+    )
+
+    /**
+     * J1.1-07
+     *
+     * Exercises nested translate/scale/rotation composition while keeping one
+     * drawable path. The purpose is to protect transform ordering and the
+     * optimizer's safe group-preservation/flattening decisions.
+     */
+    private fun deepNestedTransforms() = SvgRegressionRunner.Fixture(
+        name = "E1.2-07 Deep nested transform composition",
+        svg = """
+            <svg xmlns="http://www.w3.org/2000/svg"
+                width="64"
+                height="64"
+                viewBox="0 0 64 64">
+                <g transform="translate(8 6)">
+                    <g transform="scale(1.5 0.75)">
+                        <g transform="rotate(90 16 16)">
+                            <path
+                                d="M6 8 L26 8 L22 22 L10 26 Z"
+                                fill="#009688"/>
+                        </g>
+                    </g>
+                </g>
+            </svg>
+        """.trimIndent(),
+        expectations = SvgRegressionRunner.Expectations(
+            expectedDrawablePathCount = 1,
+            expectedWarningCount = 0,
+            requiredXmlFragments = listOf(
+                "android:pathData=",
+                "#009688"
+            ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            forbiddenXmlFragments = listOf(
+                "<svg",
+                "NaN",
+                "Infinity"
+            )
+        )
+    )
+
+    /**
+     * J1.1-08
+     *
+     * Combines duplicate/zero-length line work, a straight cubic, a straight
+     * quadratic, and a degenerate arc in one path so geometry cleanup remains
+     * covered without turning the locked suite into a stress corpus.
+     */
+    private fun geometryCleanup() = SvgRegressionRunner.Fixture(
+        name = "E1.2-08 Degenerate and straight geometry cleanup",
+        svg = """
+            <svg xmlns="http://www.w3.org/2000/svg"
+                width="64"
+                height="40"
+                viewBox="0 0 64 40">
+                <path
+                    d="M4 20 L4 20 L12 20 L20 20
+                       C24 20 28 20 32 20
+                       Q38 20 44 20
+                       A0 6 0 0 1 52 20
+                       L60 20"
+                    fill="none"
+                    stroke="#795548"
+                    stroke-width="2"/>
+            </svg>
+        """.trimIndent(),
+        expectations = SvgRegressionRunner.Expectations(
+            expectedDrawablePathCount = 1,
+            expectedWarningCount = 0,
+            requiredXmlFragments = listOf(
+                "android:pathData=",
+                "android:strokeColor=\"#795548\""
+            ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            forbiddenXmlFragments = listOf(
+                "<svg",
+                "NaN",
+                "Infinity"
+            )
+        )
+    )
+
+    /**
+     * J1.1-09
+     *
+     * Protects gradient inheritance through href plus normal path conversion.
+     * This is intentionally a small positive case rather than a broad gradient
+     * matrix.
+     */
+    private fun gradientInheritance() = SvgRegressionRunner.Fixture(
+        name = "E1.2-09 Gradient inheritance",
+        svg = """
+            <svg xmlns="http://www.w3.org/2000/svg"
+                xmlns:xlink="http://www.w3.org/1999/xlink"
+                width="48"
+                height="32"
+                viewBox="0 0 48 32">
+                <defs>
+                    <linearGradient id="base" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0" stop-color="#FF9800"/>
+                        <stop offset="1" stop-color="#9C27B0"/>
+                    </linearGradient>
+                    <linearGradient
+                        id="derived"
+                        xlink:href="#base"
+                        gradientTransform="rotate(15 .5 .5)"/>
+                </defs>
+                <rect x="4" y="4" width="40" height="24"
+                    rx="4" fill="url(#derived)"/>
+            </svg>
+        """.trimIndent(),
+        expectations = SvgRegressionRunner.Expectations(
+            expectedDrawablePathCount = 1,
+            expectedWarningCount = 0,
+            requiredXmlFragments = listOf(
+                "android:pathData=",
+                "#FF9800",
+                "#9C27B0"
+            ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            forbiddenXmlFragments = listOf(
+                "<svg",
+                "<linearGradient",
+                "NaN",
+                "Infinity"
+            )
+        )
+    )
+
+    /**
+     * J1.1-10
+     *
+     * Protects clipPath conversion combined with nested group transforms.
+     */
+    private fun nestedClipPath() = SvgRegressionRunner.Fixture(
+        name = "E1.2-10 Nested clip path and group transform",
+        svg = """
+            <svg xmlns="http://www.w3.org/2000/svg"
+                width="48"
+                height="48"
+                viewBox="0 0 48 48">
+                <defs>
+                    <clipPath id="clip">
+                        <rect x="8" y="8" width="32" height="28" rx="5"/>
+                    </clipPath>
+                </defs>
+                <g clip-path="url(#clip)" transform="translate(2 3)">
+                    <g transform="rotate(12 22 20)">
+                        <path
+                            d="M4 20 L22 4 L42 20 L22 40 Z"
+                            fill="#00BCD4"/>
+                    </g>
+                </g>
+            </svg>
+        """.trimIndent(),
+        expectations = SvgRegressionRunner.Expectations(
+            expectedDrawablePathCount = 1,
+            expectedWarningCount = 0,
+            requiredXmlFragments = listOf(
+                "<clip-path",
+                "android:pathData=",
+                "#00BCD4"
+            ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            forbiddenXmlFragments = listOf(
+                "<svg",
+                "<clipPath",
+                "NaN",
+                "Infinity"
+            )
+        )
+    )
+
+    /**
+     * J1.1-11
+     *
+     * Exercises defs/use expansion with a nested source group and independent
+     * use transforms. Distinct paint on the source paths prevents this fixture
+     * from becoming merely another adjacent-path merge test.
+     */
+    private fun nestedUseExpansion() = SvgRegressionRunner.Fixture(
+        name = "E1.2-11 Nested use expansion and transforms",
+        svg = """
+            <svg xmlns="http://www.w3.org/2000/svg"
+                xmlns:xlink="http://www.w3.org/1999/xlink"
+                width="64"
+                height="40"
+                viewBox="0 0 64 40">
+                <defs>
+                    <g id="tile">
+                        <g transform="translate(1 1)">
+                            <path d="M0 0 H10 V10 H0 Z" fill="#F44336"/>
+                            <path d="M3 3 H7 V7 H3 Z" fill="#2196F3"/>
+                        </g>
+                    </g>
+                </defs>
+                <use xlink:href="#tile" x="5" y="6"/>
+                <use xlink:href="#tile"
+                    transform="translate(38 6) rotate(15 5 5)"/>
+            </svg>
+        """.trimIndent(),
+        expectations = SvgRegressionRunner.Expectations(
+            expectedDrawablePathCount = 4,
+            expectedWarningCount = 0,
+            requiredXmlFragments = listOf(
+                "#F44336",
+                "#2196F3",
+                "android:pathData="
+            ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            forbiddenXmlFragments = listOf(
+                "<svg",
+                "<use",
+                "NaN",
+                "Infinity"
+            )
+        )
+    )
+
+    /**
+     * J1.1-12
+     *
+     * Protects stroke semantics under scaling, including non-scaling-stroke.
+     * The converter may preserve a group or bake the transform according to
+     * its existing safety/size rules; the golden fingerprint locks the approved
+     * canonical result rather than requiring one specific representation here.
+     */
+    private fun strokeSensitiveTransform() = SvgRegressionRunner.Fixture(
+        name = "E1.2-12 Stroke-sensitive non-scaling transform",
+        svg = """
+            <svg xmlns="http://www.w3.org/2000/svg"
+                width="64"
+                height="40"
+                viewBox="0 0 64 40">
+                <g transform="scale(1.6 .75)">
+                    <path
+                        d="M6 8 C14 2 24 14 34 8"
+                        fill="none"
+                        stroke="#4CAF50"
+                        stroke-width="3"
+                        stroke-linecap="round"
+                        vector-effect="non-scaling-stroke"/>
+                </g>
+            </svg>
+        """.trimIndent(),
+        expectations = SvgRegressionRunner.Expectations(
+            expectedDrawablePathCount = 1,
+            expectedWarningCount = 0,
+            requiredXmlFragments = listOf(
+                "android:pathData=",
+                "android:strokeColor=\"#4CAF50\""
+            ),
+            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            forbiddenXmlFragments = listOf(
+                "<svg",
+                "NaN",
+                "Infinity"
+            )
+        )
+    )
+
 }
 
 
@@ -201,7 +504,11 @@ object SvgRegressionSuiteE1_2 {
 }
 
 /**
- * E2.1 locked canonical golden-output fingerprints.
+ * Locked canonical golden-output fingerprints.
+ *
+ * Tests 01-05 are already locked. J1.1 initially runs tests 06-12 with
+ * CaptureCandidate so their canonical SHA-256 values can be reviewed before
+ * they are promoted to permanent fingerprints in J1.2.
  *
  * Update a fingerprint only after reviewing and approving the corresponding
  * canonical XML change produced by the regression runner.
