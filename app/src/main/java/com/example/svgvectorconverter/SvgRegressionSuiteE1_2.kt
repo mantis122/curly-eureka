@@ -257,7 +257,9 @@ object SvgRegressionSuiteE2 {
                 "android:pathData=",
                 "#009688"
             ),
-            golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate,
+            golden = SvgRegressionRunner.GoldenExpectation.CanonicalSha256(
+                SvgGoldenBaselinesE2_1.DEEP_NESTED_TRANSFORMS
+            ),
             forbiddenXmlFragments = listOf(
                 "<svg",
                 "NaN",
@@ -520,9 +522,7 @@ object SvgRegressionSuiteE1_2 {
 /**
  * Locked canonical golden-output fingerprints.
  *
- * Tests 01-06 and 08-12 are locked. Test 07 remains in CaptureCandidate
- * for one correction run after replacing the first synthetic transform fixture
- * with an immediately-idempotent nested-transform witness.
+ * All twelve fixtures are locked to canonical SHA-256 fingerprints.
  *
  * Update a fingerprint only after reviewing and approving the corresponding
  * canonical XML change produced by the regression runner.
@@ -546,6 +546,10 @@ object SvgGoldenBaselinesE2_1 {
 
     const val MERGE_PROVENANCE =
         "3a2a3872ce2e391988d09a96b03f6324fcb3949264be7efed63fa42faf559c14"
+
+
+    const val DEEP_NESTED_TRANSFORMS =
+        "eaff7d7f32a3917bf8e53595a70656311c33bc843ac582e4681bb8f3711e43c9"
 
     const val GEOMETRY_CLEANUP =
         "354fe931bcf63cca23811f6ff4f75364911f16943eaa08e6feec117c0da7e2a2"
