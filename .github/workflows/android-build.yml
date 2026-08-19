@@ -4,7 +4,17 @@ on:
   push:
     branches:
       - main
+
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: Build type
+        required: true
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
 
 jobs:
   build:
@@ -26,11 +36,165 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Read app version
+        id: version
+        shell: bash
+        run: |
+          VERSION_NAME="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          if [ -z "$VERSION_NAME" ]; then
+            echo "Could not read versionName from app/build.gradle.kts"
+            exit 1
+          fi
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "Building SVG Vector Converter v$VERSION_NAME"
+
       - name: Build Debug APK
+        if: github.event_name == 'push' || inputs.build_type == 'debug'
         run: ./gradlew assembleDebug
 
-      - name: Upload APK
+      - name: Upload Debug APK
+        if: github.event_name == 'push' || inputs.build_type == 'debug'
         uses: actions/upload-artifact@v4
         with:
-          name: SvgVectorConverter-debug
+          name: SvgVectorConverter-v${{ steps.version.outputs.version_name }}-debug
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Validate Release Signing Secrets
+        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'release'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          missing=0
+          for name in \
+            ANDROID_KEYSTORE_BASE64 \
+            ANDROID_KEYSTORE_PASSWORD \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Required GitHub Actions secret $name is missing."
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Restore Release Keystore
+        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'release'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > release-keystore.jks
+          test -s release-keystore.jks
+
+      - name: Build Unsigned Release APK
+        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'release'
+        run: ./gradlew assembleRelease
+
+      - name: Locate Android Build Tools
+        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'release'
+        id: build_tools
+        shell: bash
+        run: |
+          BUILD_TOOLS_VERSION="$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+
+          if [ -z "$BUILD_TOOLS_VERSION" ]; then
+            echo "::error::No Android SDK Build Tools installation was found."
+            exit 1
+          fi
+
+          BUILD_TOOLS_DIR="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION"
+
+          if [ ! -x "$BUILD_TOOLS_DIR/zipalign" ] || [ ! -x "$BUILD_TOOLS_DIR/apksigner" ]; then
+            echo "::error::zipalign or apksigner is missing from $BUILD_TOOLS_DIR."
+            exit 1
+          fi
+
+          echo "dir=$BUILD_TOOLS_DIR" >> "$GITHUB_OUTPUT"
+          echo "Using Android Build Tools $BUILD_TOOLS_VERSION"
+
+      - name: Align Release APK
+        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'release'
+        id: align
+        shell: bash
+        run: |
+          UNSIGNED_APK="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*-unsigned.apk' | head -n 1)"
+
+          if [ -z "$UNSIGNED_APK" ]; then
+            echo "::error::No unsigned release APK was produced by assembleRelease."
+            find app/build/outputs/apk/release -maxdepth 1 -type f -print || true
+            exit 1
+          fi
+
+          ALIGNED_APK="app/build/outputs/apk/release/app-release-aligned.apk"
+
+          "${{ steps.build_tools.outputs.dir }}/zipalign" \
+            -p \
+            -f \
+            4 \
+            "$UNSIGNED_APK" \
+            "$ALIGNED_APK"
+
+          "${{ steps.build_tools.outputs.dir }}/zipalign" -c -v 4 "$ALIGNED_APK"
+          echo "apk=$ALIGNED_APK" >> "$GITHUB_OUTPUT"
+
+      - name: Sign Release APK
+        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'release'
+        id: sign
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          SIGNED_APK="app/build/outputs/apk/release/SvgVectorConverter-v${{ steps.version.outputs.version_name }}-release.apk"
+
+          "${{ steps.build_tools.outputs.dir }}/apksigner" sign \
+            --ks release-keystore.jks \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:ANDROID_KEY_PASSWORD \
+            --out "$SIGNED_APK" \
+            "${{ steps.align.outputs.apk }}"
+
+          echo "apk=$SIGNED_APK" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Release APK Signature
+        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'release'
+        shell: bash
+        run: |
+          "${{ steps.build_tools.outputs.dir }}/apksigner" verify \
+            --verbose \
+            --print-certs \
+            "${{ steps.sign.outputs.apk }}"
+
+      - name: Create Release SHA-256
+        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'release'
+        shell: bash
+        run: |
+          cd app/build/outputs/apk/release
+          sha256sum "SvgVectorConverter-v${{ steps.version.outputs.version_name }}-release.apk" \
+            > "SvgVectorConverter-v${{ steps.version.outputs.version_name }}-release.apk.sha256"
+
+      - name: Upload Signed Release APK
+        if: github.event_name == 'workflow_dispatch' && inputs.build_type == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SvgVectorConverter-v${{ steps.version.outputs.version_name }}-release
+          path: |
+            app/build/outputs/apk/release/SvgVectorConverter-v${{ steps.version.outputs.version_name }}-release.apk
+            app/build/outputs/apk/release/SvgVectorConverter-v${{ steps.version.outputs.version_name }}-release.apk.sha256
+          if-no-files-found: error
+
+      - name: Remove Release Keystore
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.build_type == 'release'
+        shell: bash
+        run: rm -f release-keystore.jks
