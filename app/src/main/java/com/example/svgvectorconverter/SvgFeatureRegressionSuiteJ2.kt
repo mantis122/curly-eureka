@@ -558,5 +558,11 @@ object SvgFeatureRegressionSuiteJ2 {
     )
 
     fun run(): SvgRegressionRunner.SuiteResult =
-        SvgRegressionRunner.runSuite(fixtures)
+        SvgRegressionRunner.runSuite(
+            fixtures = fixtures,
+            metadata = SvgRegressionRunner.SuiteMetadata(
+                title = "Extended feature regression suite",
+                baselineLabel = "J2 final · 20 canonical fixtures"
+            )
+        )
 }

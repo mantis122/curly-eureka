@@ -8,11 +8,11 @@ import org.w3c.dom.Node
 import org.xml.sax.InputSource
 
 /**
- * E1.1 core regression runner.
+ * Core regression runner.
  *
- * This runner is deliberately independent of the Android UI and external test
- * libraries. Fixtures are defined directly in Kotlin for now. A later phase
- * can load the same expectation model from JSON or bundled assets.
+ * UI-independent and intentionally lightweight so both the permanent locked
+ * suite and the broader extended feature suite can share the same deterministic
+ * expectation, golden-output, and plain-text reporting model.
  */
 object SvgRegressionRunner {
 
@@ -89,9 +89,29 @@ object SvgRegressionRunner {
             get() = elapsedNanos / 1_000_000.0
     }
 
+    data class SuiteMetadata(
+        val title: String = "Regression suite",
+        val baselineLabel: String? = null
+    )
+
+    data class GoldenCoverage(
+        val locked: Int,
+        val captureCandidates: Int,
+        val disabled: Int
+    ) {
+        val total: Int
+            get() = locked + captureCandidates + disabled
+    }
+
     data class SuiteResult(
         val tests: List<TestResult>,
-        val elapsedNanos: Long
+        val elapsedNanos: Long,
+        val metadata: SuiteMetadata = SuiteMetadata(),
+        val goldenCoverage: GoldenCoverage = GoldenCoverage(
+            locked = 0,
+            captureCandidates = 0,
+            disabled = 0
+        )
     ) {
         val passedCount: Int
             get() = tests.count { it.passed }
@@ -106,12 +126,49 @@ object SvgRegressionRunner {
             get() = elapsedNanos / 1_000_000.0
 
         fun toPlainTextReport(): String = buildString {
-            appendLine("Regression suite")
+            appendLine(metadata.title)
+            metadata.baselineLabel?.let {
+                appendLine("Baseline: $it")
+            }
+            appendLine(
+                "Golden coverage: ${goldenCoverage.locked} locked, " +
+                    "${goldenCoverage.captureCandidates} capture, " +
+                    "${goldenCoverage.disabled} disabled"
+            )
             appendLine()
             appendLine("Tests run: ${tests.size}")
             appendLine("Passed: $passedCount")
             appendLine("Failed: $failedCount")
             appendLine("Elapsed: ${formatMilliseconds(elapsedMilliseconds)}")
+
+            if (failedCount > 0) {
+                appendLine()
+                appendLine("────────────────────────────────")
+                appendLine("Failure summary")
+                appendLine("────────────────────────────────")
+                tests.filterNot { it.passed }.forEach { test ->
+                    appendLine("✕ ${test.fixtureName}")
+
+                    val failedChecks = test.checks.filterNot { it.passed }
+                    if (failedChecks.isEmpty()) {
+                        test.error?.let { appendLine("  $it") }
+                    } else {
+                        failedChecks.forEach { check ->
+                            appendLine("  • ${check.description}")
+                            check.actual?.let { actual ->
+                                if (
+                                    check.description.contains(
+                                        "Golden output",
+                                        ignoreCase = true
+                                    )
+                                ) {
+                                    appendLine("    Actual: $actual")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             tests.forEach { test ->
                 appendLine()
@@ -201,13 +258,35 @@ object SvgRegressionRunner {
         }
     }
 
-    fun runSuite(fixtures: List<Fixture>): SuiteResult {
+    fun runSuite(
+        fixtures: List<Fixture>,
+        metadata: SuiteMetadata = SuiteMetadata()
+    ): SuiteResult {
         val start = System.nanoTime()
         val results = fixtures.map(::runFixture)
 
+        var lockedGoldens = 0
+        var captureCandidates = 0
+        var disabledGoldens = 0
+
+        fixtures.forEach { fixture ->
+            when (fixture.expectations.golden) {
+                GoldenExpectation.Disabled -> disabledGoldens++
+                GoldenExpectation.CaptureCandidate -> captureCandidates++
+                is GoldenExpectation.CanonicalXml,
+                is GoldenExpectation.CanonicalSha256 -> lockedGoldens++
+            }
+        }
+
         return SuiteResult(
             tests = results,
-            elapsedNanos = System.nanoTime() - start
+            elapsedNanos = System.nanoTime() - start,
+            metadata = metadata,
+            goldenCoverage = GoldenCoverage(
+                locked = lockedGoldens,
+                captureCandidates = captureCandidates,
+                disabled = disabledGoldens
+            )
         )
     }
 
@@ -400,7 +479,17 @@ object SvgRegressionRunner {
                         status = passed.toStatus(),
                         expected = expected,
                         actual = actualHash,
-                        details = if (passed) null else "Canonical XML changed."
+                        details = if (passed) {
+                            null
+                        } else {
+                            buildString {
+                                appendLine("Canonical XML changed.")
+                                appendLine("Replacement candidate SHA-256: $actualHash")
+                                appendLine("BEGIN ACTUAL CANONICAL XML")
+                                canonicalActual.lineSequence().forEach(::appendLine)
+                                append("END ACTUAL CANONICAL XML")
+                            }
+                        }
                     )
                 )
             }

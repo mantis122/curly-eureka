@@ -25,7 +25,13 @@ object SvgRegressionSuiteE2 {
     )
 
     fun run(): SvgRegressionRunner.SuiteResult =
-        SvgRegressionRunner.runSuite(fixtures())
+        SvgRegressionRunner.runSuite(
+            fixtures = fixtures(),
+            metadata = SvgRegressionRunner.SuiteMetadata(
+                title = "Locked regression suite",
+                baselineLabel = "J1 final · 12 canonical fixtures"
+            )
+        )
 
     fun runAndFormat(): String =
         run().toPlainTextReport()
