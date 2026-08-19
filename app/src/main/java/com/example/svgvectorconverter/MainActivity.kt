@@ -67,6 +67,33 @@ class MainActivity : ComponentActivity() {
     private var currentG318EmptyMoveOnlyIntegrationReport = ""
     private var currentH11CorpusProfileReport = ""
 
+    private val developerPreferences by lazy {
+        getSharedPreferences("svg_converter_settings", MODE_PRIVATE)
+    }
+
+    private fun isDeveloperModeEnabled(): Boolean =
+        developerPreferences.getBoolean("developer_mode_enabled", false)
+
+    private fun enableDeveloperMode() {
+        if (isDeveloperModeEnabled()) return
+
+        developerPreferences.edit()
+            .putBoolean("developer_mode_enabled", true)
+            .apply()
+
+        toast("Developer mode enabled")
+        recreate()
+    }
+
+    private fun disableDeveloperMode() {
+        developerPreferences.edit()
+            .putBoolean("developer_mode_enabled", false)
+            .apply()
+
+        toast("Developer mode disabled")
+        recreate()
+    }
+
     private fun makeButton(
         label: String,
         onClick: () -> Unit
@@ -417,7 +444,11 @@ class MainActivity : ComponentActivity() {
         copyReportButton = makeButton("Copy Report") { copyReport() }
         saveReportTextButton = makeButton("Save Report .txt") { saveCurrentReportText() }
         saveReportImageButton = makeButton("Save Report Image") { saveCurrentReportImage() }
-        val developerButton = makeButton("Developer Tools") { showDeveloperToolsDialog() }
+        val developerButton = makeButton("Developer Tools") {
+            showDeveloperToolsDialog()
+        }.apply {
+            visibility = if (isDeveloperModeEnabled()) View.VISIBLE else View.GONE
+        }
         val aboutButton = makeButton("About") { showAboutDialog() }
 
         previewBox = ImageView(this).apply {
@@ -865,6 +896,24 @@ class MainActivity : ComponentActivity() {
                 "Developer Tools",
                 21f,
                 Color.BLACK,
+                Gravity.START,
+                paddingBottom = 20
+            )
+        )
+
+        val disableDeveloperModeButton = makeButton("Disable Developer Mode") {
+            disableDeveloperMode()
+        }
+        layout.addView(
+            disableDeveloperModeButton,
+            LinearLayout.LayoutParams(-1, -2)
+        )
+
+        layout.addView(
+            makeText(
+                "Developer mode is enabled on this device.",
+                13f,
+                Color.GRAY,
                 Gravity.START,
                 paddingBottom = 20
             )
@@ -4943,7 +4992,8 @@ class MainActivity : ComponentActivity() {
             ✓ Paths and basic shapes
             ✓ Fill, stroke, opacity, fill rules, and dashed strokes
             ✓ Linear and radial gradients
-            ✓ Patterns, clip paths, masks, and markers
+            ✓ Native VectorDrawable clip-path conversion
+            ✓ Compatibility-aware pattern, mask, and marker approximation
             ✓ Paint-order support
             ✓ defs, symbols, and use references
 
@@ -4976,15 +5026,15 @@ class MainActivity : ComponentActivity() {
 
         val releaseHighlights = makeText(
             """
-            Version 1.3 Highlights
+            Version 1.4 Highlights
 
-            • Full paint-order support
-            • currentColor and context-fill/context-stroke
-            • Improved gradient inheritance and paint resolution
-            • Dashed stroke conversion and dash offset normalization
-            • Non-scaling stroke and dash compensation
-            • Marker rendering refinements
-            • Cleaner exported paths with geometry cleanup
+            • Safer, smaller VectorDrawable optimization
+            • Deterministic and idempotent output safeguards
+            • Improved path and numeric serialization
+            • Safer transform and group optimization
+            • Compatible-path merging with overlap protection
+            • Faster conversion through guarded fixed-point shortcuts
+            • Expanded validation and regression coverage
             """.trimIndent(),
             15f,
             Color.DKGRAY,
@@ -4995,7 +5045,8 @@ class MainActivity : ComponentActivity() {
         val note = makeText(
             """
             Unsupported or approximated SVG features are reported when detected.
-            Some behavior may be approximated where Android VectorDrawable cannot represent SVG exactly.
+            Where Android VectorDrawable cannot represent SVG behavior exactly,
+            the converter prefers a compatibility-aware approximation and reports it.
             """.trimIndent(),
             15f,
             Color.DKGRAY,
@@ -5003,6 +5054,7 @@ class MainActivity : ComponentActivity() {
             paddingBottom = 28
         )
 
+        var developerUnlockTapCount = 0
         val footer = makeText(
             """
             Version ${getVersionName()}
@@ -5011,7 +5063,30 @@ class MainActivity : ComponentActivity() {
             14f,
             Color.GRAY,
             Gravity.CENTER
-        )
+        ).apply {
+            setOnClickListener {
+                if (isDeveloperModeEnabled()) {
+                    return@setOnClickListener
+                }
+
+                developerUnlockTapCount++
+
+                when {
+                    developerUnlockTapCount >= 7 -> {
+                        developerUnlockTapCount = 0
+                        enableDeveloperMode()
+                    }
+
+                    developerUnlockTapCount >= 4 -> {
+                        val remaining = 7 - developerUnlockTapCount
+                        toast(
+                            "$remaining more tap${if (remaining == 1) "" else "s"} " +
+                                "to enable developer mode"
+                        )
+                    }
+                }
+            }
+        }
 
         layout.addView(icon)
         layout.addView(title)
