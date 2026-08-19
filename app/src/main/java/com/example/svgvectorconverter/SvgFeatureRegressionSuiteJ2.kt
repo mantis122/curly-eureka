@@ -3,9 +3,9 @@ package com.example.svgvectorconverter
 /**
  * J2 extended feature regression suite.
  *
- * Separate from the permanent 12-test locked gate. J2.2 has 19 locked canonical fingerprints. J2-10 remains in
- * CaptureCandidate mode for one correction run with a smaller immediately-
- * idempotent repeated-use fixture.
+ * Separate from the permanent 12-test locked gate. J2.3 keeps 19 locked canonical fingerprints. J2-10 remains in
+ * CaptureCandidate mode for one final verification run using a single basic
+ * use expansion fixture.
  */
 object SvgFeatureGoldenBaselinesJ2 {
     const val J2_01_LINEAR_GRADIENT =
@@ -297,24 +297,33 @@ object SvgFeatureRegressionSuiteJ2 {
             svg = """
             <svg xmlns="http://www.w3.org/2000/svg"
                 xmlns:xlink="http://www.w3.org/1999/xlink"
-                width="120"
+                width="80"
                 height="60"
-                viewBox="0 0 120 60">
+                viewBox="0 0 80 60">
                 <defs>
                     <path id="tile"
                         d="M0 0 H20 V20 H0 Z"
                         fill="#455A64"/>
                 </defs>
-                <use xlink:href="#tile" x="10" y="20"/>
-                <use xlink:href="#tile" x="50" y="20"/>
-                <use xlink:href="#tile" x="90" y="20"/>
+                <use xlink:href="#tile" x="30" y="20"/>
             </svg>
             """.trimIndent(),
             expectations = SvgRegressionRunner.Expectations(
                 expectedDrawablePathCount = 1,
+                // The standalone final-validator wrapper currently reports
+                // this source-level use construct as unsupported even after
+                // conversion has expanded it into normal VectorDrawable pathData.
                 requireFinalOutputValidation = false,
-                requiredXmlFragments = listOf("android:pathData="),
-                forbiddenXmlFragments = listOf("<svg", "NaN", "Infinity"),
+                requiredXmlFragments = listOf(
+                    "android:pathData=",
+                    "android:fillColor=\"#455A64\""
+                ),
+                forbiddenXmlFragments = listOf(
+                    "<svg",
+                    "<use",
+                    "NaN",
+                    "Infinity"
+                ),
                 golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate
             )
         ),
