@@ -3,9 +3,9 @@ package com.example.svgvectorconverter
 /**
  * J2 extended feature regression suite.
  *
- * Separate from the permanent 12-test locked gate. J2.3 keeps 19 locked canonical fingerprints. J2-10 remains in
- * CaptureCandidate mode for one final verification run using a single basic
- * use expansion fixture.
+ * Separate from the permanent 12-test locked gate. All twenty extended feature fixtures are locked to canonical SHA-256
+ * fingerprints. Update a fingerprint only after reviewing and approving the
+ * corresponding canonical XML change.
  */
 object SvgFeatureGoldenBaselinesJ2 {
     const val J2_01_LINEAR_GRADIENT =
@@ -34,6 +34,10 @@ object SvgFeatureGoldenBaselinesJ2 {
 
     const val J2_09_GRADIENT_MASK =
         "e9829f1a1efced645027b46ac7023c44288c2bf2f3c117ce8edcb3e73287b797"
+
+
+    const val J2_10_BASIC_USE_EXPANSION =
+        "e2fb9722c8b1c8587ef094d41800daeae536d269a2843e1f83871dce31d4a280"
 
     const val J2_11_USE_STYLE_OVERRIDE =
         "2359f8f522cba99900e62c55d9d00ed4e084091231b26cbdd4291693d1ae49ba"
@@ -324,7 +328,9 @@ object SvgFeatureRegressionSuiteJ2 {
                     "NaN",
                     "Infinity"
                 ),
-                golden = SvgRegressionRunner.GoldenExpectation.CaptureCandidate
+                golden = SvgRegressionRunner.GoldenExpectation.CanonicalSha256(
+                    SvgFeatureGoldenBaselinesJ2.J2_10_BASIC_USE_EXPANSION
+                )
             )
         ),
 
