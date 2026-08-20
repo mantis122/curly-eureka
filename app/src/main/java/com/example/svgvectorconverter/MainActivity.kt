@@ -51,6 +51,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var exportActionsRow: LinearLayout
     private lateinit var reportMenuButton: Button
     private lateinit var reportActionsRow: LinearLayout
+    private lateinit var previewTab: TextView
+    private lateinit var xmlTab: TextView
+    private lateinit var tabRow: LinearLayout
+    private var previewTabSelected = true
     private var currentRegressionReport = ""
     private var currentExtendedFeatureRegressionReport = ""
     private var currentDifferentialSearchReport = ""
@@ -134,6 +138,25 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(12), dp(10), dp(12), dp(8))
             setOnClickListener { onClick() }
         }
+    }
+
+    private fun updateTabAppearance() {
+        previewTab.paintFlags =
+            if (previewTabSelected) {
+                previewTab.paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG or android.graphics.Paint.FAKE_BOLD_TEXT_FLAG
+            } else {
+                previewTab.paintFlags and android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv() and android.graphics.Paint.FAKE_BOLD_TEXT_FLAG.inv()
+            }
+
+        xmlTab.paintFlags =
+            if (!previewTabSelected) {
+                xmlTab.paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG or android.graphics.Paint.FAKE_BOLD_TEXT_FLAG
+            } else {
+                xmlTab.paintFlags and android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv() and android.graphics.Paint.FAKE_BOLD_TEXT_FLAG.inv()
+            }
+
+        previewTab.invalidate()
+        xmlTab.invalidate()
     }
 
     private fun makeText(
@@ -478,7 +501,9 @@ class MainActivity : ComponentActivity() {
 
         copyButton = makeButton("Copy XML") { copyConvertedXml() }
         saveXmlButton = makeButton("Save XML") { saveSingleXml() }
-        saveZipButton = makeButton("Save ZIP") { saveBatchZip() }
+        saveZipButton = makeCompactButton("Save ZIP") { saveBatchZip() }.apply {
+            textSize = 14f
+        }
 
         conversionSettingsButton = makeCompactButton(conversionSettingsSummary()) {
             showConversionSettingsDialog()
@@ -536,11 +561,12 @@ class MainActivity : ComponentActivity() {
             visibility = View.GONE
         }
 
-        val previewTab = makeTab("Preview") { showPreviewTab() }
-        val xmlTab = makeTab("XML") { showXmlTab() }
+        previewTab = makeTab("Preview") { showPreviewTab() }
+        xmlTab = makeTab("XML") { showXmlTab() }
 
         val openRow = horizontalRow(openButton, batchButton)
-        val tabRow = horizontalRow(previewTab, xmlTab)
+        tabRow = horizontalRow(previewTab, xmlTab)
+        updateTabAppearance()
 
         exportActionsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -553,8 +579,11 @@ class MainActivity : ComponentActivity() {
             setPadding(0, dp(8), 0, dp(8))
         }
 
-        reportMenuButton = makeButton("Report Export ▾") {
+        reportMenuButton = makeCompactButton("Export ▾") {
             showReportExportMenu(reportMenuButton)
+        }.apply {
+            textSize = 13f
+            setPadding(dp(10), dp(4), dp(10), dp(4))
         }
 
         reportActionsRow = LinearLayout(this).apply {
@@ -620,6 +649,9 @@ class MainActivity : ComponentActivity() {
         batchGallery.removeAllViews()
         previewBox.visibility = View.VISIBLE
         previewEmptyState.visibility = View.GONE
+        previewTabSelected = true
+        updateTabAppearance()
+        setMainContentState(showPreviewContent = true)
         updateActionButtons()
     }
 
@@ -975,10 +1007,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showPreviewTab() {
+        previewTabSelected = true
+        updateTabAppearance()
         setMainContentState(showPreviewContent = true)
     }
 
     private fun showXmlTab() {
+        previewTabSelected = false
+        updateTabAppearance()
         setMainContentState(showPreviewContent = false)
     }
 
@@ -5301,6 +5337,17 @@ class MainActivity : ComponentActivity() {
         saveZipButton.visibility = if (hasBatch) View.VISIBLE else View.GONE
         exportActionsRow.visibility =
             if (hasSingleXml || hasBatch) View.VISIBLE else View.GONE
+
+        // Preview/XML are single-file navigation. In batch mode the useful
+        // content is the batch report and gallery, so do not reserve space
+        // for a meaningless single-file preview/XML panel.
+        tabRow.visibility = if (hasBatch) View.GONE else View.VISIBLE
+        if (hasBatch) {
+            previewContainer.visibility = View.GONE
+            outputBox.visibility = View.GONE
+            batchGallery.visibility = View.VISIBLE
+            reportBox.visibility = View.VISIBLE
+        }
 
         val reportAvailable = hasReport()
         reportMenuButton.isEnabled = reportAvailable
