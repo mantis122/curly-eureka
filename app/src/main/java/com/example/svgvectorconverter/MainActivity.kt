@@ -20,6 +20,7 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.Space
 import android.widget.TextView
@@ -43,9 +44,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var copyButton: Button
     private lateinit var saveXmlButton: Button
     private lateinit var saveZipButton: Button
-    private lateinit var copyReportButton: Button
-    private lateinit var saveReportTextButton: Button
-    private lateinit var saveReportImageButton: Button
+    private lateinit var conversionSettingsButton: Button
+    private lateinit var exportActionsRow: LinearLayout
+    private lateinit var reportMenuButton: Button
     private lateinit var reportActionsRow: LinearLayout
     private var currentRegressionReport = ""
     private var currentExtendedFeatureRegressionReport = ""
@@ -408,48 +409,46 @@ class MainActivity : ComponentActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 80, 32, 32)
+            setPadding(32, 64, 32, 32)
             setBackgroundColor(Color.rgb(250, 248, 240))
         }
 
-        val title = makeText("SVG → Android Vector", 24f, Color.BLACK)
-        val versionLabel = makeText("v${getVersionName()}", 12f, Color.GRAY)
+        val title = makeText(
+            "SVG → Android Vector",
+            24f,
+            Color.BLACK,
+            Gravity.CENTER_VERTICAL
+        )
+
+        val overflowButton = makeButton("⋮") {
+            showMainOverflowMenu(it)
+        }.apply {
+            minWidth = 0
+            minimumWidth = 0
+        }
+
+        val appBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(title, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(overflowButton, LinearLayout.LayoutParams(-2, -2))
+        }
 
         val openButton = makeButton("Open SVG") {
             openSvg.launch(arrayOf("image/svg+xml", "text/xml", "text/plain"))
-        }
-
-        copyButton = makeButton("Copy XML") { copyConvertedXml() }
-
-        val sizeButton = Button(this).apply {
-            text = sizeButtonText()
-            setOnClickListener {
-                showOutputSizeDialog(this)
-            }
-        }
-
-        val profileButton = Button(this).apply {
-            text = "Profile: $conversionProfile"
-            setOnClickListener {
-                showProfileDialog(this, sizeButton)
-            }
         }
 
         val batchButton = makeButton("Batch SVGs") {
             openMultipleSvgs.launch(arrayOf("image/svg+xml", "text/xml", "text/plain"))
         }
 
-        saveZipButton = makeButton("Save ZIP") { saveBatchZip() }
+        copyButton = makeButton("Copy XML") { copyConvertedXml() }
         saveXmlButton = makeButton("Save XML") { saveSingleXml() }
-        copyReportButton = makeButton("Copy Report") { copyReport() }
-        saveReportTextButton = makeButton("Save Report .txt") { saveCurrentReportText() }
-        saveReportImageButton = makeButton("Save Report Image") { saveCurrentReportImage() }
-        val developerButton = makeButton("Developer Tools") {
-            showDeveloperToolsDialog()
-        }.apply {
-            visibility = if (isDeveloperModeEnabled()) View.VISIBLE else View.GONE
+        saveZipButton = makeButton("Save ZIP") { saveBatchZip() }
+
+        conversionSettingsButton = makeButton(conversionSettingsSummary()) {
+            showConversionSettingsDialog()
         }
-        val aboutButton = makeButton("About") { showAboutDialog() }
 
         previewBox = ImageView(this).apply {
             setBackgroundColor(Color.WHITE)
@@ -477,27 +476,37 @@ class MainActivity : ComponentActivity() {
         val xmlTab = makeButton("XML") { showXmlTab() }
 
         val openRow = horizontalRow(openButton, batchButton)
-        val saveRow = horizontalRow(saveXmlButton, saveZipButton)
-
-        val utilityRow = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-
-            addView(horizontalRow(copyButton, sizeButton))
-            addView(profileButton, LinearLayout.LayoutParams(-1, -2))
-            addView(developerButton, LinearLayout.LayoutParams(-1, -2))
-            addView(aboutButton, LinearLayout.LayoutParams(-1, -2))
-        }
-
         val tabRow = horizontalRow(previewTab, xmlTab)
+
+        exportActionsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(saveXmlButton, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(copyButton, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(saveZipButton, LinearLayout.LayoutParams(0, -2, 1f))
+        }
 
         reportBox = makeText("No SVG converted yet", 14f, Color.BLACK).apply {
             setPadding(0, 16, 0, 16)
         }
 
+        reportMenuButton = makeButton("Report Export ▾") {
+            showReportExportMenu(it)
+        }
+
         reportActionsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(horizontalRow(copyReportButton, saveReportTextButton))
-            addView(saveReportImageButton, LinearLayout.LayoutParams(-1, -2))
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+
+            addView(
+                makeText(
+                    "Conversion Report",
+                    16f,
+                    Color.DKGRAY,
+                    Gravity.CENTER_VERTICAL
+                ),
+                LinearLayout.LayoutParams(0, -2, 1f)
+            )
+            addView(reportMenuButton, LinearLayout.LayoutParams(-2, -2))
         }
 
         mainPanel = LinearLayout(this).apply {
@@ -515,12 +524,11 @@ class MainActivity : ComponentActivity() {
         mainPanel.addView(batchGallery)
         mainPanel.addView(Space(this), LinearLayout.LayoutParams(-1, 96))
 
-        root.addView(title)
-        root.addView(versionLabel)
+        root.addView(appBar)
         root.addView(openRow)
-        root.addView(saveRow)
-        root.addView(utilityRow)
+        root.addView(conversionSettingsButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(tabRow)
+        root.addView(exportActionsRow)
         root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
 
         setContentView(root)
@@ -655,29 +663,53 @@ class MainActivity : ComponentActivity() {
             ?: 0
     }
 
-    private fun showOutputSizeDialog(sizeButton: Button) {
+    private fun showConversionSettingsDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 12, 32, 0)
+        }
+
+        val profileButton = makeButton("Profile: $conversionProfile") {
+            showProfileDialog()
+        }
+
+        val sizeButton = makeButton("Output size: ${outputSizeLabel()}") {
+            showOutputSizeDialog()
+        }
+
+        layout.addView(profileButton, LinearLayout.LayoutParams(-1, -2))
+        layout.addView(sizeButton, LinearLayout.LayoutParams(-1, -2))
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Conversion Settings")
+            .setView(layout)
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showOutputSizeDialog() {
         val options = arrayOf("24dp", "48dp", "Keep SVG size", "Custom...")
 
         android.app.AlertDialog.Builder(this)
             .setTitle("Output Size")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> setOutputDpSize(24, sizeButton)
-                    1 -> setOutputDpSize(48, sizeButton)
-                    2 -> setOutputDpSize(-1, sizeButton)
-                    3 -> showCustomSizeDialog(sizeButton)
+                    0 -> setOutputDpSize(24)
+                    1 -> setOutputDpSize(48)
+                    2 -> setOutputDpSize(-1)
+                    3 -> showCustomSizeDialog()
                 }
             }
             .show()
     }
 
-    private fun setOutputDpSize(size: Int, sizeButton: Button) {
+    private fun setOutputDpSize(size: Int) {
         outputDpSize = size
         ConverterSettingsStore.saveOutputDpSize(this, outputDpSize)
-        sizeButton.text = sizeButtonText()
+        updateConversionSettingsSummary()
     }
 
-    private fun showProfileDialog(profileButton: Button, sizeButton: Button) {
+    private fun showProfileDialog() {
         val options = arrayOf(
             "Default",
             "Android Icon",
@@ -689,10 +721,10 @@ class MainActivity : ComponentActivity() {
             .setTitle("Conversion Profile")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> applyProfile("Default", 24, profileButton, sizeButton)
-                    1 -> applyProfile("Android Icon", 24, profileButton, sizeButton)
-                    2 -> applyProfile("Material Icon", 24, profileButton, sizeButton)
-                    3 -> applyProfile("Keep SVG", -1, profileButton, sizeButton)
+                    0 -> applyProfile("Default", 24)
+                    1 -> applyProfile("Android Icon", 24)
+                    2 -> applyProfile("Material Icon", 24)
+                    3 -> applyProfile("Keep SVG", -1)
                 }
             }
             .show()
@@ -700,9 +732,7 @@ class MainActivity : ComponentActivity() {
 
     private fun applyProfile(
         profile: String,
-        size: Int,
-        profileButton: Button,
-        sizeButton: Button
+        size: Int
     ) {
         conversionProfile = profile
         outputDpSize = size
@@ -715,11 +745,10 @@ class MainActivity : ComponentActivity() {
             )
         )
 
-        profileButton.text = "Profile: $conversionProfile"
-        sizeButton.text = sizeButtonText()
+        updateConversionSettingsSummary()
     }
 
-    private fun showCustomSizeDialog(sizeButton: Button) {
+    private fun showCustomSizeDialog() {
         val input = EditText(this).apply {
             hint = "Example: 32"
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
@@ -735,19 +764,28 @@ class MainActivity : ComponentActivity() {
                 if (size == null || size <= 0) {
                     toast("Invalid size")
                 } else {
-                    setOutputDpSize(size, sizeButton)
+                    setOutputDpSize(size)
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-
-    private fun sizeButtonText(): String {
+    private fun outputSizeLabel(): String {
         return if (outputDpSize > 0) {
-            "Size: ${outputDpSize}dp"
+            "${outputDpSize}dp"
         } else {
-            "Size: SVG"
+            "SVG"
+        }
+    }
+
+    private fun conversionSettingsSummary(): String {
+        return "$conversionProfile · ${outputSizeLabel()} ▾"
+    }
+
+    private fun updateConversionSettingsSummary() {
+        if (::conversionSettingsButton.isInitialized) {
+            conversionSettingsButton.text = conversionSettingsSummary()
         }
     }
 
@@ -883,6 +921,73 @@ class MainActivity : ComponentActivity() {
             addView(left, LinearLayout.LayoutParams(0, -2, 1f))
             addView(right, LinearLayout.LayoutParams(0, -2, 1f))
         }
+    }
+
+    private fun showMainOverflowMenu(anchor: View) {
+        val popup = PopupMenu(this, anchor)
+        popup.menu.add("Conversion Settings")
+        if (isDeveloperModeEnabled()) {
+            popup.menu.add("Developer Tools")
+        }
+        popup.menu.add("About")
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.title.toString()) {
+                "Conversion Settings" -> {
+                    showConversionSettingsDialog()
+                    true
+                }
+
+                "Developer Tools" -> {
+                    showDeveloperToolsDialog()
+                    true
+                }
+
+                "About" -> {
+                    showAboutDialog()
+                    true
+                }
+
+                else -> false
+            }
+        }
+
+        popup.show()
+    }
+
+    private fun showReportExportMenu(anchor: View) {
+        if (!hasReport()) {
+            toast("No report available yet")
+            return
+        }
+
+        val popup = PopupMenu(this, anchor)
+        popup.menu.add("Copy report")
+        popup.menu.add("Save as text")
+        popup.menu.add("Save as image")
+
+        popup.setOnMenuItemClickListener { item ->
+            when (item.title.toString()) {
+                "Copy report" -> {
+                    copyReport()
+                    true
+                }
+
+                "Save as text" -> {
+                    saveCurrentReportText()
+                    true
+                }
+
+                "Save as image" -> {
+                    saveCurrentReportImage()
+                    true
+                }
+
+                else -> false
+            }
+        }
+
+        popup.show()
     }
 
     private fun showDeveloperToolsDialog() {
@@ -5114,13 +5219,23 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun updateActionButtons() {
-        copyButton.isEnabled = convertedXml.isNotBlank()
-        saveXmlButton.isEnabled = convertedXml.isNotBlank()
-        saveZipButton.isEnabled = batchResults.isNotEmpty()
+        val hasSingleXml = convertedXml.isNotBlank()
+        val hasBatch = batchResults.isNotEmpty()
+
+        copyButton.isEnabled = hasSingleXml
+        saveXmlButton.isEnabled = hasSingleXml
+        saveZipButton.isEnabled = hasBatch
+
+        copyButton.visibility = if (hasSingleXml) View.VISIBLE else View.GONE
+        saveXmlButton.visibility = if (hasSingleXml) View.VISIBLE else View.GONE
+        saveZipButton.visibility = if (hasBatch) View.VISIBLE else View.GONE
+        exportActionsRow.visibility =
+            if (hasSingleXml || hasBatch) View.VISIBLE else View.GONE
+
         val reportAvailable = hasReport()
-        copyReportButton.isEnabled = reportAvailable
-        saveReportTextButton.isEnabled = reportAvailable
-        saveReportImageButton.isEnabled = reportAvailable
+        reportMenuButton.isEnabled = reportAvailable
+        reportActionsRow.visibility =
+            if (reportAvailable) View.VISIBLE else View.GONE
     }
 
     private fun showBatchGallery() {
