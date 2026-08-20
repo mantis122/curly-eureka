@@ -772,11 +772,16 @@ class MainActivity : ComponentActivity() {
         }
 
         val profileButton = makeButton("Profile: $conversionProfile") {
-            showProfileDialog()
+            showProfileDialog {
+                profileButton.text = "Profile: $conversionProfile"
+                sizeButton.text = "Output size: ${outputSizeLabel()}"
+            }
         }
 
         val sizeButton = makeButton("Output size: ${outputSizeLabel()}") {
-            showOutputSizeDialog()
+            showOutputSizeDialog {
+                sizeButton.text = "Output size: ${outputSizeLabel()}"
+            }
         }
 
         layout.addView(profileButton, LinearLayout.LayoutParams(-1, -2))
@@ -789,17 +794,31 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-    private fun showOutputSizeDialog() {
+    private fun showOutputSizeDialog(
+        onChanged: (() -> Unit)? = null
+    ) {
         val options = arrayOf("24dp", "48dp", "Keep SVG size", "Custom...")
 
         android.app.AlertDialog.Builder(this)
             .setTitle("Output Size")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> setOutputDpSize(24)
-                    1 -> setOutputDpSize(48)
-                    2 -> setOutputDpSize(-1)
-                    3 -> showCustomSizeDialog()
+                    0 -> {
+                        setOutputDpSize(24)
+                        onChanged?.invoke()
+                    }
+
+                    1 -> {
+                        setOutputDpSize(48)
+                        onChanged?.invoke()
+                    }
+
+                    2 -> {
+                        setOutputDpSize(-1)
+                        onChanged?.invoke()
+                    }
+
+                    3 -> showCustomSizeDialog(onChanged)
                 }
             }
             .show()
@@ -811,7 +830,9 @@ class MainActivity : ComponentActivity() {
         updateConversionSettingsSummary()
     }
 
-    private fun showProfileDialog() {
+    private fun showProfileDialog(
+        onChanged: (() -> Unit)? = null
+    ) {
         val options = arrayOf(
             "Default",
             "Android Icon",
@@ -828,6 +849,7 @@ class MainActivity : ComponentActivity() {
                     2 -> applyProfile("Material Icon", 24)
                     3 -> applyProfile("Keep SVG", -1)
                 }
+                onChanged?.invoke()
             }
             .show()
     }
@@ -850,7 +872,9 @@ class MainActivity : ComponentActivity() {
         updateConversionSettingsSummary()
     }
 
-    private fun showCustomSizeDialog() {
+    private fun showCustomSizeDialog(
+        onChanged: (() -> Unit)? = null
+    ) {
         val input = EditText(this).apply {
             hint = "Example: 32"
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
@@ -867,6 +891,7 @@ class MainActivity : ComponentActivity() {
                     toast("Invalid size")
                 } else {
                     setOutputDpSize(size)
+                    onChanged?.invoke()
                 }
             }
             .setNegativeButton("Cancel", null)
