@@ -420,8 +420,9 @@ class MainActivity : ComponentActivity() {
             Gravity.CENTER_VERTICAL
         )
 
-        val overflowButton = makeButton("⋮") {
-            showMainOverflowMenu(it)
+        lateinit var overflowButton: Button
+        overflowButton = makeButton("⋮") {
+            showMainOverflowMenu(overflowButton)
         }.apply {
             minWidth = 0
             minimumWidth = 0
