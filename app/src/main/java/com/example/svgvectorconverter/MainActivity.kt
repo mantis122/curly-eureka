@@ -771,14 +771,17 @@ class MainActivity : ComponentActivity() {
             setPadding(32, 12, 32, 0)
         }
 
-        val profileButton = makeButton("Profile: $conversionProfile") {
+        lateinit var profileButton: Button
+        lateinit var sizeButton: Button
+
+        profileButton = makeButton("Profile: $conversionProfile") {
             showProfileDialog {
                 profileButton.text = "Profile: $conversionProfile"
                 sizeButton.text = "Output size: ${outputSizeLabel()}"
             }
         }
 
-        val sizeButton = makeButton("Output size: ${outputSizeLabel()}") {
+        sizeButton = makeButton("Output size: ${outputSizeLabel()}") {
             showOutputSizeDialog {
                 sizeButton.text = "Output size: ${outputSizeLabel()}"
             }
