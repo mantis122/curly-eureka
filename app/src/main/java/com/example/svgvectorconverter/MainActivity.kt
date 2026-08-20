@@ -17,6 +17,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -35,6 +36,8 @@ class MainActivity : ComponentActivity() {
     private var convertedXml = ""
     private lateinit var reportBox: TextView
     private lateinit var previewBox: ImageView
+    private lateinit var previewContainer: FrameLayout
+    private lateinit var previewEmptyState: TextView
     private var suggestedFileName = "converted_vector.xml"
     private lateinit var mainPanel: LinearLayout
     private val batchResults = mutableListOf<BatchResult>()
@@ -105,6 +108,34 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density + 0.5f).toInt()
+    }
+
+    private fun makeCompactButton(
+        label: String,
+        onClick: () -> Unit
+    ): Button {
+        return makeButton(label, onClick).apply {
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            textSize = 15f
+        }
+    }
+
+    private fun makeTab(
+        label: String,
+        onClick: () -> Unit
+    ): TextView {
+        return makeText(label, 15f, Color.BLACK, Gravity.CENTER).apply {
+            isClickable = true
+            isFocusable = true
+            setPadding(dp(12), dp(10), dp(12), dp(8))
+            setOnClickListener { onClick() }
+        }
+    }
+
     private fun makeText(
         value: String,
         sizeSp: Float,
@@ -126,7 +157,7 @@ class MainActivity : ComponentActivity() {
     private fun setMainContentState(
         showPreviewContent: Boolean
     ) {
-        previewBox.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
+        previewContainer.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
         reportBox.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
         reportActionsRow.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
         batchGallery.visibility = if (showPreviewContent) View.VISIBLE else View.GONE
@@ -409,23 +440,25 @@ class MainActivity : ComponentActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 64, 32, 32)
+            setPadding(dp(16), dp(28), dp(16), dp(16))
             setBackgroundColor(Color.rgb(250, 248, 240))
         }
 
         val title = makeText(
             "SVG → Android Vector",
-            24f,
+            21f,
             Color.BLACK,
             Gravity.CENTER_VERTICAL
         )
 
         lateinit var overflowButton: Button
-        overflowButton = makeButton("⋮") {
+        overflowButton = makeCompactButton("⋮") {
             showMainOverflowMenu(overflowButton)
         }.apply {
-            minWidth = 0
-            minimumWidth = 0
+            minWidth = dp(40)
+            minimumWidth = dp(40)
+            textSize = 20f
+            setPadding(dp(4), dp(2), dp(4), dp(2))
         }
 
         val appBar = LinearLayout(this).apply {
@@ -435,11 +468,11 @@ class MainActivity : ComponentActivity() {
             addView(overflowButton, LinearLayout.LayoutParams(-2, -2))
         }
 
-        val openButton = makeButton("Open SVG") {
+        val openButton = makeCompactButton("Open SVG") {
             openSvg.launch(arrayOf("image/svg+xml", "text/xml", "text/plain"))
         }
 
-        val batchButton = makeButton("Batch SVGs") {
+        val batchButton = makeCompactButton("Batch SVGs") {
             openMultipleSvgs.launch(arrayOf("image/svg+xml", "text/xml", "text/plain"))
         }
 
@@ -447,14 +480,44 @@ class MainActivity : ComponentActivity() {
         saveXmlButton = makeButton("Save XML") { saveSingleXml() }
         saveZipButton = makeButton("Save ZIP") { saveBatchZip() }
 
-        conversionSettingsButton = makeButton(conversionSettingsSummary()) {
+        conversionSettingsButton = makeCompactButton(conversionSettingsSummary()) {
             showConversionSettingsDialog()
+        }.apply {
+            textSize = 14f
         }
 
         previewBox = ImageView(this).apply {
             setBackgroundColor(Color.WHITE)
-            setPadding(24, 24, 24, 24)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
             scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+
+        previewEmptyState = makeText(
+            "No SVG selected\nOpen an SVG to preview its conversion.",
+            14f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply {
+            setBackgroundColor(Color.WHITE)
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+        }
+
+        previewContainer = FrameLayout(this).apply {
+            setBackgroundColor(Color.WHITE)
+            addView(
+                previewBox,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
+            addView(
+                previewEmptyState,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
         }
 
         batchGallery = LinearLayout(this).apply {
@@ -473,8 +536,8 @@ class MainActivity : ComponentActivity() {
             visibility = View.GONE
         }
 
-        val previewTab = makeButton("Preview") { showPreviewTab() }
-        val xmlTab = makeButton("XML") { showXmlTab() }
+        val previewTab = makeTab("Preview") { showPreviewTab() }
+        val xmlTab = makeTab("XML") { showXmlTab() }
 
         val openRow = horizontalRow(openButton, batchButton)
         val tabRow = horizontalRow(previewTab, xmlTab)
@@ -486,8 +549,8 @@ class MainActivity : ComponentActivity() {
             addView(saveZipButton, LinearLayout.LayoutParams(0, -2, 1f))
         }
 
-        reportBox = makeText("No SVG converted yet", 14f, Color.BLACK).apply {
-            setPadding(0, 16, 0, 16)
+        reportBox = makeText("", 14f, Color.BLACK).apply {
+            setPadding(0, dp(8), 0, dp(8))
         }
 
         reportMenuButton = makeButton("Report Export ▾") {
@@ -518,7 +581,7 @@ class MainActivity : ComponentActivity() {
             addView(mainPanel)
         }
 
-        mainPanel.addView(previewBox, LinearLayout.LayoutParams(-1, 450))
+        mainPanel.addView(previewContainer, LinearLayout.LayoutParams(-1, dp(260)))
         mainPanel.addView(outputBox, LinearLayout.LayoutParams(-1, -2))
         mainPanel.addView(reportActionsRow)
         mainPanel.addView(reportBox)
@@ -526,8 +589,11 @@ class MainActivity : ComponentActivity() {
         mainPanel.addView(Space(this), LinearLayout.LayoutParams(-1, 96))
 
         root.addView(appBar)
+        root.addView(Space(this), LinearLayout.LayoutParams(-1, dp(6)))
         root.addView(openRow)
+        root.addView(Space(this), LinearLayout.LayoutParams(-1, dp(4)))
         root.addView(conversionSettingsButton, LinearLayout.LayoutParams(-1, -2))
+        root.addView(Space(this), LinearLayout.LayoutParams(-1, dp(4)))
         root.addView(tabRow)
         root.addView(exportActionsRow)
         root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -553,6 +619,7 @@ class MainActivity : ComponentActivity() {
         batchResults.clear()
         batchGallery.removeAllViews()
         previewBox.visibility = View.VISIBLE
+        previewEmptyState.visibility = View.GONE
         updateActionButtons()
     }
 
@@ -569,6 +636,7 @@ class MainActivity : ComponentActivity() {
         showBatchGallery()
 
         previewBox.visibility = View.GONE
+        previewEmptyState.visibility = View.GONE
         updateActionButtons()
 
         toast("${batchResults.size} files converted")
@@ -605,6 +673,7 @@ class MainActivity : ComponentActivity() {
     private fun clearSingleConversionUi() {
         convertedXml = ""
         previewBox.setImageDrawable(null)
+        previewEmptyState.visibility = View.VISIBLE
         outputBox.setText("")
         updateActionButtons()
     }
@@ -826,7 +895,7 @@ class MainActivity : ComponentActivity() {
 
     private fun hasReport(): Boolean {
         val report = currentReportText().trim()
-        return report.isNotEmpty() && report != "No SVG converted yet"
+        return report.isNotEmpty()
     }
 
     private fun copyReport() {
@@ -5251,8 +5320,10 @@ class MainActivity : ComponentActivity() {
         try {
             val bitmap = VectorPreviewRenderer.render(xml, 512, 512)
             previewBox.setImageDrawable(BitmapDrawable(resources, bitmap))
+            previewEmptyState.visibility = View.GONE
         } catch (e: Exception) {
             previewBox.setImageDrawable(null)
+            previewEmptyState.visibility = View.GONE
             reportBox.text = reportBox.text.toString() + "\n\nPreview failed: ${e.message}"
         }
     }
