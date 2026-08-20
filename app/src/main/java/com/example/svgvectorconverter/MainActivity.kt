@@ -491,7 +491,7 @@ class MainActivity : ComponentActivity() {
         }
 
         reportMenuButton = makeButton("Report Export ▾") {
-            showReportExportMenu(it)
+            showReportExportMenu(reportMenuButton)
         }
 
         reportActionsRow = LinearLayout(this).apply {
