@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.svgvectorconverter"
+    namespace = "com.littlemachineworks.svgvectorconverter"
     compileSdk = 36
 
     buildFeatures {
@@ -12,7 +12,7 @@ android {
     } 
     
     defaultConfig {
-        applicationId = "com.example.svgvectorconverter"
+        applicationId = "com.littlemachineworks.svgvectorconverter"
         minSdk = 23
         targetSdk = 36
         versionCode = 5
