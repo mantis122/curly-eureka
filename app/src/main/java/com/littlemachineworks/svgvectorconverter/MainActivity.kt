@@ -74,6 +74,8 @@ class MainActivity : ComponentActivity() {
     private var currentG317ValidationClassificationReport = ""
     private var currentG318EmptyMoveOnlyIntegrationReport = ""
     private var currentH11CorpusProfileReport = ""
+    private lateinit var billingManager: PlayBillingManager
+    private var billingState = PlayBillingManager.State()
 
     private val developerPreferences by lazy {
         getSharedPreferences("svg_converter_settings", MODE_PRIVATE)
@@ -461,6 +463,23 @@ class MainActivity : ComponentActivity() {
         outputDpSize = savedSettings.outputDpSize
         conversionProfile = savedSettings.conversionProfile
 
+        billingManager = PlayBillingManager(
+            context = this,
+            listener = object : PlayBillingManager.Listener {
+                override fun onBillingStateChanged(state: PlayBillingManager.State) {
+                    runOnUiThread {
+                        billingState = state
+                    }
+                }
+
+                override fun onBillingMessage(message: String) {
+                    runOnUiThread {
+                        toast(message)
+                    }
+                }
+            }
+        )
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(28), dp(16), dp(16))
@@ -629,6 +648,21 @@ class MainActivity : ComponentActivity() {
 
         setContentView(root)
         updateActionButtons()
+        billingManager.start()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::billingManager.isInitialized) {
+            billingManager.refresh()
+        }
+    }
+
+    override fun onDestroy() {
+        if (::billingManager.isInitialized) {
+            billingManager.endConnection()
+        }
+        super.onDestroy()
     }
 
     private fun convertSingleSvg(uri: Uri) {
@@ -1060,6 +1094,7 @@ class MainActivity : ComponentActivity() {
     private fun showMainOverflowMenu(anchor: View) {
         val popup = PopupMenu(this, anchor)
         popup.menu.add("Conversion Settings")
+        popup.menu.add(if (billingState.isPro) "Pro unlocked" else "Upgrade to Pro")
         if (isDeveloperModeEnabled()) {
             popup.menu.add("Developer Tools")
         }
@@ -1069,6 +1104,11 @@ class MainActivity : ComponentActivity() {
             when (item.title.toString()) {
                 "Conversion Settings" -> {
                     showConversionSettingsDialog()
+                    true
+                }
+
+                "Upgrade to Pro", "Pro unlocked" -> {
+                    showProDialog()
                     true
                 }
 
@@ -1087,6 +1127,40 @@ class MainActivity : ComponentActivity() {
         }
 
         popup.show()
+    }
+
+    private fun showProDialog() {
+        val statusText = when {
+            billingState.isPro -> "Pro is unlocked on this Google Play account."
+            billingState.purchasePending -> "Your Pro purchase is pending. Pro will unlock after Google Play confirms payment."
+            else -> "Unlock unlimited batch conversion with a one-time purchase."
+        }
+
+        val priceText = billingState.proPrice ?: "Price shown by Google Play"
+        val message = buildString {
+            appendLine(statusText)
+            appendLine()
+            appendLine("Pro includes:")
+            appendLine("• Unlimited batch conversion")
+            appendLine("• Unlimited batch report and ZIP export")
+            if (!billingState.isPro) {
+                appendLine()
+                append("One-time purchase: $priceText")
+            }
+        }
+
+        val builder = android.app.AlertDialog.Builder(this)
+            .setTitle(if (billingState.isPro) "SVG Vector Converter Pro" else "Upgrade to Pro")
+            .setMessage(message)
+            .setNegativeButton("Close", null)
+
+        if (!billingState.isPro && !billingState.purchasePending) {
+            builder.setPositiveButton("Buy Pro") { _, _ ->
+                billingManager.launchProPurchase(this)
+            }
+        }
+
+        builder.show()
     }
 
     private fun showReportExportMenu(anchor: View) {

@@ -31,6 +31,7 @@ android {
 }
 
 dependencies {
+    implementation("com.android.billingclient:billing:9.1.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.vectordrawable:vectordrawable:1.2.0")
     implementation("androidx.core:core-ktx:1.13.1")
