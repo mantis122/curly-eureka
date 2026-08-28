@@ -32,6 +32,10 @@ import androidx.core.content.ContextCompat
 import android.graphics.drawable.BitmapDrawable
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        private const val FREE_BATCH_LIMIT = 5
+    }
+
     private lateinit var outputBox: EditText
     private var convertedXml = ""
     private lateinit var reportBox: TextView
@@ -199,8 +203,33 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNotEmpty()) {
-            convertBatchSvgs(uris)
+            handleBatchSelection(uris)
         }
+    }
+
+    private fun handleBatchSelection(uris: List<Uri>) {
+        if (billingState.isPro || uris.size <= FREE_BATCH_LIMIT) {
+            convertBatchSvgs(uris)
+            return
+        }
+
+        val priceText = billingState.proPrice ?: "the price shown by Google Play"
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Free batch limit")
+            .setMessage(
+                "The free version converts up to $FREE_BATCH_LIMIT SVGs per batch. " +
+                    "You selected ${uris.size}.\n\n" +
+                    "Upgrade to Pro for unlimited batch conversion ($priceText), " +
+                    "or convert the first $FREE_BATCH_LIMIT files now."
+            )
+            .setPositiveButton("Buy Pro") { _, _ ->
+                billingManager.launchProPurchase(this)
+            }
+            .setNeutralButton("Convert first $FREE_BATCH_LIMIT") { _, _ ->
+                convertBatchSvgs(uris.take(FREE_BATCH_LIMIT))
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private val saveZip = registerForActivityResult(
@@ -1133,7 +1162,7 @@ class MainActivity : ComponentActivity() {
         val statusText = when {
             billingState.isPro -> "Pro is unlocked on this Google Play account."
             billingState.purchasePending -> "Your Pro purchase is pending. Pro will unlock after Google Play confirms payment."
-            else -> "Unlock unlimited batch conversion with a one-time purchase."
+            else -> "The free version converts up to $FREE_BATCH_LIMIT SVGs per batch. Unlock unlimited batch conversion with a one-time purchase."
         }
 
         val priceText = billingState.proPrice ?: "Price shown by Google Play"
