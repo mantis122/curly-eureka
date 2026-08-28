@@ -119,9 +119,15 @@ class PlayBillingManager(
             return
         }
 
+        val offerToken = offer.offerToken
+        if (offerToken.isNullOrBlank()) {
+            listener.onBillingMessage("No eligible Pro purchase offer is available")
+            return
+        }
+
         val productParams = BillingFlowParams.ProductDetailsParams.newBuilder()
             .setProductDetails(details)
-            .setOfferToken(offer.offerToken)
+            .setOfferToken(offerToken)
             .build()
 
         val flowParams = BillingFlowParams.newBuilder()
