@@ -5632,6 +5632,9 @@ class MainActivity : ComponentActivity() {
             )
             setTextColor(Color.BLACK)
             textSize = 13f
+            gravity = Gravity.TOP or Gravity.START
+            isSingleLine = false
+            setHorizontallyScrolling(true)
             isFocusable = false
             isFocusableInTouchMode = false
             setBackgroundColor(Color.TRANSPARENT)
