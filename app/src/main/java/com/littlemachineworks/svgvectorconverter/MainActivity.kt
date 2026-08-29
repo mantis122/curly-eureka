@@ -80,6 +80,9 @@ class MainActivity : ComponentActivity() {
     private var currentH11CorpusProfileReport = ""
     private lateinit var billingManager: PlayBillingManager
     private var billingState = PlayBillingManager.State()
+    private var pendingDetailXml = ""
+    private var pendingDetailReport = ""
+    private var pendingDetailBaseName = "batch_item"
 
     private val developerPreferences by lazy {
         getSharedPreferences("svg_converter_settings", MODE_PRIVATE)
@@ -264,6 +267,42 @@ class MainActivity : ComponentActivity() {
     ) { uri ->
         if (uri != null) {
             val bitmap = createReportBitmap()
+            if (bitmap == null) {
+                toast("Could not create report image")
+            } else {
+                try {
+                    FileIoHelpers.writeBitmapPngToUri(this, uri, bitmap)
+                    toast("Report image saved")
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+        }
+    }
+
+    private val saveDetailXml = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/xml")
+    ) { uri ->
+        if (uri != null && pendingDetailXml.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(this, uri, pendingDetailXml)
+            toast("XML saved")
+        }
+    }
+
+    private val saveDetailReportText = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null && pendingDetailReport.isNotBlank()) {
+            FileIoHelpers.writeTextToUri(this, uri, pendingDetailReport)
+            toast("Report saved")
+        }
+    }
+
+    private val saveDetailReportImage = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("image/png")
+    ) { uri ->
+        if (uri != null && pendingDetailReport.isNotBlank()) {
+            val bitmap = createTextBitmap(pendingDetailReport)
             if (bitmap == null) {
                 toast("Could not create report image")
             } else {
@@ -1078,9 +1117,10 @@ class MainActivity : ComponentActivity() {
         return "${baseName}_report.$extension"
     }
 
-    private fun createReportBitmap(): Bitmap? {
-        val reportText = currentReportText()
-        if (reportText.isBlank()) return null
+    private fun createReportBitmap(): Bitmap? = createTextBitmap(currentReportText())
+
+    private fun createTextBitmap(text: String): Bitmap? {
+        if (text.isBlank()) return null
 
         val horizontalPadding = 32
         val verticalPadding = 32
@@ -1088,8 +1128,12 @@ class MainActivity : ComponentActivity() {
             .coerceAtLeast(320)
 
         val imageTextView = TextView(this).apply {
-            text = reportText
-            textSize = reportBox.textSize / resources.displayMetrics.scaledDensity
+            this.text = text
+            textSize = if (::reportBox.isInitialized) {
+                reportBox.textSize / resources.displayMetrics.scaledDensity
+            } else {
+                14f
+            }
             setTextColor(Color.BLACK)
             setBackgroundColor(Color.WHITE)
             gravity = Gravity.START
@@ -5549,19 +5593,40 @@ class MainActivity : ComponentActivity() {
 
         val detailPreviewFrame = FrameLayout(this).apply {
             addView(detailPreviewImage, FrameLayout.LayoutParams(-1, 520))
-            addView(
-                detailPreviewMessage,
-                FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)
-            )
+            addView(detailPreviewMessage, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
         }
+
+        val detailXmlActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+        }
+        val detailSaveXmlButton = makeCompactButton("Save XML") {
+            val xml = result.xml.orEmpty()
+            if (!result.success || xml.isBlank()) {
+                toast("No XML to save")
+            } else {
+                pendingDetailXml = xml
+                pendingDetailBaseName = result.fileName.substringBeforeLast('.').ifBlank { "batch_item" }
+                saveDetailXml.launch("${pendingDetailBaseName}.xml")
+            }
+        }
+        val detailCopyXmlButton = makeCompactButton("Copy XML") {
+            val xml = result.xml.orEmpty()
+            if (!result.success || xml.isBlank()) {
+                toast("No XML to copy")
+            } else {
+                val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText(result.fileName, xml))
+                toast("XML copied")
+            }
+        }
+        detailXmlActions.addView(detailSaveXmlButton, LinearLayout.LayoutParams(0, -2, 1f))
+        detailXmlActions.addView(detailCopyXmlButton, LinearLayout.LayoutParams(0, -2, 1f))
 
         val detailXmlView = EditText(this).apply {
             setText(
-                if (result.success) {
-                    result.xml.orEmpty()
-                } else {
-                    "Conversion failed: ${result.error ?: "Unknown error"}"
-                }
+                if (result.success) result.xml.orEmpty()
+                else "Conversion failed: ${result.error ?: "Unknown error"}"
             )
             setTextColor(Color.BLACK)
             textSize = 13f
@@ -5572,54 +5637,83 @@ class MainActivity : ComponentActivity() {
             setPadding(0, 16, 0, 16)
         }
 
-        val detailReportHeading = makeText("Conversion Report", 20f, Color.BLACK).apply {
+        val reportHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 24, 0, 8)
         }
+        val detailReportHeading = makeText("Conversion Report", 20f, Color.BLACK)
+        val detailReportMenu = makeCompactButton("Export ▾") { }
+        reportHeaderRow.addView(detailReportHeading, LinearLayout.LayoutParams(0, -2, 1f))
+        reportHeaderRow.addView(detailReportMenu, LinearLayout.LayoutParams(-2, -2))
 
-        val detailReport = makeText(
-            result.report.ifBlank {
-                if (result.success) {
-                    "No report available."
-                } else {
-                    "Conversion failed: ${result.error ?: "Unknown error"}"
+        val reportText = result.report.ifBlank {
+            if (result.success) "No report available."
+            else "Conversion failed: ${result.error ?: "Unknown error"}"
+        }
+        val detailReport = makeText(reportText, 14f, Color.BLACK)
+
+        detailReportMenu.setOnClickListener {
+            if (reportText.isBlank()) {
+                toast("No report available")
+                return@setOnClickListener
+            }
+            val popup = PopupMenu(this, detailReportMenu)
+            popup.menu.add("Copy report")
+            popup.menu.add("Save as text")
+            popup.menu.add("Save as image")
+            popup.setOnMenuItemClickListener { item ->
+                when (item.title.toString()) {
+                    "Copy report" -> {
+                        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("conversion_report.txt", reportText))
+                        toast("Report copied")
+                        true
+                    }
+                    "Save as text" -> {
+                        pendingDetailReport = reportText
+                        pendingDetailBaseName = result.fileName.substringBeforeLast('.').ifBlank { "batch_item" }
+                        saveDetailReportText.launch("${pendingDetailBaseName}_report.txt")
+                        true
+                    }
+                    "Save as image" -> {
+                        pendingDetailReport = reportText
+                        pendingDetailBaseName = result.fileName.substringBeforeLast('.').ifBlank { "batch_item" }
+                        saveDetailReportImage.launch("${pendingDetailBaseName}_report.png")
+                        true
+                    }
+                    else -> false
                 }
-            },
-            14f,
-            Color.BLACK
-        )
+            }
+            popup.show()
+        }
 
         fun showDetailPreview() {
             detailPreviewFrame.visibility = View.VISIBLE
+            reportHeaderRow.visibility = View.VISIBLE
+            detailReport.visibility = View.VISIBLE
+            detailXmlActions.visibility = View.GONE
             detailXmlView.visibility = View.GONE
 
-            detailPreviewTab.paintFlags =
-                detailPreviewTab.paintFlags or
-                    android.graphics.Paint.UNDERLINE_TEXT_FLAG or
-                    android.graphics.Paint.FAKE_BOLD_TEXT_FLAG
-
-            detailXmlTab.paintFlags =
-                detailXmlTab.paintFlags and
-                    android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv() and
-                    android.graphics.Paint.FAKE_BOLD_TEXT_FLAG.inv()
-
+            detailPreviewTab.paintFlags = detailPreviewTab.paintFlags or
+                android.graphics.Paint.UNDERLINE_TEXT_FLAG or android.graphics.Paint.FAKE_BOLD_TEXT_FLAG
+            detailXmlTab.paintFlags = detailXmlTab.paintFlags and
+                android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv() and android.graphics.Paint.FAKE_BOLD_TEXT_FLAG.inv()
             detailPreviewTab.invalidate()
             detailXmlTab.invalidate()
         }
 
         fun showDetailXml() {
             detailPreviewFrame.visibility = View.GONE
+            reportHeaderRow.visibility = View.GONE
+            detailReport.visibility = View.GONE
+            detailXmlActions.visibility = View.VISIBLE
             detailXmlView.visibility = View.VISIBLE
 
-            detailXmlTab.paintFlags =
-                detailXmlTab.paintFlags or
-                    android.graphics.Paint.UNDERLINE_TEXT_FLAG or
-                    android.graphics.Paint.FAKE_BOLD_TEXT_FLAG
-
-            detailPreviewTab.paintFlags =
-                detailPreviewTab.paintFlags and
-                    android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv() and
-                    android.graphics.Paint.FAKE_BOLD_TEXT_FLAG.inv()
-
+            detailXmlTab.paintFlags = detailXmlTab.paintFlags or
+                android.graphics.Paint.UNDERLINE_TEXT_FLAG or android.graphics.Paint.FAKE_BOLD_TEXT_FLAG
+            detailPreviewTab.paintFlags = detailPreviewTab.paintFlags and
+                android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv() and android.graphics.Paint.FAKE_BOLD_TEXT_FLAG.inv()
             detailPreviewTab.invalidate()
             detailXmlTab.invalidate()
         }
@@ -5638,19 +5732,20 @@ class MainActivity : ComponentActivity() {
         } else {
             detailPreviewImage.setImageDrawable(null)
             detailPreviewMessage.visibility = View.VISIBLE
+            detailSaveXmlButton.isEnabled = false
+            detailCopyXmlButton.isEnabled = false
         }
 
         content.addView(detailTabRow)
         content.addView(detailPreviewFrame)
+        content.addView(detailXmlActions)
         content.addView(detailXmlView)
-        content.addView(detailReportHeading)
+        content.addView(reportHeaderRow)
         content.addView(detailReport)
 
         showDetailPreview()
 
-        val scroll = ScrollView(this).apply {
-            addView(content)
-        }
+        val scroll = ScrollView(this).apply { addView(content) }
 
         android.app.AlertDialog.Builder(this)
             .setTitle(result.fileName)
