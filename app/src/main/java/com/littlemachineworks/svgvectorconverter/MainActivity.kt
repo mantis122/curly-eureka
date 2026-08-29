@@ -752,7 +752,8 @@ class MainActivity : ComponentActivity() {
                 xml = result.xml,
                 warningCount = countWarnings(result.report),
                 definitionPathCount = countDefinitionPaths(result.report),
-                success = true
+                success = true,
+                report = result.report
             )
         } catch (e: Exception) {
             BatchResult(
@@ -760,7 +761,8 @@ class MainActivity : ComponentActivity() {
                 xml = null,
                 warningCount = 0,
                 success = false,
-                error = e.message
+                error = e.message,
+                report = "Conversion failed: ${e.message ?: "Unknown error"}"
             )
         }
     }
@@ -816,7 +818,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun countWarnings(report: String): Int {
-        return report.lines().count { it.startsWith("⚠") }
+        // Match the same user-facing warning summary used by single conversion.
+        // Diagnostic/advisory sections can contain ⚠ lines even when the
+        // conversion itself has zero aggregate warnings.
+        if (report.lineSequence().any { it.trim() == "No warnings detected" }) {
+            return 0
+        }
+
+        return Regex(
+            """^(\d+) warning\(s\) detected$""",
+            setOf(RegexOption.MULTILINE)
+        )
+            .find(report)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?: 0
     }
 
     private fun countDefinitionPaths(report: String): Int {
@@ -5490,8 +5507,156 @@ class MainActivity : ComponentActivity() {
         BatchGalleryRenderer.render(
             context = this,
             container = batchGallery,
-            results = batchResults
+            results = batchResults,
+            onResultClick = { result ->
+                showBatchResultDetail(result)
+            }
         )
+    }
+
+    private fun showBatchResultDetail(result: BatchResult) {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 16, 32, 16)
+        }
+
+        val detailTabRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+
+        val detailPreviewTab = makeText("Preview", 18f, Color.BLACK, Gravity.CENTER)
+        val detailXmlTab = makeText("XML", 18f, Color.BLACK, Gravity.CENTER)
+
+        detailTabRow.addView(detailPreviewTab, LinearLayout.LayoutParams(0, -2, 1f))
+        detailTabRow.addView(detailXmlTab, LinearLayout.LayoutParams(0, -2, 1f))
+
+        val detailPreviewImage = ImageView(this).apply {
+            setBackgroundColor(Color.WHITE)
+            setPadding(16, 16, 16, 16)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+
+        val detailPreviewMessage = makeText(
+            if (result.success) "Preview unavailable" else "Conversion failed",
+            16f,
+            Color.DKGRAY,
+            Gravity.CENTER
+        ).apply {
+            setPadding(16, 64, 16, 64)
+            visibility = View.GONE
+        }
+
+        val detailPreviewFrame = FrameLayout(this).apply {
+            addView(detailPreviewImage, FrameLayout.LayoutParams(-1, 520))
+            addView(
+                detailPreviewMessage,
+                FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)
+            )
+        }
+
+        val detailXmlView = EditText(this).apply {
+            setText(
+                if (result.success) {
+                    result.xml.orEmpty()
+                } else {
+                    "Conversion failed: ${result.error ?: "Unknown error"}"
+                }
+            )
+            setTextColor(Color.BLACK)
+            textSize = 13f
+            isFocusable = false
+            isFocusableInTouchMode = false
+            setBackgroundColor(Color.TRANSPARENT)
+            visibility = View.GONE
+            setPadding(0, 16, 0, 16)
+        }
+
+        val detailReportHeading = makeText("Conversion Report", 20f, Color.BLACK).apply {
+            setPadding(0, 24, 0, 8)
+        }
+
+        val detailReport = makeText(
+            result.report.ifBlank {
+                if (result.success) {
+                    "No report available."
+                } else {
+                    "Conversion failed: ${result.error ?: "Unknown error"}"
+                }
+            },
+            14f,
+            Color.BLACK
+        )
+
+        fun showDetailPreview() {
+            detailPreviewFrame.visibility = View.VISIBLE
+            detailXmlView.visibility = View.GONE
+
+            detailPreviewTab.paintFlags =
+                detailPreviewTab.paintFlags or
+                    android.graphics.Paint.UNDERLINE_TEXT_FLAG or
+                    android.graphics.Paint.FAKE_BOLD_TEXT_FLAG
+
+            detailXmlTab.paintFlags =
+                detailXmlTab.paintFlags and
+                    android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv() and
+                    android.graphics.Paint.FAKE_BOLD_TEXT_FLAG.inv()
+
+            detailPreviewTab.invalidate()
+            detailXmlTab.invalidate()
+        }
+
+        fun showDetailXml() {
+            detailPreviewFrame.visibility = View.GONE
+            detailXmlView.visibility = View.VISIBLE
+
+            detailXmlTab.paintFlags =
+                detailXmlTab.paintFlags or
+                    android.graphics.Paint.UNDERLINE_TEXT_FLAG or
+                    android.graphics.Paint.FAKE_BOLD_TEXT_FLAG
+
+            detailPreviewTab.paintFlags =
+                detailPreviewTab.paintFlags and
+                    android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv() and
+                    android.graphics.Paint.FAKE_BOLD_TEXT_FLAG.inv()
+
+            detailPreviewTab.invalidate()
+            detailXmlTab.invalidate()
+        }
+
+        detailPreviewTab.setOnClickListener { showDetailPreview() }
+        detailXmlTab.setOnClickListener { showDetailXml() }
+
+        if (result.success && !result.xml.isNullOrBlank()) {
+            try {
+                val bitmap = VectorPreviewRenderer.render(result.xml, 512, 512)
+                detailPreviewImage.setImageDrawable(BitmapDrawable(resources, bitmap))
+            } catch (_: Exception) {
+                detailPreviewImage.setImageDrawable(null)
+                detailPreviewMessage.visibility = View.VISIBLE
+            }
+        } else {
+            detailPreviewImage.setImageDrawable(null)
+            detailPreviewMessage.visibility = View.VISIBLE
+        }
+
+        content.addView(detailTabRow)
+        content.addView(detailPreviewFrame)
+        content.addView(detailXmlView)
+        content.addView(detailReportHeading)
+        content.addView(detailReport)
+
+        showDetailPreview()
+
+        val scroll = ScrollView(this).apply {
+            addView(content)
+        }
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle(result.fileName)
+            .setView(scroll)
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun updatePreview(xml: String) {

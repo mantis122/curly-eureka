@@ -11,18 +11,25 @@ object BatchGalleryRenderer {
     fun render(
         context: Context,
         container: LinearLayout,
-        results: List<BatchResult>
+        results: List<BatchResult>,
+        onResultClick: (BatchResult) -> Unit
     ) {
         container.removeAllViews()
 
         container.addView(makeHeading(context))
 
         results.forEach { result ->
-            container.addView(makeResultLabel(context, result))
+            container.addView(
+                makeResultLabel(context, result).apply {
+                    setOnClickListener { onResultClick(result) }
+                }
+            )
 
             val xml = result.xml ?: return@forEach
             container.addView(
-                makePreviewImage(context, xml),
+                makePreviewImage(context, xml).apply {
+                    setOnClickListener { onResultClick(result) }
+                },
                 LinearLayout.LayoutParams(-1, 220)
             )
         }

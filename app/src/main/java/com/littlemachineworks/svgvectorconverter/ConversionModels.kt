@@ -12,6 +12,7 @@ data class BatchResult(
     val warningCount: Int,
     val success: Boolean,
     val definitionPathCount: Int = 0,
-    val error: String? = null
+    val error: String? = null,
+    val report: String = ""
 )
 
