@@ -10,7 +10,8 @@ object SvgToVectorConverter {
     fun convert(
         svg: String,
         outputDpSize: Int,
-        conversionProfile: String
+        conversionProfile: String,
+        includeDeveloperComments: Boolean = true
     ): ConversionResult {
         val startTime = System.nanoTime()
 
@@ -861,8 +862,14 @@ object SvgToVectorConverter {
             conversionStartNanos = startTime
         )
 
+        val outputXml = if (includeDeveloperComments) {
+            finalXml
+        } else {
+            stripConversionSourceComments(finalXml)
+        }
+
         return ConversionResult(
-            xml = finalXml,
+            xml = outputXml,
             report = report,
             reportData = reportData
         )
@@ -1357,6 +1364,12 @@ paintUrlRefs
 
     private fun stripSvgComments(xml: String): String {
         return Regex("""<!--.*?-->""", RegexOption.DOT_MATCHES_ALL).replace(xml, "")
+    }
+
+    private fun stripConversionSourceComments(xml: String): String {
+        return Regex(
+            """(?m)^[ \t]*<!--\s*converted from <[^>]+>\s*-->[ \t]*(?:\r?\n)?"""
+        ).replace(xml, "")
     }
 
     private fun stripDefs(xml: String): String {

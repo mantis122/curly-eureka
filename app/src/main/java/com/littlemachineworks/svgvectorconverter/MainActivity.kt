@@ -739,7 +739,8 @@ class MainActivity : ComponentActivity() {
         val result = SvgToVectorConverter.convert(
             FileIoHelpers.readTextFromUri(this, uri),
             outputDpSize,
-            conversionProfile
+            conversionProfile,
+            includeDeveloperComments = isDeveloperModeEnabled()
         )
 
         convertedXml = result.xml
@@ -783,7 +784,8 @@ class MainActivity : ComponentActivity() {
             val result = SvgToVectorConverter.convert(
                 FileIoHelpers.readTextFromUri(this, uri),
                 outputDpSize,
-                conversionProfile
+                conversionProfile,
+                includeDeveloperComments = isDeveloperModeEnabled()
             )
 
             BatchResult(
