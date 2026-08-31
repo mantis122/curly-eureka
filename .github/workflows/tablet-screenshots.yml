@@ -1,24 +1,12 @@
-name: Capture Tablet Screenshots
+name: Capture Tablet Store Screenshots
 
 on:
   workflow_dispatch:
 
 jobs:
   capture:
-    name: ${{ matrix.label }} tablet
+    name: 7-inch and 10-inch tablet screenshots
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: 7-inch
-            width: 1080
-            height: 1920
-            density: 240
-          - label: 10-inch
-            width: 1440
-            height: 2560
-            density: 240
 
     steps:
       - name: Checkout
@@ -46,11 +34,6 @@ jobs:
           #!/usr/bin/env bash
           set -eu
 
-          LABEL="$1"
-          WIDTH="$2"
-          HEIGHT="$3"
-          DENSITY="$4"
-
           mkdir -p tablet-screenshots
 
           APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
@@ -59,12 +42,8 @@ jobs:
             exit 1
           fi
 
-          echo "Installing: $APK"
-          adb install -r "$APK"
-
           BUILD_TOOLS_VERSION="$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
           AAPT="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/aapt"
-
           PACKAGE="$("$AAPT" dump badging "$APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
           ACTIVITY="$("$AAPT" dump badging "$APK" | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -n 1)"
 
@@ -73,30 +52,130 @@ jobs:
             exit 1
           fi
 
-          echo "Package: $PACKAGE"
-          echo "Activity: $ACTIVITY"
+          echo "Installing: $APK"
+          adb install -r "$APK"
 
-          adb shell wm size "${WIDTH}x${HEIGHT}"
-          adb shell wm density "$DENSITY"
+          # Put the showcase SVG where Android's document picker can see it.
+          adb shell mkdir -p /sdcard/Download
+          adb push svg_vector_converter_showcase.svg /sdcard/Download/01_mountain.svg
+          adb shell am broadcast \
+            -a android.intent.action.MEDIA_SCANNER_SCAN_FILE \
+            -d file:///sdcard/Download/01_mountain.svg >/dev/null 2>&1 || true
 
-          adb shell settings put system accelerometer_rotation 0 || true
-          adb shell settings put system user_rotation 0 || true
+          adb_wait() {
+            local tries=0
+            until adb shell true >/dev/null 2>&1; do
+              tries=$((tries + 1))
+              if [[ $tries -ge 30 ]]; then
+                echo "ADB did not recover."
+                return 1
+              fi
+              sleep 2
+            done
+          }
 
-          adb shell am force-stop "$PACKAGE"
-          adb shell am start -W -n "$PACKAGE/$ACTIVITY"
+          tap_text() {
+            local wanted="$1"
+            local tries=0
+            while [[ $tries -lt 20 ]]; do
+              adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
+              adb pull /sdcard/window.xml window.xml >/dev/null 2>&1 || true
 
-          sleep 4
+              coords="$(python3 - "$wanted" <<'PY'
+          import re, sys, xml.etree.ElementTree as ET
+          wanted = sys.argv[1]
+          try:
+              root = ET.parse('window.xml').getroot()
+          except Exception:
+              sys.exit(1)
+          for node in root.iter('node'):
+              text = (node.attrib.get('text') or '').strip()
+              desc = (node.attrib.get('content-desc') or '').strip()
+              if text == wanted or desc == wanted:
+                  m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib.get('bounds',''))
+                  if m:
+                      x1,y1,x2,y2 = map(int,m.groups())
+                      print((x1+x2)//2, (y1+y2)//2)
+                      sys.exit(0)
+          sys.exit(1)
+          PY
+              )" || true
 
-          OUTPUT="tablet-screenshots/${LABEL}-startup.png"
-          adb exec-out screencap -p > "$OUTPUT"
+              if [[ -n "$coords" ]]; then
+                read -r x y <<< "$coords"
+                echo "Tapping '$wanted' at $x,$y"
+                adb shell input tap "$x" "$y"
+                return 0
+              fi
+              tries=$((tries + 1))
+              sleep 1
+            done
+            echo "Could not find UI text: $wanted"
+            return 1
+          }
 
-          echo "Captured $LABEL screenshot:"
-          file "$OUTPUT"
+          open_showcase() {
+            adb shell am force-stop "$PACKAGE"
+            adb shell am start -W -n "$PACKAGE/$ACTIVITY" >/dev/null
+            sleep 3
+
+            tap_text "OPEN SVG"
+            sleep 3
+
+            # The Android document picker normally opens in Recents. Navigate to
+            # Downloads explicitly so the workflow is deterministic.
+            if tap_text "Show roots"; then
+              sleep 1
+            else
+              # Some picker versions expose the hamburger only by description.
+              adb shell input tap 48 72
+              sleep 1
+            fi
+
+            tap_text "Downloads" || true
+            sleep 2
+            tap_text "01_mountain.svg"
+
+            # Conversion is intentionally given extra time because optimization
+            # is the longest stage on this app.
+            sleep 10
+          }
+
+          capture_size() {
+            local label="$1"
+            local width="$2"
+            local height="$3"
+            local density="$4"
+
+            echo "=== Capturing $label ($width x $height @ $density dpi) ==="
+            adb_wait
+            adb shell wm size "${width}x${height}"
+            adb shell wm density "$density"
+            adb shell settings put system accelerometer_rotation 0 >/dev/null 2>&1 || true
+            adb shell settings put system user_rotation 0 >/dev/null 2>&1 || true
+            sleep 2
+
+            open_showcase
+            sleep 2
+
+            local output="tablet-screenshots/${label}-mountain-preview.png"
+            adb exec-out screencap -p > "$output"
+            file "$output"
+          }
+
+          # One emulator, two sequential captures. This avoids the intermittent
+          # emulator/ADB broken-pipe failures seen when the tablet jobs booted
+          # independently.
+          capture_size "7-inch" 1080 1920 240
+          capture_size "10-inch" 1440 2560 240
+
+          echo "Finished tablet screenshots:"
+          ls -lh tablet-screenshots
           SCRIPT
 
           chmod +x tablet_capture.sh
 
-      - name: Capture ${{ matrix.label }} screenshot
+      - name: Capture both tablet screenshots
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -106,8 +185,8 @@ jobs:
           cores: 2
           ram-size: 4096M
           heap-size: 1024M
-          emulator-boot-timeout: 900
           disable-animations: true
+          emulator-boot-timeout: 900
           emulator-options: >-
             -no-window
             -gpu swiftshader_indirect
@@ -115,11 +194,11 @@ jobs:
             -noaudio
             -no-boot-anim
             -camera-back none
-          script: bash tablet_capture.sh "${{ matrix.label }}" "${{ matrix.width }}" "${{ matrix.height }}" "${{ matrix.density }}"
+          script: bash tablet_capture.sh
 
-      - name: Upload ${{ matrix.label }} screenshot
+      - name: Upload tablet screenshots
         uses: actions/upload-artifact@v4
         with:
-          name: svg-vector-converter-${{ matrix.label }}-tablet-screenshot
-          path: tablet-screenshots/${{ matrix.label }}-startup.png
+          name: svg-vector-converter-tablet-store-screenshots
+          path: tablet-screenshots/*.png
           if-no-files-found: error
