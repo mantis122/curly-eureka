@@ -1,0 +1,109 @@
+name: Capture Tablet Screenshots
+
+on:
+  workflow_dispatch:
+
+jobs:
+  capture:
+    name: ${{ matrix.label }} tablet
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: 7-inch
+            width: 1080
+            height: 1920
+            density: 240
+          - label: 10-inch
+            width: 1440
+            height: 2560
+            density: 240
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Capture ${{ matrix.label }} screenshot
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          cores: 2
+          ram-size: 4096M
+          heap-size: 1024M
+          disable-animations: true
+          emulator-options: >-
+            -no-window
+            -gpu swiftshader_indirect
+            -no-snapshot
+            -noaudio
+            -no-boot-anim
+            -camera-back none
+          script: |
+            set -euo pipefail
+
+            mkdir -p tablet-screenshots
+
+            APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+            if [ -z "$APK" ]; then
+              echo "No debug APK found."
+              exit 1
+            fi
+
+            echo "Installing: $APK"
+            adb install -r "$APK"
+
+            AAPT="$ANDROID_HOME/build-tools/$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)/aapt"
+            PACKAGE="$($AAPT dump badging "$APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
+            ACTIVITY="$($AAPT dump badging "$APK" | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -n 1)"
+
+            if [ -z "$PACKAGE" ] || [ -z "$ACTIVITY" ]; then
+              echo "Could not determine package or launch activity."
+              exit 1
+            fi
+
+            echo "Package: $PACKAGE"
+            echo "Activity: $ACTIVITY"
+
+            # Force a Play-Store-compatible portrait tablet canvas while
+            # preserving tablet-sized dp dimensions for layout testing.
+            adb shell wm size ${{ matrix.width }}x${{ matrix.height }}
+            adb shell wm density ${{ matrix.density }}
+
+            # Make the screenshot deterministic and keep the app in the foreground.
+            adb shell settings put system accelerometer_rotation 0 || true
+            adb shell settings put system user_rotation 0 || true
+            adb shell am force-stop "$PACKAGE"
+            adb shell am start -W -n "$PACKAGE/$ACTIVITY"
+
+            sleep 4
+
+            adb exec-out screencap -p > "tablet-screenshots/${{ matrix.label }}-startup.png"
+
+            echo "Captured ${{ matrix.label }} screenshot:"
+            file "tablet-screenshots/${{ matrix.label }}-startup.png"
+
+      - name: Upload ${{ matrix.label }} screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: svg-vector-converter-${{ matrix.label }}-tablet-screenshot
+          path: tablet-screenshots/${{ matrix.label }}-startup.png
+          if-no-files-found: error
