@@ -39,6 +39,63 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug
 
+      - name: Prepare tablet capture script
+        shell: bash
+        run: |
+          cat > tablet_capture.sh <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -eu
+
+          LABEL="$1"
+          WIDTH="$2"
+          HEIGHT="$3"
+          DENSITY="$4"
+
+          mkdir -p tablet-screenshots
+
+          APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          if [[ -z "$APK" ]]; then
+            echo "No debug APK found."
+            exit 1
+          fi
+
+          echo "Installing: $APK"
+          adb install -r "$APK"
+
+          BUILD_TOOLS_VERSION="$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          AAPT="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/aapt"
+
+          PACKAGE="$("$AAPT" dump badging "$APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
+          ACTIVITY="$("$AAPT" dump badging "$APK" | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -n 1)"
+
+          if [[ -z "$PACKAGE" || -z "$ACTIVITY" ]]; then
+            echo "Could not determine package or launch activity."
+            exit 1
+          fi
+
+          echo "Package: $PACKAGE"
+          echo "Activity: $ACTIVITY"
+
+          adb shell wm size "${WIDTH}x${HEIGHT}"
+          adb shell wm density "$DENSITY"
+
+          adb shell settings put system accelerometer_rotation 0 || true
+          adb shell settings put system user_rotation 0 || true
+
+          adb shell am force-stop "$PACKAGE"
+          adb shell am start -W -n "$PACKAGE/$ACTIVITY"
+
+          sleep 4
+
+          OUTPUT="tablet-screenshots/${LABEL}-startup.png"
+          adb exec-out screencap -p > "$OUTPUT"
+
+          echo "Captured $LABEL screenshot:"
+          file "$OUTPUT"
+          SCRIPT
+
+          chmod +x tablet_capture.sh
+
       - name: Capture ${{ matrix.label }} screenshot
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -57,49 +114,7 @@ jobs:
             -noaudio
             -no-boot-anim
             -camera-back none
-          script: |
-            set -eu
-
-            mkdir -p tablet-screenshots
-
-            APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
-            if [ -z "$APK" ]; then
-              echo "No debug APK found."
-              exit 1
-            fi
-
-            echo "Installing: $APK"
-            adb install -r "$APK"
-
-            AAPT="$ANDROID_HOME/build-tools/$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)/aapt"
-            PACKAGE="$($AAPT dump badging "$APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
-            ACTIVITY="$($AAPT dump badging "$APK" | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -n 1)"
-
-            if [ -z "$PACKAGE" ] || [ -z "$ACTIVITY" ]; then
-              echo "Could not determine package or launch activity."
-              exit 1
-            fi
-
-            echo "Package: $PACKAGE"
-            echo "Activity: $ACTIVITY"
-
-            # Force a Play-Store-compatible portrait tablet canvas while
-            # preserving tablet-sized dp dimensions for layout testing.
-            adb shell wm size ${{ matrix.width }}x${{ matrix.height }}
-            adb shell wm density ${{ matrix.density }}
-
-            # Make the screenshot deterministic and keep the app in the foreground.
-            adb shell settings put system accelerometer_rotation 0 || true
-            adb shell settings put system user_rotation 0 || true
-            adb shell am force-stop "$PACKAGE"
-            adb shell am start -W -n "$PACKAGE/$ACTIVITY"
-
-            sleep 4
-
-            adb exec-out screencap -p > "tablet-screenshots/${{ matrix.label }}-startup.png"
-
-            echo "Captured ${{ matrix.label }} screenshot:"
-            file "tablet-screenshots/${{ matrix.label }}-startup.png"
+          script: bash tablet_capture.sh "${{ matrix.label }}" "${{ matrix.width }}" "${{ matrix.height }}" "${{ matrix.density }}"
 
       - name: Upload ${{ matrix.label }} screenshot
         uses: actions/upload-artifact@v4
