@@ -56,26 +56,32 @@ jobs:
           adb install -r "$APK"
 
           # Put the showcase SVG where Android's document picker can see it.
-          # /sdcard is available only after Android finishes mounting shared storage.
-          # Do not mkdir /sdcard/Download: on some emulator boots the shell user gets EACCES.
-          adb_wait_for_storage() {
-            local tries=0
-            until adb shell test -d /sdcard/Download >/dev/null 2>&1; do
-              tries=$((tries + 1))
-              if [[ $tries -ge 60 ]]; then
-                echo "Shared Downloads storage never became available."
-                adb shell ls -ld /sdcard /storage/emulated/0 /storage/emulated/0/Download 2>&1 || true
-                return 1
-              fi
-              sleep 2
-            done
-          }
+          #
+          # On the GitHub emulator the ordinary "shell" user can sometimes see
+          # /sdcard but receives EACCES when traversing /storage/emulated/0.
+          # google_apis emulator images are rootable, so restart adbd as root,
+          # wait for it to reconnect, then create/populate Downloads.
+          echo "Preparing shared Downloads storage..."
+          adb root >/dev/null 2>&1 || true
+          adb wait-for-device
 
-          adb_wait_for_storage
-          adb push svg_vector_converter_showcase.svg /sdcard/Download/01_mountain.svg
+          # Give Android a moment to finish reconnecting storage services after
+          # adbd restarts.
+          sleep 3
+
+          adb shell mkdir -p /storage/emulated/0/Download
+          adb shell chmod 0777 /storage/emulated/0/Download || true
+
+          adb push svg_vector_converter_showcase.svg /storage/emulated/0/Download/01_mountain.svg
+          adb shell chmod 0666 /storage/emulated/0/Download/01_mountain.svg || true
+
+          # Verify before continuing so a storage problem fails here with useful
+          # diagnostics instead of later in the document picker.
+          adb shell ls -l /storage/emulated/0/Download/01_mountain.svg
+
           adb shell am broadcast \
             -a android.intent.action.MEDIA_SCANNER_SCAN_FILE \
-            -d file:///sdcard/Download/01_mountain.svg >/dev/null 2>&1 || true
+            -d file:///storage/emulated/0/Download/01_mountain.svg >/dev/null 2>&1 || true
 
           adb_wait() {
             local tries=0
