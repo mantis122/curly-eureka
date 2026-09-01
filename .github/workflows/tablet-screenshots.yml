@@ -53,10 +53,18 @@ jobs:
           import xml.etree.ElementTree as ET
 
           if len(sys.argv) < 3:
-              raise SystemExit("usage: find_ui.py <text|--dump> <xml-file>")
+              raise SystemExit("usage: find_ui.py <text|--dump|--contains> <xml-file> [needle]")
 
-          wanted = sys.argv[1]
-          xml_file = sys.argv[2]
+          mode = sys.argv[1]
+
+          if mode == "--contains":
+              if len(sys.argv) < 4:
+                  raise SystemExit("usage: find_ui.py --contains <xml-file> <needle>")
+              xml_file = sys.argv[2]
+              wanted = sys.argv[3]
+          else:
+              wanted = mode
+              xml_file = sys.argv[2]
 
           try:
               root = ET.parse(xml_file).getroot()
@@ -64,7 +72,7 @@ jobs:
               print(f"Could not parse UI hierarchy: {exc}", file=sys.stderr)
               raise SystemExit(1)
 
-          if wanted == "--dump":
+          if mode == "--dump":
               for node in root.iter("node"):
                   text = (node.attrib.get("text") or "").strip()
                   desc = (node.attrib.get("content-desc") or "").strip()
@@ -74,6 +82,14 @@ jobs:
                           f"bounds={node.attrib.get('bounds', '')}"
                       )
               raise SystemExit(0)
+
+          if mode == "--contains":
+              for node in root.iter("node"):
+                  text = (node.attrib.get("text") or "").strip()
+                  desc = (node.attrib.get("content-desc") or "").strip()
+                  if wanted in text or wanted in desc:
+                      raise SystemExit(0)
+              raise SystemExit(1)
 
           for node in root.iter("node"):
               text = (node.attrib.get("text") or "").strip()
@@ -196,7 +212,7 @@ jobs:
               adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null 2>&1 || true
               adb pull /data/local/tmp/window.xml window.xml >/dev/null 2>&1 || true
 
-              if python3 find_ui.py "$wanted" window.xml >/dev/null 2>&1; then
+              if python3 find_ui.py --contains window.xml "$wanted" >/dev/null 2>&1; then
                 echo "UI text appeared: $wanted"
                 return 0
               fi
