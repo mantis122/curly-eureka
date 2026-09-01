@@ -179,20 +179,21 @@ jobs:
             tap_text "OPEN SVG"
             sleep 3
 
-            # Open the DocumentsUI navigation drawer with a left-edge swipe.
-            # On API 35, tapping the accessibility node "Show roots" can report
-            # success without actually opening the drawer under headless emulation.
+            # Open the DocumentsUI roots drawer by tapping its actual toolbar
+            # button. Do NOT use a left-edge swipe here: on gesture-navigation
+            # builds that gesture is Android "Back" and closes the picker.
             echo "Opening DocumentsUI roots drawer..."
-            adb shell input swipe 2 500 650 500 400
+            if ! tap_text "Show roots"; then
+              echo "Accessibility tap for Show roots failed; trying toolbar coordinates..."
+              adb shell input tap 66 84
+            fi
             sleep 2
 
-            # If the drawer did not open, try the toolbar hamburger once and
-            # then swipe again.
+            # Verify that the drawer really opened. If not, tap the known center
+            # of the Show-roots button once more, then require Downloads.
             if ! tap_text "Downloads"; then
-              echo "Downloads not visible after swipe; retrying drawer open..."
-              adb shell input tap 60 84
-              sleep 1
-              adb shell input swipe 2 500 650 500 400
+              echo "Downloads not visible; retrying Show roots at 66,84..."
+              adb shell input tap 66 84
               sleep 2
               tap_text "Downloads"
             fi
