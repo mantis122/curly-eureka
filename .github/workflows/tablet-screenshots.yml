@@ -99,8 +99,11 @@ jobs:
             local wanted="$1"
             local tries=0
             while [[ $tries -lt 20 ]]; do
-              adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
-              adb pull /sdcard/window.xml window.xml >/dev/null 2>&1 || true
+              # Dump the accessibility hierarchy to /data/local/tmp rather
+              # than /sdcard. After `adb root`, shared-storage access can be
+              # restricted even though ordinary device input still works.
+              adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null 2>&1 || true
+              adb pull /data/local/tmp/window.xml window.xml >/dev/null 2>&1 || true
 
               coords="$(python3 - "$wanted" <<'PY'
           import re, sys, xml.etree.ElementTree as ET
@@ -132,6 +135,25 @@ jobs:
               sleep 1
             done
             echo "Could not find UI text: $wanted"
+            echo "--- Current foreground activity ---"
+            adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' || true
+            echo "--- UI hierarchy text/content descriptions ---"
+            adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null 2>&1 || true
+            adb pull /data/local/tmp/window.xml window.xml >/dev/null 2>&1 || true
+            python3 - <<'PY' || true
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse("window.xml").getroot()
+    for node in root.iter("node"):
+        text = (node.attrib.get("text") or "").strip()
+        desc = (node.attrib.get("content-desc") or "").strip()
+        if text or desc:
+            print("text=%r desc=%r bounds=%s" % (
+                text, desc, node.attrib.get("bounds", "")
+            ))
+except Exception as e:
+    print("Could not parse UI hierarchy:", e)
+PY
             return 1
           }
 
