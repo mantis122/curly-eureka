@@ -171,6 +171,50 @@ jobs:
             return 1
           }
 
+          wait_for_foreground_package() {
+            local wanted_package="$1"
+            local tries=0
+
+            while [[ $tries -lt 60 ]]; do
+              if adb shell dumpsys window | grep -q "mCurrentFocus=.*${wanted_package}"; then
+                return 0
+              fi
+              tries=$((tries + 1))
+              sleep 1
+            done
+
+            echo "Timed out waiting for foreground package: $wanted_package"
+            adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' || true
+            return 1
+          }
+
+          wait_for_ui_text() {
+            local wanted="$1"
+            local tries=0
+
+            while [[ $tries -lt 120 ]]; do
+              adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null 2>&1 || true
+              adb pull /data/local/tmp/window.xml window.xml >/dev/null 2>&1 || true
+
+              if python3 find_ui.py "$wanted" window.xml >/dev/null 2>&1; then
+                echo "UI text appeared: $wanted"
+                return 0
+              fi
+
+              tries=$((tries + 1))
+              sleep 1
+            done
+
+            echo "Timed out waiting for UI text: $wanted"
+            echo "--- Current foreground activity ---"
+            adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' || true
+            echo "--- UI hierarchy text/content descriptions ---"
+            adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null 2>&1 || true
+            adb pull /data/local/tmp/window.xml window.xml >/dev/null 2>&1 || true
+            python3 find_ui.py --dump window.xml || true
+            return 1
+          }
+
           open_showcase() {
             adb shell am force-stop "$PACKAGE"
             adb shell am start -W -n "$PACKAGE/$ACTIVITY" >/dev/null
@@ -200,7 +244,14 @@ jobs:
 
             sleep 3
             tap_text "01_mountain.svg"
-            sleep 10
+
+            # Do not capture until the picker has returned control to the app
+            # and the conversion has actually finished.
+            wait_for_foreground_package "$PACKAGE"
+            wait_for_ui_text "Conversion Successful"
+
+            # Small settling delay so preview rendering is fully painted.
+            sleep 3
           }
 
           capture_size() {
@@ -222,7 +273,8 @@ jobs:
             file "$output"
           }
 
-          capture_size "7-inch" 1080 1920 240
+          # The 7-inch Play Store screenshot is already good.
+          # Capture only the missing 10-inch showcase image.
           capture_size "10-inch" 1440 2560 240
 
           echo "Tablet screenshots created:"
@@ -255,6 +307,6 @@ jobs:
       - name: Upload tablet screenshots
         uses: actions/upload-artifact@v4
         with:
-          name: svg-vector-converter-tablet-store-screenshots
+          name: svg-vector-converter-10-inch-store-screenshot
           path: tablet-screenshots/*.png
           if-no-files-found: error
