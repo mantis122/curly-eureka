@@ -141,19 +141,19 @@ jobs:
             adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null 2>&1 || true
             adb pull /data/local/tmp/window.xml window.xml >/dev/null 2>&1 || true
             python3 - <<'PY' || true
-import xml.etree.ElementTree as ET
-try:
-    root = ET.parse("window.xml").getroot()
-    for node in root.iter("node"):
-        text = (node.attrib.get("text") or "").strip()
-        desc = (node.attrib.get("content-desc") or "").strip()
-        if text or desc:
-            print("text=%r desc=%r bounds=%s" % (
-                text, desc, node.attrib.get("bounds", "")
-            ))
-except Exception as e:
-    print("Could not parse UI hierarchy:", e)
-PY
+            import xml.etree.ElementTree as ET
+            try:
+                root = ET.parse("window.xml").getroot()
+                for node in root.iter("node"):
+                    text = (node.attrib.get("text") or "").strip()
+                    desc = (node.attrib.get("content-desc") or "").strip()
+                    if text or desc:
+                        print("text=%r desc=%r bounds=%s" % (
+                            text, desc, node.attrib.get("bounds", "")
+                        ))
+            except Exception as e:
+                print("Could not parse UI hierarchy:", e)
+            PY
             return 1
           }
 
