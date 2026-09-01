@@ -162,17 +162,25 @@ jobs:
             tap_text "OPEN SVG"
             sleep 3
 
-            # Try the document picker's navigation drawer. The exact label varies
-            # by Android version, so fall back to tapping the top-left menu area.
-            if tap_text "Show roots"; then
+            # Open the DocumentsUI navigation drawer with a left-edge swipe.
+            # On API 35, tapping the accessibility node "Show roots" can report
+            # success without actually opening the drawer under headless emulation.
+            echo "Opening DocumentsUI roots drawer..."
+            adb shell input swipe 2 500 650 500 400
+            sleep 2
+
+            # If the drawer did not open, try the toolbar hamburger once and
+            # then swipe again.
+            if ! tap_text "Downloads"; then
+              echo "Downloads not visible after swipe; retrying drawer open..."
+              adb shell input tap 60 84
               sleep 1
-            else
-              adb shell input tap 48 72
-              sleep 1
+              adb shell input swipe 2 500 650 500 400
+              sleep 2
+              tap_text "Downloads"
             fi
 
-            tap_text "Downloads" || true
-            sleep 2
+            sleep 3
             tap_text "01_mountain.svg"
             sleep 10
           }
