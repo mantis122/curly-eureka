@@ -215,10 +215,66 @@ jobs:
             return 1
           }
 
+          clear_launcher_anr_if_present() {
+            local tries=0
+
+            while [[ $tries -lt 10 ]]; do
+              adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null 2>&1 || true
+              adb pull /data/local/tmp/window.xml window.xml >/dev/null 2>&1 || true
+
+              if python3 find_ui.py "Close app" window.xml >/dev/null 2>&1; then
+                echo "Launcher ANR dialog detected; dismissing it."
+                # The dialog is for Pixel Launcher, not SVG Vector Converter.
+                # Closing Launcher is safe here because we immediately launch
+                # the app explicitly by component name.
+                coords="$(python3 find_ui.py "Close app" window.xml 2>/dev/null || true)"
+                if [[ -n "$coords" ]]; then
+                  read -r x y <<< "$coords"
+                  adb shell input tap "$x" "$y"
+                else
+                  adb shell am force-stop com.google.android.apps.nexuslauncher || true
+                fi
+                sleep 2
+                return 0
+              fi
+
+              # Sometimes the launcher ANR presents only a Wait action first.
+              if python3 find_ui.py "Wait" window.xml >/dev/null 2>&1; then
+                echo "Launcher ANR dialog detected; choosing Wait."
+                coords="$(python3 find_ui.py "Wait" window.xml 2>/dev/null || true)"
+                if [[ -n "$coords" ]]; then
+                  read -r x y <<< "$coords"
+                  adb shell input tap "$x" "$y"
+                fi
+                sleep 2
+                return 0
+              fi
+
+              tries=$((tries + 1))
+              sleep 1
+            done
+
+            return 0
+          }
+
           open_showcase() {
+            # Display resizing can occasionally make Pixel Launcher ANR under
+            # software/headless emulation. Clear that system dialog before
+            # launching the app, then check once more after launch.
+            clear_launcher_anr_if_present
+            adb shell am force-stop com.google.android.apps.nexuslauncher >/dev/null 2>&1 || true
+
             adb shell am force-stop "$PACKAGE"
             adb shell am start -W -n "$PACKAGE/$ACTIVITY" >/dev/null
-            sleep 4
+            sleep 5
+
+            clear_launcher_anr_if_present
+
+            # Reassert MainActivity in case dismissing a system dialog changed
+            # focus, then wait until the app is actually foreground.
+            adb shell am start -W -n "$PACKAGE/$ACTIVITY" >/dev/null
+            wait_for_foreground_package "$PACKAGE"
+            sleep 2
 
             tap_text "OPEN SVG"
             sleep 3
@@ -264,7 +320,11 @@ jobs:
 
             adb shell wm size "${width}x${height}"
             adb shell wm density "$density"
-            sleep 3
+
+            # Large display changes can briefly stall SystemUI/Launcher on the
+            # headless emulator. Let Android settle before interacting.
+            sleep 8
+            clear_launcher_anr_if_present
 
             open_showcase
 
