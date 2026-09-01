@@ -5,7 +5,7 @@ on:
 
 jobs:
   capture:
-    name: 7-inch and 10-inch tablet screenshots
+    name: Capture tablet showcase screenshots
     runs-on: ubuntu-latest
 
     steps:
@@ -27,9 +27,53 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug
 
-      - name: Prepare tablet capture script
+      - name: Prepare tablet capture scripts
         shell: bash
         run: |
+          cat > find_ui.py <<'PY'
+          import re
+          import sys
+          import xml.etree.ElementTree as ET
+
+          if len(sys.argv) < 3:
+              raise SystemExit("usage: find_ui.py <text|--dump> <xml-file>")
+
+          wanted = sys.argv[1]
+          xml_file = sys.argv[2]
+
+          try:
+              root = ET.parse(xml_file).getroot()
+          except Exception as exc:
+              print(f"Could not parse UI hierarchy: {exc}", file=sys.stderr)
+              raise SystemExit(1)
+
+          if wanted == "--dump":
+              for node in root.iter("node"):
+                  text = (node.attrib.get("text") or "").strip()
+                  desc = (node.attrib.get("content-desc") or "").strip()
+                  if text or desc:
+                      print(
+                          f"text={text!r} desc={desc!r} "
+                          f"bounds={node.attrib.get('bounds', '')}"
+                      )
+              raise SystemExit(0)
+
+          for node in root.iter("node"):
+              text = (node.attrib.get("text") or "").strip()
+              desc = (node.attrib.get("content-desc") or "").strip()
+              if text == wanted or desc == wanted:
+                  match = re.match(
+                      r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+                      node.attrib.get("bounds", ""),
+                  )
+                  if match:
+                      x1, y1, x2, y2 = map(int, match.groups())
+                      print((x1 + x2) // 2, (y1 + y2) // 2)
+                      raise SystemExit(0)
+
+          raise SystemExit(1)
+          PY
+
           cat > tablet_capture.sh <<'SCRIPT'
           #!/usr/bin/env bash
           set -eu
@@ -42,8 +86,17 @@ jobs:
             exit 1
           fi
 
+          if [[ ! -f svg_vector_converter_showcase.svg ]]; then
+            echo "Missing svg_vector_converter_showcase.svg at repository root."
+            exit 1
+          fi
+
+          echo "Installing: $APK"
+          adb install -r "$APK"
+
           BUILD_TOOLS_VERSION="$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
           AAPT="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/aapt"
+
           PACKAGE="$("$AAPT" dump badging "$APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
           ACTIVITY="$("$AAPT" dump badging "$APK" | sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" | head -n 1)"
 
@@ -52,125 +105,68 @@ jobs:
             exit 1
           fi
 
-          echo "Installing: $APK"
-          adb install -r "$APK"
+          echo "Package: $PACKAGE"
+          echo "Activity: $ACTIVITY"
 
-          # Put the showcase SVG where Android's document picker can see it.
-          #
-          # On the GitHub emulator the ordinary "shell" user can sometimes see
-          # /sdcard but receives EACCES when traversing /storage/emulated/0.
-          # google_apis emulator images are rootable, so restart adbd as root,
-          # wait for it to reconnect, then create/populate Downloads.
           echo "Preparing shared Downloads storage..."
           adb root >/dev/null 2>&1 || true
           adb wait-for-device
-
-          # Give Android a moment to finish reconnecting storage services after
-          # adbd restarts.
           sleep 3
 
           adb shell mkdir -p /storage/emulated/0/Download
           adb shell chmod 0777 /storage/emulated/0/Download || true
-
           adb push svg_vector_converter_showcase.svg /storage/emulated/0/Download/01_mountain.svg
           adb shell chmod 0666 /storage/emulated/0/Download/01_mountain.svg || true
-
-          # Verify before continuing so a storage problem fails here with useful
-          # diagnostics instead of later in the document picker.
           adb shell ls -l /storage/emulated/0/Download/01_mountain.svg
 
           adb shell am broadcast \
             -a android.intent.action.MEDIA_SCANNER_SCAN_FILE \
             -d file:///storage/emulated/0/Download/01_mountain.svg >/dev/null 2>&1 || true
 
-          adb_wait() {
-            local tries=0
-            until adb shell true >/dev/null 2>&1; do
-              tries=$((tries + 1))
-              if [[ $tries -ge 30 ]]; then
-                echo "ADB did not recover."
-                return 1
-              fi
-              sleep 2
-            done
-          }
-
           tap_text() {
             local wanted="$1"
             local tries=0
+            local coords=""
+
             while [[ $tries -lt 20 ]]; do
-              # Dump the accessibility hierarchy to /data/local/tmp rather
-              # than /sdcard. After `adb root`, shared-storage access can be
-              # restricted even though ordinary device input still works.
               adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null 2>&1 || true
               adb pull /data/local/tmp/window.xml window.xml >/dev/null 2>&1 || true
 
-              coords="$(python3 - "$wanted" <<'PY'
-          import re, sys, xml.etree.ElementTree as ET
-          wanted = sys.argv[1]
-          try:
-              root = ET.parse('window.xml').getroot()
-          except Exception:
-              sys.exit(1)
-          for node in root.iter('node'):
-              text = (node.attrib.get('text') or '').strip()
-              desc = (node.attrib.get('content-desc') or '').strip()
-              if text == wanted or desc == wanted:
-                  m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib.get('bounds',''))
-                  if m:
-                      x1,y1,x2,y2 = map(int,m.groups())
-                      print((x1+x2)//2, (y1+y2)//2)
-                      sys.exit(0)
-          sys.exit(1)
-          PY
-              )" || true
-
+              coords="$(python3 find_ui.py "$wanted" window.xml 2>/dev/null || true)"
               if [[ -n "$coords" ]]; then
                 read -r x y <<< "$coords"
                 echo "Tapping '$wanted' at $x,$y"
                 adb shell input tap "$x" "$y"
                 return 0
               fi
+
               tries=$((tries + 1))
               sleep 1
             done
+
             echo "Could not find UI text: $wanted"
             echo "--- Current foreground activity ---"
             adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' || true
             echo "--- UI hierarchy text/content descriptions ---"
             adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null 2>&1 || true
             adb pull /data/local/tmp/window.xml window.xml >/dev/null 2>&1 || true
-            python3 - <<'PY' || true
-            import xml.etree.ElementTree as ET
-            try:
-                root = ET.parse("window.xml").getroot()
-                for node in root.iter("node"):
-                    text = (node.attrib.get("text") or "").strip()
-                    desc = (node.attrib.get("content-desc") or "").strip()
-                    if text or desc:
-                        print("text=%r desc=%r bounds=%s" % (
-                            text, desc, node.attrib.get("bounds", "")
-                        ))
-            except Exception as e:
-                print("Could not parse UI hierarchy:", e)
-            PY
+            python3 find_ui.py --dump window.xml || true
             return 1
           }
 
           open_showcase() {
             adb shell am force-stop "$PACKAGE"
             adb shell am start -W -n "$PACKAGE/$ACTIVITY" >/dev/null
-            sleep 3
+            sleep 4
 
             tap_text "OPEN SVG"
             sleep 3
 
-            # The Android document picker normally opens in Recents. Navigate to
-            # Downloads explicitly so the workflow is deterministic.
+            # Try the document picker's navigation drawer. The exact label varies
+            # by Android version, so fall back to tapping the top-left menu area.
             if tap_text "Show roots"; then
               sleep 1
             else
-              # Some picker versions expose the hamburger only by description.
               adb shell input tap 48 72
               sleep 1
             fi
@@ -178,9 +174,6 @@ jobs:
             tap_text "Downloads" || true
             sleep 2
             tap_text "01_mountain.svg"
-
-            # Conversion is intentionally given extra time because optimization
-            # is the longest stage on this app.
             sleep 10
           }
 
@@ -191,34 +184,28 @@ jobs:
             local density="$4"
 
             echo "=== Capturing $label ($width x $height @ $density dpi) ==="
-            adb_wait
+
             adb shell wm size "${width}x${height}"
             adb shell wm density "$density"
-            adb shell settings put system accelerometer_rotation 0 >/dev/null 2>&1 || true
-            adb shell settings put system user_rotation 0 >/dev/null 2>&1 || true
-            sleep 2
+            sleep 3
 
             open_showcase
-            sleep 2
 
             local output="tablet-screenshots/${label}-mountain-preview.png"
             adb exec-out screencap -p > "$output"
             file "$output"
           }
 
-          # One emulator, two sequential captures. This avoids the intermittent
-          # emulator/ADB broken-pipe failures seen when the tablet jobs booted
-          # independently.
           capture_size "7-inch" 1080 1920 240
           capture_size "10-inch" 1440 2560 240
 
-          echo "Finished tablet screenshots:"
+          echo "Tablet screenshots created:"
           ls -lh tablet-screenshots
           SCRIPT
 
           chmod +x tablet_capture.sh
 
-      - name: Capture both tablet screenshots
+      - name: Capture tablet screenshots
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -228,8 +215,8 @@ jobs:
           cores: 2
           ram-size: 4096M
           heap-size: 1024M
-          disable-animations: true
           emulator-boot-timeout: 900
+          disable-animations: true
           emulator-options: >-
             -no-window
             -gpu swiftshader_indirect
